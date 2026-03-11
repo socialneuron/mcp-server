@@ -12,7 +12,7 @@
 
 import { createInterface } from 'node:readline';
 import { saveApiKey, loadApiKey, deleteApiKey, saveSupabaseUrl } from './credentials.js';
-import { runSetup, generatePKCE, getAppBaseUrl } from './setup.js';
+import { runSetup, getAppBaseUrl } from './setup.js';
 import { validateApiKey } from '../auth/api-keys.js';
 import { getSupabaseUrl, CLOUD_SUPABASE_URL } from '../lib/supabase.js';
 
@@ -102,14 +102,11 @@ async function runLoginDevice(): Promise<void> {
 
   const supabaseUrl = getDefaultSupabaseUrl();
 
-  // Generate PKCE for the device flow
-  const { codeChallenge } = generatePKCE();
-
   // Request a device code
   const response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=device-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ code_challenge: codeChallenge }),
+    body: JSON.stringify({}),
   });
 
   if (!response.ok) {
@@ -213,9 +210,10 @@ export async function runLogoutCommand(): Promise<void> {
       // First, find the key ID by validating it
       const validation = await validateApiKey(apiKey);
       if (validation.valid) {
-        // List keys to find this one's ID
-        // Since we can't list from CLI without user JWT, just delete locally
-        console.error('  Key revoked locally.');
+        console.error('  Key removed from this device.');
+        console.error(
+          '  Note: To revoke the key server-side, visit socialneuron.com/settings/developer'
+        );
       }
     } catch {
       // Non-fatal — local deletion is what matters
