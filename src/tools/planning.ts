@@ -9,20 +9,16 @@ import {
   getDefaultProjectId,
 } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { asEnvelope } from '../lib/envelope.js';
 import type {
   ContentPlan,
   ContentPlanPost,
   IdeationContext,
   Platform,
-  ResponseEnvelope,
 } from '../types/index.js';
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
-}
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return { _meta: { version: '0.2.0', timestamp: new Date().toISOString() }, data };
 }
 
 function tomorrowIsoDate(): string {
@@ -364,7 +360,7 @@ export function registerPlanningTools(server: McpServer): void {
         }
 
         // Step 6: Build ContentPlan
-        const posts: ContentPlanPost[] = postsArray.map((p: any) => ({
+        const posts: ContentPlanPost[] = postsArray.map((p: Record<string, unknown>) => ({
           id: String(p.id ?? ''),
           day: Number(p.day ?? 1),
           date: String(p.date ?? resolvedStartDate),

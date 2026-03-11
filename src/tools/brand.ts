@@ -3,17 +3,8 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
+import { asEnvelope } from '../lib/envelope.js';
+import type { BrandProfile } from '../types/index.js';
 
 export function registerBrandTools(server: McpServer): void {
   // ---------------------------------------------------------------------------

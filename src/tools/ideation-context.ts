@@ -2,7 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getSupabaseClient, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import type { IdeationContext, ResponseEnvelope } from '../types/index.js';
+import { asEnvelope } from '../lib/envelope.js';
+import type { IdeationContext } from '../types/index.js';
 
 type InsightRow = {
   id: string;
@@ -85,16 +86,6 @@ function transformInsightsToPerformanceContext(
     topHooks: topHooks.slice(0, 5),
     insightsCount: insights.length,
     generatedAt: insights[0]?.generated_at,
-  };
-}
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
   };
 }
 

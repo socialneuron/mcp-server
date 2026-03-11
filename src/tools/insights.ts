@@ -2,7 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import type { PerformanceInsight, BestPostingTime, ResponseEnvelope } from '../types/index.js';
+import { asEnvelope } from '../lib/envelope.js';
+import type { PerformanceInsight, BestPostingTime } from '../types/index.js';
 
 const PLATFORM_ENUM = [
   'youtube',
@@ -16,16 +17,6 @@ const PLATFORM_ENUM = [
 ] as const;
 
 const DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
 
 export function registerInsightsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------

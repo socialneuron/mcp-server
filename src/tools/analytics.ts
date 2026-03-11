@@ -4,17 +4,8 @@ import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../li
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import type { AnalyticsSummary, AnalyticsPost, ResponseEnvelope } from '../types/index.js';
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
+import { asEnvelope } from '../lib/envelope.js';
+import type { AnalyticsSummary, AnalyticsPost } from '../types/index.js';
 
 export function registerAnalyticsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -231,7 +222,7 @@ export function registerAnalyticsTools(server: McpServer): void {
       // Aggregate
       let totalViews = 0;
       let totalEngagement = 0;
-      const totalClicks = 0;
+      const totalClicks = 0; // post_analytics has no clicks column — always 0
 
       const posts: AnalyticsPost[] = [];
 
@@ -485,7 +476,7 @@ function formatSimpleAnalytics(
 
   let totalViews = 0;
   let totalEngagement = 0;
-  const totalClicks = 0;
+  const totalClicks = 0; // post_analytics has no clicks column — always 0
 
   for (const row of rows) {
     totalViews += row.views ?? 0;

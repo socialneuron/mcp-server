@@ -2,11 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { evaluateQuality } from '../lib/quality.js';
 import { logMcpToolInvocation } from '../lib/supabase.js';
-import type { ResponseEnvelope } from '../types/index.js';
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return { _meta: { version: '0.2.0', timestamp: new Date().toISOString() }, data };
-}
+import { asEnvelope } from '../lib/envelope.js';
 
 export function registerQualityTools(server: McpServer): void {
   server.tool(

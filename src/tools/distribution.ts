@@ -6,12 +6,12 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { asEnvelope } from '../lib/envelope.js';
 import type {
   SchedulePostResult,
   ConnectedAccount,
   PostRecord,
   PostingSlot,
-  ResponseEnvelope,
 } from '../types/index.js';
 
 /** Map MCP lowercase platform names to DB capitalized convention */
@@ -25,16 +25,6 @@ const PLATFORM_CASE_MAP: Record<string, string> = {
   threads: 'Threads',
   bluesky: 'Bluesky',
 };
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
 
 export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------

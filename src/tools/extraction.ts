@@ -3,7 +3,8 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { logMcpToolInvocation } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import type { ExtractedContent, ResponseEnvelope } from '../types/index.js';
+import { asEnvelope } from '../lib/envelope.js';
+import type { ExtractedContent } from '../types/index.js';
 
 interface ScrapeYouTubeResponse {
   title?: string;
@@ -28,10 +29,6 @@ interface FetchUrlContentResponse {
   benefits?: string[];
   usp?: string;
   suggestedHooks?: string[];
-}
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return { _meta: { version: '0.2.0', timestamp: new Date().toISOString() }, data };
 }
 
 function isYouTubeUrl(url: string): 'video' | 'channel' | false {

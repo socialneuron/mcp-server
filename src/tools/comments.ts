@@ -3,17 +3,8 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
-import type { YouTubeComment, ResponseEnvelope } from '../types/index.js';
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
+import { asEnvelope } from '../lib/envelope.js';
+import type { YouTubeComment } from '../types/index.js';
 
 export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------

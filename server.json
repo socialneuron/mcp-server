@@ -2,7 +2,7 @@
   "name": "@socialneuron/mcp-server",
   "display_name": "Social Neuron",
   "description": "50+ MCP tools for end-to-end social media content lifecycle. The only MCP server where performance analytics feed back into content generation — every piece of content gets smarter. Create with 20+ AI models, distribute to 3 platforms (YouTube, Instagram, TikTok) with 4 more coming, track analytics, and optimize automatically.",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
   "license": "MIT",
@@ -23,8 +23,9 @@
     "docs_url": "https://socialneuron.com/for-developers"
   },
   "pricing": {
-    "has_free_tier": false,
-    "starting_price": "$19/mo",
+    "has_free_tier": true,
+    "trial": "7 days free, no credit card required",
+    "starting_price": "$29/mo",
     "pricing_url": "https://socialneuron.com/pricing"
   }
 }
