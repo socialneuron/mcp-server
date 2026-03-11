@@ -54,6 +54,12 @@ test: add tests for W
 
 Do **not** open a public issue for security vulnerabilities. See [SECURITY.md](./SECURITY.md) for responsible disclosure instructions.
 
+## Developer Certificate of Origin
+
+By contributing, you certify that your contribution is your original work and
+you have the right to submit it under the MIT license. Please sign off your
+commits: `git commit -s -m "your message"`.
+
 ## License
 
 By contributing, you agree that your contributions will be licensed under the [MIT License](./LICENSE).

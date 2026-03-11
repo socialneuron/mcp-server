@@ -2,6 +2,21 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.2.1] - 2026-03-11
+
+### Fixed
+
+- **README**: Removed phantom "MCP API $19/mo" plan — pricing now matches actual tiers (Trial/Starter/Pro/Team)
+- **README**: Rewrote scopes section with tool-to-scope mapping
+- **README**: Security section now shows trust signals instead of implementation internals
+- **README**: Added telemetry section with opt-out instructions (`DO_NOT_TRACK=1`)
+- **README**: Added MCP vs CLI distinction, npx usage note, fixed tool count to 51
+- **Device auth**: Removed decorative PKCE from device code flow (code_challenge was sent but never verified on exchange)
+- **Logout**: Message now honestly says "removed from this device" with link to server-side revocation
+- **LICENSE**: Added trade name "(trading as Social Neuron)" to copyright holder
+- **SECURITY.md**: Removed phantom 1.1.x from supported versions (never published to npm)
+- **CONTRIBUTING.md**: Added Developer Certificate of Origin (DCO) section
+
 ## [1.2.0] - 2026-03-10
 
 ### Added

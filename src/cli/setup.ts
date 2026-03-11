@@ -163,8 +163,8 @@ async function completePkceExchange(codeVerifier: string, state: string): Promis
 
 export async function runSetup(): Promise<void> {
   console.error('');
-  console.error('  Social Neuron MCP Server Setup');
-  console.error('  ==============================');
+  console.error('  Social Neuron\u2122 MCP Server Setup');
+  console.error('  ===============================');
   console.error('');
 
   // Privacy notice (first-run)

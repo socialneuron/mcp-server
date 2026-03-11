@@ -3,14 +3,15 @@
     "target": "ES2022",
     "module": "Node16",
     "moduleResolution": "Node16",
+    "outDir": "./dist",
+    "rootDir": "./src",
     "strict": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
-    "noEmit": true,
-    "types": ["node"],
-    "lib": ["ES2022"],
-    "resolveJsonModule": true
+    "declaration": true,
+    "resolveJsonModule": true,
+    "sourceMap": true
   },
-  "include": ["src/lib/**/*.ts"],
-  "exclude": ["src/**/*.test.ts"]
+  "include": ["src/**/*"],
+  "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/test-setup.ts", "vitest.config.ts"]
 }
