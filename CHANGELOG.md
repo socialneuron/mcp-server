@@ -1,0 +1,73 @@
+# Changelog
+
+All notable changes to `@socialneuron/mcp-server` will be documented in this file.
+
+## [1.2.0] - 2026-03-10
+
+### Added
+
+- **Hardcoded anon key fallback**: npm consumers no longer need to configure `SUPABASE_ANON_KEY` — the public anon key is embedded as `CLOUD_SUPABASE_ANON_KEY`
+- **Gateway token system**: HMAC-SHA256 tokens prevent direct Edge Function bypass of mcp-gateway credit/scope enforcement
+- **Standardized error responses**: All 17 mcp-gateway error paths now return structured `{ error, message, upgrade_url?, retry_after? }` JSON
+
+### Security
+
+- Tightened `api_keys` RLS policies from `{public}` to `{authenticated}` role
+- Added `key_hash` index on `api_keys` table
+- Daily credit reset cron job (`reset-api-key-daily-credits`)
+- 11 downstream Edge Functions now verify gateway tokens on service-role calls
+
+### Fixed
+
+- `.npmignore` now excludes `*.spec.ts`, `.tmp*`, `.tmp-scripts/`, `*secret*`, `*credential*`
+
+## [1.1.0] - 2026-02-27
+
+### Added
+
+- **New CLI commands**: `sn autopilot`, `sn usage`, `sn loop`, `sn credits` for deterministic access to management tools
+- **Modular CLI architecture**: Extracted `sn` subcommand logic into `src/cli/sn.ts` for better maintainability
+
+### Changed
+
+- Refactored `src/index.ts` to reduce file size and improve readability
+
+## [1.0.0] - 2026-02-17
+
+### Added
+
+- **50+ MCP tools** across 19 modules: ideation, content, distribution, analytics, brand, screenshot, remotion, insights, youtube-analytics, comments, planning, quality, credits, autopilot, loop-summary, usage, and more
+- **OAuth 2.1 authentication** with PKCE browser flow, device code flow, and API key paste
+- **Scope-based access control**: `mcp:full`, `mcp:read`, `mcp:write`, `mcp:distribute`, `mcp:analytics`, `mcp:comments`
+- **Cloud mode** via MCP gateway proxy (recommended) — service-role key stays server-side
+- **Secure credential storage**: macOS Keychain, Linux secret-tool, file fallback
+- **Auto-configuration** for Claude Desktop and Claude Code
+- **CLI tools**: `sn publish`, `sn preflight`, `sn quality-check`, `sn status`, `sn posts`, `sn refresh-analytics`
+- **Loop summary tool** for closed-loop content optimization feedback
+- **Credit balance and budget tracking** tools
+- **658 unit tests** across 32 test files
+
+### Changed
+
+- **BREAKING**: Default scope for JWT users without explicit scopes changed from `mcp:full` to `mcp:read`. Users who relied on implicit full access must now request `mcp:full` explicitly when generating API keys or authenticating via device code. This follows the principle of least privilege — read-only by default, write access on request.
+
+### Security
+
+- JWT scope default changed from `mcp:full` to `mcp:read` (principle of least privilege)
+- API key expiry validation (reject expired keys)
+- Session ownership verification (prevent cross-user session hijack)
+- Health endpoint split: public `/health` (minimal) vs authenticated `/health/details`
+- Per-user rate limiting in HTTP mode (token bucket)
+- Per-request budget isolation in HTTP mode (AsyncLocalStorage)
+- Daily credit cap enforcement in gateway
+- Pre-execution balance check for expensive operations (video/image generation)
+- Gateway-side userId override (prevents horizontal privilege escalation)
+- Per-user rate limiting (100 req/min default)
+- Per-tool rate limits for expensive operations
+- Agent loop detection (>5 identical calls in 30s)
+- Session hard cap (200 calls/hour)
+- Shell metacharacter injection detection
+- Audit logging with PII-redacted params
+- Kill switch for emergency halt of autonomous operations
+- Subscription tier-based scope restrictions
+- SSRF protection on media URL parameters

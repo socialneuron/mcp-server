@@ -1,0 +1,46 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        node-version: [20, 22]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Use Node.js ${{ matrix.node-version }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Test
+        run: npm test
+
+      - name: Audit (critical)
+        run: npm audit --audit-level=critical
+
+      - name: Build
+        run: npm run build:all
+
+      - name: Verify pack contents
+        run: |
+          npm pack --dry-run 2>&1 | tee pack-output.txt
+          if grep -E '(src/|\.test\.|\.spec\.|vitest|tsconfig|\.env|\.github|gitleaks)' pack-output.txt; then
+            echo "ERROR: unexpected files found in pack output"
+            exit 1
+          fi
+          echo "Pack contents verified - no src/ or test files"

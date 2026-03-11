@@ -1,0 +1,81 @@
+{
+  "name": "@socialneuron/mcp-server",
+  "version": "1.2.0",
+  "description": "MCP server for Social Neuron - AI content creation platform",
+  "type": "module",
+  "main": "dist/index.js",
+  "bin": {
+    "socialneuron-mcp": "dist/index.js"
+  },
+  "files": [
+    "dist/",
+    "README.md",
+    "CHANGELOG.md",
+    "LICENSE"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Social Neuron",
+    "url": "https://socialneuron.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/socialneuron/mcp-server.git"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./http": "./dist/http.js"
+  },
+  "homepage": "https://socialneuron.com/for-developers",
+  "bugs": {
+    "url": "https://github.com/socialneuron/mcp-server/issues"
+  },
+  "keywords": [
+    "mcp",
+    "model-context-protocol",
+    "social-media",
+    "content-creation",
+    "ai",
+    "claude",
+    "automation",
+    "analytics",
+    "youtube",
+    "tiktok",
+    "instagram"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "scripts": {
+    "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
+    "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external",
+    "build:all": "npm run build:stdio && npm run build",
+    "start": "node dist/http.js",
+    "start:stdio": "node dist/index.js",
+    "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
+    "dev": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --sourcemap --banner:js='#!/usr/bin/env node' --packages=external --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "clean": "rm -rf dist/",
+    "prepublishOnly": "npm run clean && npm run build:all && npm test"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.27.1",
+    "@supabase/supabase-js": "2.98.0",
+    "open": "10.0.0",
+    "posthog-node": "^5.28.0",
+    "express": "^5.1.0",
+    "jose": "^6.2.1",
+    "zod": "3.24.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.5",
+    "esbuild": "^0.27.3",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  },
+  "engines": {
+    "node": ">=20.0.0 <21.0.0 || >=22.0.0"
+  }
+}
