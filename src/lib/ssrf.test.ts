@@ -1,14 +1,19 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-// Unmock ssrf since the global test-setup does not mock it directly,
-// but we want to be explicit and also mock the DNS module it imports.
+// Hoist mock functions so they're shared between the mock factory and tests.
+// Vitest 4 requires constructors called with `new` to be proper classes.
+const { mockResolve4, mockResolve6, MockResolver } = vi.hoisted(() => {
+  const mockResolve4 = vi.fn(async () => ['93.184.216.34']);
+  const mockResolve6 = vi.fn(async () => [] as string[]);
+  class MockResolver {
+    resolve4 = mockResolve4;
+    resolve6 = mockResolve6;
+  }
+  return { mockResolve4, mockResolve6, MockResolver };
+});
+
 vi.mock('node:dns', () => ({
-  promises: {
-    Resolver: vi.fn(() => ({
-      resolve4: vi.fn(async () => ['93.184.216.34']),
-      resolve6: vi.fn(async () => []),
-    })),
-  },
+  promises: { Resolver: MockResolver },
 }));
 
 import { quickSSRFCheck, validateUrlForSSRF } from './ssrf.js';
@@ -115,14 +120,7 @@ describe('SSRF protection', () => {
     });
 
     it('blocks when DNS resolves to private IP', async () => {
-      const dns = await import('node:dns');
-      vi.mocked(dns.promises.Resolver).mockImplementationOnce(
-        () =>
-          ({
-            resolve4: vi.fn(async () => ['10.0.0.1']),
-            resolve6: vi.fn(async () => []),
-          }) as any
-      );
+      mockResolve4.mockResolvedValueOnce(['10.0.0.1']);
 
       const result = await validateUrlForSSRF('https://internal.corp.com/api');
       expect(result.isValid).toBe(false);
@@ -130,14 +128,8 @@ describe('SSRF protection', () => {
     });
 
     it('blocks when DNS resolution fails (fail-closed)', async () => {
-      const dns = await import('node:dns');
-      vi.mocked(dns.promises.Resolver).mockImplementationOnce(
-        () =>
-          ({
-            resolve4: vi.fn(async () => []),
-            resolve6: vi.fn(async () => []),
-          }) as any
-      );
+      mockResolve4.mockResolvedValueOnce([]);
+      mockResolve6.mockResolvedValueOnce([]);
 
       const result = await validateUrlForSSRF('https://nonexistent-host.invalid/');
       expect(result.isValid).toBe(false);
