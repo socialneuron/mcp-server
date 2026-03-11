@@ -1,0 +1,10 @@
+title = "Social Neuron MCP Server - Gitleaks Config"
+
+[allowlist]
+  description = "Allowlisted files and patterns"
+  paths = [
+    '''src/lib/supabase\.ts''',
+    '''node_modules/''',
+    '''dist/''',
+    '''package-lock\.json''',
+  ]

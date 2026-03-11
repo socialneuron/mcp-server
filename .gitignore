@@ -1,0 +1,16 @@
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+coverage/
+.tmp/
+.tmp-scripts/
+*.secret
+*.credential
+.tmp-vitest/
+*.tgz
+.DS_Store
+*.log
+.vscode/
+.idea/
