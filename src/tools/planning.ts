@@ -360,7 +360,7 @@ export function registerPlanningTools(server: McpServer): void {
         }
 
         // Step 6: Build ContentPlan
-        const posts: ContentPlanPost[] = postsArray.map((p: Record<string, unknown>) => ({
+        const posts: ContentPlanPost[] = postsArray.map((p: any) => ({
           id: String(p.id ?? ''),
           day: Number(p.day ?? 1),
           date: String(p.date ?? resolvedStartDate),
