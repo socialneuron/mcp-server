@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 50+ MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 51 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -13,7 +13,7 @@
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a paid Social Neuron plan (MCP API $19/mo or higher).
+This opens your browser to authorize access. Requires a Social Neuron plan ([free trial available](https://socialneuron.com/pricing)).
 
 ### 2. Add to Claude Code
 
@@ -94,6 +94,8 @@ Ask Claude things like:
 
 ## Tool Categories (51 tools)
 
+These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
+
 ### Content Lifecycle
 
 | Category | Tools | What It Does |
@@ -161,30 +163,35 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
-MCP access requires a paid Social Neuron plan:
+| Plan | Price | Credits/mo | MCP Access |
+|------|-------|-----------|------------|
+| Trial | Free (7 days) | 500 | Read + Write + Analytics + Comments |
+| Starter | $29/mo | 800 | Read + Analytics |
+| Pro | $79/mo | 2,000 | Full access |
+| Team | $199/mo | 6,500 | Full access + Multi-user |
 
-| Plan    | Price   | MCP Scopes               | Credits |
-| ------- | ------- | ------------------------ | ------- |
-| MCP API | $19/mo  | Full access              | 400     |
-| Starter | $29/mo  | Read + Analytics         | 800     |
-| Pro     | $79/mo  | Full access              | 2,000   |
-| Team    | $199/mo | Full access + Multi-user | 6,500   |
-
-**No free tier for MCP.** Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
+Start with a [free trial](https://socialneuron.com/pricing) — no credit card required.
 
 ## Scopes
 
-| Scope            | Access                                 |
-| ---------------- | -------------------------------------- |
-| `mcp:full`       | All operations                         |
-| `mcp:read`       | Read-only (analytics, insights, lists) |
-| `mcp:write`      | Content generation                     |
-| `mcp:distribute` | Publishing and scheduling              |
-| `mcp:analytics`  | Performance data                       |
-| `mcp:comments`   | Social engagement                      |
-| `mcp:autopilot`  | Automated scheduling                   |
+Each API key inherits scopes from your plan. Tools require specific scopes to execute.
+
+| Scope | What you can do |
+|-------|----------------|
+| `mcp:read` | Analytics, insights, brand profiles, content plans, quality checks, screenshots, usage stats, credit balance |
+| `mcp:write` | Generate content (video, image, voiceover, carousel), create storyboards, save brand profiles, plan content |
+| `mcp:distribute` | Schedule posts, publish content plans |
+| `mcp:analytics` | Refresh analytics, YouTube deep analytics |
+| `mcp:comments` | List, reply, post, moderate, delete comments |
+| `mcp:autopilot` | Configure and monitor automated scheduling |
+| `mcp:full` | All of the above |
 
 ## CLI Reference
+
+These commands run directly in your terminal — no AI agent needed. Useful for scripts, CI/CD, and quick checks.
+
+> After global install (`npm i -g @socialneuron/mcp-server`), use `socialneuron-mcp` directly.
+> Otherwise, prefix with `npx @socialneuron/mcp-server`.
 
 ```bash
 # Auth
@@ -226,13 +233,22 @@ Each iteration produces smarter content as performance data feeds back into the 
 
 ## Security
 
-- API keys are SHA-256 hashed with random salt before storage
-- PKCE (S256) challenge verification for browser auth
-- Timing-safe hash comparison prevents side-channel attacks
-- SSRF protection on all URL parameters
-- Rate limiting: 100 req/min per user, per-tool limits for expensive operations
-- Agent loop detection (>5 identical calls in 30s)
-- Credentials stored in OS keychain (macOS/Linux) or env var. On Windows, use `SOCIALNEURON_API_KEY` env var for secure storage
+- All API keys are hashed before storage — we never store plaintext keys
+- Credentials stored in your OS keychain (macOS Keychain, Linux secret-tool) or environment variable
+- SSRF protection on all URL parameters with DNS rebinding prevention
+- Rate limiting per user with per-tool limits for expensive operations
+- Agent loop detection prevents runaway automation
+- Set `DO_NOT_TRACK=1` to disable anonymous usage telemetry
+
+See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy and credential safety details.
+
+## Telemetry
+
+This package collects anonymous usage metrics (tool name, duration, success/failure) to improve the product. Your user ID is hashed before transmission.
+
+**To disable**: Set `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` in your environment.
+
+No personal content, API keys, or request payloads are ever collected.
 
 ## Examples
 
