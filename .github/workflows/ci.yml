@@ -25,6 +25,7 @@ jobs:
       - run: npm ci
 
       - name: Typecheck
+        if: matrix.node-version == 22
         run: npm run typecheck
 
       - name: Test
