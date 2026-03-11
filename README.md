@@ -13,7 +13,7 @@
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a Social Neuron plan ([free trial available](https://socialneuron.com/pricing)).
+This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
 
 ### 2. Add to Claude Code
 
@@ -163,14 +163,16 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
+MCP access requires a paid plan:
+
 | Plan | Price | Credits/mo | MCP Access |
 |------|-------|-----------|------------|
-| Trial | Free (7 days) | 500 | Read + Write + Analytics + Comments |
+| Free | $0 | 100 | — |
 | Starter | $29/mo | 800 | Read + Analytics |
 | Pro | $79/mo | 2,000 | Full access |
 | Team | $199/mo | 6,500 | Full access + Multi-user |
 
-Start with a [free trial](https://socialneuron.com/pricing) — no credit card required.
+Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 
 ## Scopes
 
