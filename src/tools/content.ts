@@ -5,11 +5,11 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
 import { requestContext } from '../lib/request-context.js';
+import { asEnvelope } from '../lib/envelope.js';
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
   JobStatusResponse,
-  ResponseEnvelope,
 } from '../types/index.js';
 
 interface AsyncJob {
@@ -75,16 +75,6 @@ export function getCurrentBudgetStatus(): {
     assetsGeneratedThisRun: assetsGen,
     maxAssetsPerRun: MAX_ASSETS_PER_RUN,
     remainingAssets: MAX_ASSETS_PER_RUN > 0 ? Math.max(0, MAX_ASSETS_PER_RUN - assetsGen) : null,
-  };
-}
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: '0.2.0',
-      timestamp: new Date().toISOString(),
-    },
-    data,
   };
 }
 

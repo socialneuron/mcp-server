@@ -3,18 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import { MCP_VERSION } from '../lib/version.js';
-import type { ResponseEnvelope } from '../types/index.js';
-
-function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: {
-      version: MCP_VERSION,
-      timestamp: new Date().toISOString(),
-    },
-    data,
-  };
-}
+import { asEnvelope } from '../lib/envelope.js';
 
 export function registerAutopilotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
