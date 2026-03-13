@@ -73,7 +73,7 @@ describe('usage tools', () => {
       const handler = server.getHandler('get_mcp_usage')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.3.2');
+      expect(parsed._meta.version).toBe('1.4.0');
       expect(parsed._meta.timestamp).toBeDefined();
       expect(parsed.data.tools).toHaveLength(1);
       expect(parsed.data.totalCalls).toBe(3);

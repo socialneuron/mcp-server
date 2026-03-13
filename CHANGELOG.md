@@ -2,6 +2,14 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.4.0] - 2026-03-13
+
+### Changed
+- **Telemetry is now opt-IN**: No data is sent unless `SOCIALNEURON_TELEMETRY=1` is explicitly set. Previously telemetry was opt-out.
+- **PostHog moved to optionalDependencies**: `posthog-node` is no longer a required runtime dependency. The package works fully without it installed. This reduces supply chain surface and resolves socket.dev security flags.
+- **Dynamic import**: PostHog is loaded via `import()` at runtime, silently skipped if unavailable.
+- `DO_NOT_TRACK=1` continues to override and disable telemetry in all cases.
+
 ## [1.3.2] - 2026-03-13
 
 ### Fixed
