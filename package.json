@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.3.1",
+  "version": "1.3.2",
   "description": "MCP server for Social Neuron - AI content creation platform",
   "type": "module",
   "main": "dist/index.js",
@@ -69,6 +69,7 @@
     "zod": "^4.0.0"
   },
   "devDependencies": {
+    "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.27.3",
     "typescript": "^5.9.3",
