@@ -24,6 +24,7 @@ import { registerExtractionTools } from '../tools/extraction.js';
 import { registerQualityTools } from '../tools/quality.js';
 import { registerPlanningTools } from '../tools/planning.js';
 import { registerPlanApprovalTools } from '../tools/plan-approvals.js';
+import { registerDiscoveryTools } from '../tools/discovery.js';
 
 /**
  * Wrap server.tool() to inject scope checking before each handler.
@@ -103,4 +104,5 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerQualityTools(server);
   registerPlanningTools(server);
   registerPlanApprovalTools(server);
+  registerDiscoveryTools(server);
 }

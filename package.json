@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.2.1",
+  "version": "1.3.0",
   "description": "MCP server for Social Neuron - AI content creation platform",
   "type": "module",
   "main": "dist/index.js",
@@ -61,18 +61,18 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.99.1",
+    "@supabase/supabase-js": "2.98.0",
     "express": "^5.1.0",
     "jose": "^6.2.1",
-    "open": "11.0.0",
+    "open": "10.0.0",
     "posthog-node": "^5.28.0",
-    "zod": "4.3.6"
+    "zod": "3.24.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
     "esbuild": "^0.27.3",
     "typescript": "^5.9.3",
-    "vitest": "^4.0.18"
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0"
