@@ -2,6 +2,13 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.3.1] - 2026-03-13
+
+### Fixed
+- **zod v4 compatibility**: Updated `zod` dependency from v3 to v4 to match `@modelcontextprotocol/sdk` peer requirement, fixing `ERR_PACKAGE_PATH_NOT_EXPORTED` crash on `npx` install
+- **Test domain**: Fixed test fixtures using deprecated `socialneuron.ai` domain (now `socialneuron.com`)
+- **CLI E2E timeout**: Increased envelope test timeout to avoid false failures
+
 ## [1.3.0] - 2026-03-13
 
 ### Added
