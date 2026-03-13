@@ -2,6 +2,32 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.3.0] - 2026-03-13
+
+### Added
+
+- **Tool discovery**: `sn tools` command lists all 52 MCP tools, filterable by `--module` and `--scope`
+- **Introspection**: `sn info` shows version, tool count, auth status, and credit balance (works offline)
+- **Content plan CLI**: `sn plan list|view|approve` wrappers for content plan management
+- **Presets**: `sn preset list|show|save|delete` with 6 built-in platform presets (instagram-reel, tiktok, youtube-short, etc.)
+- **Interactive REPL**: `socialneuron-mcp repl` with tab completion and persistent auth
+- **Progressive disclosure**: New `search_tools` MCP tool reduces agent token usage from 55K to ~500 tokens
+- **Unified JSON envelope**: All CLI JSON output includes `schema_version: "1"`, `ok`, `command`, typed errors with `errorType` + `retryable` + `hint`
+- **`--json` everywhere**: `--version --json`, `--help --json` now return structured JSON
+
+### Fixed
+
+- Error handler (`withSnErrorHandling`) now wraps all dispatcher handler calls — consistent error formatting
+- Flag validation runs before auth — missing flags show VALIDATION error, not AUTH error
+- Deduplicated platform normalization in publish handler
+- `schema_version: "1"` added to whoami, health, logout JSON output
+
+### Internal
+
+- 52 tools (was 51), 759 tests (was 698), 374.7KB build
+- New files: tool-catalog.ts, discovery.ts (CLI + MCP), planning.ts, presets.ts, repl.ts
+- CLI E2E test suite (23 tests), MCP E2E test suite (13 tests)
+
 ## [1.2.1] - 2026-03-11
 
 ### Fixed

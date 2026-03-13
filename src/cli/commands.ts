@@ -192,24 +192,23 @@ async function runLoginDevice(): Promise<void> {
 
 // ── Logout ───────────────────────────────────────────────────────────
 
-export async function runLogoutCommand(): Promise<void> {
-  console.error('');
-  console.error('  Social Neuron - Logout');
-  console.error('  ======================');
-  console.error('');
+export async function runLogoutCommand(options?: { json?: boolean }): Promise<void> {
+  const asJson = options?.json ?? false;
+
+  if (!asJson) {
+    console.error('');
+    console.error('  Social Neuron - Logout');
+    console.error('  ======================');
+    console.error('');
+  }
 
   const apiKey = await loadApiKey();
 
   if (apiKey) {
     // Try to revoke the key server-side
     try {
-      const supabaseUrl = getDefaultSupabaseUrl();
-      const serviceKey =
-        process.env.SOCIALNEURON_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
-
-      // First, find the key ID by validating it
       const validation = await validateApiKey(apiKey);
-      if (validation.valid) {
+      if (validation.valid && !asJson) {
         console.error('  Key removed from this device.');
         console.error(
           '  Note: To revoke the key server-side, visit socialneuron.com/settings/developer'
@@ -221,68 +220,114 @@ export async function runLogoutCommand(): Promise<void> {
   }
 
   await deleteApiKey();
-  console.error('  Credentials removed from keychain.');
-  console.error('');
+
+  if (asJson) {
+    process.stdout.write(
+      JSON.stringify({ ok: true, message: 'Credentials removed', schema_version: '1' }, null, 2) +
+        '\n'
+    );
+  } else {
+    console.error('  Credentials removed from keychain.');
+    console.error('');
+  }
 }
 
 // ── Whoami ───────────────────────────────────────────────────────────
 
-export async function runWhoami(): Promise<void> {
-  console.error('');
-  console.error('  Social Neuron - Current Identity');
-  console.error('  ================================');
-  console.error('');
+export async function runWhoami(options?: { json?: boolean }): Promise<void> {
+  const asJson = options?.json ?? false;
 
   const apiKey = await loadApiKey();
 
   if (!apiKey) {
-    console.error('  Not logged in.');
-    console.error('  Run: npx @socialneuron/mcp-server login');
-    console.error('');
+    if (asJson) {
+      process.stdout.write(
+        JSON.stringify({ ok: false, error: 'Not logged in', schema_version: '1' }, null, 2) + '\n'
+      );
+    } else {
+      console.error('');
+      console.error('  Not logged in.');
+      console.error('  Run: npx @socialneuron/mcp-server login');
+      console.error('');
+    }
     process.exit(1);
   }
 
-  console.error('  Validating key...');
+  if (!asJson) {
+    console.error('');
+    console.error('  Social Neuron - Current Identity');
+    console.error('  ================================');
+    console.error('');
+    console.error('  Validating key...');
+  }
+
   const result = await validateApiKey(apiKey);
 
   if (!result.valid) {
-    console.error('  Key is invalid or expired.');
-    console.error(`  Error: ${result.error || 'Unknown'}`);
-    console.error('  Run: npx @socialneuron/mcp-server login');
-    console.error('');
+    if (asJson) {
+      process.stdout.write(
+        JSON.stringify(
+          { ok: false, error: result.error || 'Key invalid or expired', schema_version: '1' },
+          null,
+          2
+        ) + '\n'
+      );
+    } else {
+      console.error('  Key is invalid or expired.');
+      console.error(`  Error: ${result.error || 'Unknown'}`);
+      console.error('  Run: npx @socialneuron/mcp-server login');
+      console.error('');
+    }
     process.exit(1);
   }
 
-  console.error('');
-  console.error(`  Email:    ${result.email || '(not available)'}`);
-  console.error(`  User ID:  ${result.userId}`);
-  console.error(`  Key:      ${apiKey.substring(0, 12)}...`);
-  console.error(`  Scopes:   ${result.scopes?.join(', ') || 'mcp:full'}`);
-
-  if (result.expiresAt) {
-    const expiresMs = new Date(result.expiresAt).getTime();
-    const daysLeft = Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24));
-    console.error(`  Expires:  ${result.expiresAt} (${daysLeft} days)`);
-
-    if (daysLeft <= 7) {
-      console.error('');
-      console.error(`  Warning: Key expires in ${daysLeft} day(s).`);
-      console.error('  Run: npx @socialneuron/mcp-server login');
-    }
+  if (asJson) {
+    const payload: Record<string, unknown> = {
+      ok: true,
+      email: result.email || null,
+      userId: result.userId,
+      keyPrefix: apiKey.substring(0, 12) + '...',
+      scopes: result.scopes || ['mcp:full'],
+      schema_version: '1',
+    };
+    if (result.expiresAt) payload.expiresAt = result.expiresAt;
+    process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   } else {
-    console.error('  Expires:  never');
-  }
+    console.error('');
+    console.error(`  Email:    ${result.email || '(not available)'}`);
+    console.error(`  User ID:  ${result.userId}`);
+    console.error(`  Key:      ${apiKey.substring(0, 12)}...`);
+    console.error(`  Scopes:   ${result.scopes?.join(', ') || 'mcp:full'}`);
 
-  console.error('');
+    if (result.expiresAt) {
+      const expiresMs = new Date(result.expiresAt).getTime();
+      const daysLeft = Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24));
+      console.error(`  Expires:  ${result.expiresAt} (${daysLeft} days)`);
+
+      if (daysLeft <= 7) {
+        console.error('');
+        console.error(`  Warning: Key expires in ${daysLeft} day(s).`);
+        console.error('  Run: npx @socialneuron/mcp-server login');
+      }
+    } else {
+      console.error('  Expires:  never');
+    }
+
+    console.error('');
+  }
 }
 
 // ── Health Check ─────────────────────────────────────────────────
 
-export async function runHealthCheck(): Promise<void> {
-  console.error('');
-  console.error('  Social Neuron — Health Check');
-  console.error('  ============================');
-  console.error('');
+export async function runHealthCheck(options?: { json?: boolean }): Promise<void> {
+  const asJson = options?.json ?? false;
+
+  if (!asJson) {
+    console.error('');
+    console.error('  Social Neuron — Health Check');
+    console.error('  ============================');
+    console.error('');
+  }
 
   const checks: Array<{ name: string; ok: boolean; detail: string }> = [];
 
@@ -387,14 +432,27 @@ export async function runHealthCheck(): Promise<void> {
   // Print results
   const allOk = checks.every(c => c.ok);
 
-  for (const check of checks) {
-    const icon = check.ok ? '\u2713' : '\u2717';
-    console.error(`  ${icon} ${check.name}: ${check.detail}`);
-  }
+  if (asJson) {
+    const checksObj: Record<string, { status: string; detail: string }> = {};
+    for (const check of checks) {
+      checksObj[check.name.toLowerCase().replace(/\s+/g, '_')] = {
+        status: check.ok ? 'pass' : 'fail',
+        detail: check.detail,
+      };
+    }
+    process.stdout.write(
+      JSON.stringify({ ok: allOk, checks: checksObj, schema_version: '1' }, null, 2) + '\n'
+    );
+  } else {
+    for (const check of checks) {
+      const icon = check.ok ? '\u2713' : '\u2717';
+      console.error(`  ${icon} ${check.name}: ${check.detail}`);
+    }
 
-  console.error('');
-  console.error(`  Overall: ${allOk ? 'All checks passed' : 'Some checks failed'}`);
-  console.error('');
+    console.error('');
+    console.error(`  Overall: ${allOk ? 'All checks passed' : 'Some checks failed'}`);
+    console.error('');
+  }
 
   if (!allOk) {
     process.exit(1);
