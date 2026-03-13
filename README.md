@@ -250,17 +250,26 @@ Each iteration produces smarter content as performance data feeds back into the 
 - SSRF protection on all URL parameters with DNS rebinding prevention
 - Rate limiting per user with per-tool limits for expensive operations
 - Agent loop detection prevents runaway automation
-- Set `DO_NOT_TRACK=1` to disable anonymous usage telemetry
+- Telemetry is off by default — opt in with `SOCIALNEURON_TELEMETRY=1`
 
 See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy and credential safety details.
 
 ## Telemetry
 
-This package collects anonymous usage metrics (tool name, duration, success/failure) to improve the product. Your user ID is hashed before transmission.
+Telemetry is **off by default**. No data is collected unless you explicitly opt in.
 
-**To disable**: Set `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` in your environment.
+**To enable**: Set `SOCIALNEURON_TELEMETRY=1` in your environment.
 
-No personal content, API keys, or request payloads are ever collected.
+**To disable**: `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` always disables telemetry, even if `SOCIALNEURON_TELEMETRY=1` is set.
+
+When enabled, the following anonymous metrics are collected via PostHog:
+- Tool name invoked
+- Success or failure status
+- Invocation duration (ms)
+
+No personal content, API keys, or request payloads are ever collected. Your user ID is hashed (SHA-256) before transmission.
+
+`posthog-node` is an optional dependency — if it is not installed, telemetry is a silent no-op regardless of environment variables.
 
 ## Examples
 
