@@ -88,13 +88,13 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
-// PRC-003/PRC-009 fix: Synced with constants/pricing.ts (30% margin on premium video models)
+// PRC-003/PRC-009 fix: Synced with constants/pricing.ts (40% margin on premium video models)
 const VIDEO_CREDIT_ESTIMATES: Record<string, number> = {
-  'veo3-fast': 156,
-  'veo3-quality': 780,
-  'runway-aleph': 260,
-  sora2: 390,
-  'sora2-pro': 1170,
+  'veo3-fast': 200,
+  'veo3-quality': 1000,
+  'runway-aleph': 340,
+  sora2: 500,
+  'sora2-pro': 1500,
   kling: 170,
   'kling-3': 100,
   'kling-3-pro': 135,
