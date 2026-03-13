@@ -2,6 +2,14 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.3.2] - 2026-03-13
+
+### Fixed
+- **TypeScript strict mode**: Added `@types/express`, fixed `AuthenticatedRequest` type to extend express `Request`, corrected `StreamableHTTPServerTransport` constructor usage
+- **Optional dependency stubs**: Added ambient declarations for `playwright`, `@remotion/bundler`, `@remotion/renderer` (dynamically imported, not required at runtime)
+- **Removed unused directive**: Cleaned up stale `@ts-expect-error` in REPL module
+- **Release CI**: Typecheck now passes in GitHub Actions release workflow
+
 ## [1.3.1] - 2026-03-13
 
 ### Fixed

@@ -280,6 +280,14 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
+      onsessioninitialized: (sessionId: string) => {
+        sessions.set(sessionId, {
+          transport,
+          server,
+          lastActivity: Date.now(),
+          userId: auth.userId,
+        });
+      },
     });
 
     // Track session
@@ -290,18 +298,6 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
     };
 
     await server.connect(transport);
-
-    // Store session after connect (sessionId is set during initialize)
-    const originalOnSessionInit = transport.onsessioninitialized;
-    transport.onsessioninitialized = async (sessionId: string) => {
-      if (originalOnSessionInit) await originalOnSessionInit(sessionId);
-      sessions.set(sessionId, {
-        transport,
-        server,
-        lastActivity: Date.now(),
-        userId: auth.userId,
-      });
-    };
 
     // Handle the request in user context
     await requestContext.run(

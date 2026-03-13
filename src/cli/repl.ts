@@ -105,7 +105,6 @@ export async function runRepl(): Promise<void> {
 
     // Parse as CLI command — override process.exit so it doesn't kill the REPL
     const originalExit = process.exit;
-    // @ts-expect-error — intentionally overriding process.exit in REPL mode
     process.exit = ((_code?: number) => {
       // Swallow exit calls — REPL stays alive
     }) as typeof process.exit;
