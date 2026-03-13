@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 51 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 52 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -92,7 +92,7 @@ Ask Claude things like:
 - "Check my analytics and suggest improvements"
 - "Set up autopilot to post 3 times per week"
 
-## Tool Categories (51 tools)
+## Tool Categories (52 tools)
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
@@ -128,6 +128,7 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 | Remotion | list_compositions, render_demo_video | Programmatic video rendering |
 | Usage | get_mcp_usage | API usage monitoring |
 | YouTube | fetch_youtube_analytics | YouTube-specific deep analytics |
+| Discovery | search_tools | Find tools by keyword with progressive detail levels (saves 98% tokens vs loading all tools) |
 
 ## Authentication
 
@@ -141,13 +142,13 @@ npx -y @socialneuron/mcp-server login --device
 
 Opens browser, you approve, CLI receives API key automatically.
 
-### PKCE Browser Flow
+### Browser Flow
 
 ```bash
 npx -y @socialneuron/mcp-server login
 ```
 
-Browser-based OAuth flow with PKCE challenge.
+Browser-based OAuth flow.
 
 ### API Key Paste
 
@@ -213,6 +214,15 @@ socialneuron-mcp sn autopilot
 socialneuron-mcp sn usage
 socialneuron-mcp sn loop
 socialneuron-mcp sn credits
+
+# Agent-native CLI v2
+socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 52 tools
+socialneuron-mcp sn info                                            # Version, auth, credits, tool count
+socialneuron-mcp sn plan list|view|approve                          # Content plan management
+socialneuron-mcp sn preset list|show|save|delete                    # Platform presets (6 built-in)
+
+# Interactive REPL
+socialneuron-mcp repl
 
 # Add --json to any command for machine-readable output
 ```
