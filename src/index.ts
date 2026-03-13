@@ -44,19 +44,58 @@ if (command === '--version' || command === '-v') {
   const { readFileSync } = await import('node:fs');
   const { resolve, dirname } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
+  let version = MCP_VERSION;
   try {
     const pkgPath = resolve(dirname(fileURLToPath(import.meta.url)), '..', 'package.json');
     const pkg = JSON.parse(readFileSync(pkgPath, 'utf-8'));
-    console.log(`@socialneuron/mcp-server v${pkg.version}`);
+    version = pkg.version;
   } catch {
-    console.log(`@socialneuron/mcp-server v${MCP_VERSION}`);
+    // Fall back to MCP_VERSION
+  }
+  if (process.argv.includes('--json')) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          ok: true,
+          command: 'version',
+          version,
+          name: '@socialneuron/mcp-server',
+          schema_version: '1',
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  } else {
+    console.log(`@socialneuron/mcp-server v${version}`);
   }
   process.exit(0);
 }
 
 if (command === '--help' || command === '-h') {
-  console.log(
-    `
+  if (process.argv.includes('--json')) {
+    process.stdout.write(
+      JSON.stringify(
+        {
+          ok: true,
+          command: 'help',
+          commands: [
+            { name: 'setup', aliases: ['login'], description: 'Interactive OAuth setup' },
+            { name: 'logout', description: 'Remove credentials' },
+            { name: 'whoami', description: 'Show auth info' },
+            { name: 'health', description: 'Check connectivity' },
+            { name: 'sn', description: 'CLI tools (publish, preflight, etc.)' },
+            { name: 'repl', description: 'Interactive REPL mode' },
+          ],
+          schema_version: '1',
+        },
+        null,
+        2
+      ) + '\n'
+    );
+  } else {
+    console.log(
+      `
 @socialneuron/mcp-server — AI content creation tools for Claude
 
 Usage:
@@ -69,6 +108,7 @@ Usage:
   socialneuron-mcp whoami         Show authenticated user info
   socialneuron-mcp health         Check connectivity, key validity, credits
   socialneuron-mcp sn <command>   CLI tools (publish, preflight, e2e, etc.)
+  socialneuron-mcp repl           Interactive REPL mode
   socialneuron-mcp --version      Show version
   socialneuron-mcp --help         Show this help
 
@@ -79,7 +119,8 @@ Environment:
 
 Docs: https://github.com/socialneuron/mcp-server#readme
 `.trim()
-  );
+    );
+  }
   process.exit(0);
 }
 
@@ -101,20 +142,29 @@ if (command === 'setup' || command === 'login') {
 
 if (command === 'logout') {
   const { runLogoutCommand } = await import('./cli/commands.js');
-  await runLogoutCommand();
+  const jsonFlag = process.argv.slice(3).includes('--json');
+  await runLogoutCommand({ json: jsonFlag });
   process.exit(0);
 }
 
 if (command === 'whoami') {
   const { runWhoami } = await import('./cli/commands.js');
-  await runWhoami();
+  const jsonFlag = process.argv.slice(3).includes('--json');
+  await runWhoami({ json: jsonFlag });
   process.exit(0);
 }
 
 if (command === 'health') {
   const { runHealthCheck } = await import('./cli/commands.js');
-  await runHealthCheck();
+  const jsonFlag = process.argv.slice(3).includes('--json');
+  await runHealthCheck({ json: jsonFlag });
   process.exit(0);
+}
+
+if (command === 'repl') {
+  const { runRepl } = await import('./cli/repl.js');
+  await runRepl();
+  // runRepl never returns (runs until exit)
 }
 
 if (command === 'sn') {
@@ -125,14 +175,14 @@ if (command === 'sn') {
     printSnUsage();
     process.exit(snSubcommand ? 0 : 1);
   }
-  await initializeAuth();
+  // Auth is deferred — each subcommand calls ensureAuth() only if needed
   await runSnCli(process.argv.slice(3));
   process.exit(0);
 }
 
 // ── Unknown command check ────────────────────────────────────────────
 
-if (command && !['setup', 'login', 'logout', 'whoami', 'health', 'sn'].includes(command)) {
+if (command && !['setup', 'login', 'logout', 'whoami', 'health', 'sn', 'repl'].includes(command)) {
   process.stderr.write(`Unknown command: ${command}\nRun socialneuron-mcp --help for usage.\n`);
   process.exit(1);
 }

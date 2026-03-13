@@ -99,6 +99,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:read (usage is read-only)
   get_mcp_usage: 'mcp:read',
   list_plan_approvals: 'mcp:read',
+  search_tools: 'mcp:read',
 };
 
 /**
