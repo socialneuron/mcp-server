@@ -1,12 +1,17 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { getSupabaseClient, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
-import type { ResponseEnvelope } from '../types/index.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import {
+  getSupabaseClient,
+  getDefaultUserId,
+  getDefaultProjectId,
+} from "../lib/supabase.js";
+import { MCP_VERSION } from "../lib/version.js";
+import type { ResponseEnvelope } from "../types/index.js";
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
     _meta: {
-      version: '0.2.0',
+      version: MCP_VERSION,
       timestamp: new Date().toISOString(),
     },
     data,
@@ -15,18 +20,18 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 
 export function registerLoopSummaryTools(server: McpServer): void {
   server.tool(
-    'get_loop_summary',
-    'Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights).',
+    "get_loop_summary",
+    "Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights).",
     {
       project_id: z
         .string()
         .uuid()
         .optional()
-        .describe('Project ID. Defaults to active project context.'),
+        .describe("Project ID. Defaults to active project context."),
       response_format: z
-        .enum(['text', 'json'])
+        .enum(["text", "json"])
         .optional()
-        .describe('Optional response format. Defaults to text.'),
+        .describe("Optional response format. Defaults to text."),
     },
     async ({ project_id, response_format }) => {
       const supabase = getSupabaseClient();
@@ -37,8 +42,8 @@ export function registerLoopSummaryTools(server: McpServer): void {
         return {
           content: [
             {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
+              type: "text" as const,
+              text: "No project_id provided and no default project is configured.",
             },
           ],
           isError: true,
@@ -46,51 +51,56 @@ export function registerLoopSummaryTools(server: McpServer): void {
       }
 
       const { data: project } = await supabase
-        .from('projects')
-        .select('id, organization_id')
-        .eq('id', projectId)
+        .from("projects")
+        .select("id, organization_id")
+        .eq("id", projectId)
         .maybeSingle();
       if (!project?.organization_id) {
         return {
-          content: [{ type: 'text' as const, text: 'Project not found.' }],
+          content: [{ type: "text" as const, text: "Project not found." }],
           isError: true,
         };
       }
 
       const { data: membership } = await supabase
-        .from('organization_members')
-        .select('organization_id')
-        .eq('user_id', userId)
-        .eq('organization_id', project.organization_id)
+        .from("organization_members")
+        .select("organization_id")
+        .eq("user_id", userId)
+        .eq("organization_id", project.organization_id)
         .maybeSingle();
       if (!membership) {
         return {
-          content: [{ type: 'text' as const, text: 'Project is not accessible to current user.' }],
+          content: [
+            {
+              type: "text" as const,
+              text: "Project is not accessible to current user.",
+            },
+          ],
           isError: true,
         };
       }
 
       const [brandProfile, recentContent, insights] = await Promise.all([
         supabase
-          .from('brand_profiles')
-          .select('id, brand_name, version, updated_at, is_active')
-          .eq('project_id', projectId)
-          .eq('is_active', true)
-          .order('version', { ascending: false })
+          .from("brand_profiles")
+          .select("id, brand_name, version, updated_at, is_active")
+          .eq("project_id", projectId)
+          .eq("is_active", true)
+          .order("version", { ascending: false })
           .limit(1)
           .maybeSingle(),
         supabase
-          .from('content_history')
-          .select('id, title, content_type, model_used, created_at, status')
-          .eq('project_id', projectId)
-          .order('created_at', { ascending: false })
+          .from("content_history")
+          .select("id, title, content_type, model_used, created_at, status")
+          .eq("project_id", projectId)
+          .order("created_at", { ascending: false })
           .limit(5),
         supabase
-          .from('performance_insights')
-          .select('insight_type, generated_at, confidence_score')
-          .eq('project_id', projectId)
-          .gt('expires_at', new Date().toISOString())
-          .order('generated_at', { ascending: false })
+          .from("performance_insights")
+          .select("insight_type, generated_at, confidence_score")
+          .eq("project_id", projectId)
+          .gt("expires_at", new Date().toISOString())
+          .order("generated_at", { ascending: false })
           .limit(5),
       ]);
 
@@ -99,7 +109,7 @@ export function registerLoopSummaryTools(server: McpServer): void {
         brandStatus: brandProfile.data
           ? {
               hasProfile: true,
-              brandName: brandProfile.data.brand_name || 'Unknown',
+              brandName: brandProfile.data.brand_name || "Unknown",
               version: brandProfile.data.version || 1,
               updatedAt: brandProfile.data.updated_at,
             }
@@ -107,32 +117,37 @@ export function registerLoopSummaryTools(server: McpServer): void {
         recentContent: recentContent.data || [],
         currentInsights: insights.data || [],
         recommendedNextAction: !brandProfile.data
-          ? 'Create or save a brand profile before generating content.'
+          ? "Create or save a brand profile before generating content."
           : !latestInsight
-            ? 'Run refresh_platform_analytics, then generate insights to bootstrap the feedback loop.'
-            : 'Use get_ideation_context and generate_content with project_id for the next ideation cycle.',
+            ? "Run refresh_platform_analytics, then generate insights to bootstrap the feedback loop."
+            : "Use get_ideation_context and generate_content with project_id for the next ideation cycle.",
       };
 
-      if ((response_format || 'text') === 'json') {
+      if ((response_format || "text") === "json") {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(asEnvelope(payload), null, 2),
+            },
+          ],
         };
       }
 
       return {
         content: [
           {
-            type: 'text' as const,
+            type: "text" as const,
             text:
               `Loop Summary\n` +
               `Project: ${projectId}\n` +
-              `Brand Profile: ${payload.brandStatus.hasProfile ? 'ready' : 'missing'}\n` +
+              `Brand Profile: ${payload.brandStatus.hasProfile ? "ready" : "missing"}\n` +
               `Recent Content Items: ${payload.recentContent.length}\n` +
               `Current Insights: ${payload.currentInsights.length}\n` +
               `Next Action: ${payload.recommendedNextAction}`,
           },
         ],
       };
-    }
+    },
   );
 }
