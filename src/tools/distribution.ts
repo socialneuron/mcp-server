@@ -1,35 +1,40 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { createHash } from 'node:crypto';
-import { callEdgeFunction } from '../lib/edge-function.js';
-import { checkRateLimit } from '../lib/rate-limit.js';
-import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
-import { evaluateQuality } from '../lib/quality.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { createHash } from "node:crypto";
+import { callEdgeFunction } from "../lib/edge-function.js";
+import { checkRateLimit } from "../lib/rate-limit.js";
+import {
+  getSupabaseClient,
+  getDefaultUserId,
+  logMcpToolInvocation,
+} from "../lib/supabase.js";
+import { evaluateQuality } from "../lib/quality.js";
+import { sanitizeDbError } from "../lib/sanitize-error.js";
 import type {
   SchedulePostResult,
   ConnectedAccount,
   PostRecord,
   PostingSlot,
   ResponseEnvelope,
-} from '../types/index.js';
+} from "../types/index.js";
+import { MCP_VERSION } from "../lib/version.js";
 
 /** Map MCP lowercase platform names to DB capitalized convention */
 const PLATFORM_CASE_MAP: Record<string, string> = {
-  youtube: 'YouTube',
-  tiktok: 'TikTok',
-  instagram: 'Instagram',
-  twitter: 'Twitter',
-  linkedin: 'LinkedIn',
-  facebook: 'Facebook',
-  threads: 'Threads',
-  bluesky: 'Bluesky',
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  instagram: "Instagram",
+  twitter: "Twitter",
+  linkedin: "LinkedIn",
+  facebook: "Facebook",
+  threads: "Threads",
+  bluesky: "Bluesky",
 };
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
     _meta: {
-      version: '0.2.0',
+      version: MCP_VERSION,
       timestamp: new Date().toISOString(),
     },
     data,
@@ -41,79 +46,85 @@ export function registerDistributionTools(server: McpServer): void {
   // schedule_post
   // ---------------------------------------------------------------------------
   server.tool(
-    'schedule_post',
-    'Schedule or immediately publish a post to one or more social media ' +
-      'platforms. Requires the target platforms to have active OAuth connections ' +
-      'configured in Social Neuron Settings. Supports YouTube, TikTok, ' +
-      'Instagram, Facebook, LinkedIn, Twitter, Threads, and Bluesky. ' +
-      'For Instagram carousels, provide media_urls (2-10 image URLs) and set media_type to CAROUSEL_ALBUM.',
+    "schedule_post",
+    "Schedule or immediately publish a post to one or more social media " +
+      "platforms. Requires the target platforms to have active OAuth connections " +
+      "configured in Social Neuron Settings. Supports YouTube, TikTok, " +
+      "Instagram, Facebook, LinkedIn, Twitter, Threads, and Bluesky. " +
+      "For Instagram carousels, provide media_urls (2-10 image URLs) and set media_type to CAROUSEL_ALBUM.",
     {
       media_url: z
         .string()
         .optional()
         .describe(
-          'Optional URL of the media file (video or image) to post. This should be a ' +
-            'publicly accessible URL or a Cloudflare R2 signed URL from a previous generation. ' +
-            'Required for platforms that enforce media uploads. Not needed if media_urls is provided.'
+          "Optional URL of the media file (video or image) to post. This should be a " +
+            "publicly accessible URL or a Cloudflare R2 signed URL from a previous generation. " +
+            "Required for platforms that enforce media uploads. Not needed if media_urls is provided.",
         ),
       media_urls: z
         .array(z.string())
         .optional()
         .describe(
-          'Array of image URLs for Instagram carousel posts (2-10 images). ' +
-            'Each URL should be publicly accessible or a Cloudflare R2 URL. ' +
-            'When provided with media_type=CAROUSEL_ALBUM, creates an Instagram carousel.'
+          "Array of image URLs for Instagram carousel posts (2-10 images). " +
+            "Each URL should be publicly accessible or a Cloudflare R2 URL. " +
+            "When provided with media_type=CAROUSEL_ALBUM, creates an Instagram carousel.",
         ),
       media_type: z
-        .enum(['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM'])
+        .enum(["IMAGE", "VIDEO", "CAROUSEL_ALBUM"])
         .optional()
         .describe(
-          'Media type. Set to CAROUSEL_ALBUM with media_urls for Instagram carousels. ' +
-            'Default: auto-detected from media_url.'
+          "Media type. Set to CAROUSEL_ALBUM with media_urls for Instagram carousels. " +
+            "Default: auto-detected from media_url.",
         ),
-      caption: z.string().optional().describe('Post caption/description text.'),
+      caption: z.string().optional().describe("Post caption/description text."),
       platforms: z
         .array(
           z.enum([
-            'youtube',
-            'tiktok',
-            'instagram',
-            'twitter',
-            'linkedin',
-            'facebook',
-            'threads',
-            'bluesky',
-          ])
+            "youtube",
+            "tiktok",
+            "instagram",
+            "twitter",
+            "linkedin",
+            "facebook",
+            "threads",
+            "bluesky",
+          ]),
         )
         .min(1)
-        .describe('Target platforms to post to. Each must have an active OAuth connection.'),
+        .describe(
+          "Target platforms to post to. Each must have an active OAuth connection.",
+        ),
       title: z
         .string()
         .optional()
-        .describe('Post title (used by YouTube and some other platforms).'),
+        .describe("Post title (used by YouTube and some other platforms)."),
       hashtags: z
         .array(z.string())
         .optional()
-        .describe('Hashtags to append to the caption. Include or omit the "#" prefix.'),
+        .describe(
+          'Hashtags to append to the caption. Include or omit the "#" prefix.',
+        ),
       schedule_at: z
         .string()
         .optional()
         .describe(
           'ISO 8601 datetime for scheduled posting (e.g. "2026-03-15T14:00:00Z"). ' +
-            'Omit for immediate posting.'
+            "Omit for immediate posting.",
         ),
       project_id: z
         .string()
         .optional()
-        .describe('Social Neuron project ID to associate this post with.'),
+        .describe("Social Neuron project ID to associate this post with."),
       response_format: z
-        .enum(['text', 'json'])
+        .enum(["text", "json"])
         .optional()
-        .describe('Optional response format. Defaults to text.'),
+        .describe("Optional response format. Defaults to text."),
       attribution: z
         .boolean()
         .optional()
-        .describe('If true, appends "Created with Social Neuron" to the caption. Default: false.'),
+        .describe(
+          'If true, appends "Created with Social Neuron" to the caption. Default: false.',
+        ),
     },
     async ({
       media_url,
@@ -128,27 +139,35 @@ export function registerDistributionTools(server: McpServer): void {
       response_format,
       attribution,
     }) => {
-      const format = response_format ?? 'text';
+      const format = response_format ?? "text";
       const startedAt = Date.now();
-      if ((!caption || caption.trim().length === 0) && (!title || title.trim().length === 0)) {
+      if (
+        (!caption || caption.trim().length === 0) &&
+        (!title || title.trim().length === 0)
+      ) {
         return {
-          content: [{ type: 'text' as const, text: 'Either caption or title is required.' }],
+          content: [
+            {
+              type: "text" as const,
+              text: "Either caption or title is required.",
+            },
+          ],
           isError: true,
         };
       }
       const userId = await getDefaultUserId();
-      const rateLimit = checkRateLimit('posting', `schedule_post:${userId}`);
+      const rateLimit = checkRateLimit("posting", `schedule_post:${userId}`);
       if (!rateLimit.allowed) {
         await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'rate_limited',
+          toolName: "schedule_post",
+          status: "rate_limited",
           durationMs: Date.now() - startedAt,
           details: { retryAfter: rateLimit.retryAfter },
         });
         return {
           content: [
             {
-              type: 'text' as const,
+              type: "text" as const,
               text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
             },
           ],
@@ -157,7 +176,9 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       // Normalize platform names to DB convention (capitalized) before sending
-      const normalizedPlatforms = platforms.map(p => PLATFORM_CASE_MAP[p.toLowerCase()] || p);
+      const normalizedPlatforms = platforms.map(
+        (p) => PLATFORM_CASE_MAP[p.toLowerCase()] || p,
+      );
 
       // Optional viral attribution (opt-in only, default false)
       let finalCaption = caption;
@@ -166,7 +187,7 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       const { data, error } = await callEdgeFunction<SchedulePostResult>(
-        'schedule-post',
+        "schedule-post",
         {
           mediaUrl: media_url,
           mediaUrls: media_urls,
@@ -178,20 +199,20 @@ export function registerDistributionTools(server: McpServer): void {
           scheduledAt: schedule_at,
           projectId: project_id,
         },
-        { timeoutMs: 30_000 }
+        { timeoutMs: 30_000 },
       );
 
       if (error) {
         await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'error',
+          toolName: "schedule_post",
+          status: "error",
           durationMs: Date.now() - startedAt,
           details: { error, platformCount: platforms.length },
         });
         return {
           content: [
             {
-              type: 'text' as const,
+              type: "text" as const,
               text: `Failed to schedule post: ${error}`,
             },
           ],
@@ -201,16 +222,16 @@ export function registerDistributionTools(server: McpServer): void {
 
       if (!data) {
         await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'error',
+          toolName: "schedule_post",
+          status: "error",
           durationMs: Date.now() - startedAt,
-          details: { error: 'No response from schedule-post edge function' },
+          details: { error: "No response from schedule-post edge function" },
         });
         return {
           content: [
             {
-              type: 'text' as const,
-              text: 'Post scheduling returned no response.',
+              type: "text" as const,
+              text: "Post scheduling returned no response.",
             },
           ],
           isError: true,
@@ -218,73 +239,83 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       const lines: string[] = [
-        data.success ? 'Post scheduled successfully.' : 'Post scheduling had errors.',
+        data.success
+          ? "Post scheduled successfully."
+          : "Post scheduling had errors.",
         `Scheduled for: ${data.scheduledAt}`,
-        '',
-        'Platform results:',
+        "",
+        "Platform results:",
       ];
 
       for (const [platform, result] of Object.entries(data.results)) {
         if (result.success) {
-          lines.push(`  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`);
+          lines.push(
+            `  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`,
+          );
         } else {
           lines.push(`  ${platform}: FAILED - ${result.error}`);
         }
       }
 
       await logMcpToolInvocation({
-        toolName: 'schedule_post',
-        status: data.success ? 'success' : 'error',
+        toolName: "schedule_post",
+        status: data.success ? "success" : "error",
         durationMs: Date.now() - startedAt,
         details: {
           scheduledAt: data.scheduledAt,
           platformCount: platforms.length,
-          successCount: Object.values(data.results).filter(r => r.success).length,
+          successCount: Object.values(data.results).filter((r) => r.success)
+            .length,
         },
       });
-      if (format === 'json') {
+      if (format === "json") {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(asEnvelope(data), null, 2),
+            },
+          ],
           isError: !data.success,
         };
       }
       return {
-        content: [{ type: 'text' as const, text: lines.join('\n') }],
+        content: [{ type: "text" as const, text: lines.join("\n") }],
         isError: !data.success,
       };
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
   // list_connected_accounts
   // ---------------------------------------------------------------------------
   server.tool(
-    'list_connected_accounts',
-    'List all social media accounts connected to Social Neuron via OAuth. ' +
-      'Shows which platforms are available for posting.',
+    "list_connected_accounts",
+    "List all social media accounts connected to Social Neuron via OAuth. " +
+      "Shows which platforms are available for posting.",
     {
       response_format: z
-        .enum(['text', 'json'])
+        .enum(["text", "json"])
         .optional()
-        .describe('Optional response format. Defaults to text.'),
+        .describe("Optional response format. Defaults to text."),
     },
     async ({ response_format }) => {
-      const format = response_format ?? 'text';
+      const format = response_format ?? "text";
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
 
       const { data: accounts, error } = await supabase
-        .from('connected_accounts')
-        .select('id, platform, status, username, created_at')
-        .eq('user_id', userId)
-        .eq('status', 'active')
-        .order('platform');
+        .from("connected_accounts")
+        .select("id, platform, status, username, created_at")
+        .eq("user_id", userId)
+        .eq("status", "active")
+        .order("platform");
 
       if (error) {
         return {
           content: [
             {
-              type: 'text' as const,
+              type: "text" as const,
               text: `Failed to list connected accounts: ${sanitizeDbError(error)}`,
             },
           ],
@@ -293,11 +324,11 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       if (!accounts || accounts.length === 0) {
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(asEnvelope({ accounts: [] }), null, 2),
               },
             ],
@@ -306,81 +337,86 @@ export function registerDistributionTools(server: McpServer): void {
         return {
           content: [
             {
-              type: 'text' as const,
+              type: "text" as const,
               text:
-                'No connected social media accounts found. Connect platforms ' +
-                'in Social Neuron Settings > Connections.',
+                "No connected social media accounts found. Connect platforms " +
+                "in Social Neuron Settings > Connections.",
             },
           ],
         };
       }
 
-      const lines: string[] = [`${accounts.length} connected account(s):`, ''];
+      const lines: string[] = [`${accounts.length} connected account(s):`, ""];
 
       for (const account of accounts as ConnectedAccount[]) {
-        const name = account.username || '(unnamed)';
+        const name = account.username || "(unnamed)";
         const platformLower = account.platform.toLowerCase();
-        lines.push(`  ${platformLower}: ${name} (connected ${account.created_at.split('T')[0]})`);
+        lines.push(
+          `  ${platformLower}: ${name} (connected ${account.created_at.split("T")[0]})`,
+        );
       }
 
-      if (format === 'json') {
+      if (format === "json") {
         return {
           content: [
-            { type: 'text' as const, text: JSON.stringify(asEnvelope({ accounts }), null, 2) },
+            {
+              type: "text" as const,
+              text: JSON.stringify(asEnvelope({ accounts }), null, 2),
+            },
           ],
         };
       }
 
       return {
-        content: [{ type: 'text' as const, text: lines.join('\n') }],
+        content: [{ type: "text" as const, text: lines.join("\n") }],
       };
-    }
+    },
   );
 
   // ---------------------------------------------------------------------------
   // list_recent_posts
   // ---------------------------------------------------------------------------
   server.tool(
-    'list_recent_posts',
-    'List recent posts from Social Neuron. Shows status, platform, title, and ' +
-      'timestamps. Useful for checking what has been published or scheduled recently.',
+    "list_recent_posts",
+    "List recent posts from Social Neuron. Shows status, platform, title, and " +
+      "timestamps. Useful for checking what has been published or scheduled recently.",
     {
       platform: z
         .enum([
-          'youtube',
-          'tiktok',
-          'instagram',
-          'twitter',
-          'linkedin',
-          'facebook',
-          'threads',
-          'bluesky',
+          "youtube",
+          "tiktok",
+          "instagram",
+          "twitter",
+          "linkedin",
+          "facebook",
+          "threads",
+          "bluesky",
         ])
         .optional()
-        .describe('Filter to a specific platform.'),
+        .describe("Filter to a specific platform."),
       status: z
-        .enum(['draft', 'scheduled', 'published', 'failed'])
+        .enum(["draft", "scheduled", "published", "failed"])
         .optional()
-        .describe('Filter by post status.'),
+        .describe("Filter by post status."),
       days: z
         .number()
         .min(1)
         .max(90)
         .optional()
-        .describe('Number of days to look back. Defaults to 7. Max 90.'),
+        .describe("Number of days to look back. Defaults to 7. Max 90."),
       limit: z
         .number()
         .min(1)
         .max(50)
         .optional()
-        .describe('Maximum number of posts to return. Defaults to 20.'),
+        .describe("Maximum number of posts to return. Defaults to 20."),
       response_format: z
-        .enum(['text', 'json'])
+        .enum(["text", "json"])
         .optional()
-        .describe('Optional response format. Defaults to text.'),
+        .describe("Optional response format. Defaults to text."),
     },
     async ({ platform, status, days, limit, response_format }) => {
-      const format = response_format ?? 'text';
+      const format = response_format ?? "text";
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
       const lookbackDays = days ?? 7;
@@ -391,22 +427,22 @@ export function registerDistributionTools(server: McpServer): void {
       const sinceIso = since.toISOString();
 
       let query = supabase
-        .from('posts')
+        .from("posts")
         .select(
-          'id, platform, status, title, external_post_id, published_at, scheduled_at, created_at'
+          "id, platform, status, title, external_post_id, published_at, scheduled_at, created_at",
         )
-        .eq('user_id', userId)
-        .gte('created_at', sinceIso)
-        .order('created_at', { ascending: false })
+        .eq("user_id", userId)
+        .gte("created_at", sinceIso)
+        .order("created_at", { ascending: false })
         .limit(maxPosts);
 
       if (platform) {
         // Case-insensitive match — DB may store 'YouTube', 'youtube', etc.
-        query = query.ilike('platform', platform);
+        query = query.ilike("platform", platform);
       }
 
       if (status) {
-        query = query.eq('status', status);
+        query = query.eq("status", status);
       }
 
       const { data: rows, error } = await query;
@@ -415,7 +451,7 @@ export function registerDistributionTools(server: McpServer): void {
         return {
           content: [
             {
-              type: 'text' as const,
+              type: "text" as const,
               text: `Failed to list posts: ${sanitizeDbError(error)}`,
             },
           ],
@@ -424,53 +460,60 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       if (!rows || rows.length === 0) {
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
-              { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts: [] }), null, 2) },
+              {
+                type: "text" as const,
+                text: JSON.stringify(asEnvelope({ posts: [] }), null, 2),
+              },
             ],
           };
         }
         return {
           content: [
             {
-              type: 'text' as const,
-              text: `No posts found in the last ${lookbackDays} days${platform ? ` on ${platform}` : ''}${status ? ` with status "${status}"` : ''}.`,
+              type: "text" as const,
+              text: `No posts found in the last ${lookbackDays} days${platform ? ` on ${platform}` : ""}${status ? ` with status "${status}"` : ""}.`,
             },
           ],
         };
       }
 
       const posts = rows as PostRecord[];
-      if (format === 'json') {
+      if (format === "json") {
         return {
           content: [
-            { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts }), null, 2) },
+            {
+              type: "text" as const,
+              text: JSON.stringify(asEnvelope({ posts }), null, 2),
+            },
           ],
         };
       }
 
       const statusIcon: Record<string, string> = {
-        published: '[OK]',
-        scheduled: '[SCHEDULED]',
-        draft: '[DRAFT]',
-        failed: '[FAILED]',
+        published: "[OK]",
+        scheduled: "[SCHEDULED]",
+        draft: "[DRAFT]",
+        failed: "[FAILED]",
       };
 
       const lines: string[] = [
-        `Recent Posts (last ${lookbackDays} days${platform ? `, ${platform}` : ''}${status ? `, ${status}` : ''}):`,
+        `Recent Posts (last ${lookbackDays} days${platform ? `, ${platform}` : ""}${status ? `, ${status}` : ""}):`,
         `${posts.length} post(s) found.`,
-        '',
+        "",
       ];
 
       for (const post of posts) {
-        const icon = statusIcon[post.status] ?? `[${post.status.toUpperCase()}]`;
-        const title = post.title || '(untitled)';
+        const icon =
+          statusIcon[post.status] ?? `[${post.status.toUpperCase()}]`;
+        const title = post.title || "(untitled)";
         const date = post.published_at
-          ? post.published_at.split('T')[0]
+          ? post.published_at.split("T")[0]
           : post.scheduled_at
-            ? `scheduled ${post.scheduled_at.split('T')[0]}`
-            : post.created_at.split('T')[0];
+            ? `scheduled ${post.scheduled_at.split("T")[0]}`
+            : post.created_at.split("T")[0];
 
         let line = `  ${icon} [${post.platform}] ${title} (${date})`;
         if (post.external_post_id) {
@@ -480,9 +523,9 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       return {
-        content: [{ type: 'text' as const, text: lines.join('\n') }],
+        content: [{ type: "text" as const, text: lines.join("\n") }],
       };
-    }
+    },
   );
 
   // ── find_next_slots ─────────────────────────────────────────────────
@@ -498,34 +541,48 @@ export function registerDistributionTools(server: McpServer): void {
   };
 
   server.tool(
-    'find_next_slots',
-    'Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score.',
+    "find_next_slots",
+    "Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score.",
     {
       platforms: z
         .array(
           z.enum([
-            'youtube',
-            'tiktok',
-            'instagram',
-            'twitter',
-            'linkedin',
-            'facebook',
-            'threads',
-            'bluesky',
-          ])
+            "youtube",
+            "tiktok",
+            "instagram",
+            "twitter",
+            "linkedin",
+            "facebook",
+            "threads",
+            "bluesky",
+          ]),
         )
         .min(1),
-      count: z.number().min(1).max(20).default(7).describe('Number of slots to find'),
-      start_after: z.string().optional().describe('ISO datetime, defaults to now'),
+      count: z
+        .number()
+        .min(1)
+        .max(20)
+        .default(7)
+        .describe("Number of slots to find"),
+      start_after: z
+        .string()
+        .optional()
+        .describe("ISO datetime, defaults to now"),
       min_gap_hours: z
         .number()
         .min(1)
         .max(24)
         .default(4)
-        .describe('Minimum gap between posts on same platform'),
-      response_format: z.enum(['text', 'json']).default('text'),
+        .describe("Minimum gap between posts on same platform"),
+      response_format: z.enum(["text", "json"]).default("text"),
     },
-    async ({ platforms, count, start_after, min_gap_hours, response_format }) => {
+    async ({
+      platforms,
+      count,
+      start_after,
+      min_gap_hours,
+      response_format,
+    }) => {
       const startedAt = Date.now();
       try {
         const userId = await getDefaultUserId();
@@ -535,18 +592,20 @@ export function registerDistributionTools(server: McpServer): void {
 
         // Get existing scheduled posts
         const { data: existingPosts } = await supabase
-          .from('posts')
-          .select('platform, scheduled_at, published_at')
-          .eq('user_id', userId)
-          .in('status', ['scheduled', 'draft'])
-          .gte('scheduled_at', startDate.toISOString())
-          .lte('scheduled_at', endDate.toISOString());
+          .from("posts")
+          .select("platform, scheduled_at, published_at")
+          .eq("user_id", userId)
+          .in("status", ["scheduled", "draft"])
+          .gte("scheduled_at", startDate.toISOString())
+          .lte("scheduled_at", endDate.toISOString());
 
         const gapMs = min_gap_hours * 60 * 60 * 1000;
         const candidates: PostingSlot[] = [];
 
         for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
-          const date = new Date(startDate.getTime() + dayOffset * 24 * 60 * 60 * 1000);
+          const date = new Date(
+            startDate.getTime() + dayOffset * 24 * 60 * 60 * 1000,
+          );
           const dayOfWeek = date.getUTCDay();
 
           for (const platform of platforms) {
@@ -558,8 +617,11 @@ export function registerDistributionTools(server: McpServer): void {
               if (slotDate <= startDate) continue;
 
               const hasConflict = (existingPosts ?? []).some((post: any) => {
-                if (String(post.platform).toLowerCase() !== platform) return false;
-                const postTime = new Date(post.scheduled_at ?? post.published_at).getTime();
+                if (String(post.platform).toLowerCase() !== platform)
+                  return false;
+                const postTime = new Date(
+                  post.scheduled_at ?? post.published_at,
+                ).getTime();
                 return Math.abs(postTime - slotDate.getTime()) < gapMs;
               });
 
@@ -579,25 +641,25 @@ export function registerDistributionTools(server: McpServer): void {
         }
 
         const slots = candidates
-          .filter(s => !s.conflict)
+          .filter((s) => !s.conflict)
           .sort((a, b) => b.engagement_score - a.engagement_score)
           .slice(0, count);
 
-        const conflictsAvoided = candidates.filter(s => s.conflict).length;
+        const conflictsAvoided = candidates.filter((s) => s.conflict).length;
 
         const durationMs = Date.now() - startedAt;
         logMcpToolInvocation({
-          toolName: 'find_next_slots',
-          status: 'success',
+          toolName: "find_next_slots",
+          status: "success",
           durationMs,
           details: { platforms, count: slots.length },
         });
 
-        if (response_format === 'json') {
+        if (response_format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
                   asEnvelope({
                     slots,
@@ -605,7 +667,7 @@ export function registerDistributionTools(server: McpServer): void {
                     conflicts_avoided: conflictsAvoided,
                   }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
@@ -614,37 +676,46 @@ export function registerDistributionTools(server: McpServer): void {
         }
 
         const lines: string[] = [];
-        lines.push(`Found ${slots.length} optimal slots (${conflictsAvoided} conflicts avoided):`);
-        lines.push('');
-        lines.push('Datetime (UTC)           | Platform   | Score');
-        lines.push('-------------------------+------------+------');
+        lines.push(
+          `Found ${slots.length} optimal slots (${conflictsAvoided} conflicts avoided):`,
+        );
+        lines.push("");
+        lines.push("Datetime (UTC)           | Platform   | Score");
+        lines.push("-------------------------+------------+------");
         for (const s of slots) {
-          const dt = s.datetime.replace('T', ' ').slice(0, 19);
-          lines.push(`${dt.padEnd(25)}| ${s.platform.padEnd(11)}| ${s.engagement_score}`);
+          const dt = s.datetime.replace("T", " ").slice(0, 19);
+          lines.push(
+            `${dt.padEnd(25)}| ${s.platform.padEnd(11)}| ${s.engagement_score}`,
+          );
         }
 
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: false };
+        return {
+          content: [{ type: "text" as const, text: lines.join("\n") }],
+          isError: false,
+        };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
         const message = err instanceof Error ? err.message : String(err);
         logMcpToolInvocation({
-          toolName: 'find_next_slots',
-          status: 'error',
+          toolName: "find_next_slots",
+          status: "error",
           durationMs,
           details: { error: message },
         });
         return {
-          content: [{ type: 'text' as const, text: `Failed to find slots: ${message}` }],
+          content: [
+            { type: "text" as const, text: `Failed to find slots: ${message}` },
+          ],
           isError: true,
         };
       }
-    }
+    },
   );
 
   // ── schedule_content_plan ───────────────────────────────────────────
   server.tool(
-    'schedule_content_plan',
-    'Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode.',
+    "schedule_content_plan",
+    "Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode.",
     {
       plan: z
         .object({
@@ -657,7 +728,7 @@ export function registerDistributionTools(server: McpServer): void {
               media_url: z.string().optional(),
               schedule_at: z.string().optional(),
               hashtags: z.array(z.string()).optional(),
-            })
+            }),
           ),
         })
         .passthrough()
@@ -666,36 +737,43 @@ export function registerDistributionTools(server: McpServer): void {
         .string()
         .uuid()
         .optional()
-        .describe('Persisted content plan ID from content_plans table'),
+        .describe("Persisted content plan ID from content_plans table"),
       auto_slot: z
         .boolean()
         .default(true)
-        .describe('Auto-assign time slots for posts without schedule_at'),
-      dry_run: z.boolean().default(false).describe('Preview without actually scheduling'),
-      response_format: z.enum(['text', 'json']).default('text'),
+        .describe("Auto-assign time slots for posts without schedule_at"),
+      dry_run: z
+        .boolean()
+        .default(false)
+        .describe("Preview without actually scheduling"),
+      response_format: z.enum(["text", "json"]).default("text"),
       enforce_quality: z
         .boolean()
         .default(true)
-        .describe('When true, block scheduling for posts that fail quality checks.'),
+        .describe(
+          "When true, block scheduling for posts that fail quality checks.",
+        ),
       quality_threshold: z
         .number()
         .int()
         .min(0)
         .max(35)
         .optional()
-        .describe('Optional quality threshold override. Defaults to project setting or 26.'),
+        .describe(
+          "Optional quality threshold override. Defaults to project setting or 26.",
+        ),
       batch_size: z
         .number()
         .int()
         .min(1)
         .max(10)
         .default(4)
-        .describe('Concurrent schedule calls per platform batch.'),
+        .describe("Concurrent schedule calls per platform batch."),
       idempotency_seed: z
         .string()
         .max(128)
         .optional()
-        .describe('Optional stable seed used when building idempotency keys.'),
+        .describe("Optional stable seed used when building idempotency keys."),
     },
     async ({
       plan,
@@ -725,17 +803,17 @@ export function registerDistributionTools(server: McpServer): void {
           const supabase = getSupabaseClient();
           const userId = await getDefaultUserId();
           const { data: stored, error: storedError } = await supabase
-            .from('content_plans')
-            .select('id, project_id, plan_payload')
-            .eq('id', plan_id)
-            .eq('user_id', userId)
+            .from("content_plans")
+            .select("id, project_id, plan_payload")
+            .eq("id", plan_id)
+            .eq("user_id", userId)
             .maybeSingle();
 
           if (storedError) {
             return {
               content: [
                 {
-                  type: 'text' as const,
+                  type: "text" as const,
                   text: `Failed to load content plan: ${sanitizeDbError(storedError)}`,
                 },
               ],
@@ -745,7 +823,10 @@ export function registerDistributionTools(server: McpServer): void {
           if (!stored?.plan_payload) {
             return {
               content: [
-                { type: 'text' as const, text: `No content plan found for plan_id=${plan_id}` },
+                {
+                  type: "text" as const,
+                  text: `No content plan found for plan_id=${plan_id}`,
+                },
               ],
               isError: true,
             };
@@ -754,14 +835,19 @@ export function registerDistributionTools(server: McpServer): void {
           const payload = stored.plan_payload as Record<string, unknown>;
           const postsFromPayload = Array.isArray(payload.posts)
             ? payload.posts
-            : Array.isArray((payload.data as Record<string, unknown> | undefined)?.posts)
+            : Array.isArray(
+                  (payload.data as Record<string, unknown> | undefined)?.posts,
+                )
               ? ((payload.data as Record<string, unknown>).posts as unknown[])
               : null;
 
           if (!postsFromPayload) {
             return {
               content: [
-                { type: 'text' as const, text: `Stored plan ${plan_id} has no posts array.` },
+                {
+                  type: "text" as const,
+                  text: `Stored plan ${plan_id} has no posts array.`,
+                },
               ],
               isError: true,
             };
@@ -779,8 +865,8 @@ export function registerDistributionTools(server: McpServer): void {
           return {
             content: [
               {
-                type: 'text' as const,
-                text: 'Provide either `plan` (inline) or `plan_id` (persisted) to schedule content.',
+                type: "text" as const,
+                text: "Provide either `plan` (inline) or `plan_id` (persisted) to schedule content.",
               },
             ],
             isError: true,
@@ -788,8 +874,9 @@ export function registerDistributionTools(server: McpServer): void {
         }
 
         if (!effectiveProjectId) {
-          const planProjectId = (workingPlan as Record<string, unknown>).project_id;
-          if (typeof planProjectId === 'string' && planProjectId.length > 0) {
+          const planProjectId = (workingPlan as Record<string, unknown>)
+            .project_id;
+          if (typeof planProjectId === "string" && planProjectId.length > 0) {
             effectiveProjectId = planProjectId;
           }
         }
@@ -799,16 +886,16 @@ export function registerDistributionTools(server: McpServer): void {
           const supabase = getSupabaseClient();
           const userId = await getDefaultUserId();
           const { data: approvals, error: approvalsError } = await supabase
-            .from('content_plan_approvals')
-            .select('post_id, status, edited_post')
-            .eq('plan_id', effectivePlanId)
-            .eq('user_id', userId);
+            .from("content_plan_approvals")
+            .select("post_id, status, edited_post")
+            .eq("plan_id", effectivePlanId)
+            .eq("user_id", userId);
 
           if (approvalsError) {
             return {
               content: [
                 {
-                  type: 'text' as const,
+                  type: "text" as const,
                   text: `Failed to load plan approvals: ${sanitizeDbError(approvalsError)}`,
                 },
               ],
@@ -819,13 +906,13 @@ export function registerDistributionTools(server: McpServer): void {
           if (approvals && approvals.length > 0) {
             type ApprovalRow = {
               post_id: string;
-              status: 'pending' | 'approved' | 'rejected' | 'edited';
+              status: "pending" | "approved" | "rejected" | "edited";
               edited_post?: Record<string, unknown> | null;
             };
 
             const approvedMap = new Map<string, ApprovalRow>();
             for (const row of approvals as ApprovalRow[]) {
-              if (row.status === 'approved' || row.status === 'edited') {
+              if (row.status === "approved" || row.status === "edited") {
                 approvedMap.set(row.post_id, row);
               }
             }
@@ -834,7 +921,7 @@ export function registerDistributionTools(server: McpServer): void {
               return {
                 content: [
                   {
-                    type: 'text' as const,
+                    type: "text" as const,
                     text: `Plan ${effectivePlanId} has approval items, but none are approved/edited.`,
                   },
                 ],
@@ -843,24 +930,33 @@ export function registerDistributionTools(server: McpServer): void {
             }
 
             const approvedPosts = workingPlan.posts
-              .filter(post => approvedMap.has(post.id))
-              .map(post => {
+              .filter((post) => approvedMap.has(post.id))
+              .map((post) => {
                 const approval = approvedMap.get(post.id);
                 if (
-                  approval?.status === 'edited' &&
+                  approval?.status === "edited" &&
                   approval.edited_post &&
-                  typeof approval.edited_post === 'object'
+                  typeof approval.edited_post === "object"
                 ) {
-                  const edited = approval.edited_post as Record<string, unknown>;
+                  const edited = approval.edited_post as Record<
+                    string,
+                    unknown
+                  >;
                   return {
                     ...post,
-                    ...(typeof edited.caption === 'string' ? { caption: edited.caption } : {}),
-                    ...(typeof edited.title === 'string' ? { title: edited.title } : {}),
-                    ...(typeof edited.platform === 'string' ? { platform: edited.platform } : {}),
-                    ...(typeof edited.media_url === 'string'
+                    ...(typeof edited.caption === "string"
+                      ? { caption: edited.caption }
+                      : {}),
+                    ...(typeof edited.title === "string"
+                      ? { title: edited.title }
+                      : {}),
+                    ...(typeof edited.platform === "string"
+                      ? { platform: edited.platform }
+                      : {}),
+                    ...(typeof edited.media_url === "string"
                       ? { media_url: edited.media_url }
                       : {}),
-                    ...(typeof edited.schedule_at === 'string'
+                    ...(typeof edited.schedule_at === "string"
                       ? { schedule_at: edited.schedule_at }
                       : {}),
                     ...(Array.isArray(edited.hashtags)
@@ -875,7 +971,7 @@ export function registerDistributionTools(server: McpServer): void {
               return {
                 content: [
                   {
-                    type: 'text' as const,
+                    type: "text" as const,
                     text: `Plan ${effectivePlanId} has approvals, but none match plan post IDs.`,
                   },
                 ],
@@ -886,7 +982,10 @@ export function registerDistributionTools(server: McpServer): void {
             approvalSummary = {
               total: approvals.length,
               eligible: approvedPosts.length,
-              skipped: Math.max(0, workingPlan.posts.length - approvedPosts.length),
+              skipped: Math.max(
+                0,
+                workingPlan.posts.length - approvedPosts.length,
+              ),
             };
             workingPlan = {
               ...workingPlan,
@@ -910,7 +1009,7 @@ export function registerDistributionTools(server: McpServer): void {
               }
               post.schedule_at = platformNextSlot[platform].toISOString();
               platformNextSlot[platform] = new Date(
-                platformNextSlot[platform].getTime() + 4 * 60 * 60 * 1000
+                platformNextSlot[platform].getTime() + 4 * 60 * 60 * 1000,
               );
             }
           }
@@ -923,14 +1022,19 @@ export function registerDistributionTools(server: McpServer): void {
           const supabase = getSupabaseClient();
           try {
             const { data: settingsData } = await supabase
-              .from('system_settings')
-              .select('value')
-              .eq('key', 'content_safety')
+              .from("system_settings")
+              .select("value")
+              .eq("key", "content_safety")
               .maybeSingle();
             if (settingsData?.value?.quality_threshold !== undefined) {
-              const parsedThreshold = Number(settingsData.value.quality_threshold);
+              const parsedThreshold = Number(
+                settingsData.value.quality_threshold,
+              );
               if (Number.isFinite(parsedThreshold)) {
-                effectiveQualityThreshold = Math.max(0, Math.min(35, Math.trunc(parsedThreshold)));
+                effectiveQualityThreshold = Math.max(
+                  0,
+                  Math.min(35, Math.trunc(parsedThreshold)),
+                );
               }
             }
             if (Array.isArray(settingsData?.value?.custom_banned_terms)) {
@@ -944,11 +1048,11 @@ export function registerDistributionTools(server: McpServer): void {
 
           try {
             const { data: brandData } = await supabase
-              .from('brand_profiles')
-              .select('brand_context')
-              .eq('project_id', effectiveProjectId)
-              .eq('is_active', true)
-              .order('version', { ascending: false })
+              .from("brand_profiles")
+              .select("brand_context")
+              .eq("project_id", effectiveProjectId)
+              .eq("is_active", true)
+              .order("version", { ascending: false })
               .limit(1)
               .maybeSingle();
 
@@ -966,7 +1070,7 @@ export function registerDistributionTools(server: McpServer): void {
         }
 
         // Quality check all posts
-        const postsWithResults = workingPlan.posts.map(post => {
+        const postsWithResults = workingPlan.posts.map((post) => {
           const quality = evaluateQuality({
             caption: post.caption,
             title: post.title,
@@ -985,7 +1089,9 @@ export function registerDistributionTools(server: McpServer): void {
             },
           };
         });
-        const qualityPassed = postsWithResults.filter(post => post.quality.passed).length;
+        const qualityPassed = postsWithResults.filter(
+          (post) => post.quality.passed,
+        ).length;
         const qualitySummary = {
           total_posts: postsWithResults.length,
           passed: qualityPassed,
@@ -994,9 +1100,11 @@ export function registerDistributionTools(server: McpServer): void {
             postsWithResults.length > 0
               ? Number(
                   (
-                    postsWithResults.reduce((sum, post) => sum + post.quality.score, 0) /
-                    postsWithResults.length
-                  ).toFixed(2)
+                    postsWithResults.reduce(
+                      (sum, post) => sum + post.quality.score,
+                      0,
+                    ) / postsWithResults.length
+                  ).toFixed(2),
                 )
               : 0,
         };
@@ -1009,17 +1117,17 @@ export function registerDistributionTools(server: McpServer): void {
               const supabase = getSupabaseClient();
               const userId = await getDefaultUserId();
               await supabase
-                .from('content_plans')
+                .from("content_plans")
                 .update({ quality_summary: qualitySummary })
-                .eq('id', effectivePlanId)
-                .eq('user_id', userId);
+                .eq("id", effectivePlanId)
+                .eq("user_id", userId);
             } catch {
               // Non-fatal in dry-run path
             }
           }
           logMcpToolInvocation({
-            toolName: 'schedule_content_plan',
-            status: 'success',
+            toolName: "schedule_content_plan",
+            status: "success",
             durationMs,
             details: {
               dry_run: true,
@@ -1030,11 +1138,11 @@ export function registerDistributionTools(server: McpServer): void {
             },
           });
 
-          if (response_format === 'json') {
+          if (response_format === "json") {
             return {
               content: [
                 {
-                  type: 'text' as const,
+                  type: "text" as const,
                   text: JSON.stringify(
                     asEnvelope({
                       dry_run: true,
@@ -1048,7 +1156,7 @@ export function registerDistributionTools(server: McpServer): void {
                       },
                     }),
                     null,
-                    2
+                    2,
                   ),
                 },
               ],
@@ -1061,23 +1169,28 @@ export function registerDistributionTools(server: McpServer): void {
           if (effectivePlanId) lines.push(`Plan ID: ${effectivePlanId}`);
           if (approvalSummary) {
             lines.push(
-              `Approvals: ${approvalSummary.eligible}/${approvalSummary.total} eligible (${approvalSummary.skipped} skipped)`
+              `Approvals: ${approvalSummary.eligible}/${approvalSummary.total} eligible (${approvalSummary.skipped} skipped)`,
             );
           }
-          lines.push('');
+          lines.push("");
           for (const p of postsWithResults) {
-            const icon = p.quality.passed ? '[PASS]' : '[FAIL]';
+            const icon = p.quality.passed ? "[PASS]" : "[FAIL]";
             lines.push(
-              `${icon} ${p.id} | ${p.platform} | Quality: ${p.quality.score}/35 | ${p.schedule_at ?? 'No slot'}`
+              `${icon} ${p.id} | ${p.platform} | Quality: ${p.quality.score}/35 | ${p.schedule_at ?? "No slot"}`,
             );
             if (p.quality.blockers.length > 0) {
               for (const b of p.quality.blockers) lines.push(`       - ${b}`);
             }
           }
-          lines.push('');
-          lines.push(`Summary: ${passed}/${workingPlan.posts.length} passed quality check`);
+          lines.push("");
+          lines.push(
+            `Summary: ${passed}/${workingPlan.posts.length} passed quality check`,
+          );
 
-          return { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: false };
+          return {
+            content: [{ type: "text" as const, text: lines.join("\n") }],
+            isError: false,
+          };
         }
 
         // Live scheduling
@@ -1091,43 +1204,49 @@ export function registerDistributionTools(server: McpServer): void {
           job_id?: string;
           error?: string;
           error_type?:
-            | 'quality'
-            | 'safety'
-            | 'platform_policy'
-            | 'rate_limit'
-            | 'transport'
-            | 'unknown';
+            | "quality"
+            | "safety"
+            | "platform_policy"
+            | "rate_limit"
+            | "transport"
+            | "unknown";
           retryable?: boolean;
         }> = [];
-        const buildIdempotencyKey = (post: (typeof postsWithResults)[number]): string => {
+        const buildIdempotencyKey = (
+          post: (typeof postsWithResults)[number],
+        ): string => {
           const planId =
             effectivePlanId ??
-            (typeof (workingPlan as Record<string, unknown>).plan_id === 'string'
+            (typeof (workingPlan as Record<string, unknown>).plan_id ===
+            "string"
               ? String((workingPlan as Record<string, unknown>).plan_id)
-              : 'inline');
-          const captionHash = createHash('sha256').update(post.caption).digest('hex').slice(0, 16);
+              : "inline");
+          const captionHash = createHash("sha256")
+            .update(post.caption)
+            .digest("hex")
+            .slice(0, 16);
           const raw = [
-            'schedule_content_plan',
+            "schedule_content_plan",
             planId,
             post.id,
             post.platform.toLowerCase(),
-            post.schedule_at ?? '',
+            post.schedule_at ?? "",
             captionHash,
-            idempotency_seed ?? '',
-          ].join(':');
-          return `plan-${createHash('sha256').update(raw).digest('hex').slice(0, 48)}`;
+            idempotency_seed ?? "",
+          ].join(":");
+          return `plan-${createHash("sha256").update(raw).digest("hex").slice(0, 48)}`;
         };
 
         const scheduleOne = async (
-          post: (typeof postsWithResults)[number]
+          post: (typeof postsWithResults)[number],
         ): Promise<(typeof results)[number]> => {
           if (!post.schedule_at) {
             return {
               id: post.id,
               platform: post.platform,
               success: false,
-              error: 'No schedule time assigned',
-              error_type: 'platform_policy',
+              error: "No schedule time assigned",
+              error_type: "platform_policy",
               retryable: false,
             };
           }
@@ -1137,7 +1256,7 @@ export function registerDistributionTools(server: McpServer): void {
           const idempotencyKey = buildIdempotencyKey(post);
 
           const { data, error } = await callEdgeFunction<SchedulePostResult>(
-            'schedule-post',
+            "schedule-post",
             {
               platforms: [normalizedPlatform],
               caption: post.caption,
@@ -1148,26 +1267,27 @@ export function registerDistributionTools(server: McpServer): void {
               ...(effectivePlanId ? { planId: effectivePlanId } : {}),
               idempotencyKey,
             },
-            { timeoutMs: 30_000 }
+            { timeoutMs: 30_000 },
           );
 
           if (error || !data?.success) {
-            const normalizedError = (error ?? 'Schedule failed').toLowerCase();
+            const normalizedError = (error ?? "Schedule failed").toLowerCase();
             return {
               id: post.id,
               platform: post.platform,
               success: false,
-              error: error ?? 'Schedule failed',
-              error_type: normalizedError.includes('rate limit')
-                ? 'rate_limit'
-                : normalizedError.includes('safety')
-                  ? 'safety'
-                  : normalizedError.includes('media')
-                    ? 'platform_policy'
-                    : 'transport',
-              retryable: normalizedError.includes('rate limit')
+              error: error ?? "Schedule failed",
+              error_type: normalizedError.includes("rate limit")
+                ? "rate_limit"
+                : normalizedError.includes("safety")
+                  ? "safety"
+                  : normalizedError.includes("media")
+                    ? "platform_policy"
+                    : "transport",
+              retryable: normalizedError.includes("rate limit")
                 ? true
-                : normalizedError.includes('safety') || normalizedError.includes('media')
+                : normalizedError.includes("safety") ||
+                    normalizedError.includes("media")
                   ? false
                   : true,
             };
@@ -1193,9 +1313,9 @@ export function registerDistributionTools(server: McpServer): void {
               success: false,
               error:
                 post.quality.blockers.length > 0
-                  ? `Quality gate failed: ${post.quality.blockers.join('; ')}`
+                  ? `Quality gate failed: ${post.quality.blockers.join("; ")}`
                   : `Quality gate failed: ${post.quality.score}/35`,
-              error_type: 'quality',
+              error_type: "quality",
               retryable: false,
             });
             failed++;
@@ -1215,7 +1335,8 @@ export function registerDistributionTools(server: McpServer): void {
 
         const chunk = <T>(arr: T[], size: number): T[][] => {
           const out: T[][] = [];
-          for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+          for (let i = 0; i < arr.length; i += size)
+            out.push(arr.slice(i, i + size));
           return out;
         };
 
@@ -1224,27 +1345,29 @@ export function registerDistributionTools(server: McpServer): void {
             const platformResults: typeof results = [];
             const batches = chunk(platformPosts, batch_size);
             for (const batch of batches) {
-              const settled = await Promise.allSettled(batch.map(post => scheduleOne(post)));
+              const settled = await Promise.allSettled(
+                batch.map((post) => scheduleOne(post)),
+              );
               for (const outcome of settled) {
-                if (outcome.status === 'fulfilled') {
+                if (outcome.status === "fulfilled") {
                   platformResults.push(outcome.value);
                 } else {
                   platformResults.push({
-                    id: 'unknown',
+                    id: "unknown",
                     platform,
                     success: false,
                     error:
                       outcome.reason instanceof Error
                         ? outcome.reason.message
                         : String(outcome.reason),
-                    error_type: 'unknown',
+                    error_type: "unknown",
                     retryable: true,
                   });
                 }
               }
             }
             return platformResults;
-          }
+          },
         );
 
         const settledPlatforms = await Promise.all(platformBatches);
@@ -1261,9 +1384,9 @@ export function registerDistributionTools(server: McpServer): void {
             const supabase = getSupabaseClient();
             const userId = await getDefaultUserId();
             await supabase
-              .from('content_plans')
+              .from("content_plans")
               .update({
-                status: failed > 0 ? 'approved' : 'scheduled',
+                status: failed > 0 ? "approved" : "scheduled",
                 quality_summary: qualitySummary,
                 schedule_summary: {
                   total_posts: workingPlan.posts.length,
@@ -1271,8 +1394,8 @@ export function registerDistributionTools(server: McpServer): void {
                   failed,
                 },
               })
-              .eq('id', effectivePlanId)
-              .eq('user_id', userId);
+              .eq("id", effectivePlanId)
+              .eq("user_id", userId);
           } catch {
             // Non-fatal; scheduling result has already been computed.
           }
@@ -1280,8 +1403,8 @@ export function registerDistributionTools(server: McpServer): void {
 
         const durationMs = Date.now() - startedAt;
         logMcpToolInvocation({
-          toolName: 'schedule_content_plan',
-          status: 'success',
+          toolName: "schedule_content_plan",
+          status: "success",
           durationMs,
           details: {
             plan_id: effectivePlanId,
@@ -1292,20 +1415,24 @@ export function registerDistributionTools(server: McpServer): void {
           },
         });
 
-        if (response_format === 'json') {
+        if (response_format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
                   asEnvelope({
                     plan_id: effectivePlanId,
                     approvals: approvalSummary,
                     posts: results,
-                    summary: { total_posts: workingPlan.posts.length, scheduled, failed },
+                    summary: {
+                      total_posts: workingPlan.posts.length,
+                      scheduled,
+                      failed,
+                    },
                   }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
@@ -1317,35 +1444,40 @@ export function registerDistributionTools(server: McpServer): void {
         for (const r of results) {
           if (r.success) {
             lines.push(
-              `[OK] ${r.id} | ${r.platform} → Scheduled${r.post_id ? ` (postId=${r.post_id})` : ''}`
+              `[OK] ${r.id} | ${r.platform} → Scheduled${r.post_id ? ` (postId=${r.post_id})` : ""}`,
             );
           } else {
             lines.push(`[FAIL] ${r.id} | ${r.platform} → ${r.error}`);
           }
         }
-        lines.push('');
+        lines.push("");
         lines.push(
-          `Scheduled: ${scheduled}/${workingPlan.posts.length} | Failed: ${failed}/${workingPlan.posts.length}`
+          `Scheduled: ${scheduled}/${workingPlan.posts.length} | Failed: ${failed}/${workingPlan.posts.length}`,
         );
 
         return {
-          content: [{ type: 'text' as const, text: lines.join('\n') }],
+          content: [{ type: "text" as const, text: lines.join("\n") }],
           isError: failed > 0,
         };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
         const message = err instanceof Error ? err.message : String(err);
         logMcpToolInvocation({
-          toolName: 'schedule_content_plan',
-          status: 'error',
+          toolName: "schedule_content_plan",
+          status: "error",
           durationMs,
           details: { error: message },
         });
         return {
-          content: [{ type: 'text' as const, text: `Batch scheduling failed: ${message}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `Batch scheduling failed: ${message}`,
+            },
+          ],
           isError: true,
         };
       }
-    }
+    },
   );
 }
