@@ -2,7 +2,7 @@
   "name": "@socialneuron/mcp-server",
   "display_name": "Social Neuron",
   "description": "52 MCP tools for AI-powered social media content lifecycle. Generate, schedule, and optimize content across YouTube, TikTok, and Instagram using Claude Code. Performance analytics feed back into content generation automatically.",
-  "version": "1.4.1",
+  "version": "1.4.2",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
   "license": "MIT",

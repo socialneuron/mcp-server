@@ -157,19 +157,16 @@ async function runLoginDevice(): Promise<void> {
       if (pollResponse.status === 200) {
         const pollData = (await pollResponse.json()) as { api_key?: string };
         if (pollData.api_key) {
-          // Validate before saving
-          const validation = await validateApiKey(pollData.api_key);
-          if (validation.valid) {
-            await saveApiKey(pollData.api_key);
-            await saveSupabaseUrl(supabaseUrl);
+          // Save immediately — key was just created by the server, no need to re-validate
+          // (re-validation can fail due to rate limits and cause the key to be lost)
+          await saveApiKey(pollData.api_key);
+          await saveSupabaseUrl(supabaseUrl);
 
-            console.error('');
-            console.error('  Authorized!');
-            console.error(`  User: ${validation.email || 'unknown'}`);
-            console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
-            console.error('');
-            return;
-          }
+          console.error('');
+          console.error('  Authorized!');
+          console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+          console.error('');
+          return;
         }
       }
 
