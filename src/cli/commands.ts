@@ -167,7 +167,6 @@ async function runLoginDevice(): Promise<void> {
           console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
           console.error('');
           return;
-          }
         }
       }
 
