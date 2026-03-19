@@ -22,15 +22,12 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "list_comments",
-    "List YouTube comments. Without a video_id, returns recent comments across " +
-      "all channel videos. With a video_id, returns comments for that specific video.",
+    'List YouTube comments — pass video_id (11-char string, e.g. "dQw4w9WgXcQ") for a specific video, or omit for recent comments across all channel videos. Returns comment text, author, like count, and reply count. Use page_token from previous response for pagination.',
     {
       video_id: z
         .string()
         .optional()
-        .describe(
-          "YouTube video ID. If omitted, returns comments across all channel videos.",
-        ),
+        .describe('YouTube video ID — the 11-character string from the URL (e.g. "dQw4w9WgXcQ" from youtube.com/watch?v=dQw4w9WgXcQ). Omit to get recent comments across all channel videos.'),
       max_results: z
         .number()
         .min(1)
@@ -40,7 +37,7 @@ export function registerCommentsTools(server: McpServer): void {
       page_token: z
         .string()
         .optional()
-        .describe("Pagination token from a previous list_comments call."),
+        .describe("Pagination cursor from previous list_comments response nextPageToken field. Omit for first page of results."),
       response_format: z
         .enum(["text", "json"])
         .optional()
@@ -126,7 +123,7 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "reply_to_comment",
-    "Reply to a YouTube comment. Requires the parent comment ID and reply text.",
+    "Reply to a YouTube comment. Get the parent_id from list_comments results. Reply appears as the authenticated channel. Use for community engagement after checking list_comments for questions or feedback.",
     {
       parent_id: z
         .string()

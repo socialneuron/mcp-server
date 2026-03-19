@@ -11,7 +11,7 @@ import type { ToolEntry } from '../lib/tool-catalog.js';
 export function registerDiscoveryTools(server: McpServer): void {
   server.tool(
     'search_tools',
-    'Search and discover available MCP tools. Use detail level to control token usage: "name" (~50 tokens), "summary" (~500 tokens), "full" (complete schemas).',
+    'Search available tools by name, description, module, or scope. Use "name" detail (~50 tokens) for quick lookup, "summary" (~500 tokens) for descriptions, "full" for complete input schemas. Start here if unsure which tool to call — filter by module (e.g. "planning", "content", "analytics") to narrow results.',
     {
       query: z.string().optional().describe('Search query to filter tools by name or description'),
       module: z

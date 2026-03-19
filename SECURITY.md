@@ -37,8 +37,8 @@ This policy covers:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.2.x   | Yes       |
-| < 1.2   | No        |
+| 1.4.x   | Yes       |
+| < 1.4   | No        |
 
 ## Credential Safety
 
@@ -57,3 +57,20 @@ This npm package contains **no service role keys or admin credentials**.
 - Set `daily_credit_cap` to prevent runaway costs
 - Keep the package updated to the latest version
 - Set `DO_NOT_TRACK=1` to disable telemetry if desired
+
+## Scanner False Positives
+
+Security scanners (TruffleHog, Gitleaks, etc.) may flag the embedded Supabase anon key in `src/lib/supabase.ts`. This is **not a vulnerability**:
+
+- The anon key is intentionally public — it's the same value shipped in the frontend JavaScript bundle
+- The JWT payload decodes to `"role": "anon"` — it has no elevated privileges
+- All data access is gated by Row Level Security (RLS) policies
+- The `SUPABASE_SERVICE_ROLE_KEY` is **never** embedded in this package
+
+The `.gitleaks.toml` configuration allowlists this file to suppress false positives.
+
+## Rate Limiting
+
+- Edge Function endpoints enforce per-IP rate limits (60 requests/minute)
+- API keys are hashed (SHA-256) before storage and comparison
+- Key cache entries expire after 10 seconds to limit revocation exposure window

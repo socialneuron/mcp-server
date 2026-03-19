@@ -1,19 +1,22 @@
-import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { randomUUID } from 'node:crypto';
-import { captureToolEvent } from './posthog.js';
-import { getRequestUserId } from './request-context.js';
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
+import { captureToolEvent } from "./posthog.js";
+import { getRequestUserId } from "./request-context.js";
 
-const SUPABASE_URL = process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || '';
+const SUPABASE_URL =
+  process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || "";
 
 const SUPABASE_SERVICE_KEY =
-  process.env.SOCIALNEURON_SERVICE_KEY || process.env.SUPABASE_SERVICE_ROLE_KEY || '';
+  process.env.SOCIALNEURON_SERVICE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  "";
 
 let client: SupabaseClient | null = null;
 
 // ── Auth state ───────────────────────────────────────────────────────
 
 // Tracks current auth mode for logging/diagnostics
-let _authMode: 'api-key' | 'service-role' = 'service-role';
+let _authMode: "api-key" | "service-role" = "service-role";
 let authenticatedUserId: string | null = null;
 let authenticatedScopes: string[] = [];
 let authenticatedEmail: string | null = null;
@@ -34,7 +37,7 @@ export function getSupabaseClient(): SupabaseClient {
     const url = SUPABASE_URL || getSupabaseUrl(); // fallback to cloud URL resolution
     if (!SUPABASE_SERVICE_KEY) {
       throw new Error(
-        'Missing Supabase service key. Set SOCIALNEURON_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY.'
+        "Missing Supabase service key. Set SOCIALNEURON_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY.",
       );
     }
     client = createClient(url, SUPABASE_SERVICE_KEY);
@@ -54,7 +57,7 @@ export function getSupabaseClient(): SupabaseClient {
  * The SUPABASE_SERVICE_ROLE_KEY is NEVER hardcoded anywhere in this package.
  * Service role keys are only loaded from environment variables at runtime.
  */
-export const CLOUD_SUPABASE_URL = 'https://rhukkjscgzauutioyeei.supabase.co';
+export const CLOUD_SUPABASE_URL = "https://rhukkjscgzauutioyeei.supabase.co";
 
 /**
  * Cloud Supabase anon key — intentionally public, NOT a secret.
@@ -68,7 +71,7 @@ export const CLOUD_SUPABASE_URL = 'https://rhukkjscgzauutioyeei.supabase.co';
  * The SUPABASE_SERVICE_ROLE_KEY is NEVER embedded in this package.
  */
 export const CLOUD_SUPABASE_ANON_KEY =
-  'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJodWtranNjZ3phdXV0aW95ZWVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NjM4ODYsImV4cCI6MjA4MDQzOTg4Nn0.JVtrviGvN0HaSh0JFS5KNl5FAB5ffG5Y1IMZsQFUrNQ';
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJodWtranNjZ3phdXV0aW95ZWVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NjM4ODYsImV4cCI6MjA4MDQzOTg4Nn0.JVtrviGvN0HaSh0JFS5KNl5FAB5ffG5Y1IMZsQFUrNQ";
 
 export function getSupabaseUrl(): string {
   if (SUPABASE_URL) return SUPABASE_URL;
@@ -86,7 +89,7 @@ export function getSupabaseUrl(): string {
 export function getServiceKey(): string {
   if (!SUPABASE_SERVICE_KEY) {
     throw new Error(
-      'Missing service key. Set SOCIALNEURON_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY.'
+      "Missing service key. Set SOCIALNEURON_SERVICE_KEY or SUPABASE_SERVICE_ROLE_KEY.",
     );
   }
   return SUPABASE_SERVICE_KEY;
@@ -120,7 +123,9 @@ export async function getDefaultUserId(): Promise<string> {
   const envUserId = process.env.SOCIALNEURON_USER_ID;
   if (envUserId) return envUserId;
 
-  throw new Error('No user ID available. Set SOCIALNEURON_USER_ID or authenticate via API key.');
+  throw new Error(
+    "No user ID available. Set SOCIALNEURON_USER_ID or authenticate via API key.",
+  );
 }
 
 /**
@@ -153,10 +158,10 @@ export async function getDefaultProjectId(): Promise<string | null> {
   try {
     const supabase = getSupabaseClient();
     const { data } = await supabase
-      .from('projects')
-      .select('id')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
+      .from("projects")
+      .select("id")
+      .eq("user_id", userId)
+      .order("created_at", { ascending: false })
       .limit(1)
       .single();
     if (data?.id) {
@@ -175,7 +180,7 @@ export async function getDefaultProjectId(): Promise<string | null> {
  */
 export async function initializeAuth(): Promise<void> {
   // Try API key first
-  const { loadApiKey } = await import('../cli/credentials.js');
+  const { loadApiKey } = await import("../cli/credentials.js");
   const apiKey = await loadApiKey();
 
   if (apiKey) {
@@ -183,33 +188,37 @@ export async function initializeAuth(): Promise<void> {
     authenticatedApiKey = apiKey;
 
     // Validate the API key
-    const { validateApiKey } = await import('../auth/api-keys.js');
+    const { validateApiKey } = await import("../auth/api-keys.js");
     const result = await validateApiKey(apiKey);
 
     if (result.valid && result.userId) {
-      _authMode = 'api-key';
+      _authMode = "api-key";
       authenticatedUserId = result.userId;
       authenticatedScopes =
-        result.scopes && result.scopes.length > 0 ? result.scopes : ['mcp:read'];
+        result.scopes && result.scopes.length > 0
+          ? result.scopes
+          : ["mcp:read"];
       authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
       console.error(
-        '[MCP] Authenticated via API key (prefix: ' +
+        "[MCP] Authenticated via API key (prefix: " +
           apiKey.substring(0, 6) +
-          '...' +
+          "..." +
           apiKey.slice(-4) +
-          ')'
+          ")",
       );
-      console.error('[MCP] Scopes: ' + authenticatedScopes.join(', '));
+      console.error("[MCP] Scopes: " + authenticatedScopes.join(", "));
 
       // Expiry warning
       if (authenticatedExpiresAt) {
         const expiresMs = new Date(authenticatedExpiresAt).getTime();
-        const daysLeft = Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24));
-        console.error('[MCP] Key expires: ' + authenticatedExpiresAt);
+        const daysLeft = Math.ceil(
+          (expiresMs - Date.now()) / (1000 * 60 * 60 * 24),
+        );
+        console.error("[MCP] Key expires: " + authenticatedExpiresAt);
         if (daysLeft <= 7) {
           console.error(
-            `[MCP] Warning: API key expires in ${daysLeft} day(s). Run: npx @socialneuron/mcp-server login`
+            `[MCP] Warning: API key expires in ${daysLeft} day(s). Run: npx @socialneuron/mcp-server login`,
           );
         }
       }
@@ -218,30 +227,34 @@ export async function initializeAuth(): Promise<void> {
       authenticatedApiKey = null; // Don't use invalid key for cloud transport
       // DO NOT fall back to service-role — invalid key means auth failure
       throw new Error(
-        '[MCP] Fatal: API key invalid or expired. Run: npx @socialneuron/mcp-server setup'
+        "[MCP] Fatal: API key invalid or expired. Run: npx @socialneuron/mcp-server setup",
       );
     }
   }
 
   // Fall back to service role (legacy — DEPRECATED, only when NO API key was provided)
   if (getServiceKeyOrNull()) {
-    _authMode = 'service-role';
+    _authMode = "service-role";
     // Legacy mode is effectively full-access; keep tools usable.
-    authenticatedScopes = ['mcp:full'];
-    console.error('[MCP] Using service role auth (legacy mode).');
+    authenticatedScopes = ["mcp:full"];
+    console.error("[MCP] Using service role auth (legacy mode).");
     console.error(
-      '[MCP] ⚠ DEPRECATED: Service role keys grant full admin access to your database.'
+      "[MCP] ⚠ DEPRECATED: Service role keys grant full admin access to your database.",
     );
-    console.error('[MCP]   Migrate to API key auth: npx @socialneuron/mcp-server setup');
-    console.error('[MCP]   Then remove SOCIALNEURON_SERVICE_KEY from your environment.');
+    console.error(
+      "[MCP]   Migrate to API key auth: npx @socialneuron/mcp-server setup",
+    );
+    console.error(
+      "[MCP]   Then remove SOCIALNEURON_SERVICE_KEY from your environment.",
+    );
     if (!process.env.SOCIALNEURON_USER_ID) {
       console.error(
-        '[MCP] Warning: SOCIALNEURON_USER_ID not set. Tools requiring a user will fail.'
+        "[MCP] Warning: SOCIALNEURON_USER_ID not set. Tools requiring a user will fail.",
       );
     }
   } else {
     throw new Error(
-      '[MCP] Fatal: No authentication configured. Run: npx @socialneuron/mcp-server setup'
+      "[MCP] Fatal: No authentication configured. Run: npx @socialneuron/mcp-server setup",
     );
   }
 }
@@ -262,7 +275,7 @@ export function getAuthenticatedExpiresAt(): string | null {
   return authenticatedExpiresAt;
 }
 
-export function getAuthMode(): 'api-key' | 'service-role' {
+export function getAuthMode(): "api-key" | "service-role" {
   return _authMode;
 }
 
@@ -276,9 +289,9 @@ export function getAuthenticatedApiKey(): string | null {
  */
 export function isTelemetryDisabled(): boolean {
   return (
-    process.env.DO_NOT_TRACK === '1' ||
-    process.env.DO_NOT_TRACK === 'true' ||
-    process.env.SOCIALNEURON_NO_TELEMETRY === '1'
+    process.env.DO_NOT_TRACK === "1" ||
+    process.env.DO_NOT_TRACK === "true" ||
+    process.env.SOCIALNEURON_NO_TELEMETRY === "1"
   );
 }
 
@@ -289,7 +302,7 @@ export function isTelemetryDisabled(): boolean {
  */
 export async function logMcpToolInvocation(args: {
   toolName: string;
-  status: 'success' | 'error' | 'rate_limited';
+  status: "success" | "error" | "rate_limited";
   durationMs: number;
   details?: Record<string, unknown>;
 }): Promise<void> {
@@ -312,11 +325,11 @@ export async function logMcpToolInvocation(args: {
 
   try {
     await getSupabaseClient()
-      .from('activity_logs')
+      .from("activity_logs")
       .insert({
         user_id: userId,
         action_type: `mcp_tool_${args.status}`,
-        entity_type: 'mcp_tool',
+        entity_type: "mcp_tool",
         details,
       });
   } catch {

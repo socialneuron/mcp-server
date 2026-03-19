@@ -14,17 +14,13 @@ export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_content",
-    "Generate AI-powered content (scripts, captions, hooks, blog posts) using " +
-      "Google Gemini or Anthropic Claude. Provide a detailed prompt describing " +
-      "what you need, choose the content type, and optionally specify a target " +
-      "platform and brand voice guidelines.",
+    "Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_check then schedule_post.",
     {
       prompt: z
         .string()
         .max(10000)
         .describe(
-          "Detailed prompt describing the content to generate. Include context like " +
-            "topic, angle, audience, and any specific requirements.",
+          'Detailed content prompt. Include topic, angle, audience, and requirements. Example: "LinkedIn post about AI productivity for CTOs, 300 words, include 3 actionable tips, conversational tone." Richer prompts produce better results.',
         ),
       content_type: z
         .enum(["script", "caption", "blog", "hook"])
@@ -52,8 +48,7 @@ export function registerIdeationTools(server: McpServer): void {
         .max(500)
         .optional()
         .describe(
-          'Brand voice guidelines to follow (e.g. "professional and empathetic", ' +
-            '"playful and Gen-Z"). Leave blank to use a neutral tone.',
+          'Tone directive (e.g. "direct, no jargon, second person" or "witty Gen-Z energy with emoji"). Leave blank to auto-load from project brand profile if project_id is set.',
         ),
       model: z
         .enum(["gemini-2.0-flash", "gemini-2.5-flash", "gemini-2.5-pro"])
@@ -284,9 +279,7 @@ export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "fetch_trends",
-    "Fetch current trending topics from YouTube, Google Trends, RSS feeds, or " +
-      "a custom URL. Results are cached for efficiency. Use this to discover " +
-      "what is popular right now for content ideation.",
+    'Get current trending topics for content inspiration. Source "youtube" returns trending videos with view counts, "google_trends" returns rising search terms, "rss"/"url" extracts topics from any feed or page. Results cached 1 hour — set force_refresh=true for real-time. Feed results into generate_content or plan_content_week.',
     {
       source: z
         .enum(["youtube", "google_trends", "rss", "url"])
@@ -399,9 +392,7 @@ export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "adapt_content",
-    "Adapt existing content for a different social media platform. Rewrites " +
-      "content to match the target platform's norms including character limits, " +
-      "hashtag style, tone, and CTA conventions.",
+    "Rewrite existing content for a different platform — adjusts character limits, hashtag style, tone, and CTA format automatically. Use after generate_content when you need the same message across multiple platforms. Pass project_id to apply platform-specific voice overrides from your brand profile.",
     {
       content: z
         .string()

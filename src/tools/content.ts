@@ -169,16 +169,13 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_video",
-    "Start an AI video generation job. This is an async operation -- it returns " +
-      "a job_id immediately. Use check_status to poll for completion. Supports " +
-      "Veo 3, Runway, Sora 2, Kling 2.6, and Kling 3.0 models via the Kie.ai API.",
+    "Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. Cost varies by model: veo3-fast (~15 credits/5s), kling-3 (~30 credits/5s), sora2-pro (~60 credits/10s). Check get_credit_balance first for expensive generations.",
     {
       prompt: z
         .string()
         .max(2500)
         .describe(
-          "Text prompt describing the video to generate. Be specific about " +
-            "visual style, camera angles, movement, lighting, and mood.",
+          'Video prompt — be specific about visual style, camera movement, lighting, and mood. Example: "Aerial drone shot of coastal cliffs at golden hour, slow dolly forward, cinematic 24fps, warm color grading." Vague prompts produce generic results.',
         ),
       model: z
         .enum([
@@ -192,10 +189,7 @@ export function registerContentTools(server: McpServer): void {
           "kling-3-pro",
         ])
         .describe(
-          "Video generation model. veo3-fast is fastest (~60s), veo3-quality is " +
-            "highest quality (~120s). sora2-pro is OpenAI Sora premium tier. " +
-            "kling-3 is Kling 3.0 standard (4K, 15s, audio). " +
-            "kling-3-pro is Kling 3.0 pro (higher quality).",
+          "Video model. veo3-fast: fastest (~15 credits/5s, ~60s render). veo3-quality: highest quality (~20 credits/5s, ~120s). sora2-pro: OpenAI premium (~60 credits/10s). kling-3: 4K with audio (~30 credits/5s). kling-3-pro: best Kling quality (~40 credits/5s).",
         ),
       duration: z
         .number()
@@ -210,8 +204,7 @@ export function registerContentTools(server: McpServer): void {
         .enum(["16:9", "9:16", "1:1"])
         .optional()
         .describe(
-          "Aspect ratio. 16:9 for landscape/YouTube, 9:16 for vertical/Reels/TikTok, " +
-            "1:1 for square. Defaults to 16:9.",
+          "Video aspect ratio. 16:9 for YouTube/landscape, 9:16 for TikTok/Reels/Shorts, 1:1 for Instagram feed/square. Defaults to 16:9.",
         ),
       enable_audio: z
         .boolean()
@@ -420,9 +413,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_image",
-    "Start an AI image generation job. This is an async operation -- it returns " +
-      "a job_id immediately. Use check_status to poll for completion. Supports " +
-      "Midjourney, Imagen 4, Flux, GPT-4o Image, and Seedream models.",
+    "Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 2-10 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (image-to-video).",
     {
       prompt: z
         .string()
@@ -629,9 +620,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "check_status",
-    "Check the status of an async generation job (video or image). Returns the " +
-      "current status, progress percentage, and result URL when complete. " +
-      "Call this tool periodically after generate_video or generate_image.",
+    'Poll an async job started by generate_video or generate_image. Returns status (queued/processing/completed/failed), progress %, and result URL on completion. Poll every 10-30s for video, 5-15s for images. On "failed" status, the error field explains why — check credits or try a different model.',
     {
       job_id: z
         .string()
@@ -849,9 +838,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "create_storyboard",
-    "Generate a structured scene-by-scene storyboard for video production. " +
-      "Returns an array of StoryboardFrames with prompts, durations, captions, " +
-      "and voiceover text. Use the output to drive image/video generation.",
+    "Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profile for consistent visual branding across frames.",
     {
       concept: z
         .string()
@@ -1089,8 +1076,7 @@ Return ONLY valid JSON in this exact format:
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_voiceover",
-    "Generate a professional voiceover audio file using ElevenLabs TTS. " +
-      "Returns an audio URL stored in R2. Use this for narration in video production.",
+    "Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Costs ~2 credits per generation.",
     {
       text: z
         .string()
@@ -1276,17 +1262,13 @@ Return ONLY valid JSON in this exact format:
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_carousel",
-    "Generate an Instagram carousel with AI-powered slide content. " +
-      "Supports multiple templates including Hormozi-style authority carousels. " +
-      "Returns slide data (headlines, body text, emphasis words). " +
-      "Use schedule_post with media_urls to publish the carousel to Instagram.",
+    "Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_type=CAROUSEL_ALBUM and 2-10 media_urls on Instagram.",
     {
       topic: z
         .string()
         .max(200)
         .describe(
-          "The carousel topic/subject. Be specific about the angle or hook. " +
-            'Example: "5 reasons your startup will fail in 2026"',
+          'Carousel hook/angle — specific beats general. Example: "5 pricing mistakes that kill SaaS startups" beats "SaaS tips". Include a curiosity gap or strong opinion for better Hook Strength scores.',
         ),
       template_id: z
         .enum([

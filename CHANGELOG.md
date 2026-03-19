@@ -2,6 +2,23 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.5.0] - 2026-03-19
+
+### Changed
+- **LLM-optimized tool descriptions**: Rewrote 27 tool descriptions and enriched 15 parameters for agent comprehension. Every tool now answers "when to call", "what to pass", and "what comes next" — following Arcade ToolBench patterns (Tool Description, Constrained Input, Dependency Hint, Performance Hint).
+- **API key cache TTL**: Reduced from 60s to 10s to limit revocation exposure window.
+- **OAuth issuer URL**: Production metadata now derives from `MCP_SERVER_URL` instead of defaulting to localhost.
+- **SECURITY.md**: Updated supported versions, added scanner false-positive documentation.
+- **CLI setup URL**: Fixed `app.socialneuron.com` → `www.socialneuron.com`.
+
+### Dependencies
+- `@supabase/supabase-js` 2.98.0 → 2.99.2
+- `open` 10.0.0 → 11.0.0 (requires Node.js 20+)
+- `posthog-node` 5.28.1 → 5.28.3
+- `vitest` 3.2.4 → 4.1.0
+- `esbuild` 0.27.3 → 0.27.4
+- `@types/node` 25.4.0 → 25.5.0
+
 ## [1.4.0] - 2026-03-13
 
 ### Changed

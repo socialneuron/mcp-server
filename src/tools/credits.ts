@@ -19,7 +19,7 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 export function registerCreditsTools(server: McpServer): void {
   server.tool(
     "get_credit_balance",
-    "Get current subscription credit balance and plan.",
+    "Check remaining credits, monthly limit, spending cap, and plan tier. Call this before expensive operations — generate_video costs 15-80 credits, generate_image costs 2-10. Returns current balance, monthly allocation, and spending cap (2.5x allocation).",
     {
       response_format: z
         .enum(["text", "json"])
@@ -95,7 +95,7 @@ export function registerCreditsTools(server: McpServer): void {
 
   server.tool(
     "get_budget_status",
-    "Get current MCP run budget consumption for credits/assets.",
+    "Check how much of the per-session budget has been consumed. Tracks credits spent and assets created in this MCP session against configured limits. Use to avoid hitting budget caps mid-workflow.",
     {
       response_format: z
         .enum(["text", "json"])
