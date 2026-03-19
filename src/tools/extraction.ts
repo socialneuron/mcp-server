@@ -81,7 +81,7 @@ function formatExtractedContentAsText(content: ExtractedContent): string {
 export function registerExtractionTools(server: McpServer): void {
   server.tool(
     "extract_url_content",
-    "Extract content from a URL (YouTube video transcript, article text, product page). Routes to scrape-youtube for YouTube URLs or fetch-url-content for other URLs.",
+    "Extract text content from any URL — YouTube video transcripts, article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript extraction with optional comments. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.",
     {
       url: z.string().url().describe("URL to extract content from"),
       extract_type: z

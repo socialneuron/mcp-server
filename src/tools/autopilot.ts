@@ -22,8 +22,7 @@ export function registerAutopilotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'list_autopilot_configs',
-    'List all autopilot configurations for your account. Shows active schedules, ' +
-      'associated recipes, credit budgets, and last run times.',
+    'List autopilot configurations showing schedules, credit budgets, last run times, and active/inactive status. Use to check what is automated before creating new configs, or to find config_id for update_autopilot_config.',
     {
       active_only: z
         .boolean()
@@ -211,8 +210,7 @@ export function registerAutopilotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'get_autopilot_status',
-    'Get the current status of your autopilot system, including active configs, ' +
-      'recent runs, and next scheduled execution.',
+    'Get autopilot system overview: active config count, recent execution results, credits consumed, and next scheduled run time. Use as a dashboard check before modifying autopilot settings.',
     {
       response_format: z
         .enum(['text', 'json'])

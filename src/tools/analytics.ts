@@ -53,7 +53,7 @@ export function registerAnalyticsTools(server: McpServer): void {
         .min(1)
         .max(365)
         .optional()
-        .describe("Number of days to look back. Defaults to 30. Max 365."),
+        .describe('Lookback window in days (1-365). Default 30. Use 7 for weekly review, 30 for monthly summary, 90 for quarterly trends.'),
       content_id: z
         .string()
         .uuid()
@@ -301,8 +301,7 @@ export function registerAnalyticsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "refresh_platform_analytics",
-    "Trigger an analytics refresh for all recently posted content across all connected " +
-      "platforms. Queues analytics fetch jobs for posts from the last 7 days.",
+    "Queue analytics refresh jobs for all posts from the last 7 days across connected platforms. Call this before fetch_analytics if you need fresh data. Returns immediately — data updates asynchronously over the next 1-5 minutes.",
     {
       response_format: z
         .enum(["text", "json"])

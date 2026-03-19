@@ -15,9 +15,9 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 export function registerQualityTools(server: McpServer): void {
   server.tool(
     "quality_check",
-    "Score a single post's content quality across 7 categories (Hook Strength, Message Clarity, Platform Fit, Brand Alignment, Novelty, CTA Strength, Safety/Claims). Returns pass/fail with per-category scores.",
+    "Score post quality across 7 categories: Hook Strength, Message Clarity, Platform Fit, Brand Alignment, Novelty, CTA Strength, and Safety/Claims. Each scored 0-5, total 35. Default pass threshold is 26 (~75%). Run after generate_content and before schedule_post. Include hashtags in caption if they will be published — they affect Platform Fit and Safety scores.",
     {
-      caption: z.string().describe("Post caption/body text"),
+      caption: z.string().describe("The post text to score. Include hashtags if they will be published — they affect Platform Fit and Safety/Claims scores."),
       title: z
         .string()
         .optional()
@@ -42,7 +42,7 @@ export function registerQualityTools(server: McpServer): void {
         .min(0)
         .max(35)
         .default(26)
-        .describe("Minimum total score to pass"),
+        .describe("Minimum total score to pass (max 35, scored across 7 categories at 0-5 each). Default 26 (~75%). Use 20 for rough drafts, 28+ for final posts going to large audiences."),
       brand_keyword: z
         .string()
         .optional()
@@ -122,7 +122,7 @@ export function registerQualityTools(server: McpServer): void {
 
   server.tool(
     "quality_check_plan",
-    "Run quality checks on all posts in a content plan. Returns per-post scores and aggregate summary.",
+    "Batch quality check all posts in a content plan. Returns per-post scores and aggregate pass/fail summary. Use after plan_content_week and before schedule_content_plan to catch low-quality posts before publishing.",
     {
       plan: z
         .object({
@@ -142,7 +142,7 @@ export function registerQualityTools(server: McpServer): void {
         .min(0)
         .max(35)
         .default(26)
-        .describe("Minimum total score to pass"),
+        .describe("Minimum total score to pass (max 35, scored across 7 categories at 0-5 each). Default 26 (~75%). Use 20 for rough drafts, 28+ for final posts going to large audiences."),
       response_format: z.enum(["text", "json"]).default("text"),
     },
     async ({ plan, threshold, response_format }) => {

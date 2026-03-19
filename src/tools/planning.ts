@@ -135,7 +135,7 @@ function formatPlanAsText(plan: ContentPlan): string {
 export function registerPlanningTools(server: McpServer): void {
   server.tool(
     "plan_content_week",
-    "Generate a full week's content plan with platform-specific drafts. Takes a topic or source URL, loads brand context and performance insights, and returns structured posts with hooks, angles, captions, and suggested schedule times.",
+    "Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_plan then schedule_content_plan. Costs ~5-15 credits depending on post count.",
     {
       topic: z.string().describe("Main topic or content theme"),
       source_url: z
@@ -571,7 +571,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     "save_content_plan",
-    "Persist a content plan payload for later review, approvals, and scheduling.",
+    "Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan.",
     {
       plan: z
         .object({

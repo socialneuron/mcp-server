@@ -47,11 +47,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "schedule_post",
-    "Schedule or immediately publish a post to one or more social media " +
-      "platforms. Requires the target platforms to have active OAuth connections " +
-      "configured in Social Neuron Settings. Supports YouTube, TikTok, " +
-      "Instagram, Facebook, LinkedIn, Twitter, Threads, and Bluesky. " +
-      "For Instagram carousels, provide media_urls (2-10 image URLs) and set media_type to CAROUSEL_ALBUM.",
+    "Publish or schedule a post to connected social platforms. Check list_connected_accounts first to verify active OAuth for each target platform. For Instagram carousels: use media_type=CAROUSEL_ALBUM with 2-10 media_urls. For YouTube: title is required. schedule_at uses ISO 8601 (e.g. \"2026-03-20T14:00:00Z\") — omit to post immediately.",
     {
       media_url: z
         .string()
@@ -64,11 +60,7 @@ export function registerDistributionTools(server: McpServer): void {
       media_urls: z
         .array(z.string())
         .optional()
-        .describe(
-          "Array of image URLs for Instagram carousel posts (2-10 images). " +
-            "Each URL should be publicly accessible or a Cloudflare R2 URL. " +
-            "When provided with media_type=CAROUSEL_ALBUM, creates an Instagram carousel.",
-        ),
+        .describe('Array of 2-10 image URLs for Instagram carousel posts. Each URL must be publicly accessible or a Cloudflare R2 signed URL. Use with media_type=CAROUSEL_ALBUM.'),
       media_type: z
         .enum(["IMAGE", "VIDEO", "CAROUSEL_ALBUM"])
         .optional()
@@ -91,9 +83,7 @@ export function registerDistributionTools(server: McpServer): void {
           ]),
         )
         .min(1)
-        .describe(
-          "Target platforms to post to. Each must have an active OAuth connection.",
-        ),
+        .describe('Target platforms (array). Each must have active OAuth — check list_connected_accounts first. Values: youtube, tiktok, instagram, twitter, linkedin, facebook, threads, bluesky.'),
       title: z
         .string()
         .optional()
@@ -101,16 +91,11 @@ export function registerDistributionTools(server: McpServer): void {
       hashtags: z
         .array(z.string())
         .optional()
-        .describe(
-          'Hashtags to append to the caption. Include or omit the "#" prefix.',
-        ),
+        .describe('Hashtags to append to caption. Include or omit the "#" prefix — both work. Example: ["ai", "contentcreator"] or ["#ai", "#contentcreator"].'),
       schedule_at: z
         .string()
         .optional()
-        .describe(
-          'ISO 8601 datetime for scheduled posting (e.g. "2026-03-15T14:00:00Z"). ' +
-            "Omit for immediate posting.",
-        ),
+        .describe('ISO 8601 UTC datetime for scheduled posting (e.g. "2026-03-20T14:00:00Z"). Omit to post immediately. Must be in the future.'),
       project_id: z
         .string()
         .optional()
@@ -291,8 +276,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "list_connected_accounts",
-    "List all social media accounts connected to Social Neuron via OAuth. " +
-      "Shows which platforms are available for posting.",
+    "Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. If a platform is missing or expired, the user needs to reconnect at socialneuron.com/settings/connections.",
     {
       response_format: z
         .enum(["text", "json"])
@@ -378,8 +362,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "list_recent_posts",
-    "List recent posts from Social Neuron. Shows status, platform, title, and " +
-      "timestamps. Useful for checking what has been published or scheduled recently.",
+    "List recent published and scheduled posts with status, platform, title, and timestamps. Use to check what has been posted before planning new content, or to find post IDs for fetch_analytics. Filter by platform or status to narrow results.",
     {
       platform: z
         .enum([
