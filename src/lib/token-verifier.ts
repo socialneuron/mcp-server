@@ -28,7 +28,7 @@ const apiKeyCache = new Map<
   string,
   { authInfo: AuthInfo; expiresAt: number }
 >();
-const API_KEY_CACHE_TTL_MS = 60_000; // 60 seconds
+const API_KEY_CACHE_TTL_MS = 10_000; // 10 seconds — reduced from 60s to limit revocation window
 
 export function createTokenVerifier(options: TokenVerifierOptions) {
   const { supabaseUrl, supabaseAnonKey } = options;
