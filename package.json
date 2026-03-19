@@ -64,7 +64,7 @@
     "@supabase/supabase-js": "2.99.2",
     "express": "^5.1.0",
     "jose": "^6.2.1",
-    "open": "10.0.0",
+    "open": "11.0.0",
     "zod": "^4.0.0"
   },
   "optionalDependencies": {
