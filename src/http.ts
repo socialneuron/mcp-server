@@ -33,7 +33,36 @@ const SUPABASE_URL = process.env.SUPABASE_URL ?? "";
 const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? "";
 const MCP_SERVER_URL =
   process.env.MCP_SERVER_URL ?? `http://localhost:${PORT}/mcp`;
+const APP_BASE_URL = process.env.APP_BASE_URL ?? "https://www.socialneuron.com";
 const NODE_ENV = process.env.NODE_ENV ?? "development";
+
+// Derive OAUTH_ISSUER_URL: prefer explicit env var, then extract from MCP_SERVER_URL,
+// fall back to APP_BASE_URL, never use localhost in production
+function deriveOAuthIssuerUrl(): string {
+  if (process.env.OAUTH_ISSUER_URL) {
+    return process.env.OAUTH_ISSUER_URL;
+  }
+  try {
+    const mcpUrl = new URL(MCP_SERVER_URL);
+    const isLocalhost =
+      mcpUrl.hostname === "localhost" || mcpUrl.hostname === "127.0.0.1";
+    if (isLocalhost) {
+      if (NODE_ENV === "development") {
+        return `${mcpUrl.protocol}//${mcpUrl.host}`;
+      }
+    } else {
+      return `${mcpUrl.protocol}//${mcpUrl.host}`;
+    }
+  } catch {
+    // Invalid URL, fall through
+  }
+  if (APP_BASE_URL && !APP_BASE_URL.includes("localhost")) {
+    return APP_BASE_URL;
+  }
+  return "https://mcp.socialneuron.com";
+}
+
+const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY");
