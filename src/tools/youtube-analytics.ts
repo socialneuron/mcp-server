@@ -41,6 +41,14 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
         .optional()
         .describe('Max videos to return for "topVideos" action. Defaults to 10.'),
     },
+    {
+      title: "Fetch YouTube Analytics",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ action, start_date, end_date, video_id, max_results }) => {
       if (action === 'video' && !video_id) {
         return {

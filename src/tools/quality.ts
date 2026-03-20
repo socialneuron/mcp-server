@@ -54,6 +54,14 @@ export function registerQualityTools(server: McpServer): void {
       response_format: z.enum(["text", "json"]).default("text")
         .describe("'text' for human-readable report, 'json' for structured scores suitable for pipeline automation."),
     },
+    {
+      title: "Quality Check",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({
       caption,
       title,
@@ -131,23 +139,34 @@ export function registerQualityTools(server: McpServer): void {
         .object({
           posts: z.array(
             z.object({
-              id: z.string(),
-              caption: z.string(),
-              title: z.string().optional(),
-              platform: z.string(),
+              id: z.string().describe("Unique post identifier."),
+              caption: z.string().describe("Post caption/body text to quality-check."),
+              title: z.string().optional().describe("Post title (important for YouTube)."),
+              platform: z.string().describe("Target platform (e.g. instagram, youtube)."),
             }),
           ),
         })
         .passthrough()
-        .describe("Content plan with posts array"),
+        .describe("Content plan with posts array."),
       threshold: z
         .number()
         .min(0)
         .max(35)
         .default(26)
         .describe("Minimum total score to pass (max 35, scored across 7 categories at 0-5 each). Default 26 (~75%). Use 20 for rough drafts, 28+ for final posts going to large audiences."),
-      response_format: z.enum(["text", "json"]).default("text"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("text")
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Quality Check Plan",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ plan, threshold, response_format }) => {
       const startedAt = Date.now();
 

@@ -230,6 +230,14 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Generate Video",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       prompt,
       model,
@@ -455,6 +463,14 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Generate Image",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ prompt, model, aspect_ratio, image_url, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -633,6 +649,14 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Check Job Status",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ job_id, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -894,6 +918,14 @@ export function registerContentTools(server: McpServer): void {
           "Response format. Defaults to json for structured storyboard data.",
         ),
     },
+    {
+      title: "Create Storyboard",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       concept,
       brand_context,
@@ -1112,6 +1144,14 @@ Return ONLY valid JSON in this exact format:
         .optional()
         .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Generate Voiceover",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ text, voice, speed, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -1315,6 +1355,14 @@ Return ONLY valid JSON in this exact format:
         .optional()
         .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Generate Carousel",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       topic,
       template_id,

@@ -43,6 +43,14 @@ export function registerCommentsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "List Comments",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ video_id, max_results, page_token, response_format }) => {
       const format = response_format ?? "text";
       const { data, error } = await callEdgeFunction("youtube-comments", {
@@ -136,6 +144,14 @@ export function registerCommentsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Reply to Comment",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ parent_id, text, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -225,6 +241,14 @@ export function registerCommentsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Post Comment",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ video_id, text, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -313,6 +337,14 @@ export function registerCommentsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Moderate Comment",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ comment_id, moderation_status, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();
@@ -408,6 +440,14 @@ export function registerCommentsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Delete Comment",
+      readOnlyHint: false,
+      destructiveHint: true,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ comment_id, response_format }) => {
       const format = response_format ?? "text";
       const startedAt = Date.now();

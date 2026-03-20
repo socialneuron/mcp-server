@@ -78,6 +78,14 @@ export function registerInsightsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Get Performance Insights",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ insight_type, days, limit, response_format }) => {
       const format = response_format ?? "text";
       const supabase = getSupabaseClient();
@@ -255,6 +263,14 @@ export function registerInsightsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Get Best Posting Times",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ platform, days, response_format }) => {
       const format = response_format ?? "text";
       const supabase = getSupabaseClient();

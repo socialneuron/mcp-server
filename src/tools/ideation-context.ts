@@ -138,6 +138,14 @@ export function registerIdeationContextTools(server: McpServer): void {
         .optional()
         .describe("Optional output format. Defaults to text."),
     },
+    {
+      title: "Get Ideation Context",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ project_id, days, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();

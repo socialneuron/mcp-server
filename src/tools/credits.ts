@@ -26,6 +26,14 @@ export function registerCreditsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Get Credit Balance",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -102,6 +110,14 @@ export function registerCreditsTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Get Budget Status",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ response_format }) => {
       const budget = getCurrentBudgetStatus();
       const payload = {

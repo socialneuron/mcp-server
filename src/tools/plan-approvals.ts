@@ -51,12 +51,12 @@ export function registerPlanApprovalTools(server: McpServer): void {
         .array(
           z
             .object({
-              id: z.string(),
-              platform: z.string().optional(),
-              caption: z.string().optional(),
-              title: z.string().optional(),
-              media_url: z.string().optional(),
-              schedule_at: z.string().optional(),
+              id: z.string().describe("Unique post identifier from the content plan."),
+              platform: z.string().optional().describe("Target platform (e.g. instagram, youtube)."),
+              caption: z.string().optional().describe("Post caption/body text."),
+              title: z.string().optional().describe("Post title, used by YouTube and LinkedIn articles."),
+              media_url: z.string().optional().describe("Public or R2 signed URL for the post media."),
+              schedule_at: z.string().optional().describe("ISO 8601 UTC datetime to publish (e.g. 2026-03-20T14:00:00Z)."),
             })
             .passthrough(),
         )
@@ -67,8 +67,19 @@ export function registerPlanApprovalTools(server: McpServer): void {
         .uuid()
         .optional()
         .describe("Project ID. Defaults to active project context."),
-      response_format: z.enum(["text", "json"]).optional(),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Create Plan Approvals",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({ plan_id, posts, project_id, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -159,9 +170,23 @@ export function registerPlanApprovalTools(server: McpServer): void {
     "List MCP-native approval items for a specific content plan.",
     {
       plan_id: z.string().uuid().describe("Content plan ID"),
-      status: z.enum(["pending", "approved", "rejected", "edited"]).optional(),
-      response_format: z.enum(["text", "json"]).optional(),
+      status: z
+        .enum(["pending", "approved", "rejected", "edited"])
+        .optional()
+        .describe("Filter approvals by status. Omit to return all statuses."),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "List Plan Approvals",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ plan_id, status, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -241,11 +266,33 @@ export function registerPlanApprovalTools(server: McpServer): void {
     "Approve, reject, or edit a pending plan approval item.",
     {
       approval_id: z.string().uuid().describe("Approval item ID"),
-      decision: z.enum(["approved", "rejected", "edited"]),
-      edited_post: z.record(z.string(), z.unknown()).optional(),
-      reason: z.string().max(1000).optional(),
-      response_format: z.enum(["text", "json"]).optional(),
+      decision: z
+        .enum(["approved", "rejected", "edited"])
+        .describe("Approval decision for this post."),
+      edited_post: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          'Revised post fields when decision is "edited" (e.g. {caption: "...", hashtags: [...]}).',
+        ),
+      reason: z
+        .string()
+        .max(1000)
+        .optional()
+        .describe("Optional reason for the decision, visible to the plan author."),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Respond to Plan Approval",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ approval_id, decision, edited_post, reason, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();

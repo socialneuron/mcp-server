@@ -113,14 +113,17 @@ export function createMockServer(): MockServer {
 
   const tool = vi.fn(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
-    (name: string, _desc: string, schemaOrHandler: any, handler?: Function) => {
-      // McpServer.tool() has two overloads:
-      //   tool(name, desc, schema, handler)
-      //   tool(name, desc, handler)         ← no schema (e.g. list_connected_accounts)
-      if (typeof schemaOrHandler === 'function') {
-        handlers.set(name, schemaOrHandler);
-      } else if (handler) {
-        handlers.set(name, handler);
+    (name: string, _desc: string, ...rest: any[]) => {
+      // McpServer.tool() overloads:
+      //   tool(name, desc, handler)                       ← no schema
+      //   tool(name, desc, schema, handler)               ← no annotations
+      //   tool(name, desc, schema, annotations, handler)  ← with annotations
+      // The handler is always the last argument that is a function.
+      for (let i = rest.length - 1; i >= 0; i--) {
+        if (typeof rest[i] === 'function') {
+          handlers.set(name, rest[i]);
+          return;
+        }
       }
     }
   );

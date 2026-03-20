@@ -30,6 +30,14 @@ export function registerUsageTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
+    {
+      title: "Get MCP Usage",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ response_format }) => {
       const format = response_format ?? 'text';
       const supabase = getSupabaseClient();
