@@ -120,7 +120,7 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 export function registerIdeationContextTools(server: McpServer): void {
   server.tool(
     "get_ideation_context",
-    "Get synthesized ideation context from performance insights. Returns the same prompt-injection context used by ideation generation.",
+    "Load performance-derived context (top hooks, optimal timing, winning patterns) that should inform your next content generation. Call this before generate_content or plan_content_week to ground new content in what has actually performed well. Returns a promptInjection string ready to pass into generation tools.",
     {
       project_id: z
         .string()

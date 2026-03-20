@@ -44,7 +44,7 @@ async function assertProjectAccess(
 export function registerPlanApprovalTools(server: McpServer): void {
   server.tool(
     "create_plan_approvals",
-    "Create pending approval rows for each post in a content plan.",
+    "Create individual approval items for posts you supply explicitly, useful when building a custom approval queue outside the standard plan workflow. Requires the post array as input. Use list_plan_approvals to check status afterward, and respond_plan_approval to approve or reject each item.",
     {
       plan_id: z.string().uuid().describe("Content plan ID"),
       posts: z

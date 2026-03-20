@@ -21,7 +21,7 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 export function registerLoopSummaryTools(server: McpServer): void {
   server.tool(
     "get_loop_summary",
-    "Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights).",
+    "Get a single-call health check of the content feedback loop: brand profile status, recent content, and active insights. Call at the start of a session to decide what to do next. The response includes a recommendedNextAction field that tells you which tool to call.",
     {
       project_id: z
         .string()

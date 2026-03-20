@@ -525,7 +525,7 @@ export function registerDistributionTools(server: McpServer): void {
 
   server.tool(
     "find_next_slots",
-    "Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score.",
+    "Find the next available posting time slots that avoid conflicts with already-scheduled posts. Uses engagement data from get_best_posting_times to rank slots. Call this before schedule_content_plan to pick optimal, non-overlapping times for each post.",
     {
       platforms: z
         .array(
