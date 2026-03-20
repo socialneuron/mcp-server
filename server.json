@@ -12,7 +12,8 @@
   },
   "categories": ["social-media", "content-creation", "analytics", "marketing", "automation"],
   "tools_count": 52,
-  "transport": "stdio",
+  "transport": ["stdio", "streamable-http"],
+  "source_entry": "src/index.ts",
   "install": {
     "command": "npx",
     "args": ["-y", "@socialneuron/mcp-server"]
