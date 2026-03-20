@@ -47,9 +47,12 @@ export function registerQualityTools(server: McpServer): void {
         .string()
         .optional()
         .describe("Brand keyword for alignment check"),
-      brand_avoid_patterns: z.array(z.string()).optional(),
-      custom_banned_terms: z.array(z.string()).optional(),
-      response_format: z.enum(["text", "json"]).default("text"),
+      brand_avoid_patterns: z.array(z.string()).optional()
+        .describe("Phrases the brand should never use (e.g. competitor names, off-brand slang). Matched case-insensitively."),
+      custom_banned_terms: z.array(z.string()).optional()
+        .describe("Additional banned words beyond the built-in safety list. Useful for industry-specific compliance terms."),
+      response_format: z.enum(["text", "json"]).default("text")
+        .describe("'text' for human-readable report, 'json' for structured scores suitable for pipeline automation."),
     },
     async ({
       caption,
