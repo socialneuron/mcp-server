@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { logMcpToolInvocation } from "../lib/supabase.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { validateUrlForSSRF } from "../lib/ssrf.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type { ExtractedContent, ResponseEnvelope } from "../types/index.js";
@@ -157,7 +158,7 @@ export function registerExtractionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Failed to extract YouTube video: ${error ?? "No data returned"}`,
+                  text: formatToolError(`Failed to extract YouTube video: ${error ?? "No data returned"}`),
                 },
               ],
               isError: true,
@@ -201,7 +202,7 @@ export function registerExtractionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Failed to extract YouTube channel: ${error ?? "No data returned"}`,
+                  text: formatToolError(`Failed to extract YouTube channel: ${error ?? "No data returned"}`),
                 },
               ],
               isError: true,
@@ -236,7 +237,7 @@ export function registerExtractionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Failed to extract URL content: ${error ?? "No data returned"}`,
+                  text: formatToolError(`Failed to extract URL content: ${error ?? "No data returned"}`),
                 },
               ],
               isError: true,
@@ -303,7 +304,7 @@ export function registerExtractionTools(server: McpServer): void {
         });
         return {
           content: [
-            { type: "text" as const, text: `Extraction failed: ${message}` },
+            { type: "text" as const, text: formatToolError(`Extraction failed: ${message}`) },
           ],
           isError: true,
         };

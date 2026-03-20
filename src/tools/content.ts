@@ -8,6 +8,7 @@ import {
   logMcpToolInvocation,
 } from "../lib/supabase.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { requestContext } from "../lib/request-context.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type {
@@ -331,7 +332,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Video generation failed to start: ${error}`,
+              text: formatToolError(`Video generation failed to start: ${error}`),
             },
           ],
           isError: true,
@@ -349,7 +350,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: "Video generation failed: no job ID returned.",
+              text: formatToolError("Video generation failed: no job ID returned."),
             },
           ],
           isError: true,
@@ -552,7 +553,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Image generation failed to start: ${error}`,
+              text: formatToolError(`Image generation failed to start: ${error}`),
             },
           ],
           isError: true,
@@ -570,7 +571,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: "Image generation failed: no job ID returned.",
+              text: formatToolError("Image generation failed: no job ID returned."),
             },
           ],
           isError: true,
@@ -728,7 +729,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to look up job: ${sanitizeDbError(jobError)}`,
+              text: formatToolError(`Failed to look up job: ${sanitizeDbError(jobError)}`),
             },
           ],
           isError: true,
@@ -746,7 +747,7 @@ export function registerContentTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `No job found with ID "${job_id}". The ID may be incorrect or the job has expired.`,
+              text: formatToolError(`No job found with ID "${job_id}". The ID may be incorrect or the job has expired.`),
             },
           ],
           isError: true,
@@ -1050,7 +1051,7 @@ Return ONLY valid JSON in this exact format:
           content: [
             {
               type: "text" as const,
-              text: `Storyboard generation failed: ${error}`,
+              text: formatToolError(`Storyboard generation failed: ${error}`),
             },
           ],
           isError: true,
@@ -1218,7 +1219,7 @@ Return ONLY valid JSON in this exact format:
           content: [
             {
               type: "text" as const,
-              text: `Voiceover generation failed: ${error}`,
+              text: formatToolError(`Voiceover generation failed: ${error}`),
             },
           ],
           isError: true,
@@ -1236,7 +1237,7 @@ Return ONLY valid JSON in this exact format:
           content: [
             {
               type: "text" as const,
-              text: "Voiceover generation failed: no audio URL returned.",
+              text: formatToolError("Voiceover generation failed: no audio URL returned."),
             },
           ],
           isError: true,
@@ -1457,7 +1458,7 @@ Return ONLY valid JSON in this exact format:
           content: [
             {
               type: "text" as const,
-              text: `Carousel generation failed: ${error}`,
+              text: formatToolError(`Carousel generation failed: ${error}`),
             },
           ],
           isError: true,

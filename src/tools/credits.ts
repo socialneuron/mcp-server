@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { getSupabaseClient, getDefaultUserId } from "../lib/supabase.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { getCurrentBudgetStatus } from "./content.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type { ResponseEnvelope } from "../types/index.js";
@@ -60,7 +61,7 @@ export function registerCreditsTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to fetch credit balance: ${sanitizeDbError(profileResult.error)}`,
+              text: formatToolError(`Failed to fetch credit balance: ${sanitizeDbError(profileResult.error)}`),
             },
           ],
           isError: true,

@@ -9,6 +9,7 @@ import {
   getDefaultProjectId,
 } from "../lib/supabase.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import type {
   ContentPlan,
   ContentPlanPost,
@@ -398,7 +399,7 @@ export function registerPlanningTools(server: McpServer): void {
             content: [
               {
                 type: "text" as const,
-                text: `Plan generation failed: ${aiError ?? "No response from AI"}`,
+                text: formatToolError(`Plan generation failed: ${aiError ?? "No response from AI"}`),
               },
             ],
             isError: true,
@@ -421,7 +422,7 @@ export function registerPlanningTools(server: McpServer): void {
             content: [
               {
                 type: "text" as const,
-                text: `AI response could not be parsed as JSON.\n\nRaw output (first 1000 chars):\n${rawText.slice(0, 1000)}`,
+                text: formatToolError(`AI response could not be parsed as JSON.\n\nRaw output (first 1000 chars):\n${rawText.slice(0, 1000)}`),
               },
             ],
             isError: true,
@@ -571,7 +572,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Plan generation failed: ${message}`,
+              text: formatToolError(`Plan generation failed: ${message}`),
             },
           ],
           isError: true,
@@ -715,7 +716,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to save content plan: ${message}`,
+              text: formatToolError(`Failed to save content plan: ${message}`),
             },
           ],
           isError: true,
@@ -759,7 +760,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to load content plan: ${sanitizeDbError(error)}`,
+              text: formatToolError(`Failed to load content plan: ${sanitizeDbError(error)}`),
             },
           ],
           isError: true,
@@ -771,7 +772,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `No content plan found for plan_id=${plan_id}`,
+              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
             },
           ],
           isError: true,
@@ -876,7 +877,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `No content plan found for plan_id=${plan_id}`,
+              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
             },
           ],
           isError: true,
@@ -946,7 +947,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to update content plan: ${sanitizeDbError(saveError)}`,
+              text: formatToolError(`Failed to update content plan: ${sanitizeDbError(saveError)}`),
             },
           ],
           isError: true,
@@ -1027,7 +1028,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `No content plan found for plan_id=${plan_id}`,
+              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
             },
           ],
           isError: true,
@@ -1041,7 +1042,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Plan ${plan_id} has no posts to submit.`,
+              text: formatToolError(`Plan ${plan_id} has no posts to submit.`),
             },
           ],
           isError: true,
@@ -1067,7 +1068,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to create approvals: ${sanitizeDbError(approvalError)}`,
+              text: formatToolError(`Failed to create approvals: ${sanitizeDbError(approvalError)}`),
             },
           ],
           isError: true,
@@ -1085,7 +1086,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to update plan status: ${sanitizeDbError(statusError)}`,
+              text: formatToolError(`Failed to update plan status: ${sanitizeDbError(statusError)}`),
             },
           ],
           isError: true,
