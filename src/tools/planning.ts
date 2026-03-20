@@ -696,7 +696,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     "get_content_plan",
-    "Retrieve a persisted content plan by ID.",
+    "Retrieve a saved content plan to review its posts, status, and applied insights. Use after plan_content_week or save_content_plan to inspect what was generated. Feed the result into update_content_plan to revise posts or submit_content_plan_for_approval to start the review workflow.",
     {
       plan_id: z.string().uuid().describe("Persisted content plan ID"),
       response_format: z.enum(["text", "json"]).default("json"),
@@ -775,7 +775,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     "update_content_plan",
-    "Update individual posts in a persisted content plan.",
+    "Revise specific posts in a saved content plan -- edit captions, hooks, hashtags, schedule times, or mark posts as approved/rejected. Call after reviewing a plan with get_content_plan. When all posts are approved, the plan status auto-advances so it can be scheduled.",
     {
       plan_id: z.string().uuid(),
       post_updates: z
@@ -932,7 +932,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     "submit_content_plan_for_approval",
-    "Create pending approval items for each post in a plan and mark plan status as in_review.",
+    "Submit an entire saved content plan for team review in one call -- creates approval items for every post and sets the plan to in_review status. Call after plan_content_week and any update_content_plan edits are done. Use list_plan_approvals to track reviewer decisions.",
     {
       plan_id: z.string().uuid(),
       response_format: z.enum(["text", "json"]).default("json"),
