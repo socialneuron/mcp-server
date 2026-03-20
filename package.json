@@ -22,6 +22,7 @@
     "type": "git",
     "url": "git+https://github.com/socialneuron/mcp-server.git"
   },
+  "source": "./src/index.ts",
   "exports": {
     ".": "./dist/index.js",
     "./http": "./dist/http.js"
