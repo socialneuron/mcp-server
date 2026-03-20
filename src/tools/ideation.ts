@@ -3,6 +3,7 @@ import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
 import { getDefaultUserId } from "../lib/supabase.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import type {
   GenerateContentResponse,
   FetchTrendsResponse,
@@ -268,7 +269,7 @@ export function registerIdeationTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Content generation failed: ${error}`,
+              text: formatToolError(`Content generation failed: ${error}`),
             },
           ],
           isError: true,
@@ -359,7 +360,7 @@ export function registerIdeationTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to fetch trends: ${error}`,
+              text: formatToolError(`Failed to fetch trends: ${error}`),
             },
           ],
           isError: true,
@@ -596,7 +597,7 @@ export function registerIdeationTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Content adaptation failed: ${error}`,
+              text: formatToolError(`Content adaptation failed: ${error}`),
             },
           ],
           isError: true,

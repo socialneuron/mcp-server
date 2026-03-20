@@ -2,6 +2,13 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.5.2] - 2026-03-20
+
+### Added
+- **Error recovery hints**: All 47 error paths now include actionable recovery guidance — agents know what to call next when something fails (e.g., "Call get_credit_balance to check remaining credits" or "Verify platform OAuth with list_connected_accounts").
+- Central `formatToolError()` helper with 9 error categories: rate limits, credits, OAuth, generation, not-found, access, SSRF, scheduling, and plan validation.
+- 18 new tests for error recovery formatting.
+
 ## [1.5.1] - 2026-03-20
 
 ### Added

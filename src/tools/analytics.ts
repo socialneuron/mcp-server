@@ -8,6 +8,7 @@ import {
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type {
   AnalyticsSummary,
@@ -139,7 +140,7 @@ export function registerAnalyticsTools(server: McpServer): void {
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch user-scoped posts: ${sanitizeDbError(postsError)}`,
+                text: formatToolError(`Failed to fetch user-scoped posts: ${sanitizeDbError(postsError)}`),
               },
             ],
             isError: true,
@@ -197,7 +198,7 @@ export function registerAnalyticsTools(server: McpServer): void {
             content: [
               {
                 type: "text" as const,
-                text: `Failed to fetch analytics: ${sanitizeDbError(simpleError)}`,
+                text: formatToolError(`Failed to fetch analytics: ${sanitizeDbError(simpleError)}`),
               },
             ],
             isError: true,
@@ -358,7 +359,7 @@ export function registerAnalyticsTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Error refreshing analytics: ${error}`,
+              text: formatToolError(`Error refreshing analytics: ${error}`),
             },
           ],
           isError: true,

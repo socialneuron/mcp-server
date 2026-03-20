@@ -3,6 +3,7 @@ import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
 import { getDefaultUserId, logMcpToolInvocation } from "../lib/supabase.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type { YouTubeComment, ResponseEnvelope } from "../types/index.js";
 
@@ -63,7 +64,7 @@ export function registerCommentsTools(server: McpServer): void {
       if (error) {
         return {
           content: [
-            { type: "text" as const, text: `Error listing comments: ${error}` },
+            { type: "text" as const, text: formatToolError(`Error listing comments: ${error}`) },
           ],
           isError: true,
         };
@@ -192,7 +193,7 @@ export function registerCommentsTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Error replying to comment: ${error}`,
+              text: formatToolError(`Error replying to comment: ${error}`),
             },
           ],
           isError: true,
@@ -287,7 +288,7 @@ export function registerCommentsTools(server: McpServer): void {
         });
         return {
           content: [
-            { type: "text" as const, text: `Error posting comment: ${error}` },
+            { type: "text" as const, text: formatToolError(`Error posting comment: ${error}`) },
           ],
           isError: true,
         };
@@ -385,7 +386,7 @@ export function registerCommentsTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Error moderating comment: ${error}`,
+              text: formatToolError(`Error moderating comment: ${error}`),
             },
           ],
           isError: true,
@@ -485,7 +486,7 @@ export function registerCommentsTools(server: McpServer): void {
         });
         return {
           content: [
-            { type: "text" as const, text: `Error deleting comment: ${error}` },
+            { type: "text" as const, text: formatToolError(`Error deleting comment: ${error}`) },
           ],
           isError: true,
         };

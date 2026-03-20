@@ -7,6 +7,7 @@ import {
   getDefaultProjectId,
 } from "../lib/supabase.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import { validateUrlForSSRF } from "../lib/ssrf.js";
 import { MCP_VERSION } from "../lib/version.js";
 import type { BrandProfile, ResponseEnvelope } from "../types/index.js";
@@ -74,7 +75,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Brand extraction failed: ${error}`,
+              text: formatToolError(`Brand extraction failed: ${error}`),
             },
           ],
           isError: true,
@@ -222,7 +223,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to load brand profile: ${sanitizeDbError(error)}`,
+              text: formatToolError(`Failed to load brand profile: ${sanitizeDbError(error)}`),
             },
           ],
           isError: true,
@@ -407,7 +408,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to save brand profile: ${sanitizeDbError(error)}`,
+              text: formatToolError(`Failed to save brand profile: ${sanitizeDbError(error)}`),
             },
           ],
           isError: true,
@@ -655,7 +656,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to update platform voice: ${saveError.message}`,
+              text: formatToolError(`Failed to update platform voice: ${saveError.message}`),
             },
           ],
           isError: true,

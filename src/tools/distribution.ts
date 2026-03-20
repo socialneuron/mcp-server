@@ -10,6 +10,7 @@ import {
 } from "../lib/supabase.js";
 import { evaluateQuality } from "../lib/quality.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
+import { formatToolError } from "../lib/tool-errors.js";
 import type {
   SchedulePostResult,
   ConnectedAccount,
@@ -206,7 +207,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to schedule post: ${error}`,
+              text: formatToolError(`Failed to schedule post: ${error}`),
             },
           ],
           isError: true,
@@ -316,7 +317,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to list connected accounts: ${sanitizeDbError(error)}`,
+              text: formatToolError(`Failed to list connected accounts: ${sanitizeDbError(error)}`),
             },
           ],
           isError: true,
@@ -459,7 +460,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Failed to list posts: ${sanitizeDbError(error)}`,
+              text: formatToolError(`Failed to list posts: ${sanitizeDbError(error)}`),
             },
           ],
           isError: true,
@@ -723,7 +724,7 @@ export function registerDistributionTools(server: McpServer): void {
         });
         return {
           content: [
-            { type: "text" as const, text: `Failed to find slots: ${message}` },
+            { type: "text" as const, text: formatToolError(`Failed to find slots: ${message}`) },
           ],
           isError: true,
         };
@@ -845,7 +846,7 @@ export function registerDistributionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Failed to load content plan: ${sanitizeDbError(storedError)}`,
+                  text: formatToolError(`Failed to load content plan: ${sanitizeDbError(storedError)}`),
                 },
               ],
               isError: true,
@@ -856,7 +857,7 @@ export function registerDistributionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `No content plan found for plan_id=${plan_id}`,
+                  text: formatToolError(`No content plan found for plan_id=${plan_id}`),
                 },
               ],
               isError: true,
@@ -877,7 +878,7 @@ export function registerDistributionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Stored plan ${plan_id} has no posts array.`,
+                  text: formatToolError(`Stored plan ${plan_id} has no posts array.`),
                 },
               ],
               isError: true,
@@ -927,7 +928,7 @@ export function registerDistributionTools(server: McpServer): void {
               content: [
                 {
                   type: "text" as const,
-                  text: `Failed to load plan approvals: ${sanitizeDbError(approvalsError)}`,
+                  text: formatToolError(`Failed to load plan approvals: ${sanitizeDbError(approvalsError)}`),
                 },
               ],
               isError: true,
@@ -1503,7 +1504,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: "text" as const,
-              text: `Batch scheduling failed: ${message}`,
+              text: formatToolError(`Batch scheduling failed: ${message}`),
             },
           ],
           isError: true,
