@@ -62,6 +62,14 @@ export function registerScreenshotTools(server: McpServer): void {
           'Extra milliseconds to wait after page load before capturing. Useful for animations. Defaults to 2000.'
         ),
     },
+    {
+      title: "Capture App Page",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({ page: pageName, viewport, theme, selector, wait_ms }) => {
       const startedAt = Date.now();
       let rateLimitKey = 'anonymous';
@@ -217,6 +225,14 @@ export function registerScreenshotTools(server: McpServer): void {
         .optional()
         .describe('Extra milliseconds to wait after page load before capturing. Defaults to 1000.'),
     },
+    {
+      title: "Capture Screenshot",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ url, viewport, selector, output_path, wait_ms }) => {
       const startedAt = Date.now();
       let rateLimitKey = 'anonymous';

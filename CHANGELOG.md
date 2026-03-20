@@ -2,6 +2,15 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.5.1] - 2026-03-20
+
+### Added
+- **MCP tool annotations**: All 52 tools now declare `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` per MCP spec. Agents can now determine which tools are safe to call without confirmation.
+- **Complete parameter descriptions**: Added `.describe()` to all remaining parameters (248 total). Every parameter now has format examples, constraints, and usage guidance.
+
+### Changed
+- Updated test setup to support 5-argument `server.tool()` signature with annotations.
+
 ## [1.5.0] - 2026-03-19
 
 ### Changed

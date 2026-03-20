@@ -181,8 +181,19 @@ export function registerPlanningTools(server: McpServer): void {
         .string()
         .optional()
         .describe("Project ID for brand/insights context"),
-      response_format: z.enum(["text", "json"]).default("json"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("json")
+        .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Plan Content Week",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       topic,
       source_url,
@@ -575,16 +586,35 @@ export function registerPlanningTools(server: McpServer): void {
     {
       plan: z
         .object({
-          topic: z.string(),
-          posts: z.array(z.record(z.string(), z.unknown())),
+          topic: z.string().describe("Content plan topic or theme."),
+          posts: z
+            .array(z.record(z.string(), z.unknown()))
+            .describe("Array of post objects to save."),
         })
-        .passthrough(),
-      project_id: z.string().uuid().optional(),
+        .passthrough()
+        .describe("Content plan object with topic and posts array."),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe("Project ID. Defaults to active project context."),
       status: z
         .enum(["draft", "in_review", "approved", "scheduled", "completed"])
-        .default("draft"),
-      response_format: z.enum(["text", "json"]).default("json"),
+        .default("draft")
+        .describe("Initial plan status. Defaults to draft."),
+      response_format: z
+        .enum(["text", "json"])
+        .default("json")
+        .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Save Content Plan",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({ plan, project_id, status, response_format }) => {
       const startedAt = Date.now();
       try {
@@ -699,8 +729,19 @@ export function registerPlanningTools(server: McpServer): void {
     "Retrieve a saved content plan to review its posts, status, and applied insights. Use after plan_content_week or save_content_plan to inspect what was generated. Feed the result into update_content_plan to revise posts or submit_content_plan_for_approval to start the review workflow.",
     {
       plan_id: z.string().uuid().describe("Persisted content plan ID"),
-      response_format: z.enum(["text", "json"]).default("json"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("json")
+        .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Get Content Plan",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ plan_id, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -777,26 +818,38 @@ export function registerPlanningTools(server: McpServer): void {
     "update_content_plan",
     "Revise specific posts in a saved content plan -- edit captions, hooks, hashtags, schedule times, or mark posts as approved/rejected. Call after reviewing a plan with get_content_plan. When all posts are approved, the plan status auto-advances so it can be scheduled.",
     {
-      plan_id: z.string().uuid(),
+      plan_id: z.string().uuid().describe("Content plan ID to update."),
       post_updates: z
         .array(
           z.object({
-            post_id: z.string(),
-            caption: z.string().optional(),
-            title: z.string().optional(),
-            hashtags: z.array(z.string()).optional(),
-            hook: z.string().optional(),
-            angle: z.string().optional(),
-            visual_direction: z.string().optional(),
-            media_url: z.string().optional(),
-            schedule_at: z.string().optional(),
-            platform: z.string().optional(),
-            status: z.enum(["approved", "rejected", "needs_edit"]).optional(),
+            post_id: z.string().describe("ID of the post to update within this plan."),
+            caption: z.string().optional().describe("Revised caption/body text."),
+            title: z.string().optional().describe("Revised post title."),
+            hashtags: z.array(z.string()).optional().describe("Revised hashtags array."),
+            hook: z.string().optional().describe("Revised attention-grabbing opening line."),
+            angle: z.string().optional().describe("Revised content angle or perspective."),
+            visual_direction: z.string().optional().describe("Revised visual/media direction notes."),
+            media_url: z.string().optional().describe("Revised media URL (public or R2 signed URL)."),
+            schedule_at: z.string().optional().describe("Revised ISO 8601 UTC publish datetime."),
+            platform: z.string().optional().describe("Revised target platform."),
+            status: z.enum(["approved", "rejected", "needs_edit"]).optional().describe("Review status for this post."),
           }),
         )
-        .min(1),
-      response_format: z.enum(["text", "json"]).default("json"),
+        .min(1)
+        .describe("Array of post-level updates to apply."),
+      response_format: z
+        .enum(["text", "json"])
+        .default("json")
+        .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Update Content Plan",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ plan_id, post_updates, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -934,9 +987,20 @@ export function registerPlanningTools(server: McpServer): void {
     "submit_content_plan_for_approval",
     "Submit an entire saved content plan for team review in one call -- creates approval items for every post and sets the plan to in_review status. Call after plan_content_week and any update_content_plan edits are done. Use list_plan_approvals to track reviewer decisions.",
     {
-      plan_id: z.string().uuid(),
-      response_format: z.enum(["text", "json"]).default("json"),
+      plan_id: z.string().uuid().describe("Content plan ID to submit for review."),
+      response_format: z
+        .enum(["text", "json"])
+        .default("json")
+        .describe("Response format. Defaults to json."),
     },
+    {
+      title: "Submit Plan for Approval",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ plan_id, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();

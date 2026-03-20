@@ -123,6 +123,14 @@ export function registerRemotionTools(server: McpServer): void {
       'Returns composition IDs, dimensions, duration, and descriptions. Use ' +
       'this to discover what videos can be rendered with render_demo_video.',
     {},
+    {
+      title: "List Compositions",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async () => {
       const lines: string[] = [`${COMPOSITIONS.length} Remotion compositions available:`, ''];
 
@@ -170,6 +178,14 @@ export function registerRemotionTools(server: McpServer): void {
             'Each composition accepts different props. Omit for defaults.'
         ),
     },
+    {
+      title: "Render Demo Video",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({ composition_id, output_format, props }) => {
       const startedAt = Date.now();
       const userId = await getDefaultUserId();

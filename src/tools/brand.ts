@@ -44,6 +44,14 @@ export function registerBrandTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Extract Brand",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({ url, response_format }) => {
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
@@ -145,6 +153,14 @@ export function registerBrandTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "Get Brand Profile",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ project_id, response_format }) => {
       const supabase = getSupabaseClient();
       const userId = await getDefaultUserId();
@@ -296,9 +312,25 @@ export function registerBrandTools(server: McpServer): void {
         .max(1)
         .optional()
         .describe("Optional overall confidence score in range 0..1."),
-      extraction_metadata: z.record(z.string(), z.unknown()).optional(),
-      response_format: z.enum(["text", "json"]).optional(),
+      extraction_metadata: z
+        .record(z.string(), z.unknown())
+        .optional()
+        .describe(
+          "Arbitrary key-value metadata about the extraction process.",
+        ),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Save Brand Profile",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({
       project_id,
       brand_context,
@@ -421,16 +453,18 @@ export function registerBrandTools(server: McpServer): void {
     "update_platform_voice",
     "Update platform-specific voice overrides (samples, tone/style, CTA/hashtag strategy).",
     {
-      platform: z.enum([
-        "youtube",
-        "tiktok",
-        "instagram",
-        "twitter",
-        "linkedin",
-        "facebook",
-        "threads",
-        "bluesky",
-      ]),
+      platform: z
+        .enum([
+          "youtube",
+          "tiktok",
+          "instagram",
+          "twitter",
+          "linkedin",
+          "facebook",
+          "threads",
+          "bluesky",
+        ])
+        .describe("Social platform to set voice overrides for."),
       project_id: z
         .string()
         .uuid()
@@ -441,13 +475,51 @@ export function registerBrandTools(server: McpServer): void {
         .max(3000)
         .optional()
         .describe("3-5 real platform post examples for style anchoring."),
-      tone: z.array(z.string()).optional(),
-      style: z.array(z.string()).optional(),
-      avoid_patterns: z.array(z.string()).optional(),
-      hashtag_strategy: z.string().max(300).optional(),
-      cta_style: z.string().max(300).optional(),
-      response_format: z.enum(["text", "json"]).optional(),
+      tone: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Tone descriptors for this platform (e.g. ["casual", "witty", "informative"]).',
+        ),
+      style: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Writing style tags (e.g. ["short-form", "emoji-heavy", "storytelling"]).',
+        ),
+      avoid_patterns: z
+        .array(z.string())
+        .optional()
+        .describe(
+          'Phrases or patterns the brand should never use on this platform (e.g. ["click here", "buy now"]).',
+        ),
+      hashtag_strategy: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'Hashtag usage guidelines for this platform (e.g. "3-5 niche hashtags, no generic tags").',
+        ),
+      cta_style: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'Preferred call-to-action style (e.g. "soft CTA with question" or "direct link in bio").',
+        ),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Update Platform Voice",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: false,
+    },
+
     async ({
       platform,
       project_id,

@@ -111,6 +111,14 @@ export function registerDistributionTools(server: McpServer): void {
           'If true, appends "Created with Social Neuron" to the caption. Default: false.',
         ),
     },
+    {
+      title: "Schedule Post",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       media_url,
       media_urls,
@@ -283,6 +291,14 @@ export function registerDistributionTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "List Connected Accounts",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ response_format }) => {
       const format = response_format ?? "text";
       const supabase = getSupabaseClient();
@@ -398,6 +414,14 @@ export function registerDistributionTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
+    {
+      title: "List Recent Posts",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ platform, status, days, limit, response_format }) => {
       const format = response_format ?? "text";
       const supabase = getSupabaseClient();
@@ -540,7 +564,8 @@ export function registerDistributionTools(server: McpServer): void {
             "bluesky",
           ]),
         )
-        .min(1),
+        .min(1)
+        .describe("Platforms to find posting slots for."),
       count: z
         .number()
         .min(1)
@@ -557,8 +582,19 @@ export function registerDistributionTools(server: McpServer): void {
         .max(24)
         .default(4)
         .describe("Minimum gap between posts on same platform"),
-      response_format: z.enum(["text", "json"]).default("text"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("text")
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Find Next Posting Slots",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({
       platforms,
       count,
@@ -704,18 +740,19 @@ export function registerDistributionTools(server: McpServer): void {
         .object({
           posts: z.array(
             z.object({
-              id: z.string(),
-              caption: z.string(),
-              platform: z.string(),
-              title: z.string().optional(),
-              media_url: z.string().optional(),
-              schedule_at: z.string().optional(),
-              hashtags: z.array(z.string()).optional(),
+              id: z.string().describe("Unique post identifier from the content plan."),
+              caption: z.string().describe("Post caption/body text."),
+              platform: z.string().describe("Target platform name (e.g. instagram, youtube)."),
+              title: z.string().optional().describe("Post title, required for YouTube."),
+              media_url: z.string().optional().describe("Public or R2 signed URL for the post media."),
+              schedule_at: z.string().optional().describe("ISO 8601 UTC datetime to publish (e.g. 2026-03-20T14:00:00Z)."),
+              hashtags: z.array(z.string()).optional().describe("Hashtags to append to the caption."),
             }),
           ),
         })
         .passthrough()
-        .optional(),
+        .optional()
+        .describe("Inline content plan object with a posts array. Provide this or plan_id."),
       plan_id: z
         .string()
         .uuid()
@@ -729,7 +766,10 @@ export function registerDistributionTools(server: McpServer): void {
         .boolean()
         .default(false)
         .describe("Preview without actually scheduling"),
-      response_format: z.enum(["text", "json"]).default("text"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("text")
+        .describe("Response format. Defaults to text."),
       enforce_quality: z
         .boolean()
         .default(true)
@@ -758,6 +798,14 @@ export function registerDistributionTools(server: McpServer): void {
         .optional()
         .describe("Optional stable seed used when building idempotency keys."),
     },
+    {
+      title: "Schedule Content Plan",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       plan,
       plan_id,

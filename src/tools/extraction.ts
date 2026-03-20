@@ -98,8 +98,19 @@ export function registerExtractionTools(server: McpServer): void {
         .max(100)
         .default(10)
         .describe("Max comments to include"),
-      response_format: z.enum(["text", "json"]).default("text"),
+      response_format: z
+        .enum(["text", "json"])
+        .default("text")
+        .describe("Response format. Defaults to text."),
     },
+    {
+      title: "Extract URL Content",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: true,
+    },
+
     async ({
       url,
       extract_type,

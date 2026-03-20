@@ -33,6 +33,14 @@ export function registerAutopilotTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
+    {
+      title: "List Autopilot Configs",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ active_only, response_format }) => {
       const format = response_format ?? 'text';
       const supabase = getSupabaseClient();
@@ -117,9 +125,9 @@ export function registerAutopilotTools(server: McpServer): void {
       config_id: z.string().uuid().describe('The autopilot config ID to update.'),
       is_active: z.boolean().optional().describe('Enable or disable this autopilot config.'),
       schedule_days: z
-        .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
+        .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']).describe('Three-letter lowercase day abbreviation.'))
         .optional()
-        .describe('Days of the week to run (e.g., ["mon", "wed", "fri"]).'),
+        .describe('Days of the week to run (e.g. ["mon", "wed", "fri"]).'),
       schedule_time: z
         .string()
         .optional()
@@ -127,6 +135,14 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_run: z.number().optional().describe('Maximum credits per execution.'),
       max_credits_per_week: z.number().optional().describe('Maximum credits per week.'),
     },
+    {
+      title: "Update Autopilot Config",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({
       config_id,
       is_active,
@@ -217,6 +233,14 @@ export function registerAutopilotTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
+    {
+      title: "Get Autopilot Status",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: true,
+      openWorldHint: false,
+    },
+
     async ({ response_format }) => {
       const format = response_format ?? 'text';
       const supabase = getSupabaseClient();

@@ -64,6 +64,14 @@ export function registerIdeationTools(server: McpServer): void {
           "Project ID to auto-load brand profile and performance context for prompt enrichment.",
         ),
     },
+    {
+      title: "Generate Content",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       prompt,
       content_type,
@@ -312,6 +320,14 @@ export function registerIdeationTools(server: McpServer): void {
         .optional()
         .describe("Skip the server-side cache and fetch fresh data."),
     },
+    {
+      title: "Fetch Trends",
+      readOnlyHint: true,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({ source, category, niche, url, force_refresh }) => {
       // Validate that url is provided for rss/url sources
       if ((source === "rss" || source === "url") && !url) {
@@ -442,6 +458,14 @@ export function registerIdeationTools(server: McpServer): void {
           "Optional project ID to load platform voice overrides from brand profile.",
         ),
     },
+    {
+      title: "Adapt Content",
+      readOnlyHint: false,
+      destructiveHint: false,
+      idempotentHint: false,
+      openWorldHint: true,
+    },
+
     async ({
       content,
       source_platform,
