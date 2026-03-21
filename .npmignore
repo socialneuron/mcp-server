@@ -17,6 +17,7 @@ test-setup.ts
 *secret*
 *credential*
 docs/
+examples/
 CONTRIBUTING.md
 CODE_OF_CONDUCT.md
 server.json
