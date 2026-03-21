@@ -1,0 +1,61 @@
+{
+  "name": "@socialneuron/sdk",
+  "version": "0.1.0",
+  "description": "TypeScript SDK for the Social Neuron REST API",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "README.md"
+  ],
+  "license": "MIT",
+  "author": {
+    "name": "Social Neuron",
+    "url": "https://socialneuron.com"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/socialneuron/mcp-server.git",
+    "directory": "packages/sdk"
+  },
+  "homepage": "https://socialneuron.com/docs/sdk",
+  "keywords": [
+    "socialneuron",
+    "social-media",
+    "content-creation",
+    "ai",
+    "sdk",
+    "api",
+    "automation",
+    "rest-api",
+    "typescript",
+    "youtube",
+    "tiktok",
+    "instagram",
+    "video-generation",
+    "content-scheduling",
+    "analytics",
+    "mcp"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "tsc",
+    "clean": "rm -rf dist/",
+    "prepublishOnly": "npm run clean && npm run build"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
