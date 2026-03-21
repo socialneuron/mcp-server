@@ -2,6 +2,25 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.6.0] - 2026-03-21
+
+### Added
+- **REST API layer**: Universal tool proxy at `POST /v1/tools/:name` — call any of the 52 MCP tools via standard HTTP REST. No MCP client required.
+- **OpenAPI 3.1 spec**: Auto-generated from TOOL_CATALOG at `/openapi.json` — always in sync with tools.
+- **15 convenience endpoints**: Resource-oriented routes for common operations (`/v1/credits`, `/v1/content/generate`, `/v1/posts`, etc.).
+- **Express HTTP transport**: New `dist/http.js` entry point for running as a standalone REST API server.
+- **MCP Registry metadata**: `server.json` with mcpName, endpoints, env, and auth configuration for registry discovery.
+- **Cursor Directory manifest**: Plugin manifest for Cursor IDE integration.
+
+### Fixed
+- **TS2345**: Cast Express route param to string for strict TypeScript compatibility.
+- **npm publish 404**: Removed `--provenance` flag from release workflow (incompatible with scoped packages on granular tokens).
+
+### Changed
+- Dual transport support: MCP (stdio) and HTTP (Express) from a single codebase.
+- SECURITY.md updated with v1.6.x in supported versions.
+- `docs/auth.md` domain reference corrected (`www.socialneuron.com` → `socialneuron.com`).
+
 ## [1.5.2] - 2026-03-20
 
 ### Added
