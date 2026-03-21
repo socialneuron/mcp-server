@@ -303,7 +303,6 @@ describe("createTokenVerifier", () => {
         valid: true,
         userId: "user-full",
         scopes: ["mcp:read", "mcp:write"],
-        email: "admin@socialneuron.com",
         expiresAt: "2027-06-15T00:00:00Z",
       });
 
@@ -314,7 +313,6 @@ describe("createTokenVerifier", () => {
       expect(result.scopes).toEqual(["mcp:read", "mcp:write"]);
       expect(result.extra).toEqual({
         userId: "user-full",
-        email: "admin@socialneuron.com",
       });
       // expiresAt should be epoch seconds
       const expectedExp = Math.floor(

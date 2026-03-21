@@ -48,12 +48,11 @@ function mockFetchNonError(value: unknown) {
 // ---------------------------------------------------------------------------
 
 describe("validateApiKey", () => {
-  it("returns userId, scopes, email, and expiresAt for a valid key", async () => {
+  it("returns userId, scopes, and expiresAt for a valid key", async () => {
     const validResponse: ValidateApiKeyResult = {
       valid: true,
       userId: "user-abc-123",
       scopes: ["mcp:read", "mcp:write"],
-      email: "test@example.com",
       expiresAt: "2026-12-31T23:59:59Z",
     };
     mockFetchResponse(200, validResponse);
@@ -63,7 +62,6 @@ describe("validateApiKey", () => {
     expect(result.valid).toBe(true);
     expect(result.userId).toBe("user-abc-123");
     expect(result.scopes).toEqual(["mcp:read", "mcp:write"]);
-    expect(result.email).toBe("test@example.com");
     expect(result.expiresAt).toBe("2026-12-31T23:59:59Z");
   });
 
