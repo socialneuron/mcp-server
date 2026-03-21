@@ -278,7 +278,7 @@ export function createRestApiRouter(options: CreateRouterOptions): Router {
   router.post(
     "/tools/:name",
     async (req: AuthenticatedRequest, res: Response) => {
-      const toolName = req.params.name;
+      const toolName = req.params.name as string;
 
       if (!hasRegisteredTool(toolName)) {
         res.status(404).json({
