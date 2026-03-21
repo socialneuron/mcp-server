@@ -10,6 +10,17 @@
  *   DELETE /mcp        — Session teardown
  *   GET  /health       — Railway health check
  *   /.well-known/oauth-protected-resource — Points to Supabase Auth
+ *
+ * REST API (mounted at /v1):
+ *   GET  /v1/           — API info
+ *   GET  /v1/tools      — List available tools
+ *   POST /v1/tools/:name — Execute any tool (universal proxy)
+ *   GET  /v1/credits    — Credit balance
+ *   GET  /v1/brand      — Brand profile
+ *   GET  /v1/analytics  — Post analytics
+ *   GET  /v1/posts      — Recent posts
+ *   POST /v1/content/generate — Generate content
+ *   POST /v1/distribution/schedule — Schedule post
  */
 
 import express from "express";
@@ -25,6 +36,8 @@ import { createTokenVerifier } from "./lib/token-verifier.js";
 import { checkRateLimit } from "./lib/rate-limit.js";
 import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { MCP_VERSION } from "./lib/version.js";
+import { captureToolHandlers } from "./api/tool-executor.js";
+import { createRestApiRouter } from "./api/router.js";
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -511,6 +524,27 @@ app.delete(
   },
 );
 
+// ── REST API ─────────────────────────────────────────────────────────
+// Capture tool handlers at startup for REST API access.
+// Uses a dedicated McpServer instance (not per-session) because
+// tool handlers are module-level functions that don't depend on
+// the server instance — they use callEdgeFunction() and Supabase.
+
+const restCaptureServer = new McpServer({
+  name: "socialneuron-rest",
+  version: MCP_VERSION,
+});
+captureToolHandlers(restCaptureServer);
+registerAllTools(restCaptureServer, { skipScreenshots: true });
+
+const restRouter = createRestApiRouter({
+  supabaseUrl: SUPABASE_URL,
+  supabaseAnonKey: SUPABASE_ANON_KEY,
+});
+app.use("/v1", restRouter);
+
+console.log("[MCP HTTP] REST API mounted at /v1");
+
 // ── Start server ─────────────────────────────────────────────────────
 
 const httpServer = app.listen(PORT, "0.0.0.0", () => {
@@ -519,6 +553,7 @@ const httpServer = app.listen(PORT, "0.0.0.0", () => {
   );
   console.log(`[MCP HTTP] Health: http://localhost:${PORT}/health`);
   console.log(`[MCP HTTP] MCP endpoint: ${MCP_SERVER_URL}`);
+  console.log(`[MCP HTTP] REST API: http://localhost:${PORT}/v1`);
   console.log(`[MCP HTTP] Environment: ${NODE_ENV}`);
 });
 

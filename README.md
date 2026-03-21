@@ -1,13 +1,26 @@
 # @socialneuron/mcp-server
 
-> 52 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 52 tools for AI-powered social media management. MCP, REST API, CLI — create content, schedule posts, track analytics, and optimize performance.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+## Integration Methods
+
+| Method | Best For | Docs |
+|--------|----------|------|
+| **MCP** | AI agents (Claude, Cursor, VS Code) | [Setup](#quick-start) |
+| **REST API** | Any HTTP client, webhooks, Zapier | [Guide](docs/rest-api.md) |
+| **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
+| **SDK** | TypeScript/Node.js apps | Coming Q2 2026 |
+
+All methods share the same 52 tools, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+
 ## Quick Start
 
-### 1. Authenticate
+### MCP (AI Agents)
+
+#### 1. Authenticate
 
 ```bash
 npx -y @socialneuron/mcp-server login --device
@@ -15,7 +28,7 @@ npx -y @socialneuron/mcp-server login --device
 
 This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
 
-### 2. Add to Claude Code
+#### 2. Add to Claude Code
 
 ```bash
 claude mcp add socialneuron -- npx -y @socialneuron/mcp-server
@@ -76,9 +89,41 @@ Add to `.cursor/mcp.json` in your workspace:
 ```
 </details>
 
-### 3. Start using
+#### 3. Start using
 
 Ask Claude: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
+
+### REST API (Any Language)
+
+```bash
+# Check credits
+curl -H "Authorization: Bearer snk_live_..." \
+  https://mcp.socialneuron.com/v1/credits
+
+# Generate content
+curl -X POST -H "Authorization: Bearer snk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"topic": "AI trends", "platforms": ["linkedin"]}' \
+  https://mcp.socialneuron.com/v1/content/generate
+
+# Execute any tool via proxy
+curl -X POST -H "Authorization: Bearer snk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"response_format": "json"}' \
+  https://mcp.socialneuron.com/v1/tools/get_brand_profile
+```
+
+See [REST API docs](docs/rest-api.md) | [OpenAPI spec](https://mcp.socialneuron.com/v1/openapi.json) | [Examples](examples/rest/)
+
+### CLI (Terminal & CI/CD)
+
+```bash
+npx @socialneuron/mcp-server sn system credits --json
+npx @socialneuron/mcp-server sn analytics loop --json
+npx @socialneuron/mcp-server sn discovery tools --module content
+```
+
+See [CLI guide](docs/cli-guide.md) | [Examples](examples/cli/)
 
 ## What You Can Do
 
@@ -94,7 +139,7 @@ Ask Claude things like:
 
 ## Tool Categories (52 tools)
 
-These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
+All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
 ### Content Lifecycle
 
@@ -273,23 +318,27 @@ No personal content, API keys, or request payloads are ever collected. Your user
 
 ## Examples
 
-See the [examples repo](https://github.com/socialneuron/examples) for prompt-driven workflow templates:
+See the [`examples/`](examples/) directory:
 
-- Weekly content batch planning
-- Cross-platform content repurposing
+- [REST API examples](examples/rest/) — curl scripts for every endpoint
+- [CLI examples](examples/cli/) — automation workflows
+- [MCP prompts](examples/mcp/claude-prompts.md) — natural language examples
+- [External examples repo](https://github.com/socialneuron/examples) — prompt-driven workflow templates
 - Performance review and optimization loops
 - Brand-aligned content generation
 - Comment engagement automation
 
 ## Links
 
-- [Social Neuron](https://socialneuron.com)
-- [For Developers](https://socialneuron.com/for-developers)
+- [For Developers](https://socialneuron.com/for-developers) — Integration methods, tools, pricing
+- [REST API Docs](docs/rest-api.md) — Endpoint reference
+- [CLI Guide](docs/cli-guide.md) — Terminal commands
+- [Integration Methods](docs/integration-methods.md) — Compare MCP vs REST vs CLI
+- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) — Machine-readable API spec
+- [Developer Settings](https://socialneuron.com/settings/developer) — Generate API keys
 - [Documentation](https://socialneuron.com/docs)
-- [Examples](https://github.com/socialneuron/examples)
-- [Agent Protocol](https://socialneuron.com/system-prompt.txt)
-- [Developer Settings](https://socialneuron.com/settings/developer)
 - [Pricing](https://socialneuron.com/pricing)
+- [Agent Protocol](https://socialneuron.com/system-prompt.txt)
 
 ## License
 
