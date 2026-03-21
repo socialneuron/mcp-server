@@ -1,7 +1,7 @@
 {
-  "name": "@socialneuron/mcp-server",
+  "name": "com.socialneuron/mcp-server",
   "display_name": "Social Neuron",
-  "description": "52 MCP tools for AI-powered social media content lifecycle. Generate, schedule, and optimize content across YouTube, TikTok, and Instagram using Claude Code. Performance analytics feed back into content generation automatically.",
+  "description": "52 MCP tools for AI-powered social media content lifecycle. Generate, schedule, and optimize content across YouTube, TikTok, and Instagram using Claude Code, Cursor, or any MCP client. Performance analytics feed back into content generation automatically.",
   "version": "1.5.2",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
@@ -14,15 +14,36 @@
   "tools_count": 52,
   "transport": ["stdio", "streamable-http"],
   "source_entry": "src/index.ts",
+  "package": {
+    "name": "@socialneuron/mcp-server",
+    "registry": "https://registry.npmjs.org"
+  },
   "install": {
     "command": "npx",
     "args": ["-y", "@socialneuron/mcp-server"]
+  },
+  "endpoints": {
+    "stdio": {
+      "command": "npx",
+      "args": ["-y", "@socialneuron/mcp-server"]
+    },
+    "http": {
+      "url": "https://mcp.socialneuron.com/mcp",
+      "transport": "streamable-http"
+    }
   },
   "auth": {
     "type": "api_key",
     "setup_url": "https://socialneuron.com/settings/developer",
     "docs_url": "https://socialneuron.com/for-developers"
   },
+  "env": [
+    {
+      "name": "SOCIALNEURON_API_KEY",
+      "description": "Your Social Neuron API key. Generate at https://socialneuron.com/settings/developer",
+      "required": true
+    }
+  ],
   "pricing": {
     "has_free_tier": false,
     "starting_price": "$29/mo",
