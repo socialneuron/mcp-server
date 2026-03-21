@@ -158,8 +158,8 @@ See Pricing (socialneuron.com/pricing)
 | MCP tools | 52 |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
-| Video models | 8 (Veo 3, Sora 2, Runway, Kling, Luma, Midjourney) |
-| Image models | 10 (Midjourney, Flux Pro, GPT-4o, Imagen 4, Seedream, ...) |
+| Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |
+| Image models | 10 (Midjourney, Nano Banana/Pro, Ideogram, Flux Pro/Max, GPT-4o, Imagen 4/Fast, Seedream) |
 | SDK resources | 9 (content, posts, analytics, brand, plans, comments, jobs, tools, account) |
 
 ---
