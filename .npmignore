@@ -22,3 +22,5 @@ CODE_OF_CONDUCT.md
 server.json
 .github/
 .gitleaks.toml
+examples/
+packages/
