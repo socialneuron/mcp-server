@@ -155,7 +155,7 @@ curl -i https://mcp.socialneuron.com/v1/content/image \
 | Field | Type | Required | Default | Description |
 |-------|------|----------|---------|-------------|
 | `prompt` | string | Yes | — | Image description |
-| `model` | string | No | flux-pro | midjourney, nano-banana, flux-pro, flux-max, gpt4o-image, imagen4, imagen4-fast, seedream |
+| `model` | string | No | flux-pro | midjourney, nano-banana, nano-banana-pro, ideogram, flux-pro, flux-max, gpt4o-image, imagen4, imagen4-fast, seedream |
 | `aspect_ratio` | string | No | 1:1 | 16:9, 9:16, 1:1, 4:3, 3:4 |
 | `style` | string | No | — | Style modifier |
 | `negative_prompt` | string | No | — | What to avoid |

@@ -45,7 +45,7 @@ const video = await sn.content.generateVideo({
 // Generate image (async — returns job ID)
 const image = await sn.content.generateImage({
   prompt: 'Minimalist workspace',
-  model: 'flux-pro',        // midjourney, flux-pro, flux-max, gpt4o-image, imagen4, seedream, ...
+  model: 'flux-pro',        // midjourney, nano-banana, ideogram, flux-pro, flux-max, gpt4o-image, imagen4, seedream
   aspect_ratio: '1:1',
 });
 

@@ -3,7 +3,7 @@
  *
  * POST /v1/posts           — Schedule a post to social platforms
  * GET  /v1/posts           — List recent posts
- * GET  /v1/accounts        — List connected social accounts
+ * GET  /v1/posts/accounts   — List connected social accounts
  */
 
 import { Router } from "express";
