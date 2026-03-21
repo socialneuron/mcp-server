@@ -3,7 +3,23 @@
 > 52 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
+[![npm SDK](https://img.shields.io/npm/v/@socialneuron/sdk?label=sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-green.svg)](./openapi.yaml)
+
+## Integration Methods
+
+Four ways to use Social Neuron — all share the same 52 tools, authentication, and rate limits.
+
+| Method | Best for | Setup |
+|--------|----------|-------|
+| **MCP** | Claude, Cursor, VS Code — AI handles the workflow | `claude mcp add socialneuron -- npx -y @socialneuron/mcp-server` |
+| **REST API** | Any language, any platform — 35 endpoints | `curl -H "Authorization: Bearer snk_live_..." https://mcp.socialneuron.com/v1/...` |
+| **TypeScript SDK** | Node.js/TS apps — typed client with auto-polling | `npm install @socialneuron/sdk` |
+| **CLI** | Scripts, CI/CD — deterministic commands, JSON output | `npx @socialneuron/mcp-server sn publish ...` |
+
+See [docs/integration-methods.md](docs/integration-methods.md) for a detailed comparison and decision guide.
 
 ## Quick Start
 
@@ -79,6 +95,57 @@ Add to `.cursor/mcp.json` in your workspace:
 ### 3. Start using
 
 Ask Claude: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
+
+<details>
+<summary><strong>REST API Quick Start</strong></summary>
+
+```bash
+# Generate content
+curl https://mcp.socialneuron.com/v1/content/generate \
+  -H "Authorization: Bearer snk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "5 tips for better reels", "platform": "instagram"}'
+
+# Generate video (async)
+curl -X POST https://mcp.socialneuron.com/v1/content/video \
+  -H "Authorization: Bearer snk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{"prompt": "Sunrise timelapse", "model": "veo3-fast"}'
+# → 202 Accepted, Location: /v1/jobs/{jobId}
+
+# Poll for completion
+curl https://mcp.socialneuron.com/v1/jobs/{jobId} \
+  -H "Authorization: Bearer snk_live_..."
+```
+
+Full API reference: [docs/rest-api.md](docs/rest-api.md) | [OpenAPI spec](openapi.yaml)
+</details>
+
+<details>
+<summary><strong>TypeScript SDK Quick Start</strong></summary>
+
+```bash
+npm install @socialneuron/sdk
+```
+
+```typescript
+import { SocialNeuron } from '@socialneuron/sdk';
+
+const sn = new SocialNeuron({ apiKey: 'snk_live_...' });
+
+// Generate video and wait for completion
+const video = await sn.content.generateVideo({ prompt: 'Sunrise timelapse', model: 'veo3-fast' });
+const result = await sn.jobs.waitForCompletion(video.data.taskId);
+
+// Schedule to platforms
+await sn.posts.schedule({
+  media_url: result.data.resultUrl!,
+  platforms: ['youtube', 'tiktok', 'instagram'],
+});
+```
+
+Full SDK guide: [docs/sdk-guide.md](docs/sdk-guide.md)
+</details>
 
 ## What You Can Do
 
@@ -273,23 +340,40 @@ No personal content, API keys, or request payloads are ever collected. Your user
 
 ## Examples
 
-See the [examples repo](https://github.com/socialneuron/examples) for prompt-driven workflow templates:
+Runnable examples for every integration method are in the [`examples/`](examples/) directory:
 
-- Weekly content batch planning
-- Cross-platform content repurposing
-- Performance review and optimization loops
-- Brand-aligned content generation
-- Comment engagement automation
+| Directory | What's inside |
+|-----------|--------------|
+| [`examples/rest/`](examples/rest/) | 8 curl scripts — content gen, video polling, scheduling, analytics, plans, comments, tool proxy |
+| [`examples/sdk/`](examples/sdk/) | 5 TypeScript scripts — generate+schedule, plan workflow, analytics, error handling, cross-platform |
+| [`examples/cli/`](examples/cli/) | 4 shell scripts — publishing, analytics, plans, CI/CD pipeline |
+| [`examples/mcp/`](examples/mcp/) | Claude prompt examples for all tool categories |
+
+See also the [examples repo](https://github.com/socialneuron/examples) for full workflow templates.
+
+## Documentation
+
+| Guide | Description |
+|-------|-------------|
+| [Integration Methods](docs/integration-methods.md) | Compare MCP vs REST vs SDK vs CLI |
+| [REST API Guide](docs/rest-api.md) | All 35 endpoints with curl examples |
+| [SDK Guide](docs/sdk-guide.md) | TypeScript SDK walkthrough |
+| [CLI Guide](docs/cli-guide.md) | Terminal commands for scripts and CI/CD |
+| [Authentication](docs/auth.md) | Auth architecture and key storage |
+| [OpenAPI Spec](openapi.yaml) | Import into Postman, Swagger, or SDK generators |
+| [Landing Page Brief](docs/landing-page-brief.md) | Content for the developer landing page |
 
 ## Links
 
 - [Social Neuron](https://socialneuron.com)
 - [For Developers](https://socialneuron.com/for-developers)
 - [Documentation](https://socialneuron.com/docs)
-- [Examples](https://github.com/socialneuron/examples)
+- [Examples](https://github.com/socialneuron/mcp-server/tree/main/examples)
 - [Agent Protocol](https://socialneuron.com/system-prompt.txt)
 - [Developer Settings](https://socialneuron.com/settings/developer)
 - [Pricing](https://socialneuron.com/pricing)
+- [npm — MCP Server](https://www.npmjs.com/package/@socialneuron/mcp-server)
+- [npm — TypeScript SDK](https://www.npmjs.com/package/@socialneuron/sdk)
 
 ## License
 

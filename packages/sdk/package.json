@@ -33,7 +33,16 @@
     "ai",
     "sdk",
     "api",
-    "automation"
+    "automation",
+    "rest-api",
+    "typescript",
+    "youtube",
+    "tiktok",
+    "instagram",
+    "video-generation",
+    "content-scheduling",
+    "analytics",
+    "mcp"
   ],
   "publishConfig": {
     "access": "public"

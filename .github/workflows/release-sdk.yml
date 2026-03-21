@@ -1,0 +1,56 @@
+name: Release SDK
+
+on:
+  push:
+    tags:
+      - "sdk-v*"
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/sdk
+
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+          cache: npm
+
+      - name: Install SDK dependencies
+        run: npm ci
+
+      - name: Verify version matches tag
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          TAG_VERSION="${REF_NAME#sdk-v}"
+          if [ "$PKG_VERSION" != "$TAG_VERSION" ]; then
+            echo "ERROR: package.json ($PKG_VERSION) != tag ($TAG_VERSION)"
+            exit 1
+          fi
+
+      - name: Build
+        run: npm run build
+
+      - name: Verify pack contents
+        run: |
+          npm pack --dry-run 2>&1 | tee pack-output.txt
+          if grep -E '(src/|\.test\.|\.spec\.|tsconfig)' pack-output.txt; then
+            echo "ERROR: unexpected files found in pack output"
+            exit 1
+          fi
+
+      - name: Publish
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

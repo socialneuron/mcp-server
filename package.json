@@ -43,7 +43,17 @@
     "analytics",
     "youtube",
     "tiktok",
-    "instagram"
+    "instagram",
+    "rest-api",
+    "typescript-sdk",
+    "video-generation",
+    "content-scheduling",
+    "openapi",
+    "social-media-api",
+    "ai-content",
+    "linkedin",
+    "twitter",
+    "bluesky"
   ],
   "publishConfig": {
     "access": "public"

@@ -1,6 +1,10 @@
 # @socialneuron/sdk
 
-TypeScript SDK for the [Social Neuron](https://socialneuron.com) REST API.
+[![npm version](https://img.shields.io/npm/v/@socialneuron/sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+
+TypeScript SDK for the [Social Neuron](https://socialneuron.com) REST API. 9 resource classes, full TypeScript types, and auto-polling for async jobs.
 
 ## Installation
 
@@ -95,6 +99,13 @@ const sn = new SocialNeuron({
   timeout: 60000,                       // Optional, ms (default: 60s)
 });
 ```
+
+## Full Documentation
+
+- [SDK Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/sdk-guide.md) — complete walkthrough with all resources
+- [REST API Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) — curl examples for every endpoint
+- [Examples](https://github.com/socialneuron/mcp-server/tree/main/examples/sdk) — runnable TypeScript examples
+- [OpenAPI Spec](https://github.com/socialneuron/mcp-server/blob/main/openapi.yaml) — full API specification
 
 ## License
 
