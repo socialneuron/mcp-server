@@ -11,7 +11,6 @@ export interface ValidateApiKeyResult {
   valid: boolean;
   userId?: string;
   scopes?: string[];
-  email?: string;
   expiresAt?: string;
   error?: string;
 }

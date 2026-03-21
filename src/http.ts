@@ -36,6 +36,7 @@ import { createTokenVerifier } from "./lib/token-verifier.js";
 import { checkRateLimit } from "./lib/rate-limit.js";
 import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { MCP_VERSION } from "./lib/version.js";
+import { sanitizeError } from "./lib/sanitize-error.js";
 import { captureToolHandlers } from "./api/tool-executor.js";
 import { createRestApiRouter } from "./api/router.js";
 
@@ -156,7 +157,7 @@ const cleanupInterval = setInterval(
 
 const app = express();
 app.disable("x-powered-by");
-app.use(express.json());
+app.use(express.json({ limit: '50kb' }));
 
 // Trust Railway's proxy
 app.set("trust proxy", 1);
@@ -314,8 +315,7 @@ async function authenticateRequest(
     };
     next();
   } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Token verification failed";
+    const message = sanitizeError(err);
     res.status(401).json({
       error: "invalid_token",
       error_description: message,
@@ -458,10 +458,11 @@ app.post(
         () => transport.handleRequest(req, res, req.body),
       );
     } catch (err) {
-      const message =
+      const rawMessage =
         err instanceof Error ? err.message : "Internal server error";
-      console.error(`[MCP HTTP] POST /mcp error: ${message}`);
+      console.error(`[MCP HTTP] POST /mcp error: ${rawMessage}`);
       if (!res.headersSent) {
+        const message = sanitizeError(err);
         res
           .status(500)
           .json({ jsonrpc: "2.0", error: { code: -32603, message } });

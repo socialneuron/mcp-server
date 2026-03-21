@@ -83,7 +83,7 @@ async function runLoginPaste(): Promise<void> {
 
   console.error('');
   console.error('  API key saved securely.');
-  console.error(`  User: ${result.email || 'unknown'}`);
+  console.error(`  User: ${result.userId || 'unknown'}`);
   console.error(`  Scopes: ${result.scopes?.join(', ') || 'mcp:full'}`);
   if (result.expiresAt) {
     const daysLeft = Math.ceil(
@@ -281,7 +281,6 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
   if (asJson) {
     const payload: Record<string, unknown> = {
       ok: true,
-      email: result.email || null,
       userId: result.userId,
       keyPrefix: apiKey.substring(0, 12) + '...',
       scopes: result.scopes || ['mcp:full'],
@@ -291,7 +290,6 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   } else {
     console.error('');
-    console.error(`  Email:    ${result.email || '(not available)'}`);
     console.error(`  User ID:  ${result.userId}`);
     console.error(`  Key:      ${apiKey.substring(0, 12)}...`);
     console.error(`  Scopes:   ${result.scopes?.join(', ') || 'mcp:full'}`);
@@ -346,7 +344,7 @@ export async function runHealthCheck(options?: { json?: boolean }): Promise<void
         checks.push({
           name: 'Key Valid',
           ok: true,
-          detail: `User: ${result.email || result.userId}`,
+          detail: `User: ${result.userId}`,
         });
         checks.push({
           name: 'Scopes',

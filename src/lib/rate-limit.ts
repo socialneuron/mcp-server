@@ -20,6 +20,7 @@ export interface RateLimitCheckResult {
 
 const CATEGORY_CONFIGS: Record<string, BucketConfig> = {
   posting: { maxTokens: 30, refillRate: 30 / 60 }, // 30 req/min
+  generation: { maxTokens: 20, refillRate: 20 / 60 }, // 20 req/min — AI content generation (mcp:write)
   screenshot: { maxTokens: 10, refillRate: 10 / 60 }, // 10 req/min
   read: { maxTokens: 60, refillRate: 60 / 60 }, // 60 req/min
 };
@@ -73,7 +74,7 @@ const limiters = new Map<string, RateLimiter>();
 /**
  * Get (or create) the rate limiter for a given category.
  *
- * Known categories: 'posting' (30/min), 'screenshot' (10/min), 'read' (60/min).
+ * Known categories: 'posting' (30/min), 'generation' (20/min), 'screenshot' (10/min), 'read' (60/min).
  * Unknown categories fall back to 'read' limits.
  */
 export function getRateLimiter(category: string): RateLimiter {

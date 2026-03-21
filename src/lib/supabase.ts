@@ -19,7 +19,6 @@ let client: SupabaseClient | null = null;
 let _authMode: "api-key" | "service-role" = "service-role";
 let authenticatedUserId: string | null = null;
 let authenticatedScopes: string[] = [];
-let authenticatedEmail: string | null = null;
 let authenticatedExpiresAt: string | null = null;
 let authenticatedApiKey: string | null = null;
 const MCP_RUN_ID = randomUUID();
@@ -198,7 +197,6 @@ export async function initializeAuth(): Promise<void> {
         result.scopes && result.scopes.length > 0
           ? result.scopes
           : ["mcp:read"];
-      authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
       console.error(
         "[MCP] Authenticated via API key (prefix: " +
@@ -265,10 +263,6 @@ export function getMcpRunId(): string {
 
 export function getAuthenticatedScopes(): string[] {
   return authenticatedScopes;
-}
-
-export function getAuthenticatedEmail(): string | null {
-  return authenticatedEmail;
 }
 
 export function getAuthenticatedExpiresAt(): string | null {

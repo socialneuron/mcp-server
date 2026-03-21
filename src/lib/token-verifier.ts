@@ -133,7 +133,6 @@ async function verifyApiKey(
       valid: boolean;
       userId?: string;
       scopes?: string[];
-      email?: string;
       expiresAt?: string;
       error?: string;
     };
@@ -156,7 +155,7 @@ async function verifyApiKey(
       clientId: "api-key",
       scopes: data.scopes ?? ["mcp:read"],
       expiresAt,
-      extra: { userId: data.userId, email: data.email },
+      extra: { userId: data.userId },
     };
   } catch (err) {
     clearTimeout(timer);
