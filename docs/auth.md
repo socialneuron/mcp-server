@@ -10,7 +10,7 @@ The Social Neuron MCP Server supports two authentication modes:
 ```
 User → `npx @socialneuron/mcp-server setup`
        ↓
-  Opens browser → www.socialneuron.com/mcp/authorize
+  Opens browser → socialneuron.com/mcp/authorize
        ↓
   User logs in (Supabase Auth) → approves scopes
        ↓
