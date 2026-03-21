@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "socialneuron-mcp": "dist/index.js"
+    "socialneuron-mcp": "dist/index.js",
+    "sn": "dist/index.js"
   },
   "files": [
     "dist/",

@@ -1,0 +1,963 @@
+openapi: 3.1.0
+info:
+  title: Social Neuron REST API
+  version: 1.5.2
+  description: |
+    REST API for Social Neuron — AI-powered social media content creation, scheduling, and analytics.
+
+    ## Authentication
+    All endpoints require an API key via Bearer token:
+    ```
+    Authorization: Bearer snk_live_...
+    ```
+    Get your API key at [socialneuron.com/settings/developer](https://socialneuron.com/settings/developer).
+
+    ## Scopes
+    API keys have scopes that control access:
+    - `mcp:full` — All permissions
+    - `mcp:read` — Read analytics, brand, credits
+    - `mcp:write` — Generate content, save plans
+    - `mcp:distribute` — Schedule posts
+    - `mcp:analytics` — Refresh analytics
+    - `mcp:comments` — Manage comments
+    - `mcp:autopilot` — Automated scheduling (Pro+)
+
+    ## Async Operations
+    Video/image generation returns `202 Accepted` with a `Location` header pointing to the job status endpoint.
+    Poll `GET /v1/jobs/{id}` with the `Retry-After` interval until status is `completed` or `failed`.
+
+    ## Rate Limits
+    - Read operations: 60 requests/minute
+    - Write/posting operations: 30 requests/minute
+    - IP-level: 60 requests/minute (pre-auth)
+
+    Rate-limited responses include `Retry-After` header.
+  contact:
+    name: Social Neuron
+    url: https://socialneuron.com
+    email: developers@socialneuron.com
+  license:
+    name: MIT
+
+servers:
+  - url: https://mcp.socialneuron.com/v1
+    description: Production
+  - url: http://localhost:8080/v1
+    description: Local development
+
+security:
+  - apiKey: []
+
+components:
+  securitySchemes:
+    apiKey:
+      type: http
+      scheme: bearer
+      description: "API key with snk_live_ prefix"
+
+  schemas:
+    Error:
+      type: object
+      required: [error, error_description, status]
+      properties:
+        error:
+          type: string
+          example: validation_error
+        error_description:
+          type: string
+          example: "prompt is required"
+        status:
+          type: integer
+          example: 400
+        retry_after:
+          type: integer
+          description: Seconds to wait before retrying (rate limit responses)
+
+    Meta:
+      type: object
+      properties:
+        version:
+          type: string
+          example: "1.5.2"
+        timestamp:
+          type: string
+          format: date-time
+
+    Platform:
+      type: string
+      enum: [youtube, tiktok, instagram, twitter, linkedin, facebook, threads, bluesky]
+
+    VideoModel:
+      type: string
+      enum: [veo3-fast, veo3-quality, runway-aleph, sora2, sora2-pro, kling, luma, midjourney-video]
+
+    ImageModel:
+      type: string
+      enum: [midjourney, nano-banana, nano-banana-pro, ideogram, flux-pro, flux-max, gpt4o-image, imagen4, imagen4-fast, seedream]
+
+    AspectRatio:
+      type: string
+      enum: ["16:9", "9:16", "1:1", "4:3", "3:4"]
+
+    JobStatus:
+      type: string
+      enum: [pending, processing, completed, failed]
+
+    Tool:
+      type: object
+      properties:
+        name:
+          type: string
+        description:
+          type: string
+        module:
+          type: string
+        scope:
+          type: string
+
+paths:
+  # ── Content ──────────────────────────────────────────────────────
+  /content/generate:
+    post:
+      summary: Generate text content
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                  description: Content generation prompt
+                platform:
+                  $ref: "#/components/schemas/Platform"
+                content_type:
+                  type: string
+                  enum: [script, caption, blog, hook, generation]
+                tone:
+                  type: string
+                brand_voice:
+                  type: string
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Generated content
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+
+  /content/video:
+    post:
+      summary: Generate video (async)
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                model:
+                  $ref: "#/components/schemas/VideoModel"
+                aspect_ratio:
+                  $ref: "#/components/schemas/AspectRatio"
+                duration:
+                  type: integer
+                  minimum: 1
+                  maximum: 60
+                reference_image_url:
+                  type: string
+                  format: uri
+      responses:
+        "202":
+          description: Job accepted
+          headers:
+            Location:
+              schema:
+                type: string
+              description: URL to poll for job status
+            Retry-After:
+              schema:
+                type: integer
+              description: Seconds to wait before polling
+
+  /content/image:
+    post:
+      summary: Generate image (async)
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [prompt]
+              properties:
+                prompt:
+                  type: string
+                model:
+                  $ref: "#/components/schemas/ImageModel"
+                aspect_ratio:
+                  $ref: "#/components/schemas/AspectRatio"
+                style:
+                  type: string
+                negative_prompt:
+                  type: string
+      responses:
+        "202":
+          description: Job accepted
+
+  /content/carousel:
+    post:
+      summary: Generate carousel content
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic]
+              properties:
+                topic:
+                  type: string
+                platform:
+                  $ref: "#/components/schemas/Platform"
+                slides:
+                  type: integer
+                  default: 5
+                brand_voice:
+                  type: string
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Carousel content
+
+  /content/voiceover:
+    post:
+      summary: Generate AI voiceover
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+                voice:
+                  type: string
+                language:
+                  type: string
+                  default: en
+      responses:
+        "200":
+          description: Voiceover audio
+
+  /content/adapt:
+    post:
+      summary: Adapt content for platforms
+      tags: [Content]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [content, target_platforms]
+              properties:
+                content:
+                  type: string
+                source_platform:
+                  $ref: "#/components/schemas/Platform"
+                target_platforms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Platform"
+                brand_voice:
+                  type: string
+      responses:
+        "200":
+          description: Adapted content
+
+  /content/trends:
+    get:
+      summary: Fetch trending topics
+      tags: [Content]
+      parameters:
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [youtube, google_trends, rss, url]
+            default: youtube
+        - name: category
+          in: query
+          schema:
+            type: string
+            default: all
+        - name: region
+          in: query
+          schema:
+            type: string
+            default: US
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 20
+      responses:
+        "200":
+          description: Trending topics
+
+  # ── Posts ─────────────────────────────────────────────────────────
+  /posts:
+    post:
+      summary: Schedule a post
+      tags: [Posts]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [platforms]
+              properties:
+                media_url:
+                  type: string
+                  format: uri
+                media_urls:
+                  type: array
+                  items:
+                    type: string
+                    format: uri
+                media_type:
+                  type: string
+                  enum: [video, image, carousel]
+                  default: video
+                caption:
+                  type: string
+                title:
+                  type: string
+                platforms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Platform"
+                scheduled_at:
+                  type: string
+                  format: date-time
+                attribution:
+                  type: boolean
+                  default: false
+      responses:
+        "201":
+          description: Post scheduled
+    get:
+      summary: List recent posts
+      tags: [Posts]
+      parameters:
+        - name: platform
+          in: query
+          schema:
+            $ref: "#/components/schemas/Platform"
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 7
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of posts
+
+  /posts/accounts:
+    get:
+      summary: List connected social accounts
+      tags: [Posts]
+      responses:
+        "200":
+          description: Connected accounts
+
+  # ── Analytics ────────────────────────────────────────────────────
+  /analytics:
+    get:
+      summary: Fetch post analytics
+      tags: [Analytics]
+      parameters:
+        - name: platform
+          in: query
+          schema:
+            $ref: "#/components/schemas/Platform"
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Analytics data
+
+  /analytics/refresh:
+    post:
+      summary: Trigger analytics refresh
+      tags: [Analytics]
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                platform:
+                  $ref: "#/components/schemas/Platform"
+      responses:
+        "202":
+          description: Refresh triggered
+
+  /analytics/youtube:
+    get:
+      summary: YouTube channel analytics
+      tags: [Analytics]
+      parameters:
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 28
+        - name: metrics
+          in: query
+          schema:
+            type: string
+            description: Comma-separated metric names
+      responses:
+        "200":
+          description: YouTube analytics
+
+  /analytics/insights:
+    get:
+      summary: AI performance insights
+      tags: [Analytics]
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: days
+          in: query
+          schema:
+            type: integer
+            default: 30
+      responses:
+        "200":
+          description: Performance insights
+
+  /analytics/posting-times:
+    get:
+      summary: Best posting times
+      tags: [Analytics]
+      parameters:
+        - name: platform
+          in: query
+          schema:
+            $ref: "#/components/schemas/Platform"
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Recommended posting times
+
+  # ── Brand ────────────────────────────────────────────────────────
+  /brand:
+    get:
+      summary: Get brand profile
+      tags: [Brand]
+      parameters:
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Brand profile
+    put:
+      summary: Save/update brand profile
+      tags: [Brand]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [brand_context]
+              properties:
+                brand_context:
+                  type: object
+                change_summary:
+                  type: string
+                changed_paths:
+                  type: array
+                  items:
+                    type: string
+                source_url:
+                  type: string
+                  format: uri
+                extraction_method:
+                  type: string
+                overall_confidence:
+                  type: number
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        "200":
+          description: Brand profile saved
+
+  /brand/extract:
+    post:
+      summary: Extract brand from URL
+      tags: [Brand]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [url]
+              properties:
+                url:
+                  type: string
+                  format: uri
+      responses:
+        "200":
+          description: Extracted brand profile
+
+  # ── Plans ────────────────────────────────────────────────────────
+  /plans:
+    post:
+      summary: Generate content plan
+      tags: [Plans]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [topic, platforms]
+              properties:
+                topic:
+                  type: string
+                platforms:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/Platform"
+                days:
+                  type: integer
+                  default: 7
+                brand_voice:
+                  type: string
+                source_url:
+                  type: string
+                  format: uri
+                project_id:
+                  type: string
+                  format: uuid
+      responses:
+        "201":
+          description: Content plan created
+    get:
+      summary: List content plans
+      tags: [Plans]
+      parameters:
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: project_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            default: 0
+      responses:
+        "200":
+          description: List of plans
+
+  /plans/approvals:
+    get:
+      summary: List pending plan approvals
+      tags: [Plans]
+      parameters:
+        - name: plan_id
+          in: query
+          schema:
+            type: string
+            format: uuid
+        - name: status
+          in: query
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: Plan approvals
+
+  /plans/{id}:
+    get:
+      summary: Get a content plan
+      tags: [Plans]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Content plan
+        "404":
+          description: Plan not found
+    put:
+      summary: Update a content plan
+      tags: [Plans]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                posts:
+                  type: array
+                topic:
+                  type: string
+                status:
+                  type: string
+      responses:
+        "200":
+          description: Plan updated
+
+  /plans/{id}/schedule:
+    post:
+      summary: Schedule plan posts
+      tags: [Plans]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                auto_slot:
+                  type: boolean
+                  default: true
+                batch_size:
+                  type: integer
+                  default: 5
+                dry_run:
+                  type: boolean
+                  default: false
+      responses:
+        "202":
+          description: Scheduling initiated
+
+  /plans/{id}/approve:
+    post:
+      summary: Approve/reject plan
+      tags: [Plans]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                action:
+                  type: string
+                  enum: [approve, reject, needs_edit]
+                  default: approve
+                post_ids:
+                  type: array
+                  items:
+                    type: string
+                feedback:
+                  type: string
+      responses:
+        "200":
+          description: Approval response
+
+  # ── Comments ─────────────────────────────────────────────────────
+  /comments:
+    get:
+      summary: List comments
+      tags: [Comments]
+      parameters:
+        - name: platform
+          in: query
+          schema:
+            $ref: "#/components/schemas/Platform"
+        - name: video_id
+          in: query
+          schema:
+            type: string
+        - name: post_id
+          in: query
+          schema:
+            type: string
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [time, relevance]
+            default: time
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        "200":
+          description: List of comments
+    post:
+      summary: Post a comment
+      tags: [Comments]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                video_id:
+                  type: string
+                post_id:
+                  type: string
+                text:
+                  type: string
+                platform:
+                  $ref: "#/components/schemas/Platform"
+      responses:
+        "201":
+          description: Comment posted
+
+  /comments/{id}/reply:
+    post:
+      summary: Reply to a comment
+      tags: [Comments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [text]
+              properties:
+                text:
+                  type: string
+      responses:
+        "201":
+          description: Reply posted
+
+  /comments/{id}/moderate:
+    post:
+      summary: Moderate a comment
+      tags: [Comments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [action]
+              properties:
+                action:
+                  type: string
+                  enum: [approve, hide, flag]
+      responses:
+        "200":
+          description: Comment moderated
+
+  /comments/{id}:
+    delete:
+      summary: Delete a comment
+      tags: [Comments]
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Comment deleted
+
+  # ── Tools ────────────────────────────────────────────────────────
+  /tools:
+    get:
+      summary: List available tools
+      tags: [Tools]
+      parameters:
+        - name: query
+          in: query
+          schema:
+            type: string
+          description: Search tools by name/description
+        - name: module
+          in: query
+          schema:
+            type: string
+          description: Filter by module
+        - name: scope
+          in: query
+          schema:
+            type: string
+          description: Filter by required scope
+      responses:
+        "200":
+          description: List of tools
+
+  /tools/{name}:
+    post:
+      summary: Execute tool by name (universal proxy)
+      tags: [Tools]
+      description: |
+        Universal tool proxy — execute any MCP tool by name.
+        Pass tool parameters as JSON body. The tool's required scope
+        is enforced based on your API key.
+      parameters:
+        - name: name
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Tool name (e.g., generate_content, schedule_post)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Tool-specific parameters
+      responses:
+        "200":
+          description: Tool execution result
+        "202":
+          description: Async job accepted (for generation tools)
+        "404":
+          description: Tool not found
+
+  # ── Jobs ─────────────────────────────────────────────────────────
+  /jobs/{id}:
+    get:
+      summary: Poll async job status
+      tags: [Jobs]
+      description: |
+        Poll the status of an async job (video/image generation).
+        Returns `Retry-After` header while job is in progress.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Job status with result if completed
+
+  # ── Account ──────────────────────────────────────────────────────
+  /credits:
+    get:
+      summary: Get credit balance
+      tags: [Account]
+      responses:
+        "200":
+          description: Credit balance and plan info
+
+  /usage:
+    get:
+      summary: Get usage statistics
+      tags: [Account]
+      responses:
+        "200":
+          description: Monthly usage stats

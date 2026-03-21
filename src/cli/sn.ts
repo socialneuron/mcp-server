@@ -11,6 +11,12 @@ type CommandEntry = {
 };
 
 const COMMAND_REGISTRY: Record<string, CommandEntry> = {
+  // Content generation (new)
+  generate: { handler: lazyGenerate('handleGenerate'), needsAuth: true, group: 'content' },
+  video: { handler: lazyGenerate('handleVideo'), needsAuth: true, group: 'content' },
+  image: { handler: lazyGenerate('handleImage'), needsAuth: true, group: 'content' },
+
+  // Content workflow
   publish: { handler: lazyContent('handlePublish'), needsAuth: true, group: 'content' },
   'quality-check': {
     handler: lazyContent('handleQualityCheck'),
@@ -18,6 +24,8 @@ const COMMAND_REGISTRY: Record<string, CommandEntry> = {
     group: 'content',
   },
   e2e: { handler: lazyContent('handleE2e'), needsAuth: true, group: 'content' },
+
+  // Account
   'oauth-health': {
     handler: lazyAccount('handleOauthHealth'),
     needsAuth: true,
@@ -29,10 +37,14 @@ const COMMAND_REGISTRY: Record<string, CommandEntry> = {
     group: 'account',
   },
   preflight: { handler: lazyAccount('handlePreflight'), needsAuth: true, group: 'account' },
+
+  // System
   status: { handler: lazySystem('handleStatus'), needsAuth: true, group: 'system' },
   autopilot: { handler: lazySystem('handleAutopilot'), needsAuth: true, group: 'system' },
   usage: { handler: lazySystem('handleUsage'), needsAuth: true, group: 'system' },
   credits: { handler: lazySystem('handleCredits'), needsAuth: true, group: 'system' },
+
+  // Analytics
   posts: { handler: lazyAnalytics('handlePosts'), needsAuth: true, group: 'analytics' },
   'refresh-analytics': {
     handler: lazyAnalytics('handleRefreshAnalytics'),
@@ -40,18 +52,25 @@ const COMMAND_REGISTRY: Record<string, CommandEntry> = {
     group: 'analytics',
   },
   loop: { handler: lazyAnalytics('handleLoop'), needsAuth: true, group: 'analytics' },
+
+  // Discovery
   tools: { handler: lazyDiscovery('handleTools'), needsAuth: false, group: 'discovery' },
   info: { handler: lazyDiscovery('handleInfo'), needsAuth: false, group: 'discovery' },
+
+  // Planning & presets
   plan: { handler: lazyPlanning('handlePlan'), needsAuth: true, group: 'content' },
   preset: { handler: lazyPresets('handlePreset'), needsAuth: false, group: 'content' },
+
+  // Shell completions (new)
+  completions: { handler: lazyCompletions('handleCompletions'), needsAuth: false, group: 'system' },
 };
 
 // Command groups for "sn content", "sn account", etc.
 const GROUP_COMMANDS: Record<string, string[]> = {
-  content: ['publish', 'quality-check', 'e2e', 'plan', 'preset'],
+  content: ['generate', 'video', 'image', 'publish', 'quality-check', 'e2e', 'plan', 'preset'],
   account: ['oauth-health', 'oauth-refresh', 'preflight'],
   analytics: ['posts', 'refresh-analytics', 'loop'],
-  system: ['status', 'autopilot', 'usage', 'credits'],
+  system: ['status', 'autopilot', 'usage', 'credits', 'completions'],
   discovery: ['tools', 'info'],
 };
 
@@ -106,50 +125,69 @@ function lazyPresets(name: string) {
   };
 }
 
+function lazyGenerate(name: string) {
+  return async (args: SnArgs, asJson: boolean) => {
+    const mod = await import('./sn/generate.js');
+    return (mod as any)[name](args, asJson);
+  };
+}
+
+function lazyCompletions(name: string) {
+  return async (args: SnArgs, asJson: boolean) => {
+    const mod = await import('./sn/completions.js');
+    return (mod as any)[name](args, asJson);
+  };
+}
+
 // ── Help ────────────────────────────────────────────────────────────
 
 export function printSnUsage(): void {
   console.error('');
-  console.error('Usage: socialneuron-mcp sn <command> [flags]');
+  console.error('Usage: sn <command> [flags]');
   console.error('');
-  console.error('Discovery:');
-  console.error('  tools [--scope <scope>] [--module <module>] [--json]');
-  console.error('  info [--json]');
+  console.error('Global flags:');
+  console.error('  --json                    Output as JSON');
+  console.error('  --output <json|table|csv>  Output format (default: table for TTY, json for pipes)');
+  console.error('  --help, -h                Show help for a command');
   console.error('');
-  console.error('Content:');
-  console.error(
-    '  publish --media-url <url> --caption <text> --platforms <comma-list> --confirm [--title <text>] [--schedule-at <iso8601>] [--idempotency-key <key>] [--json]'
-  );
-  console.error(
-    '  quality-check --caption <text> [--title <text>] [--platforms <comma-list>] [--threshold <0-35>] [--json]'
-  );
-  console.error(
-    '  e2e --media-url <url> --caption <text> --platforms <comma-list> --confirm [--title <text>] [--schedule-at <iso8601>] [--check-urls] [--threshold <0-35>] [--dry-run] [--force] [--json]'
-  );
-  console.error(
-    '  plan (list|view|approve) [--plan-id <id>] [--status <draft|submitted|approved>] [--json]'
-  );
-  console.error(
-    '  preset (list|show|save|delete) [--name <name>] [--platform <name>] [--max-length <n>] [--aspect-ratio <ratio>] [--json]'
-  );
+  console.error('Content Generation:');
+  console.error('  generate --prompt <text> [--platform <name>] [--type <script|caption|blog|hook>]');
+  console.error('  video --prompt <text> [--model <model>] [--aspect-ratio <ratio>] [--duration <sec>]');
+  console.error('  image --prompt <text> [--model <model>] [--aspect-ratio <ratio>] [--style <style>]');
+  console.error('');
+  console.error('Content Workflow:');
+  console.error('  publish --media-url <url> --caption <text> --platforms <list> --confirm');
+  console.error('  quality-check --caption <text> [--platforms <list>] [--threshold <0-35>]');
+  console.error('  e2e --media-url <url> --caption <text> --platforms <list> --confirm [--dry-run]');
+  console.error('  plan (list|view|approve) [--plan-id <id>] [--status <draft|submitted|approved>]');
+  console.error('  preset (list|show|save|delete) [--name <name>] [--platform <name>]');
   console.error('');
   console.error('Account:');
-  console.error('  preflight [--privacy-url <url>] [--terms-url <url>] [--check-urls] [--json]');
-  console.error('  oauth-health [--warn-days <1-90>] [--platforms <comma-list>] [--all] [--json]');
-  console.error('  oauth-refresh (--platforms <comma-list> | --all) [--json]');
+  console.error('  preflight [--privacy-url <url>] [--terms-url <url>] [--check-urls]');
+  console.error('  oauth-health [--warn-days <1-90>] [--platforms <list>] [--all]');
+  console.error('  oauth-refresh (--platforms <list> | --all)');
   console.error('');
   console.error('Analytics:');
-  console.error(
-    '  posts [--days <1-90>] [--platform <name>] [--status <draft|scheduled|published|failed>] [--json]'
-  );
-  console.error('  refresh-analytics [--json]');
-  console.error('  loop [--json]');
+  console.error('  posts [--days <1-90>] [--platform <name>] [--status <published|failed|...>]');
+  console.error('  refresh-analytics');
+  console.error('  loop');
   console.error('');
   console.error('System:');
-  console.error('  status --job-id <id> [--json]');
-  console.error('  autopilot [--json]');
-  console.error('  usage [--json]');
-  console.error('  credits [--json]');
+  console.error('  status --job-id <id>');
+  console.error('  autopilot');
+  console.error('  usage');
+  console.error('  credits');
+  console.error('  completions <bash|zsh>     Generate shell completions');
+  console.error('');
+  console.error('Discovery:');
+  console.error('  tools [--scope <scope>] [--module <module>]');
+  console.error('  info');
+  console.error('');
+  console.error('Auth:');
+  console.error('  login [--browser|--paste|--device]');
+  console.error('  logout');
+  console.error('  whoami');
+  console.error('  health');
   console.error('');
 }
 
@@ -185,6 +223,12 @@ export async function runSnCli(argv: string[]): Promise<void> {
     const asJson = isEnabledFlag(args.json);
     await withSnErrorHandling(subcommand, asJson, () => entry.handler(args, asJson));
     return;
+  }
+
+  // Help flags
+  if (first === '--help' || first === '-h' || first === 'help') {
+    printSnUsage();
+    process.exit(0);
   }
 
   // Direct command (e.g., "sn publish")

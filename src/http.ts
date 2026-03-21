@@ -25,6 +25,7 @@ import { createTokenVerifier } from "./lib/token-verifier.js";
 import { checkRateLimit } from "./lib/rate-limit.js";
 import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { MCP_VERSION } from "./lib/version.js";
+import { apiRouter } from "./api/router.js";
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -333,6 +334,12 @@ app.get(
     });
   },
 );
+
+// ── REST API v1 ─────────────────────────────────────────────────────
+// Public REST API for non-MCP integrations (SDKs, scripts, webhooks).
+// Uses API key auth (snk_live_...) instead of OAuth session tokens.
+
+app.use("/v1", apiRouter);
 
 // ── MCP Routes ───────────────────────────────────────────────────────
 
