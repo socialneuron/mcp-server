@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "socialneuron": {
+      "command": "npx",
+      "args": ["-y", "@socialneuron/mcp-server"],
+      "env": {
+        "SOCIALNEURON_API_KEY": "${SOCIALNEURON_API_KEY}"
+      }
+    }
+  }
+}
