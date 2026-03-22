@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "description": "MCP server for Social Neuron - AI content creation platform",
   "type": "module",
   "main": "dist/index.js",

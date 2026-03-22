@@ -2,6 +2,26 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.6.1] - 2026-03-22
+
+### Security
+- **Explicit body size limit**: `express.json({ limit: '50kb' })` prevents DoS via oversized payloads.
+- **Error message sanitization**: MCP POST catch block now uses `sanitizeError()` — no more internal paths or table names in error responses.
+- **PII removal**: Removed `email` from API key validation chain (7 files). Key validation no longer exposes user email addresses.
+- **Generation rate limiting**: Added explicit `generation` category at 20 req/min (previously fell back to `read` at 60/min).
+- **npm provenance**: Added `--provenance` flag and `id-token: write` permission to release workflow for supply chain verification.
+- **Security comment**: Documented that Edge Functions must not trust `x-internal-worker-call` header without Bearer token verification.
+
+### Fixed
+- **hono prototype pollution**: Updated transitive dependency to fix GHSA-v8w9-8mx6-g223.
+- `npm audit` now reports 0 vulnerabilities.
+
+### Added
+- 18 examples (8 REST curl, 5 TypeScript SDK, 4 CLI, 1 MCP prompts).
+- TypeScript SDK package (`packages/sdk/`) with 9 resource classes.
+- CLI tab completion and content generation commands.
+- SDK documentation and release workflow.
+
 ## [1.6.0] - 2026-03-21
 
 ### Added
