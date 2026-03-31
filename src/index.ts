@@ -26,6 +26,8 @@ import {
 import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { initializeAuth, getAuthenticatedScopes } from "./lib/supabase.js";
 import { runSnCli } from "./cli/sn.js";
+import { registerPrompts } from "./prompts.js";
+import { registerResources } from "./resources.js";
 
 /** Flush stdout/stderr before exiting to prevent truncated pipe output. */
 function flushAndExit(code: number): void {
@@ -247,6 +249,8 @@ const server = new McpServer({
 // ── Scope Enforcement + Tool Registration ────────────────────────────
 applyScopeEnforcement(server, getAuthenticatedScopes);
 registerAllTools(server);
+registerPrompts(server);
+registerResources(server);
 
 // Graceful shutdown
 async function shutdown() {
