@@ -4,6 +4,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
+import { applyAnnotations } from './tool-annotations.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -25,6 +26,10 @@ import { registerQualityTools } from '../tools/quality.js';
 import { registerPlanningTools } from '../tools/planning.js';
 import { registerPlanApprovalTools } from '../tools/plan-approvals.js';
 import { registerDiscoveryTools } from '../tools/discovery.js';
+import { registerPipelineTools } from '../tools/pipeline.js';
+import { registerSuggestTools } from '../tools/suggest.js';
+import { registerDigestTools } from '../tools/digest.js';
+import { registerBrandRuntimeTools } from '../tools/brandRuntime.js';
 
 /**
  * Wrap server.tool() to inject scope checking before each handler.
@@ -70,12 +75,60 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
             isError: true,
           };
         }
-        return originalHandler(...handlerArgs);
+        const result = await originalHandler(...handlerArgs);
+        return truncateResponse(result);
       };
     }
 
     return originalTool(...args);
   };
+}
+
+// ── Response truncation ───────────────────────────────────────────
+
+const RESPONSE_CHAR_LIMIT = 100_000; // ~25K tokens at ~4 chars/token
+
+/**
+ * Truncate tool responses that exceed the character limit.
+ * Prevents runaway responses from consuming excessive tokens.
+ */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function truncateResponse(result: any): any {
+  if (!result?.content || !Array.isArray(result.content)) return result;
+
+  let totalChars = 0;
+  for (const part of result.content) {
+    if (part.type === 'text' && typeof part.text === 'string') {
+      totalChars += part.text.length;
+    }
+  }
+
+  if (totalChars <= RESPONSE_CHAR_LIMIT) return result;
+
+  // Truncate the last text part to fit within the limit
+  let remaining = RESPONSE_CHAR_LIMIT;
+  const truncated = [];
+  for (const part of result.content) {
+    if (part.type === 'text' && typeof part.text === 'string') {
+      if (remaining <= 0) continue;
+      if (part.text.length <= remaining) {
+        truncated.push(part);
+        remaining -= part.text.length;
+      } else {
+        truncated.push({
+          ...part,
+          text:
+            part.text.slice(0, remaining) +
+            `\n\n[Response truncated: ${totalChars.toLocaleString()} chars exceeded ${RESPONSE_CHAR_LIMIT.toLocaleString()} limit. Use filters to narrow your query.]`,
+        });
+        remaining = 0;
+      }
+    } else {
+      truncated.push(part);
+    }
+  }
+
+  return { ...result, content: truncated };
 }
 
 /**
@@ -105,4 +158,11 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerPlanningTools(server);
   registerPlanApprovalTools(server);
   registerDiscoveryTools(server);
+  registerPipelineTools(server);
+  registerSuggestTools(server);
+  registerDigestTools(server);
+  registerBrandRuntimeTools(server);
+
+  // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)
+  applyAnnotations(server);
 }

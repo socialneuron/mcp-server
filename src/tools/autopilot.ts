@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -33,57 +31,54 @@ export function registerAutopilotTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    {
-      title: "List Autopilot Configs",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ active_only, response_format }) => {
       const format = response_format ?? 'text';
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
 
-      let query = supabase
-        .from('autopilot_configs')
-        .select(
-          'id, recipe_id, is_active, schedule_config, max_credits_per_run, max_credits_per_week, credits_used_this_week, last_run_at, created_at, mode'
-        )
-        .eq('user_id', userId)
-        .order('created_at', { ascending: false });
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        configs: Array<{
+          id: string;
+          recipe_id: string;
+          is_active: boolean;
+          schedule_config: { days?: string[]; time?: string } | null;
+          max_credits_per_run: number | null;
+          max_credits_per_week: number | null;
+          credits_used_this_week: number | null;
+          last_run_at: string | null;
+          created_at: string;
+          mode: string | null;
+        }>;
+      }>('mcp-data', {
+        action: 'list-autopilot-configs',
+        active_only: active_only ?? false,
+      });
 
-      if (active_only) {
-        query = query.eq('is_active', true);
-      }
-
-      const { data: configs, error } = await query;
-
-      if (error) {
+      if (efError) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error fetching autopilot configs: ${sanitizeDbError(error)}`,
+              text: `Error fetching autopilot configs: ${efError}`,
             },
           ],
           isError: true,
         };
       }
 
+      const configs = result?.configs ?? [];
+
       if (format === 'json') {
         return {
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(asEnvelope(configs || []), null, 2),
+              text: JSON.stringify(asEnvelope(configs), null, 2),
             },
           ],
         };
       }
 
-      if (!configs || configs.length === 0) {
+      if (configs.length === 0) {
         return {
           content: [
             {
@@ -125,9 +120,9 @@ export function registerAutopilotTools(server: McpServer): void {
       config_id: z.string().uuid().describe('The autopilot config ID to update.'),
       is_active: z.boolean().optional().describe('Enable or disable this autopilot config.'),
       schedule_days: z
-        .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']).describe('Three-letter lowercase day abbreviation.'))
+        .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
         .optional()
-        .describe('Days of the week to run (e.g. ["mon", "wed", "fri"]).'),
+        .describe('Days of the week to run (e.g., ["mon", "wed", "fri"]).'),
       schedule_time: z
         .string()
         .optional()
@@ -135,14 +130,6 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_run: z.number().optional().describe('Maximum credits per execution.'),
       max_credits_per_week: z.number().optional().describe('Maximum credits per week.'),
     },
-    {
-      title: "Update Autopilot Config",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({
       config_id,
       is_active,
@@ -151,32 +138,13 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_run,
       max_credits_per_week,
     }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
-
-      const updates: Record<string, unknown> = {};
-      if (is_active !== undefined) updates.is_active = is_active;
-      if (max_credits_per_run !== undefined) updates.max_credits_per_run = max_credits_per_run;
-      if (max_credits_per_week !== undefined) updates.max_credits_per_week = max_credits_per_week;
-
-      if (schedule_days || schedule_time) {
-        // Fetch existing schedule to merge
-        const { data: existing } = await supabase
-          .from('autopilot_configs')
-          .select('schedule_config')
-          .eq('id', config_id)
-          .eq('user_id', userId)
-          .single();
-
-        const existingSchedule = existing?.schedule_config || {};
-        updates.schedule_config = {
-          ...existingSchedule,
-          ...(schedule_days ? { days: schedule_days } : {}),
-          ...(schedule_time ? { time: schedule_time } : {}),
-        };
-      }
-
-      if (Object.keys(updates).length === 0) {
+      if (
+        is_active === undefined &&
+        !schedule_days &&
+        !schedule_time &&
+        max_credits_per_run === undefined &&
+        max_credits_per_week === undefined
+      ) {
         return {
           content: [
             {
@@ -187,23 +155,46 @@ export function registerAutopilotTools(server: McpServer): void {
         };
       }
 
-      const { data: updated, error } = await supabase
-        .from('autopilot_configs')
-        .update(updates)
-        .eq('id', config_id)
-        .eq('user_id', userId)
-        .select('id, is_active, schedule_config, max_credits_per_run')
-        .single();
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        updated: {
+          id: string;
+          is_active: boolean;
+          schedule_config: Record<string, unknown> | null;
+          max_credits_per_run: number | null;
+        } | null;
+        message?: string;
+      }>('mcp-data', {
+        action: 'update-autopilot-config',
+        config_id,
+        is_active,
+        schedule_days,
+        schedule_time,
+        max_credits_per_run,
+        max_credits_per_week,
+      });
 
-      if (error) {
+      if (efError) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Error updating config: ${sanitizeDbError(error)}`,
+              text: `Error updating config: ${efError}`,
             },
           ],
           isError: true,
+        };
+      }
+
+      const updated = result?.updated;
+      if (!updated) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: result?.message || 'No changes applied.',
+            },
+          ],
         };
       }
 
@@ -233,47 +224,27 @@ export function registerAutopilotTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    {
-      title: "Get Autopilot Status",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ response_format }) => {
       const format = response_format ?? 'text';
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
 
-      // Get active configs
-      const { data: configs } = await supabase
-        .from('autopilot_configs')
-        .select(
-          'id, recipe_id, is_active, schedule_config, last_run_at, credits_used_this_week, max_credits_per_week'
-        )
-        .eq('user_id', userId)
-        .eq('is_active', true);
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        activeConfigs: number;
+        pendingApprovals: number;
+        configs: Array<Record<string, unknown>>;
+      }>('mcp-data', { action: 'autopilot-status' });
 
-      // Get recent recipe runs
-      const { data: recentRuns } = await supabase
-        .from('recipe_runs')
-        .select('id, status, started_at, completed_at, credits_used')
-        .eq('user_id', userId)
-        .order('started_at', { ascending: false })
-        .limit(5);
-
-      // Get pending approvals
-      const { data: approvals } = await supabase
-        .from('approval_queue')
-        .select('id, status, created_at')
-        .eq('user_id', userId)
-        .eq('status', 'pending');
+      if (efError) {
+        return {
+          content: [{ type: 'text' as const, text: `Error fetching autopilot status: ${efError}` }],
+          isError: true,
+        };
+      }
 
       const statusData = {
-        activeConfigs: configs?.length || 0,
-        recentRuns: recentRuns || [],
-        pendingApprovals: approvals?.length || 0,
+        activeConfigs: result?.activeConfigs ?? 0,
+        recentRuns: [] as Array<Record<string, unknown>>,
+        pendingApprovals: result?.pendingApprovals ?? 0,
       };
 
       if (format === 'json') {
@@ -290,18 +261,125 @@ export function registerAutopilotTools(server: McpServer): void {
       let text = `Autopilot Status\n${'='.repeat(40)}\n\n`;
       text += `Active Configs: ${statusData.activeConfigs}\n`;
       text += `Pending Approvals: ${statusData.pendingApprovals}\n\n`;
-
-      if (statusData.recentRuns.length > 0) {
-        text += `Recent Runs:\n`;
-        for (const run of statusData.recentRuns) {
-          text += `  ${run.id.substring(0, 8)}... — ${run.status} (${run.started_at})\n`;
-        }
-      } else {
-        text += `No recent runs.\n`;
-      }
+      text += `No recent runs.\n`;
 
       return {
         content: [{ type: 'text' as const, text }],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // create_autopilot_config
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'create_autopilot_config',
+    'Create a new autopilot configuration for automated content pipeline execution. ' +
+      'Defines schedule, credit budgets, and approval mode.',
+    {
+      name: z.string().min(1).max(100).describe('Name for this autopilot config'),
+      project_id: z.string().uuid().describe('Project to run autopilot for'),
+      mode: z
+        .enum(['recipe', 'pipeline'])
+        .default('pipeline')
+        .describe('Mode: recipe (legacy) or pipeline (new orchestration)'),
+      schedule_days: z
+        .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
+        .min(1)
+        .describe('Days of the week to run'),
+      schedule_time: z.string().describe('Time to run in HH:MM format (24h). E.g., "09:00"'),
+      timezone: z
+        .string()
+        .optional()
+        .describe('Timezone (e.g., "America/New_York"). Defaults to UTC.'),
+      max_credits_per_run: z.number().min(0).optional().describe('Maximum credits per execution'),
+      max_credits_per_week: z.number().min(0).optional().describe('Maximum credits per week'),
+      approval_mode: z
+        .enum(['auto', 'review_all', 'review_low_confidence'])
+        .default('review_low_confidence')
+        .describe('How to handle post approvals'),
+      is_active: z.boolean().default(true).describe('Whether to activate immediately'),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Response format. Defaults to text.'),
+    },
+    async ({
+      name,
+      project_id,
+      mode,
+      schedule_days,
+      schedule_time,
+      timezone,
+      max_credits_per_run,
+      max_credits_per_week,
+      approval_mode,
+      is_active,
+      response_format,
+    }) => {
+      const format = response_format ?? 'text';
+
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        created: {
+          id: string;
+          name: string;
+          is_active: boolean;
+          mode: string;
+          schedule_config: Record<string, unknown>;
+        };
+      }>('mcp-data', {
+        action: 'create-autopilot-config',
+        name,
+        projectId: project_id,
+        mode,
+        schedule_days,
+        schedule_time,
+        timezone,
+        max_credits_per_run,
+        max_credits_per_week,
+        approval_mode,
+        is_active,
+      });
+
+      if (efError) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Error creating autopilot config: ${efError}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const created = result?.created;
+      if (!created) {
+        return {
+          content: [{ type: 'text' as const, text: 'Failed to create config.' }],
+          isError: true,
+        };
+      }
+
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(created), null, 2) }],
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text:
+              `Autopilot config created: ${created.id}\n` +
+              `Name: ${name}\n` +
+              `Mode: ${mode}\n` +
+              `Schedule: ${schedule_days.join(', ')} @ ${schedule_time}\n` +
+              `Active: ${is_active}`,
+          },
+        ],
       };
     }
   );

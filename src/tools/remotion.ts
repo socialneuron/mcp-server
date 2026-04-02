@@ -4,6 +4,7 @@ import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { callEdgeFunction } from '../lib/edge-function.js';
 
 /** Static composition registry extracted from remotion/Root.tsx */
 const COMPOSITIONS = [
@@ -111,6 +112,23 @@ const COMPOSITIONS = [
     fps: 30,
     description: 'Product ad - 15s ultra-short',
   },
+  {
+    id: 'DataVizDashboard',
+    width: 1080,
+    height: 1920,
+    durationInFrames: 450,
+    fps: 30,
+    description: 'Animated data dashboard - KPIs, bar chart, donut chart, line chart (15s, 9:16)',
+  },
+  {
+    id: 'ReviewsTestimonial',
+    width: 1080,
+    height: 1920,
+    durationInFrames: 600,
+    fps: 30,
+    description:
+      'Customer review testimonial with star animations and review carousel (dynamic duration, 9:16)',
+  },
 ];
 
 export function registerRemotionTools(server: McpServer): void {
@@ -123,14 +141,6 @@ export function registerRemotionTools(server: McpServer): void {
       'Returns composition IDs, dimensions, duration, and descriptions. Use ' +
       'this to discover what videos can be rendered with render_demo_video.',
     {},
-    {
-      title: "List Compositions",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async () => {
       const lines: string[] = [`${COMPOSITIONS.length} Remotion compositions available:`, ''];
 
@@ -178,14 +188,6 @@ export function registerRemotionTools(server: McpServer): void {
             'Each composition accepts different props. Omit for defaults.'
         ),
     },
-    {
-      title: "Render Demo Video",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-
     async ({ composition_id, output_format, props }) => {
       const startedAt = Date.now();
       const userId = await getDefaultUserId();
@@ -327,6 +329,169 @@ export function registerRemotionTools(server: McpServer): void {
             {
               type: 'text' as const,
               text: `Remotion render failed: ${message}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // render_template_video (cloud — production)
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'render_template_video',
+    'Render a Remotion template video in the cloud. Creates an async render job ' +
+      'that is processed by the production worker, uploaded to R2, and tracked ' +
+      'via async_jobs. Returns a job ID that can be polled with check_status. ' +
+      'Costs credits based on video duration (3 base + 0.1/sec). ' +
+      'Use list_compositions to see available template IDs.',
+    {
+      composition_id: z
+        .string()
+        .describe(
+          'Remotion composition ID. Examples: "DataVizDashboard", "ReviewsTestimonial", ' +
+            '"CaptionedClip". Use list_compositions to see all available IDs.'
+        ),
+      input_props: z
+        .string()
+        .describe(
+          'JSON string of input props for the composition. Each composition has different ' +
+            'required props. For DataVizDashboard: {title, kpis, barData, donutData, lineData}. ' +
+            'For ReviewsTestimonial: {businessName, overallRating, totalReviews, reviews}.'
+        ),
+      aspect_ratio: z
+        .enum(['9:16', '1:1', '16:9'])
+        .optional()
+        .describe('Output aspect ratio. Defaults to "9:16" (vertical).'),
+    },
+    async ({ composition_id, input_props, aspect_ratio }) => {
+      const startedAt = Date.now();
+      const userId = await getDefaultUserId();
+      const rateLimit = checkRateLimit('generation', `render_template:${userId}`);
+      if (!rateLimit.allowed) {
+        await logMcpToolInvocation({
+          toolName: 'render_template_video',
+          status: 'rate_limited',
+          durationMs: Date.now() - startedAt,
+          details: { retryAfter: rateLimit.retryAfter },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Validate composition ID
+      const comp = COMPOSITIONS.find(c => c.id === composition_id);
+      if (!comp) {
+        await logMcpToolInvocation({
+          toolName: 'render_template_video',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { error: 'Unknown composition', compositionId: composition_id },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Unknown composition "${composition_id}". Available: ${COMPOSITIONS.map(c => c.id).join(', ')}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Parse input props
+      let inputProps: Record<string, unknown>;
+      try {
+        inputProps = JSON.parse(input_props);
+      } catch {
+        await logMcpToolInvocation({
+          toolName: 'render_template_video',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { error: 'Invalid input_props JSON' },
+        });
+        return {
+          content: [{ type: 'text' as const, text: `Invalid JSON in input_props.` }],
+          isError: true,
+        };
+      }
+
+      try {
+        const { data, error } = await callEdgeFunction<{
+          success: boolean;
+          jobId: string;
+          contentHistoryId: string;
+          creditsCharged: number;
+          estimatedDurationSeconds: number;
+          error?: string;
+        }>('create-remotion-job', {
+          compositionId: composition_id,
+          inputProps,
+          outputs: [
+            {
+              aspectRatio: aspect_ratio || '9:16',
+              resolution: '1080p',
+              codec: 'h264',
+            },
+          ],
+        });
+
+        if (error || !data?.success) {
+          throw new Error(error || data?.error || 'Failed to create render job');
+        }
+
+        await logMcpToolInvocation({
+          toolName: 'render_template_video',
+          status: 'success',
+          durationMs: Date.now() - startedAt,
+          details: {
+            compositionId: composition_id,
+            jobId: data.jobId,
+            creditsCharged: data.creditsCharged,
+          },
+        });
+
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: [
+                `Render job created successfully.`,
+                `  Composition: ${composition_id}`,
+                `  Job ID: ${data.jobId}`,
+                `  Credits charged: ${data.creditsCharged}`,
+                `  Estimated duration: ${data.estimatedDurationSeconds}s`,
+                `  Content ID: ${data.contentHistoryId}`,
+                ``,
+                `The video is rendering in the cloud. Use check_status with ` +
+                  `job_id="${data.jobId}" to poll for completion. When done, ` +
+                  `the result_url will contain the R2 video URL.`,
+              ].join('\n'),
+            },
+          ],
+        };
+      } catch (err) {
+        const message = err instanceof Error ? err.message : String(err);
+        await logMcpToolInvocation({
+          toolName: 'render_template_video',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { error: message, compositionId: composition_id },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to create render job: ${message}`,
             },
           ],
           isError: true,

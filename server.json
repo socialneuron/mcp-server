@@ -1,17 +1,17 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
   "name": "com.socialneuron/mcp-server",
-  "description": "52 MCP tools for AI social media: create, distribute, analyze, and optimize content.",
+  "description": "64 MCP tools for end-to-end social media content lifecycle — create with 35+ AI models, distribute to YouTube/Instagram/TikTok, track analytics, and auto-optimize. Includes 5 prompt templates and 4 resources.",
   "repository": {
     "url": "https://github.com/socialneuron/mcp-server",
     "source": "github"
   },
-  "version": "1.6.0",
+  "version": "1.6.1",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@socialneuron/mcp-server",
-      "version": "1.6.0",
+      "version": "1.6.1",
       "transport": {
         "type": "stdio"
       },
