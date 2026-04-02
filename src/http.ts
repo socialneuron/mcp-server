@@ -179,8 +179,13 @@ setInterval(() => {
 }, IP_RATE_CLEANUP_INTERVAL).unref();
 
 app.use((req, res, next) => {
-  // Exempt health checks
-  if (req.path === "/health") return next();
+  // Exempt health checks and static discovery endpoints
+  if (
+    req.path === "/health" ||
+    req.path === "/.well-known/mcp/server-card.json" ||
+    req.path === "/.well-known/oauth-protected-resource"
+  )
+    return next();
 
   const ip = req.ip ?? req.socket.remoteAddress ?? "unknown";
   const now = Date.now();
@@ -322,6 +327,226 @@ async function authenticateRequest(
     });
   }
 }
+
+// ── Smithery Static Server Card ──────────────────────────────────────
+// Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
+// See: https://smithery.ai/docs/build/publish#server-scanning
+
+app.get("/.well-known/mcp/server-card.json", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json({
+    serverInfo: {
+      name: "socialneuron",
+      version: MCP_VERSION,
+    },
+    authentication: {
+      required: true,
+      schemes: ["oauth2"],
+    },
+    tools: [
+      {
+        name: "generate_content",
+        description:
+          "Create a script, caption, hook, or blog post tailored to a specific platform.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            prompt: { type: "string" },
+            platform: { type: "string" },
+          },
+          required: ["prompt"],
+        },
+      },
+      {
+        name: "schedule_post",
+        description:
+          "Publish or schedule a post to connected social platforms.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            content: { type: "string" },
+            platform: { type: "string" },
+          },
+          required: ["content", "platform"],
+        },
+      },
+      {
+        name: "fetch_analytics",
+        description:
+          "Get post performance metrics for connected platforms.",
+        inputSchema: {
+          type: "object",
+          properties: { platform: { type: "string" } },
+        },
+      },
+      {
+        name: "extract_brand",
+        description:
+          "Analyze a website URL and extract brand identity data.",
+        inputSchema: {
+          type: "object",
+          properties: { url: { type: "string" } },
+          required: ["url"],
+        },
+      },
+      {
+        name: "plan_content_week",
+        description:
+          "Generate a full week content plan with platform-specific drafts.",
+        inputSchema: {
+          type: "object",
+          properties: { niche: { type: "string" } },
+          required: ["niche"],
+        },
+      },
+      {
+        name: "generate_video",
+        description: "Start an async AI video generation job.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      {
+        name: "generate_image",
+        description: "Start an async AI image generation job.",
+        inputSchema: {
+          type: "object",
+          properties: { prompt: { type: "string" } },
+          required: ["prompt"],
+        },
+      },
+      {
+        name: "adapt_content",
+        description:
+          "Rewrite existing content for a different platform.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            content: { type: "string" },
+            target_platform: { type: "string" },
+          },
+          required: ["content", "target_platform"],
+        },
+      },
+      {
+        name: "quality_check",
+        description: "Score post quality across 7 categories (0-100).",
+        inputSchema: {
+          type: "object",
+          properties: { content: { type: "string" } },
+          required: ["content"],
+        },
+      },
+      {
+        name: "run_content_pipeline",
+        description:
+          "Full pipeline: trends → plan → quality check → schedule.",
+        inputSchema: {
+          type: "object",
+          properties: { niche: { type: "string" } },
+          required: ["niche"],
+        },
+      },
+      {
+        name: "fetch_trends",
+        description:
+          "Get current trending topics for content inspiration.",
+        inputSchema: {
+          type: "object",
+          properties: { platform: { type: "string" } },
+        },
+      },
+      {
+        name: "get_credit_balance",
+        description: "Check remaining credits and plan tier.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "list_connected_accounts",
+        description:
+          "Check which social platforms have active OAuth connections.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "get_brand_profile",
+        description: "Load the active brand voice profile.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "list_comments",
+        description: "List YouTube comments for moderation.",
+        inputSchema: { type: "object", properties: {} },
+      },
+      {
+        name: "reply_to_comment",
+        description: "Reply to a YouTube comment.",
+        inputSchema: {
+          type: "object",
+          properties: {
+            comment_id: { type: "string" },
+            text: { type: "string" },
+          },
+          required: ["comment_id", "text"],
+        },
+      },
+    ],
+    prompts: [
+      {
+        name: "create_weekly_content_plan",
+        description:
+          "Generate a full week of social media content with structured plan.",
+      },
+      {
+        name: "analyze_top_content",
+        description:
+          "Analyze best-performing posts to identify patterns and replicate success.",
+      },
+      {
+        name: "repurpose_content",
+        description:
+          "Transform one piece of content into 8-10 pieces across platforms.",
+      },
+      {
+        name: "setup_brand_voice",
+        description:
+          "Define or refine brand voice profile for consistent content.",
+      },
+      {
+        name: "run_content_audit",
+        description:
+          "Audit recent content performance with prioritized action plan.",
+      },
+    ],
+    resources: [
+      {
+        uri: "socialneuron://brand/profile",
+        name: "brand-profile",
+        description:
+          "Brand voice profile with personality traits, audience, tone, and content pillars.",
+      },
+      {
+        uri: "socialneuron://account/overview",
+        name: "account-overview",
+        description:
+          "Account status including plan tier, credits, and feature access.",
+      },
+      {
+        uri: "socialneuron://docs/capabilities",
+        name: "platform-capabilities",
+        description:
+          "Complete reference of all capabilities, platforms, AI models, and credit costs.",
+      },
+      {
+        uri: "socialneuron://docs/getting-started",
+        name: "getting-started",
+        description:
+          "Quick start guide for using Social Neuron with AI agents.",
+      },
+    ],
+  });
+});
 
 // ── Health check ─────────────────────────────────────────────────────
 

@@ -39,12 +39,12 @@ describe('remotion tools', () => {
   // list_compositions
   // =========================================================================
   describe('list_compositions', () => {
-    it('returns all 13 compositions with IDs and dimensions', async () => {
+    it('returns all 15 compositions with IDs and dimensions', async () => {
       const handler = server.getHandler('list_compositions')!;
       const result = await handler({});
 
       const text = result.content[0].text;
-      expect(text).toContain('13 Remotion compositions available');
+      expect(text).toContain('15 Remotion compositions available');
       expect(text).toContain('CaptionedClip');
       expect(text).toContain('CaptionedClip-Square');
       expect(text).toContain('CaptionedClip-Horizontal');
@@ -56,6 +56,8 @@ describe('remotion tools', () => {
       expect(text).toContain('ProductAd-GTM-A');
       expect(text).toContain('ProductAd-30s');
       expect(text).toContain('ProductAd-15s');
+      expect(text).toContain('DataVizDashboard');
+      expect(text).toContain('ReviewsTestimonial');
       // Check dimensions present
       expect(text).toContain('1080x1920');
       expect(text).toContain('1920x1080');
