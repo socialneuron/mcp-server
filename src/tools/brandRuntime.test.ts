@@ -197,4 +197,102 @@ describe('brandRuntime tools', () => {
       expect(parsed.data.dimensions.avoidCompliance).toBeDefined();
     });
   });
+
+  // =========================================================================
+  // audit_brand_colors
+  // =========================================================================
+  describe('audit_brand_colors', () => {
+    it('audits content colors against brand palette', async () => {
+      mockCallEdge.mockResolvedValueOnce(
+        brandProfileResponse({
+          colorPalette: { primary: '#0053A0', secondary: '#ffffff', accent: '#FF6600' },
+        })
+      );
+
+      const handler = server.getHandler('audit_brand_colors')!;
+      const result = await handler({ content_colors: ['#0053A0', '#ff00ff'] });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.entries).toHaveLength(2);
+      expect(parsed.data.entries[0].passed).toBe(true); // exact match
+      expect(parsed.data.entries[1].passed).toBe(false); // magenta is off-brand
+      expect(parsed.data.overallScore).toBeDefined();
+    });
+
+    it('returns error when no palette exists', async () => {
+      mockCallEdge.mockResolvedValueOnce(brandProfileResponse({ name: 'Test' }));
+
+      const handler = server.getHandler('audit_brand_colors')!;
+      const result = await handler({ content_colors: ['#000'] });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('No brand color palette');
+    });
+  });
+
+  // =========================================================================
+  // export_design_tokens
+  // =========================================================================
+  describe('export_design_tokens', () => {
+    it('exports CSS variables', async () => {
+      mockCallEdge.mockResolvedValueOnce(
+        brandProfileResponse({
+          colorPalette: { primary: '#0053A0', secondary: '#ffffff', accent: '#FF6600' },
+          typography: { headingFont: 'Inter', bodyFont: 'Open Sans' },
+        })
+      );
+
+      const handler = server.getHandler('export_design_tokens')!;
+      const result = await handler({ format: 'css' });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.format).toBe('css');
+      expect(parsed.data.tokens).toContain('--brand-primary');
+      expect(parsed.data.tokens).toContain('#0053A0');
+      expect(parsed.data.tokens).toContain('Inter');
+    });
+
+    it('exports Tailwind config', async () => {
+      mockCallEdge.mockResolvedValueOnce(
+        brandProfileResponse({
+          colorPalette: { primary: '#000', secondary: '#fff', accent: '#f00' },
+        })
+      );
+
+      const handler = server.getHandler('export_design_tokens')!;
+      const result = await handler({ format: 'tailwind' });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.format).toBe('tailwind');
+      const tokens = JSON.parse(parsed.data.tokens);
+      expect(tokens['brand-primary']).toBe('#000');
+    });
+
+    it('exports Figma tokens', async () => {
+      mockCallEdge.mockResolvedValueOnce(
+        brandProfileResponse({
+          colorPalette: { primary: '#123', secondary: '#456', accent: '#789' },
+          typography: { headingFont: 'Roboto' },
+        })
+      );
+
+      const handler = server.getHandler('export_design_tokens')!;
+      const result = await handler({ format: 'figma' });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.format).toBe('figma');
+      const tokens = JSON.parse(parsed.data.tokens);
+      expect(tokens.color.primary.type).toBe('color');
+      expect(tokens.fontFamily.heading.value).toBe('Roboto');
+    });
+
+    it('returns error when no palette exists', async () => {
+      mockCallEdge.mockResolvedValueOnce(brandProfileResponse({ name: 'Test' }));
+
+      const handler = server.getHandler('export_design_tokens')!;
+      const result = await handler({ format: 'css' });
+
+      expect(result.isError).toBe(true);
+    });
+  });
 });

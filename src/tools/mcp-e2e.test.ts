@@ -95,9 +95,9 @@ describe('search_tools token efficiency', () => {
     expect(result.content[0].text.length).toBeLessThan(2000);
   });
 
-  it('"summary" output is moderate (<8000 chars)', async () => {
+  it('"summary" output is moderate (<10000 chars)', async () => {
     const result = await handler({ detail: 'summary' });
-    expect(result.content[0].text.length).toBeLessThan(8000);
+    expect(result.content[0].text.length).toBeLessThan(10000);
   });
 
   it('"full" is at least 3x larger than "name"', async () => {

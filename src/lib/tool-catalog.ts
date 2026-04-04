@@ -76,6 +76,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'content',
     scope: 'mcp:write',
   },
+  {
+    name: 'create_carousel',
+    description: 'End-to-end carousel: generate text + kick off image jobs for each slide',
+    module: 'carousel',
+    scope: 'mcp:write',
+  },
 
   // media
   {
@@ -455,6 +461,48 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description: 'Create a new autopilot configuration',
     module: 'autopilot',
     scope: 'mcp:autopilot',
+  },
+
+  // brand runtime (additions)
+  {
+    name: 'audit_brand_colors',
+    description: 'Audit brand color palette for accessibility, contrast, and harmony',
+    module: 'brandRuntime',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'export_design_tokens',
+    description: 'Export brand design tokens in CSS/Tailwind/JSON formats',
+    module: 'brandRuntime',
+    scope: 'mcp:read',
+  },
+
+  // carousel (already listed in content section above)
+
+  // recipes
+  {
+    name: 'list_recipes',
+    description: 'List available recipe templates for automated content workflows',
+    module: 'recipes',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'get_recipe_details',
+    description: 'Get full details of a recipe template including steps and required inputs',
+    module: 'recipes',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'execute_recipe',
+    description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
+    module: 'recipes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'get_recipe_run_status',
+    description: 'Check the status and progress of a running recipe execution',
+    module: 'recipes',
+    scope: 'mcp:read',
   },
 ];
 

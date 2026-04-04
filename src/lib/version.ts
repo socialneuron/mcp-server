@@ -1,2 +1,2 @@
 /** Single source of truth for the MCP server version. */
-export const MCP_VERSION = '1.7.2';
+export const MCP_VERSION = '1.7.4';
