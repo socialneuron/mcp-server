@@ -9,6 +9,7 @@ import { applyAnnotations } from './tool-annotations.js';
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
 import { registerDistributionTools } from '../tools/distribution.js';
+import { registerMediaTools } from '../tools/media.js';
 import { registerAnalyticsTools } from '../tools/analytics.js';
 import { registerBrandTools } from '../tools/brand.js';
 import { registerScreenshotTools } from '../tools/screenshot.js';
@@ -139,6 +140,7 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerIdeationTools(server);
   registerContentTools(server);
   registerDistributionTools(server);
+  registerMediaTools(server);
   registerAnalyticsTools(server);
   registerBrandTools(server);
   if (!options?.skipScreenshots) {

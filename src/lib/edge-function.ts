@@ -110,12 +110,6 @@ export async function callEdgeFunction<T = unknown>(
       }
     }
 
-    // SECURITY: x-internal-worker-call is a convenience signal, NOT a security
-    // boundary. Edge Functions MUST NOT trust this header alone to grant elevated
-    // access. They MUST independently verify the Bearer token's JWT role claim
-    // (role === 'service_role') before performing any privileged operations.
-    // An attacker can trivially forge this header on any HTTP request. The real
-    // auth gate is the service-role JWT in the Authorization header.
     headers = {
       Authorization: `Bearer ${serviceKey}`,
       'Content-Type': 'application/json',
@@ -128,7 +122,7 @@ export async function callEdgeFunction<T = unknown>(
     return {
       data: null,
       error:
-        'No auth available for Edge Function calls. Set SOCIALNEURON_API_KEY (cloud) or SOCIALNEURON_SERVICE_KEY (self-host).',
+        'Not authenticated. Run: npx @socialneuron/mcp-server login — Requires a paid plan (Starter+). See https://socialneuron.com/pricing',
     };
   }
 

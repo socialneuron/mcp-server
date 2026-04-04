@@ -127,7 +127,7 @@ describe('remotion tools', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Remotion render failed');
-      expect(result.content[0].text).toContain('FFMPEG not found');
+      // Raw error is sanitized — not exposed to user
     });
 
     it('renders successfully and returns file path', async () => {

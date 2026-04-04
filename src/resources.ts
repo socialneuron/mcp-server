@@ -35,7 +35,7 @@ export function registerResources(server: McpServer): void {
                   {
                     _meta: { version: MCP_VERSION, status: 'no_profile' },
                     message:
-                      'No brand profile set up yet. Use the setup_brand_voice prompt or update_brand_profile tool to create one.',
+                      'No brand profile set up yet. Use the setup_brand_voice prompt or save_brand_profile tool to create one.',
                   },
                   null,
                   2
@@ -157,13 +157,7 @@ export function registerResources(server: McpServer): void {
         },
         content_formats: {
           text: ['Social post', 'Thread', 'Caption', 'Newsletter', 'Blog draft', 'Script'],
-          image: [
-            'AI-generated image',
-            'Quote graphic',
-            'Carousel slide',
-            'Thumbnail',
-            'Story',
-          ],
+          image: ['AI-generated image', 'Quote graphic', 'Carousel slide', 'Thumbnail', 'Story'],
           video: [
             'Short-form (< 60s)',
             'Long-form',
@@ -264,31 +258,31 @@ export function registerResources(server: McpServer): void {
 
 1. Check your account: Read the \`socialneuron://account/overview\` resource
 2. Set up your brand: Use the \`setup_brand_voice\` prompt
-3. Generate content: Call \`generate_social_content\` with a topic
-4. Review & publish: Call \`publish_post\` to distribute
+3. Generate content: Call \`generate_content\` with a topic
+4. Review & publish: Call \`schedule_post\` to distribute
 
 ## Common Workflows
 
 ### Create & Publish a Post
-1. \`generate_content_ideas\` → get topic suggestions
-2. \`generate_social_content\` → create the post
-3. \`score_content_quality\` → check quality (aim for 70+)
-4. \`publish_post\` → distribute to platforms
+1. \`generate_content\` → get topic suggestions
+2. \`generate_content\` → create the post
+3. \`quality_check\` → check quality (aim for 70+)
+4. \`schedule_post\` → distribute to platforms
 
 ### Analyze Performance
-1. \`get_analytics_summary\` → see overall metrics
+1. \`fetch_analytics\` → see overall metrics
 2. \`get_performance_insights\` → AI analysis of patterns
 3. \`get_best_posting_times\` → optimize scheduling
 
 ### Repurpose Content
 1. Use the \`repurpose_content\` prompt with your source material
 2. Review each generated variation
-3. Schedule across platforms using \`create_content_plan\`
+3. Schedule across platforms using \`save_content_plan\`
 
 ### Set Up Autopilot
 1. \`get_brand_profile\` → verify brand settings
-2. \`configure_autopilot\` → set schedule and preferences
-3. \`enable_autopilot\` → start automated posting
+2. \`update_autopilot_config\` → set schedule and preferences
+3. \`update_autopilot_config\` → start automated posting
 
 ## Credit Tips
 - Text generation: 1-3 credits

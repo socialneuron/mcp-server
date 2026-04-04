@@ -15,6 +15,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { computeBrandConsistency } from '../lib/brandScoring.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -287,57 +288,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         };
       }
 
-      // Run lightweight consistency checks (vocabulary + claims)
+      // Run multi-dimensional brand consistency scoring
       const profile = row.profile_data;
-      const contentLower = content.toLowerCase();
-      const issues: string[] = [];
-      let score = 70; // Start positive
-
-      // Check banned terms
-      const banned = profile.vocabularyRules?.bannedTerms || [];
-      const bannedFound = banned.filter((t: string) => contentLower.includes(t.toLowerCase()));
-      if (bannedFound.length > 0) {
-        score -= bannedFound.length * 15;
-        issues.push(`Banned terms found: ${bannedFound.join(', ')}`);
-      }
-
-      // Check avoid patterns
-      const avoid = profile.voiceProfile?.avoidPatterns || [];
-      const avoidFound = avoid.filter((p: string) => contentLower.includes(p.toLowerCase()));
-      if (avoidFound.length > 0) {
-        score -= avoidFound.length * 10;
-        issues.push(`Avoid patterns found: ${avoidFound.join(', ')}`);
-      }
-
-      // Check preferred terms used
-      const preferred = profile.vocabularyRules?.preferredTerms || [];
-      const prefUsed = preferred.filter((t: string) => contentLower.includes(t.toLowerCase()));
-      score += Math.min(15, prefUsed.length * 5);
-
-      // Check for fabrication patterns
-      const fabPatterns = [
-        { regex: /\b\d+[,.]?\d*\s*(%|percent)/gi, label: 'unverified percentage' },
-        { regex: /\b(award[- ]?winning|best[- ]selling|#\s*1)\b/gi, label: 'unverified ranking' },
-        { regex: /\b(guaranteed|proven to|studies show)\b/gi, label: 'unverified claim' },
-      ];
-
-      for (const { regex, label } of fabPatterns) {
-        regex.lastIndex = 0;
-        if (regex.test(content)) {
-          score -= 10;
-          issues.push(`Potential ${label} detected`);
-        }
-      }
-
-      score = Math.max(0, Math.min(100, score));
-
-      const checkResult = {
-        score,
-        passed: score >= 60,
-        issues,
-        preferredTermsUsed: prefUsed,
-        bannedTermsFound: bannedFound,
-      };
+      const checkResult = computeBrandConsistency(content, profile);
 
       const envelope = asEnvelope(checkResult);
       return {

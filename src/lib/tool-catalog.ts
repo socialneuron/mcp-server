@@ -77,6 +77,20 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
 
+  // media
+  {
+    name: 'upload_media',
+    description: 'Upload local file or external URL to R2 storage',
+    module: 'media',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'get_media_url',
+    description: 'Sign an R2 key to get a fresh download URL',
+    module: 'media',
+    scope: 'mcp:read',
+  },
+
   // distribution
   {
     name: 'schedule_post',

@@ -1,5 +1,5 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
-import { initializeAuth, getDefaultUserId, getSupabaseClient } from '../../lib/supabase.js';
+import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
 import { emitSnResult, classifySupabaseCliError, tryGetSupabaseClient } from './parse.js';
 import type { SnArgs } from './types.js';
 
@@ -90,8 +90,13 @@ export async function handleStatus(args: SnArgs, asJson: boolean): Promise<void>
 
 export async function handleAutopilot(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
-  try {
-    const supabase = getSupabaseClient();
+  const supabase = tryGetSupabaseClient();
+
+  let activeConfigs: number;
+  let pendingApprovals: number;
+  let configs: Array<Record<string, unknown>>;
+
+  if (supabase) {
     const [configsResult, approvalsResult] = await Promise.all([
       supabase
         .from('autopilot_configs')
@@ -101,42 +106,58 @@ export async function handleAutopilot(args: SnArgs, asJson: boolean): Promise<vo
       supabase.from('approval_queue').select('id').eq('user_id', userId).eq('status', 'pending'),
     ]);
 
-    const activeConfigs = configsResult.data?.length ?? 0;
-    const pendingApprovals = approvalsResult.data?.length ?? 0;
+    activeConfigs = configsResult.data?.length ?? 0;
+    pendingApprovals = approvalsResult.data?.length ?? 0;
+    configs = configsResult.data ?? [];
+  } else {
+    // Cloud mode: route through mcp-gateway
+    const { data, error } = await callEdgeFunction<{
+      success: boolean;
+      activeConfigs: number;
+      pendingApprovals: number;
+      configs: Array<Record<string, unknown>>;
+      error?: string;
+    }>('mcp-data', { action: 'autopilot-status', userId });
 
-    if (asJson) {
-      emitSnResult(
-        {
-          ok: true,
-          command: 'autopilot',
-          activeConfigs,
-          pendingApprovals,
-          configs: configsResult.data ?? [],
-        },
-        true
-      );
-    } else {
-      console.error('Autopilot Status');
-      console.error('================');
-      console.error(`Active Configs: ${activeConfigs}`);
-      console.error(`Pending Approvals: ${pendingApprovals}`);
-      if (configsResult.data?.length) {
-        console.error('\nConfigs:');
-        for (const cfg of configsResult.data) {
-          console.error(`- ${cfg.platform}: enabled (updated ${cfg.updated_at})`);
-        }
+    if (error || !data?.success) {
+      throw new Error(`Autopilot status failed: ${error ?? data?.error ?? 'Unknown error'}`);
+    }
+
+    activeConfigs = data.activeConfigs;
+    pendingApprovals = data.pendingApprovals;
+    configs = data.configs ?? [];
+  }
+
+  if (asJson) {
+    emitSnResult(
+      { ok: true, command: 'autopilot', activeConfigs, pendingApprovals, configs },
+      true
+    );
+  } else {
+    console.error('Autopilot Status');
+    console.error('================');
+    console.error(`Active Configs: ${activeConfigs}`);
+    console.error(`Pending Approvals: ${pendingApprovals}`);
+    if (configs.length) {
+      console.error('\nConfigs:');
+      for (const cfg of configs) {
+        console.error(`- ${cfg.platform}: enabled (updated ${cfg.updated_at})`);
       }
     }
-  } catch (err) {
-    throw new Error(`Autopilot status failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   process.exit(0);
 }
 
 export async function handleUsage(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
-  try {
-    const supabase = getSupabaseClient();
+  const supabase = tryGetSupabaseClient();
+
+  type ToolUsage = { tool_name: string; call_count: number; credits_total: number };
+  let totalCalls: number;
+  let totalCredits: number;
+  let tools: ToolUsage[];
+
+  if (supabase) {
     const startOfMonth = new Date();
     startOfMonth.setDate(1);
     startOfMonth.setHours(0, 0, 0, 0);
@@ -155,51 +176,63 @@ export async function handleUsage(args: SnArgs, asJson: boolean): Promise<void> 
         .gte('created_at', startOfMonth.toISOString())
         .like('action', 'mcp:%');
 
-      const totalCalls = logs?.length ?? 0;
-      if (asJson) {
-        emitSnResult({ ok: true, command: 'usage', totalCalls, totalCredits: 0, tools: [] }, true);
-      } else {
-        console.error('MCP Usage This Month');
-        console.error('====================');
-        console.error(`Total Calls: ${totalCalls}`);
-        console.error('(Detailed breakdown requires get_mcp_monthly_usage RPC function)');
-      }
+      totalCalls = logs?.length ?? 0;
+      totalCredits = 0;
+      tools = [];
     } else {
-      const tools = (rows ?? []) as Array<{
-        tool_name: string;
-        call_count: number;
-        credits_total: number;
-      }>;
-      const totalCalls = tools.reduce((sum: number, t) => sum + (t.call_count ?? 0), 0);
-      const totalCredits = tools.reduce((sum: number, t) => sum + (t.credits_total ?? 0), 0);
+      tools = (rows ?? []) as ToolUsage[];
+      totalCalls = tools.reduce((sum: number, t) => sum + (t.call_count ?? 0), 0);
+      totalCredits = tools.reduce((sum: number, t) => sum + (t.credits_total ?? 0), 0);
+    }
+  } else {
+    // Cloud mode: route through mcp-gateway
+    const { data, error } = await callEdgeFunction<{
+      success: boolean;
+      totalCalls: number;
+      totalCredits: number;
+      tools: ToolUsage[];
+      error?: string;
+    }>('mcp-data', { action: 'mcp-usage', userId });
 
-      if (asJson) {
-        emitSnResult({ ok: true, command: 'usage', totalCalls, totalCredits, tools }, true);
-      } else {
-        console.error('MCP Usage This Month');
-        console.error('====================');
-        console.error(`Total Calls: ${totalCalls}`);
-        console.error(`Total Credits: ${totalCredits}`);
-        if (tools.length) {
-          console.error('\nPer-Tool Breakdown:');
-          for (const tool of tools) {
-            console.error(
-              `- ${tool.tool_name}: ${tool.call_count} calls, ${tool.credits_total} credits`
-            );
-          }
-        }
+    if (error || !data?.success) {
+      throw new Error(`Usage fetch failed: ${error ?? data?.error ?? 'Unknown error'}`);
+    }
+
+    totalCalls = data.totalCalls;
+    totalCredits = data.totalCredits;
+    tools = data.tools ?? [];
+  }
+
+  if (asJson) {
+    emitSnResult({ ok: true, command: 'usage', totalCalls, totalCredits, tools }, true);
+  } else {
+    console.error('MCP Usage This Month');
+    console.error('====================');
+    console.error(`Total Calls: ${totalCalls}`);
+    console.error(`Total Credits: ${totalCredits}`);
+    if (tools.length) {
+      console.error('\nPer-Tool Breakdown:');
+      for (const tool of tools) {
+        console.error(
+          `- ${tool.tool_name}: ${tool.call_count} calls, ${tool.credits_total} credits`
+        );
       }
     }
-  } catch (err) {
-    throw new Error(`Usage fetch failed: ${err instanceof Error ? err.message : String(err)}`);
   }
   process.exit(0);
 }
 
 export async function handleCredits(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
-  try {
-    const supabase = getSupabaseClient();
+  const supabase = tryGetSupabaseClient();
+
+  let balance: number;
+  let monthlyUsed: number;
+  let monthlyLimit: number;
+  let plan: string;
+
+  if (supabase) {
+    // Self-host mode: query DB directly
     const [profileResult, subResult] = await Promise.all([
       supabase
         .from('user_profiles')
@@ -218,27 +251,41 @@ export async function handleCredits(args: SnArgs, asJson: boolean): Promise<void
 
     if (profileResult.error) throw profileResult.error;
 
-    const balance = Number(profileResult.data?.credits || 0);
-    const monthlyUsed = Number(profileResult.data?.monthly_credits_used || 0);
-    const monthlyLimit = Number(subResult.data?.monthly_credits || 0);
-    const plan = (subResult.data?.tier as string) || 'free';
+    balance = Number(profileResult.data?.credits || 0);
+    monthlyUsed = Number(profileResult.data?.monthly_credits_used || 0);
+    monthlyLimit = Number(subResult.data?.monthly_credits || 0);
+    plan = (subResult.data?.tier as string) || 'free';
+  } else {
+    // Cloud mode: route through mcp-gateway
+    const { data, error } = await callEdgeFunction<{
+      success: boolean;
+      balance: number;
+      monthlyUsed: number;
+      monthlyLimit: number;
+      plan: string;
+      error?: string;
+    }>('mcp-data', { action: 'credit-balance', userId });
 
-    if (asJson) {
-      emitSnResult(
-        { ok: true, command: 'credits', balance, monthlyUsed, monthlyLimit, plan },
-        true
-      );
-    } else {
-      console.error('Credit Balance');
-      console.error('==============');
-      console.error(`Plan: ${plan.toUpperCase()}`);
-      console.error(`Balance: ${balance} credits`);
-      if (monthlyLimit) {
-        console.error(`Monthly Usage: ${monthlyUsed} / ${monthlyLimit}`);
-      }
+    if (error || !data?.success) {
+      throw new Error(`Credit balance failed: ${error ?? data?.error ?? 'Unknown error'}`);
     }
-  } catch (err) {
-    throw new Error(`Credit balance failed: ${err instanceof Error ? err.message : String(err)}`);
+
+    balance = data.balance;
+    monthlyUsed = data.monthlyUsed;
+    monthlyLimit = data.monthlyLimit;
+    plan = data.plan;
+  }
+
+  if (asJson) {
+    emitSnResult({ ok: true, command: 'credits', balance, monthlyUsed, monthlyLimit, plan }, true);
+  } else {
+    console.error('Credit Balance');
+    console.error('==============');
+    console.error(`Plan: ${plan.toUpperCase()}`);
+    console.error(`Balance: ${balance} credits`);
+    if (monthlyLimit) {
+      console.error(`Monthly Usage: ${monthlyUsed} / ${monthlyLimit}`);
+    }
   }
   process.exit(0);
 }
