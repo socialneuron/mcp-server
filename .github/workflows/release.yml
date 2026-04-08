@@ -36,6 +36,18 @@ jobs:
             exit 1
           fi
 
+      - name: Lint package-lock.json
+        run: npm run lint:lockfile
+
+      - name: Dependency cooldown (enforced on release)
+        run: npm run check:dep-age
+        env:
+          SN_DEP_AGE_ENFORCE: "true"
+        # Release is stricter than CI: young deps block publish.
+        # Emergency override: set SN_DEP_MIN_AGE_DAYS=0 on this step for
+        # a single release when shipping a vetted security patch that is
+        # under the cooldown. Revert immediately after.
+
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
