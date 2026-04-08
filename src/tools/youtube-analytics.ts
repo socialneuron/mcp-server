@@ -1,11 +1,23 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { MCP_VERSION } from '../lib/version.js';
 import type {
   YouTubeChannelAnalytics,
   YouTubeDailyAnalytics,
   YouTubeTopVideo,
+  ResponseEnvelope,
 } from '../types/index.js';
+
+function asEnvelope<T>(data: T): ResponseEnvelope<T> {
+  return {
+    _meta: {
+      version: MCP_VERSION,
+      timestamp: new Date().toISOString(),
+    },
+    data,
+  };
+}
 
 export function registerYouTubeAnalyticsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -40,16 +52,14 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
         .max(50)
         .optional()
         .describe('Max videos to return for "topVideos" action. Defaults to 10.'),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Optional response format. Defaults to text.'),
     },
-    {
-      title: "Fetch YouTube Analytics",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
+    async ({ action, start_date, end_date, video_id, max_results, response_format }) => {
+      const format = response_format ?? 'text';
 
-    async ({ action, start_date, end_date, video_id, max_results }) => {
       if (action === 'video' && !video_id) {
         return {
           content: [
@@ -79,6 +89,20 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
       // Format based on action
       if (action === 'channel') {
         const a = (result.analytics ?? {}) as YouTubeChannelAnalytics;
+        if (format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  asEnvelope({ action, startDate: start_date, endDate: end_date, analytics: a }),
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
         const lines = [
           `YouTube Channel Analytics (${start_date} to ${end_date}):`,
           '',
@@ -103,6 +127,25 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
             ],
           };
         }
+        if (format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  asEnvelope({
+                    action,
+                    startDate: start_date,
+                    endDate: end_date,
+                    dailyAnalytics: days,
+                  }),
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
         const lines = [`YouTube Daily Analytics (${start_date} to ${end_date}):`, ''];
         for (const d of days) {
           lines.push(
@@ -117,6 +160,26 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
 
       if (action === 'video') {
         const a = (result.analytics ?? {}) as Record<string, number>;
+        if (format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  asEnvelope({
+                    action,
+                    videoId: video_id,
+                    startDate: start_date,
+                    endDate: end_date,
+                    analytics: a,
+                  }),
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
         const lines = [
           `YouTube Video Analytics for ${video_id} (${start_date} to ${end_date}):`,
           '',
@@ -138,6 +201,25 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
             content: [{ type: 'text' as const, text: 'No top videos found for this period.' }],
           };
         }
+        if (format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  asEnvelope({
+                    action,
+                    startDate: start_date,
+                    endDate: end_date,
+                    topVideos: videos,
+                  }),
+                  null,
+                  2
+                ),
+              },
+            ],
+          };
+        }
         const lines = [`Top ${videos.length} YouTube Videos (${start_date} to ${end_date}):`, ''];
         for (let i = 0; i < videos.length; i++) {
           const v = videos[i];
@@ -153,6 +235,11 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
       }
 
       // Fallback - return raw data
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
+        };
+      }
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
       };

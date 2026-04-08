@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { callEdgeFunction } from '../lib/edge-function.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -30,45 +29,27 @@ export function registerUsageTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    {
-      title: "Get MCP Usage",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ response_format }) => {
       const format = response_format ?? 'text';
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
 
-      // Get monthly usage from mcp_usage table
-      const { data: usage, error } = await supabase.rpc('get_mcp_monthly_usage', {
-        p_user_id: userId,
-      });
+      // Route through mcp-data EF (works in cloud mode with API key)
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        totalCalls: number;
+        totalCredits: number;
+        tools: Array<{ tool_name: string; call_count: number; credits_total: number }>;
+      }>('mcp-data', { action: 'mcp-usage' });
 
-      if (error) {
+      if (efError) {
         return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error fetching usage: ${sanitizeDbError(error)}`,
-            },
-          ],
+          content: [{ type: 'text' as const, text: `Error fetching usage: ${efError}` }],
           isError: true,
         };
       }
 
-      const rows = usage || [];
-      const totalCalls = rows.reduce(
-        (sum: number, r: { call_count: number }) => sum + Number(r.call_count),
-        0
-      );
-      const totalCredits = rows.reduce(
-        (sum: number, r: { credits_total: number }) => sum + Number(r.credits_total),
-        0
-      );
+      const rows = result?.tools ?? [];
+      const totalCalls = result?.totalCalls ?? 0;
+      const totalCredits = result?.totalCredits ?? 0;
 
       if (format === 'json') {
         return {

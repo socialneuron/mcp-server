@@ -2,6 +2,28 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.3] - 2026-04-04
+
+### Security
+- **Full error sanitization**: `sanitizeError()` applied across all 15 catch blocks in 9 tool files + `http.ts` global error handler. No internal paths, table names, or stack traces leak to clients.
+- **R2 key masking**: R2 storage keys are masked in all text output to prevent path disclosure.
+
+### Added
+- **`upload_media` tool**: Upload local files or URLs to R2 storage for use in posts.
+- **`get_media_url` tool**: Generate signed URLs for R2-stored media.
+- **`schedule_post` enhancements**: Now accepts `r2_key`/`r2_keys`, `job_id`/`job_ids`, and typed `platform_metadata` — enables seamless generate-upload-post pipeline.
+- **`check_status` enhancements**: Returns `all_urls` for multi-output jobs, presigned PUT URL support.
+- **Brand consistency scoring**: New `brandScoring.ts` + `brandRuntime.ts` modules with multi-dimensional brand alignment scoring.
+
+### Fixed
+- Duplicate `sanitizeError` import removed.
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.3`.
+- Removed `api/` directory (OpenAPI spec, router, tool-executor) — REST convenience routes consolidated into `http.ts`.
+- Removed `cli/sn/completions.ts`, `cli/sn/generate.ts`, `cli/sn/parse.ts` — CLI streamlined.
+- Removed `lib/tool-errors.ts` — error handling consolidated into `sanitizeError`.
+
 ## [1.7.0] - 2026-04-03
 
 ### Added
@@ -12,8 +34,8 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 - Response truncation (100K char limit)
 
 ### Security
-- Removed hardcoded Supabase URL and anon key from npm package
-- Cloud config now fetched at startup from `/config` endpoint (rotatable without npm republish)
+- Cloud config fetched at startup from `/config` endpoint (rotatable without npm republish)
+- Supabase anon key (public, RLS-gated) restored with documentation — service role key remains env-only
 
 ### Dependencies
 - `@modelcontextprotocol/sdk` 1.27 → 1.29

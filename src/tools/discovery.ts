@@ -29,14 +29,6 @@ export function registerDiscoveryTools(server: McpServer): void {
           'Detail level: "name" for just tool names, "summary" for names + descriptions, "full" for complete info including scope and module'
         ),
     },
-    {
-      title: "Search Tools",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ query, module, scope, detail }) => {
       let results: ToolEntry[] = [...TOOL_CATALOG];
 

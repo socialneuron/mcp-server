@@ -2,13 +2,12 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerPlanningTools } from './planning.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId, getDefaultUserId, getSupabaseClient } from '../lib/supabase.js';
+import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 
 vi.mock('../lib/edge-function.js');
 vi.mock('../lib/supabase.js');
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
-const mockGetClient = vi.mocked(getSupabaseClient);
 const mockGetUserId = vi.mocked(getDefaultUserId);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
 
@@ -29,28 +28,6 @@ const MOCK_POSTS = [
   },
 ];
 
-function chainMock(resolvedValue: { data: any; error: any }) {
-  const chain: Record<string, any> = {};
-  const methods = [
-    'select',
-    'eq',
-    'order',
-    'limit',
-    'single',
-    'maybeSingle',
-    'insert',
-    'update',
-    'upsert',
-  ];
-  for (const method of methods) {
-    chain[method] = vi.fn().mockReturnValue(chain);
-  }
-  chain.then = (resolve: (value: { data: any; error: any }) => unknown) => resolve(resolvedValue);
-  chain.catch = () => chain;
-  chain.finally = () => chain;
-  return chain;
-}
-
 describe('planning tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
@@ -63,14 +40,6 @@ describe('planning tools', () => {
   });
 
   it('plan_content_week includes insights_applied and persists plan', async () => {
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plans') {
-        return chainMock({ data: { id: 'plan-1' }, error: null });
-      }
-      return chainMock({ data: null, error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
-
     mockCallEdge.mockResolvedValueOnce({
       data: { success: true, profile: { brand_name: 'Acme', brand_context: { voiceProfile: {} } } },
       error: null,
@@ -104,6 +73,10 @@ describe('planning tools', () => {
       data: { text: JSON.stringify(MOCK_POSTS) },
       error: null,
     }); // social-neuron-ai
+    mockCallEdge.mockResolvedValueOnce({
+      data: { success: true, plan_id: 'plan-1' },
+      error: null,
+    }); // mcp-data save-content-plan
 
     const handler = server.getHandler('plan_content_week')!;
     const result = await handler({
@@ -122,13 +95,10 @@ describe('planning tools', () => {
   });
 
   it('save_content_plan persists a provided plan payload', async () => {
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plans') {
-        return chainMock({ data: { id: 'plan-save-1' }, error: null });
-      }
-      return chainMock({ data: null, error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+    mockCallEdge.mockResolvedValueOnce({
+      data: { success: true, plan_id: '55555555-5555-4555-8555-555555555555' },
+      error: null,
+    }); // mcp-data save-content-plan
 
     const handler = server.getHandler('save_content_plan')!;
     const result = await handler({
@@ -153,24 +123,21 @@ describe('planning tools', () => {
   });
 
   it('get_content_plan returns persisted payload', async () => {
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plans') {
-        return chainMock({
-          data: {
-            id: '22222222-2222-2222-2222-222222222222',
-            topic: 'Topic',
-            status: 'draft',
-            created_at: '2026-02-20T00:00:00Z',
-            updated_at: '2026-02-20T00:00:00Z',
-            insights_applied: { has_historical_data: false },
-            plan_payload: { posts: MOCK_POSTS },
-          },
-          error: null,
-        });
-      }
-      return chainMock({ data: null, error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        plan: {
+          id: '22222222-2222-2222-2222-222222222222',
+          topic: 'Topic',
+          status: 'draft',
+          created_at: '2026-02-20T00:00:00Z',
+          updated_at: '2026-02-20T00:00:00Z',
+          insights_applied: { has_historical_data: false },
+          plan_payload: { posts: MOCK_POSTS },
+        },
+      },
+      error: null,
+    }); // mcp-data get-content-plan
 
     const handler = server.getHandler('get_content_plan')!;
     const result = await handler({
@@ -185,20 +152,15 @@ describe('planning tools', () => {
   });
 
   it('update_content_plan merges post updates', async () => {
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plans') {
-        return chainMock({
-          data: {
-            id: '33333333-3333-3333-3333-333333333333',
-            status: 'draft',
-            plan_payload: { posts: MOCK_POSTS },
-          },
-          error: null,
-        });
-      }
-      return chainMock({ data: null, error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        plan_id: '33333333-3333-3333-3333-333333333333',
+        status: 'draft',
+        updated_posts: 1,
+      },
+      error: null,
+    }); // mcp-data update-content-plan
 
     const handler = server.getHandler('update_content_plan')!;
     const result = await handler({
@@ -213,27 +175,15 @@ describe('planning tools', () => {
   });
 
   it('submit_content_plan_for_approval creates approval rows', async () => {
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plans') {
-        return chainMock({
-          data: {
-            id: '44444444-4444-4444-4444-444444444444',
-            project_id: '11111111-1111-1111-1111-111111111111',
-            status: 'draft',
-            plan_payload: { posts: MOCK_POSTS },
-          },
-          error: null,
-        });
-      }
-      if (table === 'content_plan_approvals') {
-        return chainMock({
-          data: [{ id: 'approval-1', post_id: 'day1-linkedin-1', status: 'pending' }],
-          error: null,
-        });
-      }
-      return chainMock({ data: null, error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        plan_id: '44444444-4444-4444-4444-444444444444',
+        approvals_created: 1,
+        status: 'in_review',
+      },
+      error: null,
+    }); // mcp-data submit-plan-approval
 
     const handler = server.getHandler('submit_content_plan_for_approval')!;
     const result = await handler({
