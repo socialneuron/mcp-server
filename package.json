@@ -80,6 +80,12 @@
     "typescript": "^5.9.3",
     "vitest": "^3.0.0"
   },
+  "overrides": {
+    "vite": "7.3.2",
+    "@hono/node-server": "1.19.13",
+    "hono": "4.12.12",
+    "path-to-regexp": "8.4.2"
+  },
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0"
   }
