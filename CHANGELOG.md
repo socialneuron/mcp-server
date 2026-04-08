@@ -2,6 +2,24 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.0] - 2026-04-03
+
+### Added
+- 12 new tools (52 → 64): brandRuntime (3), pipeline (4), suggest (1), digest (2), remotion (+1), autopilot (+1)
+- `/.well-known/mcp/server-card.json` endpoint for Smithery marketplace discovery
+- `/config` endpoint for cloud-mode connection info (replaces hardcoded credentials)
+- MCP tool safety annotations for Anthropic Connectors Directory
+- Response truncation (100K char limit)
+
+### Security
+- Removed hardcoded Supabase URL and anon key from npm package
+- Cloud config now fetched at startup from `/config` endpoint (rotatable without npm republish)
+
+### Dependencies
+- `@modelcontextprotocol/sdk` 1.27 → 1.29
+- `@supabase/supabase-js` 2.99 → 2.101
+- `jose` 6.2.1 → 6.2.2
+
 ## [1.6.1] - 2026-03-22
 
 ### Security
