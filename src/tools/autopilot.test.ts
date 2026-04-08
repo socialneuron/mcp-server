@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerAutopilotTools } from './autopilot.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 
@@ -146,7 +147,7 @@ describe('autopilot tools', () => {
       const handler = server.getHandler('list_autopilot_configs')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.6.1');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed._meta.timestamp).toBeDefined();
       expect(parsed.data).toHaveLength(1);
       expect(parsed.data[0].id).toBe('cfg-333');
@@ -307,7 +308,7 @@ describe('autopilot tools', () => {
       const handler = server.getHandler('get_autopilot_status')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.6.1');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed._meta.timestamp).toBeDefined();
       expect(parsed.data.activeConfigs).toBe(1);
       expect(parsed.data.pendingApprovals).toBe(1);
@@ -395,7 +396,7 @@ describe('autopilot tools', () => {
         response_format: 'json',
       });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.6.1');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.id).toBe('new-cfg-2');
     });
 
