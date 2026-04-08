@@ -14,7 +14,7 @@ import { createInterface } from 'node:readline';
 import { saveApiKey, loadApiKey, deleteApiKey, saveSupabaseUrl } from './credentials.js';
 import { runSetup, getAppBaseUrl } from './setup.js';
 import { validateApiKey } from '../auth/api-keys.js';
-import { getSupabaseUrl, CLOUD_SUPABASE_URL } from '../lib/supabase.js';
+import { getSupabaseUrl } from '../lib/supabase.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -29,7 +29,11 @@ function prompt(question: string): Promise<string> {
 }
 
 function getDefaultSupabaseUrl(): string {
-  return process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || CLOUD_SUPABASE_URL;
+  try {
+    return getSupabaseUrl();
+  } catch {
+    return "https://mcp.socialneuron.com";
+  }
 }
 
 // ── Login ────────────────────────────────────────────────────────────

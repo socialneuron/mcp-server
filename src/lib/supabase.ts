@@ -45,41 +45,90 @@ export function getSupabaseClient(): SupabaseClient {
 }
 
 /**
- * Returns the configured Supabase URL (for building Edge Function URLs).
+ * Cloud config endpoint — returns public connection info (Supabase URL + anon key).
+ * Fetched once at startup; no secrets hardcoded in the npm package.
  */
-/**
- * Cloud Supabase URL — NOT a secret.
- *
- * This is the same value shipped in the frontend bundle as VITE_SUPABASE_URL.
- * It identifies the Supabase project; all access is gated by RLS + auth.
- *
- * The SUPABASE_SERVICE_ROLE_KEY is NEVER hardcoded anywhere in this package.
- * Service role keys are only loaded from environment variables at runtime.
- */
-export const CLOUD_SUPABASE_URL = "https://rhukkjscgzauutioyeei.supabase.co";
+const CLOUD_CONFIG_URL =
+  process.env.SOCIALNEURON_CONFIG_URL || "https://mcp.socialneuron.com/config";
+
+let _cloudConfig: { supabaseUrl: string; anonKey: string } | null = null;
 
 /**
- * Cloud Supabase anon key — intentionally public, NOT a secret.
- *
- * This is the same value shipped in the frontend bundle as VITE_SUPABASE_ANON_KEY.
- * The JWT payload decodes to: { "role": "anon", ... }
- *
- * Row Level Security (RLS) enforces all access control. The anon key alone
- * cannot read, write, or modify any user data without a valid user JWT.
- *
- * The SUPABASE_SERVICE_ROLE_KEY is NEVER embedded in this package.
+ * Fetch cloud config from the MCP HTTP server.
+ * Caches the result for the process lifetime.
  */
-export const CLOUD_SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJodWtranNjZ3phdXV0aW95ZWVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NjM4ODYsImV4cCI6MjA4MDQzOTg4Nn0.JVtrviGvN0HaSh0JFS5KNl5FAB5ffG5Y1IMZsQFUrNQ";
+export async function fetchCloudConfig(): Promise<{
+  supabaseUrl: string;
+  anonKey: string;
+}> {
+  if (_cloudConfig) return _cloudConfig;
+
+  // Check env vars first — always preferred
+  const envUrl =
+    process.env.SOCIALNEURON_CLOUD_SUPABASE_URL ||
+    process.env.SUPABASE_URL;
+  const envAnon =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SOCIALNEURON_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY;
+
+  if (envUrl && envAnon) {
+    _cloudConfig = { supabaseUrl: envUrl, anonKey: envAnon };
+    return _cloudConfig;
+  }
+
+  // Fetch from config endpoint (no secrets, just public connection info)
+  try {
+    const resp = await fetch(CLOUD_CONFIG_URL, {
+      signal: AbortSignal.timeout(5000),
+    });
+    if (!resp.ok) {
+      throw new Error(`Config fetch failed: ${resp.status}`);
+    }
+    const config = (await resp.json()) as {
+      supabaseUrl: string;
+      anonKey: string;
+    };
+    _cloudConfig = config;
+    return _cloudConfig;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    throw new Error(
+      `Failed to fetch cloud config from ${CLOUD_CONFIG_URL}: ${msg}. ` +
+        "Set SUPABASE_URL and SUPABASE_ANON_KEY environment variables as a fallback.",
+    );
+  }
+}
 
 export function getSupabaseUrl(): string {
   if (SUPABASE_URL) return SUPABASE_URL;
 
-  // Cloud mode: fall back to embedded cloud URL (env override still honored)
+  // Cloud mode: check env var override
   const cloudOverride = process.env.SOCIALNEURON_CLOUD_SUPABASE_URL;
   if (cloudOverride) return cloudOverride;
 
-  return CLOUD_SUPABASE_URL;
+  // Use cached cloud config if available (populated by fetchCloudConfig)
+  if (_cloudConfig) return _cloudConfig.supabaseUrl;
+
+  throw new Error(
+    "Supabase URL not configured. Run: npx @socialneuron/mcp-server setup",
+  );
+}
+
+/**
+ * Get cloud anon key (for Bearer auth on Edge Function calls).
+ * Returns cached value from fetchCloudConfig() or env var.
+ */
+export function getCloudAnonKey(): string {
+  const envAnon =
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SOCIALNEURON_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY;
+  if (envAnon) return envAnon;
+  if (_cloudConfig) return _cloudConfig.anonKey;
+  throw new Error(
+    "Supabase anon key not available. Call fetchCloudConfig() first or set SUPABASE_ANON_KEY.",
+  );
 }
 
 /**
@@ -178,6 +227,16 @@ export async function getDefaultProjectId(): Promise<string | null> {
  * Tries API key auth first, falls back to service role.
  */
 export async function initializeAuth(): Promise<void> {
+  // Fetch cloud config (Supabase URL + anon key) for cloud mode
+  // Must happen before API key validation which needs the anon key
+  if (!SUPABASE_URL) {
+    try {
+      await fetchCloudConfig();
+    } catch {
+      // Non-fatal here — will fail later if cloud config is actually needed
+    }
+  }
+
   // Try API key first
   const { loadApiKey } = await import("../cli/credentials.js");
   const apiKey = await loadApiKey();

@@ -548,6 +548,18 @@ app.get("/.well-known/mcp/server-card.json", (_req, res) => {
   });
 });
 
+// ── Public config ───────────────────────────────────────────────────
+// Returns connection info for cloud-mode stdio clients.
+// No secrets — same values shipped in the frontend bundle.
+
+app.get("/config", (_req, res) => {
+  res.setHeader("Cache-Control", "public, max-age=3600");
+  res.json({
+    supabaseUrl: SUPABASE_URL,
+    anonKey: SUPABASE_ANON_KEY,
+  });
+});
+
 // ── Health check ─────────────────────────────────────────────────────
 
 app.get("/health", (_req, res) => {

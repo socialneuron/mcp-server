@@ -152,10 +152,19 @@ describe("validateApiKey", () => {
     );
   });
 
-  it("uses hardcoded CLOUD_SUPABASE_ANON_KEY when env vars are absent", async () => {
+  it("uses cloud config anon key when env vars are absent", async () => {
     delete process.env.SUPABASE_ANON_KEY;
     delete process.env.SOCIALNEURON_ANON_KEY;
     delete process.env.VITE_SUPABASE_ANON_KEY;
+
+    // Pre-populate cloud config cache via fetchCloudConfig
+    const { fetchCloudConfig } = await import("../lib/supabase.js");
+    // Set env vars temporarily so fetchCloudConfig resolves from env
+    process.env.SUPABASE_URL = "https://test.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "test-anon-key-from-config";
+    await fetchCloudConfig();
+    // Clear env var so getCloudAnonKey uses cached config
+    delete process.env.SUPABASE_ANON_KEY;
 
     mockFetchResponse(200, {
       valid: true,
@@ -167,13 +176,13 @@ describe("validateApiKey", () => {
     expect(result.valid).toBe(true);
     expect(result.userId).toBe("u-fallback");
 
-    // Verify fetch WAS called (using the hardcoded anon key)
+    // Verify fetch WAS called with the cached anon key
     const fetchMock = vi.mocked(globalThis.fetch);
     expect(fetchMock).toHaveBeenCalledOnce();
     const [, options] = fetchMock.mock.calls[0];
     const authHeader = (options as Record<string, Record<string, string>>)
       .headers.Authorization;
-    expect(authHeader).toContain("Bearer eyJ"); // Hardcoded anon key used
+    expect(authHeader).toContain("Bearer test-anon-key-from-config");
   });
 
   it("prefers SUPABASE_ANON_KEY env var for Authorization header", async () => {
