@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: production  # Requires manual approval before publish
 
     steps:
       - uses: actions/checkout@v6
@@ -56,14 +57,9 @@ jobs:
           fi
 
       - name: Publish
-        # --provenance generates SLSA Build L2 attestation via GitHub OIDC.
-        # Requires id-token: write permission (set above).
-        # History: --provenance was removed in v1.3.1 due to a 404 on scoped
-        # packages when the npm token lacked the correct permissions. The
-        # NPM_TOKEN was rotated to a Granular Access Token with Bypass 2FA
-        # (2026-03-20) which supports provenance. If publish fails with a
-        # 404 again, verify the token has "Publish" + "Bypass 2FA" permissions
-        # and that the @socialneuron scope is included in the token's allowed scopes.
+        # npm Trusted Publishing (OIDC) — no NODE_AUTH_TOKEN needed.
+        # Trust is configured on npmjs.com → package → Access → Trusted Publisher.
+        # Requires: permissions.id-token: write (set above) + production environment.
+        # --provenance generates SLSA Build L2 attestation, signed via GitHub OIDC.
+        # https://docs.npmjs.com/trusted-publishers
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
