@@ -40,6 +40,10 @@ import { registerQualityTools } from "./quality.js";
 import { registerPlanningTools } from "./planning.js";
 import { registerPlanApprovalTools } from "./plan-approvals.js";
 import { registerDiscoveryTools } from "./discovery.js";
+import { registerPipelineTools } from "./pipeline.js";
+import { registerSuggestTools } from "./suggest.js";
+import { registerDigestTools } from "./digest.js";
+import { registerBrandRuntimeTools } from "./brandRuntime.js";
 // Screenshot tools require browser mocks; tested separately below.
 import { registerScreenshotTools } from "./screenshot.js";
 
@@ -196,6 +200,10 @@ describe("Registration & Scope Coverage", () => {
     registerPlanningTools(server as any);
     registerPlanApprovalTools(server as any);
     registerDiscoveryTools(server as any);
+    registerPipelineTools(server as any);
+    registerSuggestTools(server as any);
+    registerDigestTools(server as any);
+    registerBrandRuntimeTools(server as any);
   });
 
   it("every tool in TOOL_SCOPES is actually registered (no orphaned scope entries)", () => {
