@@ -22,7 +22,7 @@ import { homedir, platform } from "node:os";
 import { join } from "node:path";
 import type { AddressInfo } from "node:net";
 import { saveApiKey, saveSupabaseUrl, deleteApiKey } from "./credentials.js";
-import { CLOUD_SUPABASE_URL } from "../lib/supabase.js";
+import { getSupabaseUrl } from "../lib/supabase.js";
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -46,11 +46,11 @@ export function getAppBaseUrl(): string {
 }
 
 function getDefaultSupabaseUrl(): string {
-  return (
-    process.env.SOCIALNEURON_SUPABASE_URL ||
-    process.env.SUPABASE_URL ||
-    CLOUD_SUPABASE_URL
-  );
+  try {
+    return getSupabaseUrl();
+  } catch {
+    return "https://mcp.socialneuron.com";
+  }
 }
 
 // ── MCP Client Config ────────────────────────────────────────────────
