@@ -68,7 +68,7 @@ describe('credits tools', () => {
       const handler = server.getHandler('get_credit_balance')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.2');
+      expect(parsed._meta.version).toBe('1.7.4');
       expect(parsed._meta.timestamp).toBeDefined();
       expect(parsed.data.plan).toBe('starter');
       expect(parsed.data.balance).toBe(500);
@@ -107,7 +107,7 @@ describe('credits tools', () => {
       const handler = server.getHandler('get_budget_status')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.2');
+      expect(parsed._meta.version).toBe('1.7.4');
       expect(parsed.data).toHaveProperty('creditsUsedThisRun');
     });
 

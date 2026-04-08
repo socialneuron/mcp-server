@@ -133,7 +133,7 @@ describe('distribution tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.2');
+      expect(parsed._meta.version).toBe('1.7.4');
       expect(parsed.data.success).toBe(true);
     });
   });
