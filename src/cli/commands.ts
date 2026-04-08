@@ -14,7 +14,7 @@ import { createInterface } from 'node:readline';
 import { saveApiKey, loadApiKey, deleteApiKey, saveSupabaseUrl } from './credentials.js';
 import { runSetup, getAppBaseUrl } from './setup.js';
 import { validateApiKey } from '../auth/api-keys.js';
-import { getSupabaseUrl } from '../lib/supabase.js';
+import { getSupabaseUrl, CLOUD_SUPABASE_URL } from '../lib/supabase.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -29,11 +29,7 @@ function prompt(question: string): Promise<string> {
 }
 
 function getDefaultSupabaseUrl(): string {
-  try {
-    return getSupabaseUrl();
-  } catch {
-    return "https://mcp.socialneuron.com";
-  }
+  return process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || CLOUD_SUPABASE_URL;
 }
 
 // ── Login ────────────────────────────────────────────────────────────
@@ -87,7 +83,7 @@ async function runLoginPaste(): Promise<void> {
 
   console.error('');
   console.error('  API key saved securely.');
-  console.error(`  User: ${result.userId || 'unknown'}`);
+  console.error(`  User: ${result.email || 'unknown'}`);
   console.error(`  Scopes: ${result.scopes?.join(', ') || 'mcp:full'}`);
   if (result.expiresAt) {
     const daysLeft = Math.ceil(
@@ -151,39 +147,58 @@ async function runLoginDevice(): Promise<void> {
   while (Date.now() - startTime < maxTime) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
 
+    let pollResponse;
     try {
-      const pollResponse = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=device-poll`, {
+      pollResponse = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=device-poll`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ device_code: data.device_code }),
       });
+    } catch {
+      // Network error — keep trying
+      continue;
+    }
 
-      if (pollResponse.status === 200) {
-        const pollData = (await pollResponse.json()) as { api_key?: string };
-        if (pollData.api_key) {
-          // Save immediately — key was just created by the server, no need to re-validate
-          // (re-validation can fail due to rate limits and cause the key to be lost)
+    if (pollResponse.status === 200) {
+      const pollData = (await pollResponse.json()) as { api_key?: string };
+      if (pollData.api_key) {
+        // Key received — save is critical, never swallow errors here.
+        // If save fails, print the key so the user can recover with --paste.
+        try {
           await saveApiKey(pollData.api_key);
           await saveSupabaseUrl(supabaseUrl);
-
+        } catch (saveErr) {
           console.error('');
-          console.error('  Authorized!');
-          console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+          console.error('  Warning: Could not save key to keychain.');
+          console.error(`  Error: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`);
+          console.error('');
+          console.error('  Your API key (save this — it cannot be retrieved again):');
+          console.error(`  ${pollData.api_key}`);
+          console.error('');
+          console.error('  To authenticate manually, run:');
+          console.error('  npx @socialneuron/mcp-server login --paste');
+          console.error('');
+          console.error('  Or set the environment variable:');
+          console.error(`  export SOCIALNEURON_API_KEY="${pollData.api_key}"`);
           console.error('');
           return;
         }
-      }
 
-      if (pollResponse.status === 410) {
         console.error('');
-        console.error('  Error: Device code expired. Please try again.');
-        process.exit(1);
+        console.error('  Authorized!');
+        console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+        console.error('');
+        return;
       }
-
-      // 428 = pending or slow_down, keep polling
-    } catch {
-      // Network error — keep trying
     }
+
+    if (pollResponse.status === 410) {
+      console.error('');
+      console.error('  Error: Device code expired. Please try again.');
+      process.exit(1);
+    }
+
+    // 428 = pending or slow_down, keep polling
   }
 
   console.error('');
@@ -212,7 +227,7 @@ export async function runLogoutCommand(options?: { json?: boolean }): Promise<vo
       if (validation.valid && !asJson) {
         console.error('  Key removed from this device.');
         console.error(
-          '  Note: To revoke the key server-side, visit socialneuron.com/settings/developer'
+          '  Note: To revoke the key server-side, visit https://www.socialneuron.com/settings/developer'
         );
       }
     } catch {
@@ -285,6 +300,7 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
   if (asJson) {
     const payload: Record<string, unknown> = {
       ok: true,
+      email: result.email || null,
       userId: result.userId,
       keyPrefix: apiKey.substring(0, 12) + '...',
       scopes: result.scopes || ['mcp:full'],
@@ -294,6 +310,7 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
     process.stdout.write(JSON.stringify(payload, null, 2) + '\n');
   } else {
     console.error('');
+    console.error(`  Email:    ${result.email || '(not available)'}`);
     console.error(`  User ID:  ${result.userId}`);
     console.error(`  Key:      ${apiKey.substring(0, 12)}...`);
     console.error(`  Scopes:   ${result.scopes?.join(', ') || 'mcp:full'}`);
@@ -348,7 +365,7 @@ export async function runHealthCheck(options?: { json?: boolean }): Promise<void
         checks.push({
           name: 'Key Valid',
           ok: true,
-          detail: `User: ${result.userId}`,
+          detail: `User: ${result.email || result.userId}`,
         });
         checks.push({
           name: 'Scopes',

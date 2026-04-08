@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 import { logMcpToolInvocation, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import { MCP_VERSION } from '../lib/version.js';
@@ -176,7 +177,7 @@ export function registerPipelineTools(server: McpServer): void {
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
           toolName: 'check_pipeline_readiness',
           status: 'error',
@@ -379,7 +380,7 @@ export function registerPipelineTools(server: McpServer): void {
           } catch (deductErr) {
             errors.push({
               stage: 'planning',
-              message: `Credit deduction failed: ${deductErr instanceof Error ? deductErr.message : String(deductErr)}`,
+              message: `Credit deduction failed: ${sanitizeError(deductErr)}`,
             });
           }
         }
@@ -581,7 +582,7 @@ export function registerPipelineTools(server: McpServer): void {
             } catch (schedErr) {
               errors.push({
                 stage: 'schedule',
-                message: `Failed to schedule ${post.id}: ${schedErr instanceof Error ? schedErr.message : String(schedErr)}`,
+                message: `Failed to schedule ${post.id}: ${sanitizeError(schedErr)}`,
               });
             }
           }
@@ -689,7 +690,7 @@ export function registerPipelineTools(server: McpServer): void {
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
           toolName: 'run_content_pipeline',
           status: 'error',
@@ -969,7 +970,7 @@ export function registerPipelineTools(server: McpServer): void {
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
           toolName: 'auto_approve_plan',
           status: 'error',

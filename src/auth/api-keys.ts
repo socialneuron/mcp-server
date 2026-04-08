@@ -5,12 +5,13 @@
  * SHA-256 hash against the `api_keys` table.
  */
 
-import { getSupabaseUrl, getCloudAnonKey } from '../lib/supabase.js';
+import { getSupabaseUrl, CLOUD_SUPABASE_ANON_KEY } from '../lib/supabase.js';
 
 export interface ValidateApiKeyResult {
   valid: boolean;
   userId?: string;
   scopes?: string[];
+  email?: string;
   expiresAt?: string;
   error?: string;
 }
@@ -25,7 +26,11 @@ export async function validateApiKey(apiKey: string): Promise<ValidateApiKeyResu
     // Supabase Edge Functions require an Authorization header even for "public" endpoints.
     // Use the anon key for Bearer auth. Never use the API key itself as bearer —
     // it leaks the secret in Authorization headers and bypasses proper auth flow.
-    const anonKey = getCloudAnonKey();
+    const anonKey =
+      process.env.SUPABASE_ANON_KEY ||
+      process.env.SOCIALNEURON_ANON_KEY ||
+      process.env.VITE_SUPABASE_ANON_KEY ||
+      CLOUD_SUPABASE_ANON_KEY;
 
     const response = await fetch(
       `${supabaseUrl}/functions/v1/mcp-auth?action=validate-key-public`,

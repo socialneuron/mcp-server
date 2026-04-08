@@ -26,7 +26,6 @@ export async function handleTools(args: SnArgs, asJson: boolean): Promise<void> 
 
   if (asJson) {
     emitSnResult({ ok: true, command: 'tools', toolCount: tools.length, tools }, true);
-    process.exit(0);
     return;
   }
 
@@ -77,6 +76,7 @@ export async function handleInfo(args: SnArgs, asJson: boolean): Promise<void> {
       const result = await validateApiKey(apiKey);
       if (result.valid) {
         info.auth = {
+          email: result.email || null,
           scopes: result.scopes || [],
           expiresAt: result.expiresAt || null,
         };
@@ -113,8 +113,8 @@ export async function handleInfo(args: SnArgs, asJson: boolean): Promise<void> {
   if (info.auth === null) {
     console.error('Auth: not configured');
   } else if (info.auth) {
-    const auth = info.auth as { scopes: string[]; expiresAt: string | null };
-    console.error('Auth: authenticated');
+    const auth = info.auth as { email: string | null; scopes: string[]; expiresAt: string | null };
+    console.error(`Auth: ${auth.email ?? 'authenticated'}`);
     console.error(`Scopes: ${auth.scopes.length > 0 ? auth.scopes.join(', ') : 'none'}`);
     if (auth.expiresAt) {
       console.error(`Expires: ${auth.expiresAt}`);

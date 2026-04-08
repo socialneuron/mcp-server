@@ -127,7 +127,7 @@ describe('screenshot tools', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Screenshot capture failed');
-      expect(result.content[0].text).toContain('Playwright is not installed');
+      // Raw error message is sanitized — not exposed to user
     });
   });
 
@@ -205,7 +205,7 @@ describe('screenshot tools', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Screenshot capture failed');
-      expect(result.content[0].text).toContain('Browser launch timeout');
+      // Raw error message is sanitized — not exposed to user
     });
   });
 });

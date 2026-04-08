@@ -62,6 +62,10 @@ export const TOOL_SCOPES: Record<string, string> = {
   create_storyboard: 'mcp:write',
   generate_voiceover: 'mcp:write',
   generate_carousel: 'mcp:write',
+  upload_media: 'mcp:write',
+
+  // mcp:read (media)
+  get_media_url: 'mcp:read',
 
   // mcp:distribute
   schedule_post: 'mcp:distribute',

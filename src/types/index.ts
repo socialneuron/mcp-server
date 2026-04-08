@@ -4,50 +4,50 @@
 
 /** Platforms supported for distribution and trend fetching. */
 export type Platform =
-  | "youtube"
-  | "tiktok"
-  | "instagram"
-  | "twitter"
-  | "linkedin"
-  | "facebook"
-  | "threads"
-  | "bluesky";
+  | 'youtube'
+  | 'tiktok'
+  | 'instagram'
+  | 'twitter'
+  | 'linkedin'
+  | 'facebook'
+  | 'threads'
+  | 'bluesky';
 
 /** Content types the AI generation endpoint supports. */
-export type ContentType = "script" | "caption" | "blog" | "hook" | "generation";
+export type ContentType = 'script' | 'caption' | 'blog' | 'hook' | 'generation';
 
 /** Video generation model identifiers (matches kie-video-generate MODEL_CONFIG). */
 export type VideoModel =
-  | "veo3-fast"
-  | "veo3-quality"
-  | "runway-aleph"
-  | "sora2"
-  | "sora2-pro"
-  | "kling"
-  | "luma"
-  | "midjourney-video";
+  | 'veo3-fast'
+  | 'veo3-quality'
+  | 'runway-aleph'
+  | 'sora2'
+  | 'sora2-pro'
+  | 'kling'
+  | 'luma'
+  | 'midjourney-video';
 
 /** Image generation model identifiers (matches kie-image-generate MODEL_CONFIG). */
 export type ImageModel =
-  | "midjourney"
-  | "nano-banana"
-  | "nano-banana-pro"
-  | "ideogram"
-  | "flux-pro"
-  | "flux-max"
-  | "gpt4o-image"
-  | "imagen4"
-  | "imagen4-fast"
-  | "seedream";
+  | 'midjourney'
+  | 'nano-banana'
+  | 'nano-banana-pro'
+  | 'ideogram'
+  | 'flux-pro'
+  | 'flux-max'
+  | 'gpt4o-image'
+  | 'imagen4'
+  | 'imagen4-fast'
+  | 'seedream';
 
 /** Aspect ratios supported by generation endpoints. */
-export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
+export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
 
 /** Trend data sources supported by fetch-trends. */
-export type TrendSource = "youtube" | "google_trends" | "rss" | "url";
+export type TrendSource = 'youtube' | 'google_trends' | 'rss' | 'url';
 
 /** Async job status values (mirrors async_jobs.status column). */
-export type JobStatus = "pending" | "processing" | "completed" | "failed";
+export type JobStatus = 'pending' | 'processing' | 'completed' | 'failed';
 
 // ============================================================================
 // Edge Function response shapes
@@ -164,10 +164,7 @@ export interface ResponseEnvelope<T> {
 
 export interface SchedulePostResult {
   success: boolean;
-  results: Record<
-    string,
-    { success: boolean; jobId?: string; postId?: string; error?: string }
-  >;
+  results: Record<string, { success: boolean; jobId?: string; postId?: string; error?: string }>;
   scheduledAt: string;
 }
 
@@ -183,7 +180,6 @@ export interface AnalyticsSummary {
   platform: string | null;
   totalViews: number;
   totalEngagement: number;
-  totalClicks: number;
   postCount: number;
   posts: AnalyticsPost[];
 }
@@ -194,7 +190,6 @@ export interface AnalyticsPost {
   title: string | null;
   views: number;
   engagement: number;
-  clicks: number;
   posted_at: string;
   content_type?: string | null;
   model_used?: string | null;
@@ -301,22 +296,12 @@ export interface ContentPlanPost {
   hook: string;
   angle: string;
   visual_direction?: string;
-  media_type?: "image" | "video" | "carousel" | "text-only";
+  media_type?: 'image' | 'video' | 'carousel' | 'text-only';
   media_url?: string;
   schedule_at?: string;
-  quality?: {
-    score: number;
-    max_score: number;
-    passed: boolean;
-    blockers: string[];
-  };
-  schedule_result?: {
-    success: boolean;
-    post_id?: string;
-    job_id?: string;
-    error?: string;
-  };
-  status?: "pending" | "approved" | "rejected" | "needs_edit" | "edited";
+  quality?: { score: number; max_score: number; passed: boolean; blockers: string[] };
+  schedule_result?: { success: boolean; post_id?: string; job_id?: string; error?: string };
+  status?: 'pending' | 'approved' | 'rejected' | 'needs_edit' | 'edited';
 }
 
 export interface ContentPlan {
@@ -338,11 +323,7 @@ export interface ContentPlan {
   };
   insights_applied?: {
     top_hooks: string[];
-    optimal_timing: {
-      dayOfWeek: number;
-      hourOfDay: number;
-      timezone?: string;
-    } | null;
+    optimal_timing: { dayOfWeek: number; hourOfDay: number; timezone?: string } | null;
     recommended_model: string | null;
     winning_patterns: {
       hookTypes: string[];
@@ -352,17 +333,12 @@ export interface ContentPlan {
     insights_count: number;
     has_historical_data: boolean;
   };
-  quality_summary?: {
-    total_posts: number;
-    passed: number;
-    failed: number;
-    avg_score: number;
-  };
+  quality_summary?: { total_posts: number; passed: number; failed: number; avg_score: number };
   schedule_summary?: { total_posts: number; scheduled: number; failed: number };
 }
 
 export interface ExtractedContent {
-  source_type: "youtube_video" | "youtube_channel" | "article" | "product";
+  source_type: 'youtube_video' | 'youtube_channel' | 'article' | 'product';
   url: string;
   title: string;
   description: string;
@@ -397,12 +373,7 @@ export interface PostingSlot {
 // Pipeline / Orchestration types
 // ============================================================================
 
-export type PipelineStatus =
-  | "running"
-  | "completed"
-  | "failed"
-  | "paused"
-  | "awaiting_approval";
+export type PipelineStatus = 'running' | 'completed' | 'failed' | 'paused' | 'awaiting_approval';
 
 export interface PipelineRun {
   id: string;
@@ -433,11 +404,7 @@ export interface PipelineReadinessCheck {
     connected_accounts: { platforms: string[]; missing: string[] };
     brand_profile: { exists: boolean };
     pending_approvals: { count: number };
-    insights_available: {
-      count: number;
-      fresh: boolean;
-      last_generated_at: string | null;
-    };
+    insights_available: { count: number; fresh: boolean; last_generated_at: string | null };
   };
   blockers: string[];
   warnings: string[];
@@ -466,16 +433,11 @@ export interface DigestMetrics {
     views: number;
     engagement: number;
   } | null;
-  platform_breakdown: Array<{
-    platform: string;
-    posts: number;
-    views: number;
-    engagement: number;
-  }>;
+  platform_breakdown: Array<{ platform: string; posts: number; views: number; engagement: number }>;
 }
 
 export interface DigestTrend {
-  direction: "up" | "down" | "flat";
+  direction: 'up' | 'down' | 'flat';
   change_pct: number;
 }
 

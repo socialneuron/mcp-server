@@ -1,107 +1,67 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { randomUUID } from "node:crypto";
-import { callEdgeFunction } from "../lib/edge-function.js";
-import {
-  logMcpToolInvocation,
-  getSupabaseClient,
-  getDefaultUserId,
-  getDefaultProjectId,
-} from "../lib/supabase.js";
-import { sanitizeDbError } from "../lib/sanitize-error.js";
-import { formatToolError } from "../lib/tool-errors.js";
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { randomUUID } from 'node:crypto';
+import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
+import { logMcpToolInvocation, getDefaultProjectId } from '../lib/supabase.js';
 import type {
   ContentPlan,
   ContentPlanPost,
   IdeationContext,
   Platform,
   ResponseEnvelope,
-} from "../types/index.js";
-import { MCP_VERSION } from "../lib/version.js";
+} from '../types/index.js';
+import { MCP_VERSION } from '../lib/version.js';
+import { extractJsonArray } from '../lib/parse-utils.js';
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === "object"
-    ? (value as Record<string, unknown>)
-    : undefined;
+  return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
 }
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: { version: MCP_VERSION, timestamp: new Date().toISOString() },
-    data,
-  };
+  return { _meta: { version: MCP_VERSION, timestamp: new Date().toISOString() }, data };
 }
 
 function tomorrowIsoDate(): string {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  return d.toISOString().split("T")[0];
+  return d.toISOString().split('T')[0];
 }
 
 function addDaysToIsoDate(dateStr: string, days: number): string {
-  const d = new Date(dateStr + "T00:00:00");
+  const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
-  return d.toISOString().split("T")[0];
+  return d.toISOString().split('T')[0];
 }
 
 function isYouTubeUrl(url: string): boolean {
   return /youtube\.com\/watch|youtu\.be\/|youtube\.com\/@/.test(url);
 }
 
-function extractJsonArray(text: string): unknown[] | null {
-  // Try 1: direct parse
-  try {
-    const parsed = JSON.parse(text);
-    if (Array.isArray(parsed)) return parsed;
-    // Unwrap common wrapper keys
-    for (const key of ["posts", "plan", "content", "items", "results"]) {
-      if (parsed[key] && Array.isArray(parsed[key])) return parsed[key];
-    }
-  } catch {
-    /* fall through */
-  }
-
-  // Try 2: regex fallback
-  const match = text.match(/\[[\s\S]*\]/);
-  if (match) {
-    try {
-      return JSON.parse(match[0]);
-    } catch {
-      /* fall through */
-    }
-  }
-
-  return null;
-}
-
 function formatPlanAsText(plan: ContentPlan): string {
   const lines: string[] = [];
   lines.push(`WEEKLY CONTENT PLAN: "${plan.topic}"`);
   lines.push(`Period: ${plan.start_date} to ${plan.end_date}`);
-  lines.push(`Platforms: ${plan.platforms.join(", ")}`);
-  lines.push(
-    `Posts: ${plan.posts.length} | Estimated credits: ~${plan.estimated_credits}`,
-  );
+  lines.push(`Platforms: ${plan.platforms.join(', ')}`);
+  lines.push(`Posts: ${plan.posts.length} | Estimated credits: ~${plan.estimated_credits}`);
   if (plan.plan_id) lines.push(`Plan ID: ${plan.plan_id}`);
   if (plan.insights_applied?.has_historical_data) {
-    lines.push("");
-    lines.push("What the AI learned from your data:");
+    lines.push('');
+    lines.push('What the AI learned from your data:');
     if (plan.insights_applied.top_hooks.length > 0) {
-      lines.push(`- Top hooks: ${plan.insights_applied.top_hooks.join(", ")}`);
+      lines.push(`- Top hooks: ${plan.insights_applied.top_hooks.join(', ')}`);
     }
     const timing = plan.insights_applied.optimal_timing;
     if (timing) {
-      const days = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
+      const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
       lines.push(
-        `- Best posting time: ${days[timing.dayOfWeek] ?? timing.dayOfWeek} ${timing.hourOfDay}:00`,
+        `- Best posting time: ${days[timing.dayOfWeek] ?? timing.dayOfWeek} ${timing.hourOfDay}:00`
       );
     }
-    lines.push(
-      `- Recommended model: ${plan.insights_applied.recommended_model ?? "N/A"}`,
-    );
+    lines.push(`- Recommended model: ${plan.insights_applied.recommended_model ?? 'N/A'}`);
     lines.push(`- Insights count: ${plan.insights_applied.insights_count}`);
   }
-  lines.push("");
+  lines.push('');
 
   const byDay = new Map<number, ContentPlanPost[]>();
   for (const post of plan.posts) {
@@ -111,90 +71,55 @@ function formatPlanAsText(plan: ContentPlan): string {
   }
 
   for (const [day, posts] of [...byDay.entries()].sort((a, b) => a[0] - b[0])) {
-    const date = posts[0]?.date ?? "";
+    const date = posts[0]?.date ?? '';
     lines.push(`--- Day ${day} (${date}) ---`);
     for (const post of posts) {
       lines.push(`  [${post.platform.toUpperCase()}] ${post.content_type}`);
       lines.push(`  Hook: ${post.hook}`);
       lines.push(`  Angle: ${post.angle}`);
       lines.push(
-        `  Caption: ${post.caption.slice(0, 200)}${post.caption.length > 200 ? "..." : ""}`,
+        `  Caption: ${post.caption.slice(0, 200)}${post.caption.length > 200 ? '...' : ''}`
       );
       if (post.title) lines.push(`  Title: ${post.title}`);
-      if (post.visual_direction)
-        lines.push(`  Visual: ${post.visual_direction}`);
+      if (post.visual_direction) lines.push(`  Visual: ${post.visual_direction}`);
       if (post.media_type) lines.push(`  Media: ${post.media_type}`);
-      if (post.hashtags?.length)
-        lines.push(`  Hashtags: ${post.hashtags.join(" ")}`);
-      lines.push("");
+      if (post.hashtags?.length) lines.push(`  Hashtags: ${post.hashtags.join(' ')}`);
+      lines.push('');
     }
   }
 
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 export function registerPlanningTools(server: McpServer): void {
   server.tool(
-    "plan_content_week",
-    "Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_plan then schedule_content_plan. Costs ~5-15 credits depending on post count.",
+    'plan_content_week',
+    'Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_plan then schedule_content_plan. Costs ~5-15 credits depending on post count.',
     {
-      topic: z.string().describe("Main topic or content theme"),
-      source_url: z
-        .string()
-        .optional()
-        .describe("URL to extract content from (YouTube, article)"),
+      topic: z.string().describe('Main topic or content theme'),
+      source_url: z.string().optional().describe('URL to extract content from (YouTube, article)'),
       platforms: z
         .array(
           z.enum([
-            "youtube",
-            "tiktok",
-            "instagram",
-            "twitter",
-            "linkedin",
-            "facebook",
-            "threads",
-            "bluesky",
-          ]),
+            'youtube',
+            'tiktok',
+            'instagram',
+            'twitter',
+            'linkedin',
+            'facebook',
+            'threads',
+            'bluesky',
+          ])
         )
         .min(1)
-        .describe("Target platforms"),
-      posts_per_day: z
-        .number()
-        .min(1)
-        .max(5)
-        .default(1)
-        .describe("Posts per platform per day"),
-      days: z
-        .number()
-        .min(1)
-        .max(7)
-        .default(5)
-        .describe("Number of days to plan"),
-      start_date: z
-        .string()
-        .optional()
-        .describe("ISO date, defaults to tomorrow"),
-      brand_voice: z
-        .string()
-        .optional()
-        .describe("Override brand voice description"),
-      project_id: z
-        .string()
-        .optional()
-        .describe("Project ID for brand/insights context"),
-      response_format: z
-        .enum(["text", "json"])
-        .default("json")
-        .describe("Response format. Defaults to json."),
+        .describe('Target platforms'),
+      posts_per_day: z.number().min(1).max(5).default(1).describe('Posts per platform per day'),
+      days: z.number().min(1).max(7).default(5).describe('Number of days to plan'),
+      start_date: z.string().optional().describe('ISO date, defaults to tomorrow'),
+      brand_voice: z.string().optional().describe('Override brand voice description'),
+      project_id: z.string().optional().describe('Project ID for brand/insights context'),
+      response_format: z.enum(['text', 'json']).default('json'),
     },
-    {
-      title: "Plan Content Week",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: true,
-    },
-
     async ({
       topic,
       source_url,
@@ -217,25 +142,23 @@ export function registerPlanningTools(server: McpServer): void {
           resolvedProjectId = (await getDefaultProjectId()) ?? undefined;
         }
         // Step 1: Extract source content (non-fatal)
-        let sourceContext = "";
+        let sourceContext = '';
         if (source_url) {
           try {
-            const fnName = isYouTubeUrl(source_url)
-              ? "scrape-youtube"
-              : "fetch-url-content";
+            const fnName = isYouTubeUrl(source_url) ? 'scrape-youtube' : 'fetch-url-content';
             const { data } = await callEdgeFunction<Record<string, unknown>>(
               fnName,
               { url: source_url },
-              { timeoutMs: 30_000 },
+              { timeoutMs: 30_000 }
             );
             if (data) {
               const parts = [
-                data.title ? String(data.title) : "",
-                data.description ? String(data.description) : "",
-                data.transcript ? String(data.transcript).slice(0, 2000) : "",
-                data.content ? String(data.content).slice(0, 2000) : "",
+                data.title ? String(data.title) : '',
+                data.description ? String(data.description) : '',
+                data.transcript ? String(data.transcript).slice(0, 2000) : '',
+                data.content ? String(data.content).slice(0, 2000) : '',
               ].filter(Boolean);
-              sourceContext = parts.join("\n\n");
+              sourceContext = parts.join('\n\n');
             }
           } catch {
             // Non-fatal — continue without source context
@@ -243,8 +166,8 @@ export function registerPlanningTools(server: McpServer): void {
         }
 
         // Step 2: Load brand profile (non-fatal)
-        let brandName = "";
-        let brandContext = "";
+        let brandName = '';
+        let brandContext = '';
         let ideationContext: IdeationContext | null = null;
         let loopSummary: Record<string, unknown> | null = null;
         if (!brand_voice) {
@@ -253,48 +176,37 @@ export function registerPlanningTools(server: McpServer): void {
               success?: boolean;
               profile?: Record<string, unknown> | null;
             }>(
-              "mcp-data",
+              'mcp-data',
               {
-                action: "brand-profile",
+                action: 'brand-profile',
                 ...(resolvedProjectId
-                  ? {
-                      projectId: resolvedProjectId,
-                      project_id: resolvedProjectId,
-                    }
+                  ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
                   : {}),
               },
-              { timeoutMs: 15_000 },
+              { timeoutMs: 15_000 }
             );
 
             const profile = data?.profile;
             if (profile) {
-              const ctx =
-                (profile.brand_context as
-                  | Record<string, unknown>
-                  | undefined) ?? {};
-              brandName = String(profile.brand_name ?? ctx.name ?? "");
+              const ctx = (profile.brand_context as Record<string, unknown> | undefined) ?? {};
+              brandName = String(profile.brand_name ?? ctx.name ?? '');
 
-              const voiceProfile =
-                (ctx.voiceProfile as Record<string, unknown> | undefined) ?? {};
+              const voiceProfile = (ctx.voiceProfile as Record<string, unknown> | undefined) ?? {};
               const tone =
                 Array.isArray(voiceProfile.tone) && voiceProfile.tone.length > 0
-                  ? voiceProfile.tone.map(String).join(", ")
-                  : String(profile.voice_tone ?? "");
+                  ? voiceProfile.tone.map(String).join(', ')
+                  : String(profile.voice_tone ?? '');
               const targetAudience =
-                (ctx.targetAudience as Record<string, unknown> | undefined) ??
-                undefined;
+                (ctx.targetAudience as Record<string, unknown> | undefined) ?? undefined;
               const psycho =
-                (targetAudience?.psychographics as
-                  | Record<string, unknown>
-                  | undefined) ?? undefined;
+                (targetAudience?.psychographics as Record<string, unknown> | undefined) ??
+                undefined;
               const painPoints = Array.isArray(psycho?.painPoints)
-                ? psycho.painPoints.map(String).join(", ")
-                : "";
-              const audience = painPoints || String(profile.audience ?? "");
+                ? psycho.painPoints.map(String).join(', ')
+                : '';
+              const audience = painPoints || String(profile.audience ?? '');
 
-              brandContext = [brandName, tone, audience]
-                .filter(Boolean)
-                .join(" — ");
+              brandContext = [brandName, tone, audience].filter(Boolean).join(' — ');
             }
           } catch {
             // Non-fatal
@@ -304,34 +216,27 @@ export function registerPlanningTools(server: McpServer): void {
         // Step 2b: Load feedback-loop context (non-fatal)
         if (resolvedProjectId) {
           try {
-            const [{ data: ideationData }, { data: loopData }] =
-              await Promise.all([
-                callEdgeFunction<{
-                  success?: boolean;
-                  context?: IdeationContext;
-                }>(
-                  "mcp-data",
-                  {
-                    action: "ideation-context",
-                    projectId: resolvedProjectId,
-                    project_id: resolvedProjectId,
-                    days: 30,
-                  },
-                  { timeoutMs: 20_000 },
-                ),
-                callEdgeFunction<{
-                  success?: boolean;
-                  summary?: Record<string, unknown>;
-                }>(
-                  "mcp-data",
-                  {
-                    action: "loop-summary",
-                    projectId: resolvedProjectId,
-                    project_id: resolvedProjectId,
-                  },
-                  { timeoutMs: 20_000 },
-                ),
-              ]);
+            const [{ data: ideationData }, { data: loopData }] = await Promise.all([
+              callEdgeFunction<{ success?: boolean; context?: IdeationContext }>(
+                'mcp-data',
+                {
+                  action: 'ideation-context',
+                  projectId: resolvedProjectId,
+                  project_id: resolvedProjectId,
+                  days: 30,
+                },
+                { timeoutMs: 20_000 }
+              ),
+              callEdgeFunction<{ success?: boolean; summary?: Record<string, unknown> }>(
+                'mcp-data',
+                {
+                  action: 'loop-summary',
+                  projectId: resolvedProjectId,
+                  project_id: resolvedProjectId,
+                },
+                { timeoutMs: 20_000 }
+              ),
+            ]);
             ideationContext = ideationData?.context ?? null;
             loopSummary = loopData?.summary ?? null;
           } catch {
@@ -341,65 +246,65 @@ export function registerPlanningTools(server: McpServer): void {
 
         // Step 3: Build prompt
         const promptParts = [
-          `Generate a ${days}-day content plan for "${topic}" across platforms: ${platforms.join(", ")}.`,
+          `Generate a ${days}-day content plan for "${topic}" across platforms: ${platforms.join(', ')}.`,
           `${posts_per_day} post(s) per platform per day. Start date: ${resolvedStartDate}.`,
-          sourceContext ? `\nSource material:\n${sourceContext}\n` : "",
-          brandContext ? `Brand context: ${brandContext}` : "",
-          brand_voice ? `Brand voice override: ${brand_voice}` : "",
+          sourceContext ? `\nSource material:\n${sourceContext}\n` : '',
+          brandContext ? `Brand context: ${brandContext}` : '',
+          brand_voice ? `Brand voice override: ${brand_voice}` : '',
           ideationContext?.promptInjection
             ? `Performance insights:\n${ideationContext.promptInjection.slice(0, 1500)}`
-            : "",
-          "",
-          "For each post, return a JSON object with these fields:",
+            : '',
+          '',
+          'For each post, return a JSON object with these fields:',
           '  id (format: "day{N}-{platform}-{index}", e.g. "day1-linkedin-1")',
-          "  day (number, 1-" + days + ")",
-          "  date (ISO date)",
-          "  platform (lowercase)",
+          '  day (number, 1-' + days + ')',
+          '  date (ISO date)',
+          '  platform (lowercase)',
           '  content_type ("script", "caption", "blog", or "hook")',
-          "  caption (full post text, platform-appropriate length)",
-          "  title (for YouTube/LinkedIn articles)",
-          "  hashtags (array of strings)",
-          "  hook (attention-grabbing first line)",
-          "  angle (unique perspective/approach)",
-          "  visual_direction (what image/video should show)",
+          '  caption (full post text, platform-appropriate length)',
+          '  title (for YouTube/LinkedIn articles)',
+          '  hashtags (array of strings)',
+          '  hook (attention-grabbing first line)',
+          '  angle (unique perspective/approach)',
+          '  visual_direction (what image/video should show)',
           '  media_type ("image", "video", "carousel", or "text-only")',
-          "",
-          "Return ONLY a JSON array of post objects. No surrounding text.",
+          '',
+          'Return ONLY a JSON array of post objects. No surrounding text.',
         ];
 
-        const prompt = promptParts.filter(Boolean).join("\n");
+        const prompt = promptParts.filter(Boolean).join('\n');
 
         // Step 4: Call AI
         const { data: aiData, error: aiError } = await callEdgeFunction<{
           text?: string;
           content?: string;
         }>(
-          "social-neuron-ai",
+          'social-neuron-ai',
           {
-            type: "generation",
+            type: 'generation',
             prompt,
-            model: "gemini-2.5-flash",
-            responseFormat: "json",
+            model: 'gemini-2.5-flash',
+            responseFormat: 'json',
             ...(resolvedProjectId
               ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
               : {}),
           },
-          { timeoutMs: 60_000 },
+          { timeoutMs: 60_000 }
         );
 
         if (aiError || !aiData) {
           const durationMs = Date.now() - startedAt;
           logMcpToolInvocation({
-            toolName: "plan_content_week",
-            status: "error",
+            toolName: 'plan_content_week',
+            status: 'error',
             durationMs,
             details: { topic, error: aiError },
           });
           return {
             content: [
               {
-                type: "text" as const,
-                text: formatToolError(`Plan generation failed: ${aiError ?? "No response from AI"}`),
+                type: 'text' as const,
+                text: `Plan generation failed: ${aiError ?? 'No response from AI'}`,
               },
             ],
             isError: true,
@@ -407,22 +312,22 @@ export function registerPlanningTools(server: McpServer): void {
         }
 
         // Step 5: Parse AI response
-        const rawText = String(aiData.text ?? aiData.content ?? "");
+        const rawText = String(aiData.text ?? aiData.content ?? '');
         const postsArray = extractJsonArray(rawText);
 
         if (!postsArray) {
           const durationMs = Date.now() - startedAt;
           logMcpToolInvocation({
-            toolName: "plan_content_week",
-            status: "error",
+            toolName: 'plan_content_week',
+            status: 'error',
             durationMs,
-            details: { topic, error: "could not parse AI response" },
+            details: { topic, error: 'could not parse AI response' },
           });
           return {
             content: [
               {
-                type: "text" as const,
-                text: formatToolError(`AI response could not be parsed as JSON.\n\nRaw output (first 1000 chars):\n${rawText.slice(0, 1000)}`),
+                type: 'text' as const,
+                text: `AI response could not be parsed as JSON.\n\nRaw output (first 1000 chars):\n${rawText.slice(0, 1000)}`,
               },
             ],
             isError: true,
@@ -431,28 +336,23 @@ export function registerPlanningTools(server: McpServer): void {
 
         // Step 6: Build ContentPlan
         const posts: ContentPlanPost[] = postsArray.map((p: any) => ({
-          id: String(p.id ?? ""),
+          id: String(p.id ?? ''),
           day: Number(p.day ?? 1),
           date: String(p.date ?? resolvedStartDate),
-          platform: String(p.platform ?? "") as Platform,
-          content_type: (p.content_type ??
-            "caption") as ContentPlanPost["content_type"],
-          caption: String(p.caption ?? ""),
+          platform: String(p.platform ?? '') as Platform,
+          content_type: (p.content_type ?? 'caption') as ContentPlanPost['content_type'],
+          caption: String(p.caption ?? ''),
           title: p.title ? String(p.title) : undefined,
-          hashtags: Array.isArray(p.hashtags)
-            ? p.hashtags.map(String)
-            : undefined,
-          hook: String(p.hook ?? ""),
-          angle: String(p.angle ?? ""),
-          visual_direction: p.visual_direction
-            ? String(p.visual_direction)
-            : undefined,
+          hashtags: Array.isArray(p.hashtags) ? p.hashtags.map(String) : undefined,
+          hook: String(p.hook ?? ''),
+          angle: String(p.angle ?? ''),
+          visual_direction: p.visual_direction ? String(p.visual_direction) : undefined,
           media_type: p.media_type
-            ? (String(p.media_type) as ContentPlanPost["media_type"])
+            ? (String(p.media_type) as ContentPlanPost['media_type'])
             : undefined,
         }));
 
-        const insightsApplied: NonNullable<ContentPlan["insights_applied"]> = {
+        const insightsApplied: NonNullable<ContentPlan['insights_applied']> = {
           top_hooks: ideationContext?.topHooks?.slice(0, 3) ?? [],
           optimal_timing: ideationContext?.recommendedPostingTime
             ? {
@@ -494,42 +394,35 @@ export function registerPlanningTools(server: McpServer): void {
         // Step 7: Persist content plan when project context is available
         if (resolvedProjectId) {
           try {
-            const supabase = getSupabaseClient();
-            const userId = await getDefaultUserId();
-            const { error: persistError } = await supabase
-              .from("content_plans")
-              .insert({
-                id: planId,
+            const { error: persistError } = await callEdgeFunction(
+              'mcp-data',
+              {
+                action: 'save-content-plan',
+                plan_id: planId,
+                projectId: resolvedProjectId,
                 project_id: resolvedProjectId,
-                user_id: userId,
                 topic,
-                status: "draft",
+                plan_status: 'draft',
                 plan_payload: plan,
                 insights_applied: insightsApplied,
-                source: "mcp",
-              });
+                source: 'mcp',
+              },
+              { timeoutMs: 10_000 }
+            );
             if (persistError) {
-              throw new Error(persistError.message);
+              throw new Error(persistError);
             }
           } catch (persistErr) {
             const durationMs = Date.now() - startedAt;
-            const message =
-              persistErr instanceof Error
-                ? persistErr.message
-                : String(persistErr);
+            const message = sanitizeError(persistErr);
             logMcpToolInvocation({
-              toolName: "plan_content_week",
-              status: "error",
+              toolName: 'plan_content_week',
+              status: 'error',
               durationMs,
               details: { topic, error: `plan persistence failed: ${message}` },
             });
             return {
-              content: [
-                {
-                  type: "text" as const,
-                  text: `Plan persistence failed: ${message}`,
-                },
-              ],
+              content: [{ type: 'text' as const, text: `Plan persistence failed: ${message}` }],
               isError: true,
             };
           }
@@ -537,102 +430,69 @@ export function registerPlanningTools(server: McpServer): void {
 
         const durationMs = Date.now() - startedAt;
         logMcpToolInvocation({
-          toolName: "plan_content_week",
-          status: "success",
+          toolName: 'plan_content_week',
+          status: 'success',
           durationMs,
           details: { topic, platforms, posts: posts.length, days },
         });
 
-        if (response_format === "json") {
+        if (response_format === 'json') {
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(asEnvelope(plan), null, 2),
-              },
-            ],
+            content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(plan), null, 2) }],
             isError: false,
           };
         }
 
         return {
-          content: [{ type: "text" as const, text: formatPlanAsText(plan) }],
+          content: [{ type: 'text' as const, text: formatPlanAsText(plan) }],
           isError: false,
         };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
-          toolName: "plan_content_week",
-          status: "error",
+          toolName: 'plan_content_week',
+          status: 'error',
           durationMs,
           details: { topic, error: message },
         });
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`Plan generation failed: ${message}`),
-            },
-          ],
+          content: [{ type: 'text' as const, text: `Plan generation failed: ${message}` }],
           isError: true,
         };
       }
-    },
+    }
   );
 
   server.tool(
-    "save_content_plan",
-    "Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan.",
+    'save_content_plan',
+    'Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan.',
     {
       plan: z
         .object({
-          topic: z.string().describe("Content plan topic or theme."),
-          posts: z
-            .array(z.record(z.string(), z.unknown()))
-            .describe("Array of post objects to save."),
+          topic: z.string(),
+          posts: z.array(z.record(z.string(), z.unknown())),
         })
-        .passthrough()
-        .describe("Content plan object with topic and posts array."),
-      project_id: z
-        .string()
-        .uuid()
-        .optional()
-        .describe("Project ID. Defaults to active project context."),
-      status: z
-        .enum(["draft", "in_review", "approved", "scheduled", "completed"])
-        .default("draft")
-        .describe("Initial plan status. Defaults to draft."),
-      response_format: z
-        .enum(["text", "json"])
-        .default("json")
-        .describe("Response format. Defaults to json."),
+        .passthrough(),
+      project_id: z.string().uuid().optional(),
+      status: z.enum(['draft', 'in_review', 'approved', 'scheduled', 'completed']).default('draft'),
+      response_format: z.enum(['text', 'json']).default('json'),
     },
-    {
-      title: "Save Content Plan",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-
     async ({ plan, project_id, status, response_format }) => {
       const startedAt = Date.now();
       try {
-        const supabase = getSupabaseClient();
-        const userId = await getDefaultUserId();
-        const normalizedStatus = status ?? "draft";
+        const normalizedStatus = status ?? 'draft';
         const resolvedProjectId =
           project_id ||
-          (typeof plan.project_id === "string" ? plan.project_id : null) ||
+          (typeof plan.project_id === 'string' ? plan.project_id : null) ||
           (await getDefaultProjectId());
 
         if (!resolvedProjectId) {
           return {
             content: [
               {
-                type: "text" as const,
-                text: "No project_id provided and no default project found.",
+                type: 'text' as const,
+                text: 'No project_id provided and no default project found.',
               },
             ],
             isError: true,
@@ -640,40 +500,39 @@ export function registerPlanningTools(server: McpServer): void {
         }
 
         const planId =
-          typeof plan.plan_id === "string" && plan.plan_id
-            ? plan.plan_id
-            : randomUUID();
+          typeof plan.plan_id === 'string' && plan.plan_id ? plan.plan_id : randomUUID();
         const payload: ContentPlan = {
           ...(plan as unknown as ContentPlan),
           plan_id: planId,
           project_id: resolvedProjectId,
         };
 
-        const { error } = await supabase.from("content_plans").insert({
-          id: planId,
-          project_id: resolvedProjectId,
-          user_id: userId,
-          topic: payload.topic || "Untitled Plan",
-          status: normalizedStatus,
-          plan_payload: payload,
-          insights_applied: payload.insights_applied ?? null,
-          source: "mcp",
-        });
+        const { error } = await callEdgeFunction(
+          'mcp-data',
+          {
+            action: 'save-content-plan',
+            plan_id: planId,
+            projectId: resolvedProjectId,
+            project_id: resolvedProjectId,
+            topic: payload.topic || 'Untitled Plan',
+            plan_status: normalizedStatus,
+            plan_payload: payload,
+            insights_applied: payload.insights_applied ?? null,
+            source: 'mcp',
+          },
+          { timeoutMs: 10_000 }
+        );
 
         if (error) {
-          throw new Error(sanitizeDbError(error));
+          throw new Error(error);
         }
 
         const durationMs = Date.now() - startedAt;
         logMcpToolInvocation({
-          toolName: "save_content_plan",
-          status: "success",
+          toolName: 'save_content_plan',
+          status: 'success',
           durationMs,
-          details: {
-            plan_id: planId,
-            project_id: resolvedProjectId,
-            status: normalizedStatus,
-          },
+          details: { plan_id: planId, project_id: resolvedProjectId, status: normalizedStatus },
         });
 
         const result = {
@@ -682,98 +541,74 @@ export function registerPlanningTools(server: McpServer): void {
           status: normalizedStatus,
         };
 
-        if (response_format === "json") {
+        if (response_format === 'json') {
           return {
-            content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(asEnvelope(result), null, 2),
-              },
-            ],
+            content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
             isError: false,
           };
         }
 
         return {
           content: [
-            {
-              type: "text" as const,
-              text: `Saved content plan ${planId} (${normalizedStatus}).`,
-            },
+            { type: 'text' as const, text: `Saved content plan ${planId} (${normalizedStatus}).` },
           ],
           isError: false,
         };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
-          toolName: "save_content_plan",
-          status: "error",
+          toolName: 'save_content_plan',
+          status: 'error',
           durationMs,
           details: { error: message },
         });
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`Failed to save content plan: ${message}`),
-            },
-          ],
+          content: [{ type: 'text' as const, text: `Failed to save content plan: ${message}` }],
           isError: true,
         };
       }
-    },
+    }
   );
 
   server.tool(
-    "get_content_plan",
-    "Retrieve a saved content plan to review its posts, status, and applied insights. Use after plan_content_week or save_content_plan to inspect what was generated. Feed the result into update_content_plan to revise posts or submit_content_plan_for_approval to start the review workflow.",
+    'get_content_plan',
+    'Retrieve a persisted content plan by ID.',
     {
-      plan_id: z.string().uuid().describe("Persisted content plan ID"),
-      response_format: z
-        .enum(["text", "json"])
-        .default("json")
-        .describe("Response format. Defaults to json."),
+      plan_id: z.string().uuid().describe('Persisted content plan ID'),
+      response_format: z.enum(['text', 'json']).default('json'),
     },
-    {
-      title: "Get Content Plan",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ plan_id, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
-      const { data, error } = await supabase
-        .from("content_plans")
-        .select(
-          "id, topic, status, plan_payload, insights_applied, created_at, updated_at",
-        )
-        .eq("id", plan_id)
-        .eq("user_id", userId)
-        .maybeSingle();
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan: {
+          id: string;
+          topic: string;
+          status: string;
+          plan_payload: ContentPlan;
+          insights_applied: Record<string, unknown> | null;
+          created_at: string;
+          updated_at: string;
+        } | null;
+      }>('mcp-data', { action: 'get-content-plan', plan_id }, { timeoutMs: 10_000 });
 
       if (error) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: formatToolError(`Failed to load content plan: ${sanitizeDbError(error)}`),
+              type: 'text' as const,
+              text: `Failed to load content plan: ${error}`,
             },
           ],
           isError: true,
         };
       }
 
+      const data = result?.plan;
       if (!data) {
         return {
           content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
-            },
+            { type: 'text' as const, text: `No content plan found for plan_id=${plan_id}` },
           ],
           isError: true,
         };
@@ -789,14 +624,9 @@ export function registerPlanningTools(server: McpServer): void {
         plan: data.plan_payload,
       };
 
-      if (response_format === "json") {
+      if (response_format === 'json') {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(payload), null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
           isError: false,
         };
       }
@@ -808,147 +638,67 @@ export function registerPlanningTools(server: McpServer): void {
         `Status: ${data.status}`,
         `Posts: ${Array.isArray(plan?.posts) ? plan.posts.length : 0}`,
       ];
-      return {
-        content: [{ type: "text" as const, text: lines.join("\n") }],
-        isError: false,
-      };
-    },
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: false };
+    }
   );
 
   server.tool(
-    "update_content_plan",
-    "Revise specific posts in a saved content plan -- edit captions, hooks, hashtags, schedule times, or mark posts as approved/rejected. Call after reviewing a plan with get_content_plan. When all posts are approved, the plan status auto-advances so it can be scheduled.",
+    'update_content_plan',
+    'Update individual posts in a persisted content plan.',
     {
-      plan_id: z.string().uuid().describe("Content plan ID to update."),
+      plan_id: z.string().uuid(),
       post_updates: z
         .array(
           z.object({
-            post_id: z.string().describe("ID of the post to update within this plan."),
-            caption: z.string().optional().describe("Revised caption/body text."),
-            title: z.string().optional().describe("Revised post title."),
-            hashtags: z.array(z.string()).optional().describe("Revised hashtags array."),
-            hook: z.string().optional().describe("Revised attention-grabbing opening line."),
-            angle: z.string().optional().describe("Revised content angle or perspective."),
-            visual_direction: z.string().optional().describe("Revised visual/media direction notes."),
-            media_url: z.string().optional().describe("Revised media URL (public or R2 signed URL)."),
-            schedule_at: z.string().optional().describe("Revised ISO 8601 UTC publish datetime."),
-            platform: z.string().optional().describe("Revised target platform."),
-            status: z.enum(["approved", "rejected", "needs_edit"]).optional().describe("Review status for this post."),
-          }),
+            post_id: z.string(),
+            caption: z.string().optional(),
+            title: z.string().optional(),
+            hashtags: z.array(z.string()).optional(),
+            hook: z.string().optional(),
+            angle: z.string().optional(),
+            visual_direction: z.string().optional(),
+            media_url: z.string().optional(),
+            schedule_at: z.string().optional(),
+            platform: z.string().optional(),
+            status: z.enum(['approved', 'rejected', 'needs_edit']).optional(),
+          })
         )
-        .min(1)
-        .describe("Array of post-level updates to apply."),
-      response_format: z
-        .enum(["text", "json"])
-        .default("json")
-        .describe("Response format. Defaults to json."),
+        .min(1),
+      response_format: z.enum(['text', 'json']).default('json'),
     },
-    {
-      title: "Update Content Plan",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ plan_id, post_updates, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
-      const { data: stored, error: loadError } = await supabase
-        .from("content_plans")
-        .select("id, status, plan_payload")
-        .eq("id", plan_id)
-        .eq("user_id", userId)
-        .maybeSingle();
-
-      if (loadError) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: `Failed to load content plan: ${sanitizeDbError(loadError)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (!stored?.plan_payload) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const plan = stored.plan_payload as ContentPlan;
-      const existingPosts = Array.isArray(plan.posts) ? plan.posts : [];
-      const updatesById = new Map(
-        post_updates.map((update) => [update.post_id, update]),
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan_id: string;
+        status: string;
+        updated_posts: number;
+        error?: string;
+      }>(
+        'mcp-data',
+        {
+          action: 'update-content-plan',
+          plan_id,
+          post_updates,
+        },
+        { timeoutMs: 10_000 }
       );
 
-      const updatedPosts = existingPosts.map((post) => {
-        const update = updatesById.get(post.id);
-        if (!update) return post;
-        return {
-          ...post,
-          ...(update.caption !== undefined ? { caption: update.caption } : {}),
-          ...(update.title !== undefined ? { title: update.title } : {}),
-          ...(update.hashtags !== undefined
-            ? { hashtags: update.hashtags }
-            : {}),
-          ...(update.hook !== undefined ? { hook: update.hook } : {}),
-          ...(update.angle !== undefined ? { angle: update.angle } : {}),
-          ...(update.visual_direction !== undefined
-            ? { visual_direction: update.visual_direction }
-            : {}),
-          ...(update.media_url !== undefined
-            ? { media_url: update.media_url }
-            : {}),
-          ...(update.schedule_at !== undefined
-            ? { schedule_at: update.schedule_at }
-            : {}),
-          ...(update.platform !== undefined
-            ? { platform: update.platform as Platform }
-            : {}),
-          ...(update.status !== undefined ? { status: update.status } : {}),
-        };
-      });
-
-      const nextStatus =
-        updatedPosts.length > 0 &&
-        updatedPosts.every(
-          (post) => post.status === "approved" || post.status === "edited",
-        )
-          ? "approved"
-          : stored.status === "scheduled" || stored.status === "completed"
-            ? stored.status
-            : "draft";
-
-      const updatedPlan: ContentPlan = {
-        ...plan,
-        posts: updatedPosts,
-      };
-
-      const { error: saveError } = await supabase
-        .from("content_plans")
-        .update({
-          status: nextStatus,
-          plan_payload: updatedPlan,
-        })
-        .eq("id", plan_id)
-        .eq("user_id", userId);
-
-      if (saveError) {
+      if (error) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: formatToolError(`Failed to update content plan: ${sanitizeDbError(saveError)}`),
+              type: 'text' as const,
+              text: `Failed to update content plan: ${error}`,
             },
+          ],
+          isError: true,
+        };
+      }
+
+      if (!result?.success) {
+        return {
+          content: [
+            { type: 'text' as const, text: `No content plan found for plan_id=${plan_id}` },
           ],
           isError: true,
         };
@@ -956,18 +706,13 @@ export function registerPlanningTools(server: McpServer): void {
 
       const payload = {
         plan_id,
-        status: nextStatus,
-        updated_posts: post_updates.length,
+        status: result.status,
+        updated_posts: result.updated_posts,
       };
 
-      if (response_format === "json") {
+      if (response_format === 'json') {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(payload), null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
           isError: false,
         };
       }
@@ -975,118 +720,49 @@ export function registerPlanningTools(server: McpServer): void {
       return {
         content: [
           {
-            type: "text" as const,
+            type: 'text' as const,
             text: `Updated ${post_updates.length} post(s) in plan ${plan_id}.`,
           },
         ],
         isError: false,
       };
-    },
+    }
   );
 
   server.tool(
-    "submit_content_plan_for_approval",
-    "Submit an entire saved content plan for team review in one call -- creates approval items for every post and sets the plan to in_review status. Call after plan_content_week and any update_content_plan edits are done. Use list_plan_approvals to track reviewer decisions.",
+    'submit_content_plan_for_approval',
+    'Create pending approval items for each post in a plan and mark plan status as in_review.',
     {
-      plan_id: z.string().uuid().describe("Content plan ID to submit for review."),
-      response_format: z
-        .enum(["text", "json"])
-        .default("json")
-        .describe("Response format. Defaults to json."),
+      plan_id: z.string().uuid(),
+      response_format: z.enum(['text', 'json']).default('json'),
     },
-    {
-      title: "Submit Plan for Approval",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ plan_id, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
-      const { data: stored, error: loadError } = await supabase
-        .from("content_plans")
-        .select("id, project_id, status, plan_payload")
-        .eq("id", plan_id)
-        .eq("user_id", userId)
-        .maybeSingle();
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan_id: string;
+        approvals_created: number;
+        status: string;
+        error?: string;
+      }>('mcp-data', { action: 'submit-plan-approval', plan_id }, { timeoutMs: 15_000 });
 
-      if (loadError) {
+      if (error) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: `Failed to load content plan: ${sanitizeDbError(loadError)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (!stored?.plan_payload || !stored.project_id) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`No content plan found for plan_id=${plan_id}`),
+              type: 'text' as const,
+              text: `Failed to submit plan for approval: ${error}`,
             },
           ],
           isError: true,
         };
       }
 
-      const plan = stored.plan_payload as ContentPlan;
-      const posts = Array.isArray(plan.posts) ? plan.posts : [];
-      if (posts.length === 0) {
+      if (!result?.success) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: formatToolError(`Plan ${plan_id} has no posts to submit.`),
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const approvalRows = posts.map((post) => ({
-        plan_id,
-        post_id: post.id,
-        project_id: stored.project_id,
-        user_id: userId,
-        status: "pending",
-        original_post: post,
-      }));
-
-      const { data: approvals, error: approvalError } = await supabase
-        .from("content_plan_approvals")
-        .upsert(approvalRows, { onConflict: "plan_id,post_id" })
-        .select("id, post_id, status");
-
-      if (approvalError) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`Failed to create approvals: ${sanitizeDbError(approvalError)}`),
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const { error: statusError } = await supabase
-        .from("content_plans")
-        .update({ status: "in_review" })
-        .eq("id", plan_id)
-        .eq("user_id", userId);
-
-      if (statusError) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatToolError(`Failed to update plan status: ${sanitizeDbError(statusError)}`),
+              type: 'text' as const,
+              text: result?.error ?? `Plan ${plan_id} not found or has no posts.`,
             },
           ],
           isError: true,
@@ -1095,18 +771,13 @@ export function registerPlanningTools(server: McpServer): void {
 
       const payload = {
         plan_id,
-        approvals_created: approvals?.length ?? 0,
-        status: "in_review",
+        approvals_created: result.approvals_created,
+        status: 'in_review',
       };
 
-      if (response_format === "json") {
+      if (response_format === 'json') {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(payload), null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
           isError: false,
         };
       }
@@ -1114,12 +785,12 @@ export function registerPlanningTools(server: McpServer): void {
       return {
         content: [
           {
-            type: "text" as const,
+            type: 'text' as const,
             text: `Submitted plan ${plan_id} for approval with ${payload.approvals_created} item(s).`,
           },
         ],
         isError: false,
       };
-    },
+    }
   );
 }

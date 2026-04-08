@@ -52,12 +52,12 @@ For each day, provide:
 7. **Best posting time** — optimal time based on platform norms
 
 Use Social Neuron tools:
-- Call \`generate_content_ideas\` for fresh topic suggestions
+- Call \`generate_content\` for fresh topic suggestions
 - Call \`get_brand_profile\` to align with brand guidelines
 - Call \`get_performance_insights\` to learn what's worked before
 - Call \`get_best_posting_times\` for optimal scheduling
 
-After building the plan, use \`create_content_plan\` to save it.`,
+After building the plan, use \`save_content_plan\` to save it.`,
             },
           },
         ],
@@ -92,7 +92,7 @@ After building the plan, use \`create_content_plan\` to save it.`,
               text: `Analyze my top-performing content from the last ${period}.${platformFilter}
 
 Steps:
-1. Call \`get_analytics_summary\` for overall performance metrics
+1. Call \`fetch_analytics\` for overall performance metrics
 2. Call \`get_performance_insights\` for AI-generated patterns
 3. Call \`get_best_posting_times\` for timing insights
 
@@ -152,9 +152,9 @@ Generate these variations:
 5. **1 newsletter section** — key takeaways with a CTA
 
 Use Social Neuron tools:
-- Call \`generate_social_content\` for each platform variation
+- Call \`generate_content\` for each platform variation
 - Call \`get_brand_profile\` to maintain brand voice consistency
-- Call \`score_content_quality\` to ensure each piece scores 70+
+- Call \`quality_check\` to ensure each piece scores 70+
 
 For each piece, include the platform, format, character count, and suggested posting time.`,
             },
@@ -197,8 +197,8 @@ I need to define:
 6. **Words we avoid** — vocabulary that's off-brand
 7. **Content pillars** — 3-5 recurring content themes
 
-After we define these, use \`update_brand_profile\` to save the profile.
-Then use \`generate_social_content\` to create a sample post to verify the voice sounds right.`,
+After we define these, use \`save_brand_profile\` to save the profile.
+Then use \`generate_content\` to create a sample post to verify the voice sounds right.`,
             },
           },
         ],
@@ -221,7 +221,7 @@ Then use \`generate_social_content\` to create a sample post to verify the voice
 
 Steps:
 1. Call \`get_credit_balance\` to check account status
-2. Call \`get_analytics_summary\` for performance overview
+2. Call \`fetch_analytics\` for performance overview
 3. Call \`get_performance_insights\` for AI-generated analysis
 4. Call \`get_brand_profile\` to check brand alignment
 5. Call \`get_best_posting_times\` for scheduling optimization

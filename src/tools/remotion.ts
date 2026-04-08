@@ -5,6 +5,7 @@ import { mkdir } from 'node:fs/promises';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 
 /** Static composition registry extracted from remotion/Root.tsx */
 const COMPOSITIONS = [
@@ -317,7 +318,7 @@ export function registerRemotionTools(server: McpServer): void {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         await logMcpToolInvocation({
           toolName: 'render_demo_video',
           status: 'error',
@@ -480,7 +481,7 @@ export function registerRemotionTools(server: McpServer): void {
           ],
         };
       } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         await logMcpToolInvocation({
           toolName: 'render_template_video',
           status: 'error',

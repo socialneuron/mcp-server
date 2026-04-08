@@ -1,13 +1,9 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import {
-  getSupabaseClient,
-  getDefaultUserId,
-  getDefaultProjectId,
-} from "../lib/supabase.js";
-import { sanitizeDbError } from "../lib/sanitize-error.js";
-import { MCP_VERSION } from "../lib/version.js";
-import type { ResponseEnvelope } from "../types/index.js";
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { callEdgeFunction } from '../lib/edge-function.js';
+import { getDefaultProjectId } from '../lib/supabase.js';
+import { MCP_VERSION } from '../lib/version.js';
+import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
@@ -19,117 +15,85 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
-async function assertProjectAccess(
-  supabase: ReturnType<typeof getSupabaseClient>,
-  userId: string,
-  projectId: string,
-): Promise<string | null> {
-  const { data: project } = await supabase
-    .from("projects")
-    .select("id, organization_id")
-    .eq("id", projectId)
-    .maybeSingle();
-  if (!project?.organization_id) return "Project not found.";
-
-  const { data: membership } = await supabase
-    .from("organization_members")
-    .select("organization_id")
-    .eq("user_id", userId)
-    .eq("organization_id", project.organization_id)
-    .maybeSingle();
-  if (!membership) return "Project is not accessible to current user.";
-  return null;
-}
-
 export function registerPlanApprovalTools(server: McpServer): void {
   server.tool(
-    "create_plan_approvals",
-    "Create individual approval items for posts you supply explicitly, useful when building a custom approval queue outside the standard plan workflow. Requires the post array as input. Use list_plan_approvals to check status afterward, and respond_plan_approval to approve or reject each item.",
+    'create_plan_approvals',
+    'Create pending approval rows for each post in a content plan.',
     {
-      plan_id: z.string().uuid().describe("Content plan ID"),
+      plan_id: z.string().uuid().describe('Content plan ID'),
       posts: z
         .array(
           z
             .object({
-              id: z.string().describe("Unique post identifier from the content plan."),
-              platform: z.string().optional().describe("Target platform (e.g. instagram, youtube)."),
-              caption: z.string().optional().describe("Post caption/body text."),
-              title: z.string().optional().describe("Post title, used by YouTube and LinkedIn articles."),
-              media_url: z.string().optional().describe("Public or R2 signed URL for the post media."),
-              schedule_at: z.string().optional().describe("ISO 8601 UTC datetime to publish (e.g. 2026-03-20T14:00:00Z)."),
+              id: z.string(),
+              platform: z.string().optional(),
+              caption: z.string().optional(),
+              title: z.string().optional(),
+              media_url: z.string().optional(),
+              schedule_at: z.string().optional(),
             })
-            .passthrough(),
+            .passthrough()
         )
         .min(1)
-        .describe("Posts to create approval entries for."),
+        .describe('Posts to create approval entries for.'),
       project_id: z
         .string()
         .uuid()
         .optional()
-        .describe("Project ID. Defaults to active project context."),
-      response_format: z
-        .enum(["text", "json"])
-        .optional()
-        .describe("Response format. Defaults to text."),
+        .describe('Project ID. Defaults to active project context.'),
+      response_format: z.enum(['text', 'json']).optional(),
     },
-    {
-      title: "Create Plan Approvals",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-
     async ({ plan_id, posts, project_id, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
       const projectId = project_id || (await getDefaultProjectId());
       if (!projectId) {
         return {
           content: [
+            { type: 'text' as const, text: 'No project_id provided and no default project found.' },
+          ],
+          isError: true,
+        };
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan_id: string;
+        created: number;
+        items: Array<{
+          id: string;
+          plan_id: string;
+          post_id: string;
+          status: string;
+          created_at: string;
+        }>;
+        error?: string;
+      }>(
+        'mcp-data',
+        {
+          action: 'create-plan-approval',
+          plan_id,
+          posts,
+          projectId: projectId,
+          project_id: projectId,
+        },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error) {
+        return {
+          content: [
             {
-              type: "text" as const,
-              text: "No project_id provided and no default project found.",
+              type: 'text' as const,
+              text: `Failed to create plan approvals: ${error}`,
             },
           ],
           isError: true,
         };
       }
 
-      const accessError = await assertProjectAccess(
-        supabase,
-        userId,
-        projectId,
-      );
-      if (accessError) {
-        return {
-          content: [{ type: "text" as const, text: accessError }],
-          isError: true,
-        };
-      }
-
-      const rows = posts.map((post) => ({
-        plan_id,
-        post_id: post.id,
-        project_id: projectId,
-        user_id: userId,
-        status: "pending",
-        original_post: post,
-      }));
-
-      const { data, error } = await supabase
-        .from("content_plan_approvals")
-        .upsert(rows, { onConflict: "plan_id,post_id" })
-        .select("id, plan_id, post_id, status, created_at")
-        .order("created_at", { ascending: true });
-
-      if (error) {
+      if (!result?.success) {
         return {
           content: [
-            {
-              type: "text" as const,
-              text: `Failed to create plan approvals: ${sanitizeDbError(error)}`,
-            },
+            { type: 'text' as const, text: result?.error ?? 'Failed to create plan approvals.' },
           ],
           isError: true,
         };
@@ -137,18 +101,13 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
       const payload = {
         plan_id,
-        created: data?.length ?? 0,
-        items: data ?? [],
+        created: result.created,
+        items: result.items,
       };
 
-      if ((response_format || "text") === "json") {
+      if ((response_format || 'text') === 'json') {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(payload), null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
           isError: false,
         };
       }
@@ -156,90 +115,81 @@ export function registerPlanApprovalTools(server: McpServer): void {
       return {
         content: [
           {
-            type: "text" as const,
+            type: 'text' as const,
             text: `Created/updated ${payload.created} approval item(s) for plan ${plan_id}.`,
           },
         ],
         isError: false,
       };
-    },
+    }
   );
 
   server.tool(
-    "list_plan_approvals",
-    "List MCP-native approval items for a specific content plan.",
+    'list_plan_approvals',
+    'List MCP-native approval items for a specific content plan.',
     {
-      plan_id: z.string().uuid().describe("Content plan ID"),
-      status: z
-        .enum(["pending", "approved", "rejected", "edited"])
-        .optional()
-        .describe("Filter approvals by status. Omit to return all statuses."),
-      response_format: z
-        .enum(["text", "json"])
-        .optional()
-        .describe("Response format. Defaults to text."),
+      plan_id: z.string().uuid().describe('Content plan ID'),
+      status: z.enum(['pending', 'approved', 'rejected', 'edited']).optional(),
+      response_format: z.enum(['text', 'json']).optional(),
     },
-    {
-      title: "List Plan Approvals",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ plan_id, status, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan_id: string;
+        total: number;
+        items: Array<{
+          id: string;
+          plan_id: string;
+          post_id: string;
+          project_id: string;
+          status: string;
+          reason: string | null;
+          decided_at: string | null;
+          created_at: string;
+          updated_at: string;
+          original_post: Record<string, unknown>;
+          edited_post: Record<string, unknown> | null;
+        }>;
+      }>(
+        'mcp-data',
+        {
+          action: 'list-plan-approvals',
+          plan_id,
+          ...(status ? { status } : {}),
+        },
+        { timeoutMs: 10_000 }
+      );
 
-      let query = supabase
-        .from("content_plan_approvals")
-        .select(
-          "id, plan_id, post_id, project_id, status, reason, decided_at, created_at, updated_at, original_post, edited_post",
-        )
-        .eq("user_id", userId)
-        .eq("plan_id", plan_id)
-        .order("created_at", { ascending: true });
-
-      if (status) query = query.eq("status", status);
-
-      const { data, error } = await query;
       if (error) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: `Failed to list plan approvals: ${sanitizeDbError(error)}`,
+              type: 'text' as const,
+              text: `Failed to list plan approvals: ${error}`,
             },
           ],
           isError: true,
         };
       }
 
+      const data = result?.items ?? [];
       const payload = {
         plan_id,
-        total: data?.length ?? 0,
-        items: data ?? [],
+        total: result?.total ?? 0,
+        items: data,
       };
 
-      if ((response_format || "text") === "json") {
+      if ((response_format || 'text') === 'json') {
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(payload), null, 2),
-            },
-          ],
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
           isError: false,
         };
       }
 
-      if (!data || data.length === 0) {
+      if (data.length === 0) {
         return {
           content: [
-            {
-              type: "text" as const,
-              text: `No approval items found for plan ${plan_id}.`,
-            },
+            { type: 'text' as const, text: `No approval items found for plan ${plan_id}.` },
           ],
           isError: false,
         };
@@ -247,119 +197,89 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
       const lines: string[] = [];
       lines.push(`Approvals for plan ${plan_id}:`);
-      lines.push("");
+      lines.push('');
       for (const row of data) {
         lines.push(`- ${row.id} | post=${row.post_id} | status=${row.status}`);
       }
-      lines.push("");
+      lines.push('');
       lines.push(`Total: ${data.length}`);
 
-      return {
-        content: [{ type: "text" as const, text: lines.join("\n") }],
-        isError: false,
-      };
-    },
+      return { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: false };
+    }
   );
 
   server.tool(
-    "respond_plan_approval",
-    "Approve, reject, or edit a pending plan approval item.",
+    'respond_plan_approval',
+    'Approve, reject, or edit a pending plan approval item.',
     {
-      approval_id: z.string().uuid().describe("Approval item ID"),
-      decision: z
-        .enum(["approved", "rejected", "edited"])
-        .describe("Approval decision for this post."),
-      edited_post: z
-        .record(z.string(), z.unknown())
-        .optional()
-        .describe(
-          'Revised post fields when decision is "edited" (e.g. {caption: "...", hashtags: [...]}).',
-        ),
-      reason: z
-        .string()
-        .max(1000)
-        .optional()
-        .describe("Optional reason for the decision, visible to the plan author."),
-      response_format: z
-        .enum(["text", "json"])
-        .optional()
-        .describe("Response format. Defaults to text."),
+      approval_id: z.string().uuid().describe('Approval item ID'),
+      decision: z.enum(['approved', 'rejected', 'edited']),
+      edited_post: z.record(z.string(), z.unknown()).optional(),
+      reason: z.string().max(1000).optional(),
+      response_format: z.enum(['text', 'json']).optional(),
     },
-    {
-      title: "Respond to Plan Approval",
-      readOnlyHint: false,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: false,
-    },
-
     async ({ approval_id, decision, edited_post, reason, response_format }) => {
-      const supabase = getSupabaseClient();
-      const userId = await getDefaultUserId();
-
-      if (decision === "edited" && !edited_post) {
+      if (decision === 'edited' && !edited_post) {
         return {
           content: [
-            {
-              type: "text" as const,
-              text: 'edited_post is required when decision is "edited".',
-            },
+            { type: 'text' as const, text: 'edited_post is required when decision is "edited".' },
           ],
           isError: true,
         };
       }
 
-      const updates: Record<string, unknown> = {
-        status: decision,
-        reason: reason ?? null,
-        decided_at: new Date().toISOString(),
-      };
-      if (decision === "edited") {
-        updates.edited_post = edited_post;
-      }
-
-      const { data, error } = await supabase
-        .from("content_plan_approvals")
-        .update(updates)
-        .eq("id", approval_id)
-        .eq("user_id", userId)
-        .eq("status", "pending")
-        .select(
-          "id, plan_id, post_id, status, reason, decided_at, original_post, edited_post",
-        )
-        .maybeSingle();
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        approval: {
+          id: string;
+          plan_id: string;
+          post_id: string;
+          status: string;
+          reason: string | null;
+          decided_at: string;
+          original_post: Record<string, unknown>;
+          edited_post: Record<string, unknown> | null;
+        } | null;
+      }>(
+        'mcp-data',
+        {
+          action: 'respond-plan-approval',
+          approval_id,
+          decision,
+          ...(edited_post ? { edited_post } : {}),
+          ...(reason ? { reason } : {}),
+        },
+        { timeoutMs: 10_000 }
+      );
 
       if (error) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: `Failed to respond to approval: ${sanitizeDbError(error)}`,
-            },
-          ],
-          isError: true,
-        };
-      }
-      if (!data) {
-        return {
-          content: [
-            {
-              type: "text" as const,
-              text: "Approval not found, already processed, or not owned by current user.",
+              type: 'text' as const,
+              text: `Failed to respond to approval: ${error}`,
             },
           ],
           isError: true,
         };
       }
 
-      if ((response_format || "text") === "json") {
+      const data = result?.approval;
+      if (!data) {
         return {
           content: [
             {
-              type: "text" as const,
-              text: JSON.stringify(asEnvelope(data), null, 2),
+              type: 'text' as const,
+              text: 'Approval not found, already processed, or not owned by current user.',
             },
           ],
+          isError: true,
+        };
+      }
+
+      if ((response_format || 'text') === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
           isError: false,
         };
       }
@@ -367,12 +287,12 @@ export function registerPlanApprovalTools(server: McpServer): void {
       return {
         content: [
           {
-            type: "text" as const,
+            type: 'text' as const,
             text: `Approval ${data.id} updated: ${data.status}.`,
           },
         ],
         isError: false,
       };
-    },
+    }
   );
 }

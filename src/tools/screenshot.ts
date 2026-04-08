@@ -13,6 +13,7 @@ import { resolve, relative } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
 export function registerScreenshotTools(server: McpServer): void {
@@ -62,14 +63,6 @@ export function registerScreenshotTools(server: McpServer): void {
           'Extra milliseconds to wait after page load before capturing. Useful for animations. Defaults to 2000.'
         ),
     },
-    {
-      title: "Capture App Page",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: false,
-    },
-
     async ({ page: pageName, viewport, theme, selector, wait_ms }) => {
       const startedAt = Date.now();
       let rateLimitKey = 'anonymous';
@@ -174,7 +167,7 @@ export function registerScreenshotTools(server: McpServer): void {
         };
       } catch (err) {
         await closeBrowser();
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         await logMcpToolInvocation({
           toolName: 'capture_app_page',
           status: 'error',
@@ -225,14 +218,6 @@ export function registerScreenshotTools(server: McpServer): void {
         .optional()
         .describe('Extra milliseconds to wait after page load before capturing. Defaults to 1000.'),
     },
-    {
-      title: "Capture Screenshot",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: false,
-      openWorldHint: true,
-    },
-
     async ({ url, viewport, selector, output_path, wait_ms }) => {
       const startedAt = Date.now();
       let rateLimitKey = 'anonymous';
@@ -379,7 +364,7 @@ export function registerScreenshotTools(server: McpServer): void {
         };
       } catch (err) {
         await closeBrowser();
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         await logMcpToolInvocation({
           toolName: 'capture_screenshot',
           status: 'error',

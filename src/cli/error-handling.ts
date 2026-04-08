@@ -55,7 +55,7 @@ export function classifyError(err: unknown): ClassifiedError {
       message,
       errorType: 'AUTH',
       retryable: false,
-      hint: 'Run: socialneuron-mcp login',
+      hint: 'Run: npx @socialneuron/mcp-server login — Requires a paid plan (Starter+). See https://socialneuron.com/pricing',
     };
   }
 
@@ -96,7 +96,11 @@ export function classifyError(err: unknown): ClassifiedError {
   }
 
   // Validation errors
-  if (lower.includes('missing required') || lower.includes('invalid')) {
+  if (
+    lower.includes('missing required') ||
+    lower.includes('invalid') ||
+    lower.includes('cannot delete builtin')
+  ) {
     return { message, errorType: 'VALIDATION', retryable: false };
   }
 

@@ -1,5 +1,5 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
-import { initializeAuth, getDefaultUserId, getSupabaseClient } from '../../lib/supabase.js';
+import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
 import { emitSnResult, classifySupabaseCliError, tryGetSupabaseClient } from './parse.js';
 import type { SnArgs } from './types.js';
 
@@ -105,8 +105,13 @@ export async function handleRefreshAnalytics(args: SnArgs, asJson: boolean): Pro
 
 export async function handleLoop(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
-  try {
-    const supabase = getSupabaseClient();
+  const supabase = tryGetSupabaseClient();
+
+  let hasProfile: boolean;
+  let recentContent: Array<Record<string, unknown>>;
+  let currentInsights: Array<Record<string, unknown>>;
+
+  if (supabase) {
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
@@ -133,40 +138,55 @@ export async function handleLoop(args: SnArgs, asJson: boolean): Promise<void> {
         .limit(20),
     ]);
 
-    const hasProfile = !!brandResult.data;
-    const recentCount = contentResult.data?.length ?? 0;
-    const insightsCount = insightsResult.data?.length ?? 0;
+    hasProfile = !!brandResult.data;
+    recentContent = contentResult.data ?? [];
+    currentInsights = insightsResult.data ?? [];
+  } else {
+    // Cloud mode: route through mcp-gateway
+    const { data, error } = await callEdgeFunction<{
+      success: boolean;
+      hasProfile: boolean;
+      recentContent: Array<Record<string, unknown>>;
+      currentInsights: Array<Record<string, unknown>>;
+      error?: string;
+    }>('mcp-data', { action: 'loop-summary', userId });
 
-    let nextAction = 'Generate content to start building your feedback loop';
-    if (!hasProfile) nextAction = 'Set up your brand profile first';
-    else if (recentCount === 0)
-      nextAction = 'Generate and publish content to collect performance data';
-    else if (insightsCount === 0)
-      nextAction = 'Publish more content — insights need 5+ data points';
-    else nextAction = 'Loop is active — use insights to improve next content batch';
-
-    if (asJson) {
-      emitSnResult(
-        {
-          ok: true,
-          command: 'loop',
-          brandStatus: { hasProfile },
-          recentContent: contentResult.data ?? [],
-          currentInsights: insightsResult.data ?? [],
-          recommendedNextAction: nextAction,
-        },
-        true
-      );
-    } else {
-      console.error('Feedback Loop Summary');
-      console.error('=====================');
-      console.error(`Brand Profile: ${hasProfile ? 'Ready' : 'Missing'}`);
-      console.error(`Recent Content: ${recentCount} items (last 30 days)`);
-      console.error(`Current Insights: ${insightsCount} active`);
-      console.error(`\nNext Action: ${nextAction}`);
+    if (error || !data?.success) {
+      throw new Error(`Loop summary failed: ${error ?? data?.error ?? 'Unknown error'}`);
     }
-  } catch (err) {
-    throw new Error(`Loop summary failed: ${err instanceof Error ? err.message : String(err)}`);
+
+    hasProfile = data.hasProfile;
+    recentContent = data.recentContent ?? [];
+    currentInsights = data.currentInsights ?? [];
+  }
+
+  let nextAction = 'Generate content to start building your feedback loop';
+  if (!hasProfile) nextAction = 'Set up your brand profile first';
+  else if (recentContent.length === 0)
+    nextAction = 'Generate and publish content to collect performance data';
+  else if (currentInsights.length === 0)
+    nextAction = 'Publish more content — insights need 5+ data points';
+  else nextAction = 'Loop is active — use insights to improve next content batch';
+
+  if (asJson) {
+    emitSnResult(
+      {
+        ok: true,
+        command: 'loop',
+        brandStatus: { hasProfile },
+        recentContent,
+        currentInsights,
+        recommendedNextAction: nextAction,
+      },
+      true
+    );
+  } else {
+    console.error('Feedback Loop Summary');
+    console.error('=====================');
+    console.error(`Brand Profile: ${hasProfile ? 'Ready' : 'Missing'}`);
+    console.error(`Recent Content: ${recentContent.length} items (last 30 days)`);
+    console.error(`Current Insights: ${currentInsights.length} active`);
+    console.error(`\nNext Action: ${nextAction}`);
   }
   process.exit(0);
 }

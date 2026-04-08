@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 import { logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope, ContentSuggestion } from '../types/index.js';
@@ -208,7 +209,7 @@ export function registerSuggestTools(server: McpServer): void {
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
           toolName: 'suggest_next_content',
           status: 'error',

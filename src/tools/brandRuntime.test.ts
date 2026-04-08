@@ -187,8 +187,14 @@ describe('brandRuntime tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.issues.length).toBeGreaterThan(0);
-      expect(parsed.data.issues.some((i: string) => i.includes('unverified'))).toBe(true);
+      expect(parsed.data.fabricationWarnings.length).toBeGreaterThan(0);
+      expect(parsed.data.fabricationWarnings.some((w: string) => w.includes('unverified'))).toBe(
+        true
+      );
+      expect(parsed.data.overall).toBeDefined();
+      expect(parsed.data.dimensions).toBeDefined();
+      expect(parsed.data.dimensions.toneAlignment).toBeDefined();
+      expect(parsed.data.dimensions.avoidCompliance).toBeDefined();
     });
   });
 });

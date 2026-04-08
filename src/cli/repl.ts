@@ -11,7 +11,7 @@ export async function runRepl(): Promise<void> {
   process.stderr.write('Type a command, .help for help, or .exit to quit.\n\n');
 
   // 2. Try to authenticate once at startup (non-fatal)
-  let authUserId: string | null = null;
+  let authEmail: string | null = null;
   try {
     const { loadApiKey } = await import('./credentials.js');
     const { validateApiKey } = await import('../auth/api-keys.js');
@@ -19,8 +19,8 @@ export async function runRepl(): Promise<void> {
     if (key) {
       const result = await validateApiKey(key);
       if (result.valid) {
-        authUserId = result.userId || null;
-        process.stderr.write(`  Authenticated (user: ${authUserId || 'unknown'})\n\n`);
+        authEmail = result.email || null;
+        process.stderr.write(`  Authenticated as: ${authEmail || 'unknown'}\n\n`);
       }
     }
   } catch {
@@ -56,7 +56,7 @@ export async function runRepl(): Promise<void> {
   ];
 
   // 4. Create readline interface
-  const promptStr = authUserId ? `sn[${authUserId.substring(0, 8)}]> ` : 'sn> ';
+  const promptStr = authEmail ? `sn[${authEmail.split('@')[0]}]> ` : 'sn> ';
 
   const rl = createInterface({
     input: process.stdin,
@@ -105,6 +105,7 @@ export async function runRepl(): Promise<void> {
 
     // Parse as CLI command — override process.exit so it doesn't kill the REPL
     const originalExit = process.exit;
+    // @ts-expect-error — intentionally overriding process.exit in REPL mode
     process.exit = ((_code?: number) => {
       // Swallow exit calls — REPL stays alive
     }) as typeof process.exit;

@@ -1,11 +1,11 @@
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { z } from "zod";
-import { callEdgeFunction } from "../lib/edge-function.js";
-import { logMcpToolInvocation } from "../lib/supabase.js";
-import { formatToolError } from "../lib/tool-errors.js";
-import { validateUrlForSSRF } from "../lib/ssrf.js";
-import { MCP_VERSION } from "../lib/version.js";
-import type { ExtractedContent, ResponseEnvelope } from "../types/index.js";
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { z } from 'zod';
+import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
+import { logMcpToolInvocation } from '../lib/supabase.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { MCP_VERSION } from '../lib/version.js';
+import type { ExtractedContent, ResponseEnvelope } from '../types/index.js';
 
 interface ScrapeYouTubeResponse {
   title?: string;
@@ -33,15 +33,12 @@ interface FetchUrlContentResponse {
 }
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
-  return {
-    _meta: { version: MCP_VERSION, timestamp: new Date().toISOString() },
-    data,
-  };
+  return { _meta: { version: MCP_VERSION, timestamp: new Date().toISOString() }, data };
 }
 
-function isYouTubeUrl(url: string): "video" | "channel" | false {
-  if (/youtube\.com\/watch|youtu\.be\//.test(url)) return "video";
-  if (/youtube\.com\/@/.test(url)) return "channel";
+function isYouTubeUrl(url: string): 'video' | 'channel' | false {
+  if (/youtube\.com\/watch|youtu\.be\//.test(url)) return 'video';
+  if (/youtube\.com\/@/.test(url)) return 'channel';
   return false;
 }
 
@@ -52,81 +49,50 @@ function formatExtractedContentAsText(content: ExtractedContent): string {
   if (content.description) lines.push(`\nDescription:\n${content.description}`);
   if (content.transcript)
     lines.push(
-      `\nTranscript:\n${content.transcript.slice(0, 3000)}${content.transcript.length > 3000 ? "\n... (truncated)" : ""}`,
+      `\nTranscript:\n${content.transcript.slice(0, 3000)}${content.transcript.length > 3000 ? '\n... (truncated)' : ''}`
     );
   if (content.video_metadata) {
     const m = content.video_metadata;
     lines.push(`\nMetadata:`);
     lines.push(`  Channel: ${m.channel_name}`);
-    lines.push(`  Views: ${m.views?.toLocaleString() ?? "N/A"}`);
-    lines.push(`  Likes: ${m.likes?.toLocaleString() ?? "N/A"}`);
-    lines.push(`  Duration: ${m.duration ?? "N/A"}s`);
-    if (m.tags?.length) lines.push(`  Tags: ${m.tags.join(", ")}`);
+    lines.push(`  Views: ${m.views?.toLocaleString() ?? 'N/A'}`);
+    lines.push(`  Likes: ${m.likes?.toLocaleString() ?? 'N/A'}`);
+    lines.push(`  Duration: ${m.duration ?? 'N/A'}s`);
+    if (m.tags?.length) lines.push(`  Tags: ${m.tags.join(', ')}`);
   }
   if (content.features?.length)
-    lines.push(
-      `\nFeatures:\n${content.features.map((f: string) => `  - ${f}`).join("\n")}`,
-    );
+    lines.push(`\nFeatures:\n${content.features.map((f: string) => `  - ${f}`).join('\n')}`);
   if (content.benefits?.length)
-    lines.push(
-      `\nBenefits:\n${content.benefits.map((b: string) => `  - ${b}`).join("\n")}`,
-    );
+    lines.push(`\nBenefits:\n${content.benefits.map((b: string) => `  - ${b}`).join('\n')}`);
   if (content.usp) lines.push(`\nUSP: ${content.usp}`);
   if (content.suggested_hooks?.length)
     lines.push(
-      `\nSuggested Hooks:\n${content.suggested_hooks.map((h: string) => `  - ${h}`).join("\n")}`,
+      `\nSuggested Hooks:\n${content.suggested_hooks.map((h: string) => `  - ${h}`).join('\n')}`
     );
-  return lines.join("\n");
+  return lines.join('\n');
 }
 
 export function registerExtractionTools(server: McpServer): void {
   server.tool(
-    "extract_url_content",
-    "Extract text content from any URL — YouTube video transcripts, article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript extraction with optional comments. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.",
+    'extract_url_content',
+    'Extract text content from any URL — YouTube video transcripts, article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript extraction with optional comments. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.',
     {
-      url: z.string().url().describe("URL to extract content from"),
+      url: z.string().url().describe('URL to extract content from'),
       extract_type: z
-        .enum(["auto", "transcript", "article", "product"])
-        .default("auto")
-        .describe("Type of extraction"),
-      include_comments: z
-        .boolean()
-        .default(false)
-        .describe("Include top comments (YouTube only)"),
-      max_results: z
-        .number()
-        .min(1)
-        .max(100)
-        .default(10)
-        .describe("Max comments to include"),
-      response_format: z
-        .enum(["text", "json"])
-        .default("text")
-        .describe("Response format. Defaults to text."),
+        .enum(['auto', 'transcript', 'article', 'product'])
+        .default('auto')
+        .describe('Type of extraction'),
+      include_comments: z.boolean().default(false).describe('Include top comments (YouTube only)'),
+      max_results: z.number().min(1).max(100).default(10).describe('Max comments to include'),
+      response_format: z.enum(['text', 'json']).default('text'),
     },
-    {
-      title: "Extract URL Content",
-      readOnlyHint: true,
-      destructiveHint: false,
-      idempotentHint: true,
-      openWorldHint: true,
-    },
-
-    async ({
-      url,
-      extract_type,
-      include_comments,
-      max_results,
-      response_format,
-    }) => {
+    async ({ url, extract_type, include_comments, max_results, response_format }) => {
       const startedAt = Date.now();
 
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
         return {
-          content: [
-            { type: "text" as const, text: `URL blocked: ${ssrfCheck.error}` },
-          ],
+          content: [{ type: 'text' as const, text: `URL blocked: ${ssrfCheck.error}` }],
           isError: true,
         };
       }
@@ -136,29 +102,29 @@ export function registerExtractionTools(server: McpServer): void {
       try {
         let extracted: ExtractedContent;
 
-        if (youtubeType === "video") {
+        if (youtubeType === 'video') {
           const { data, error } = await callEdgeFunction<ScrapeYouTubeResponse>(
-            "scrape-youtube",
+            'scrape-youtube',
             {
               url,
               includeComments: include_comments,
               maxComments: max_results,
             },
-            { timeoutMs: 30_000 },
+            { timeoutMs: 30_000 }
           );
 
           if (error || !data) {
             logMcpToolInvocation({
-              toolName: "extract_url_content",
-              status: "error",
+              toolName: 'extract_url_content',
+              status: 'error',
               durationMs: Date.now() - startedAt,
               details: { url, error },
             });
             return {
               content: [
                 {
-                  type: "text" as const,
-                  text: formatToolError(`Failed to extract YouTube video: ${error ?? "No data returned"}`),
+                  type: 'text' as const,
+                  text: `Failed to extract YouTube video: ${error ?? 'No data returned'}`,
                 },
               ],
               isError: true,
@@ -166,10 +132,10 @@ export function registerExtractionTools(server: McpServer): void {
           }
 
           extracted = {
-            source_type: "youtube_video",
+            source_type: 'youtube_video',
             url,
-            title: data.title ?? "",
-            description: data.description ?? "",
+            title: data.title ?? '',
+            description: data.description ?? '',
             transcript: data.transcript,
             video_metadata: data.metadata
               ? {
@@ -177,32 +143,32 @@ export function registerExtractionTools(server: McpServer): void {
                   likes: data.metadata.likes ?? 0,
                   duration: data.metadata.duration ?? 0,
                   tags: data.metadata.tags ?? [],
-                  channel_name: data.metadata.channelName ?? "",
+                  channel_name: data.metadata.channelName ?? '',
                 }
               : undefined,
           };
-        } else if (youtubeType === "channel") {
+        } else if (youtubeType === 'channel') {
           const { data, error } = await callEdgeFunction<ScrapeYouTubeResponse>(
-            "scrape-youtube",
+            'scrape-youtube',
             {
               url,
-              type: "channel",
+              type: 'channel',
             },
-            { timeoutMs: 30_000 },
+            { timeoutMs: 30_000 }
           );
 
           if (error || !data) {
             logMcpToolInvocation({
-              toolName: "extract_url_content",
-              status: "error",
+              toolName: 'extract_url_content',
+              status: 'error',
               durationMs: Date.now() - startedAt,
               details: { url, error },
             });
             return {
               content: [
                 {
-                  type: "text" as const,
-                  text: formatToolError(`Failed to extract YouTube channel: ${error ?? "No data returned"}`),
+                  type: 'text' as const,
+                  text: `Failed to extract YouTube channel: ${error ?? 'No data returned'}`,
                 },
               ],
               isError: true,
@@ -210,34 +176,33 @@ export function registerExtractionTools(server: McpServer): void {
           }
 
           extracted = {
-            source_type: "youtube_channel",
+            source_type: 'youtube_channel',
             url,
-            title: data.title ?? "",
-            description: data.description ?? "",
+            title: data.title ?? '',
+            description: data.description ?? '',
           };
         } else {
           const body: Record<string, unknown> = { url };
-          if (extract_type !== "auto") body.type = extract_type;
+          if (extract_type !== 'auto') body.type = extract_type;
 
-          const { data, error } =
-            await callEdgeFunction<FetchUrlContentResponse>(
-              "fetch-url-content",
-              body,
-              { timeoutMs: 30_000 },
-            );
+          const { data, error } = await callEdgeFunction<FetchUrlContentResponse>(
+            'fetch-url-content',
+            body,
+            { timeoutMs: 30_000 }
+          );
 
           if (error || !data) {
             logMcpToolInvocation({
-              toolName: "extract_url_content",
-              status: "error",
+              toolName: 'extract_url_content',
+              status: 'error',
               durationMs: Date.now() - startedAt,
               details: { url, error },
             });
             return {
               content: [
                 {
-                  type: "text" as const,
-                  text: formatToolError(`Failed to extract URL content: ${error ?? "No data returned"}`),
+                  type: 'text' as const,
+                  text: `Failed to extract URL content: ${error ?? 'No data returned'}`,
                 },
               ],
               isError: true,
@@ -245,17 +210,17 @@ export function registerExtractionTools(server: McpServer): void {
           }
 
           const sourceType =
-            extract_type === "product"
-              ? ("product" as const)
-              : data.type === "product"
-                ? ("product" as const)
-                : ("article" as const);
+            extract_type === 'product'
+              ? ('product' as const)
+              : data.type === 'product'
+                ? ('product' as const)
+                : ('article' as const);
 
           extracted = {
             source_type: sourceType,
             url,
-            title: data.title ?? "",
-            description: data.description ?? "",
+            title: data.title ?? '',
+            description: data.description ?? '',
             transcript: data.content,
             features: data.features,
             benefits: data.benefits,
@@ -266,49 +231,39 @@ export function registerExtractionTools(server: McpServer): void {
 
         const durationMs = Date.now() - startedAt;
         logMcpToolInvocation({
-          toolName: "extract_url_content",
-          status: "success",
+          toolName: 'extract_url_content',
+          status: 'success',
           durationMs,
           details: { url, source_type: extracted.source_type },
         });
 
-        if (response_format === "json") {
+        if (response_format === 'json') {
           return {
             content: [
-              {
-                type: "text" as const,
-                text: JSON.stringify(asEnvelope(extracted), null, 2),
-              },
+              { type: 'text' as const, text: JSON.stringify(asEnvelope(extracted), null, 2) },
             ],
             isError: false,
           };
         }
 
         return {
-          content: [
-            {
-              type: "text" as const,
-              text: formatExtractedContentAsText(extracted),
-            },
-          ],
+          content: [{ type: 'text' as const, text: formatExtractedContentAsText(extracted) }],
           isError: false,
         };
       } catch (err) {
         const durationMs = Date.now() - startedAt;
-        const message = err instanceof Error ? err.message : String(err);
+        const message = sanitizeError(err);
         logMcpToolInvocation({
-          toolName: "extract_url_content",
-          status: "error",
+          toolName: 'extract_url_content',
+          status: 'error',
           durationMs,
           details: { url, error: message },
         });
         return {
-          content: [
-            { type: "text" as const, text: formatToolError(`Extraction failed: ${message}`) },
-          ],
+          content: [{ type: 'text' as const, text: `Extraction failed: ${message}` }],
           isError: true,
         };
       }
-    },
+    }
   );
 }

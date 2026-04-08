@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.7.0",
+  "version": "1.7.3",
   "description": "MCP server for Social Neuron - AI content creation platform",
   "type": "module",
   "main": "dist/index.js",
@@ -22,7 +22,6 @@
     "type": "git",
     "url": "git+https://github.com/socialneuron/mcp-server.git"
   },
-  "source": "./src/index.ts",
   "exports": {
     ".": "./dist/index.js",
     "./http": "./dist/http.js"
@@ -33,24 +32,27 @@
   },
   "keywords": [
     "mcp",
+    "mcp-server",
     "model-context-protocol",
-    "social-media",
-    "content-creation",
     "ai",
-    "claude",
+    "social-media",
+    "social-media-management",
+    "content-creation",
+    "content-scheduling",
+    "marketing",
     "automation",
     "analytics",
     "youtube",
     "tiktok",
-    "instagram"
+    "instagram",
+    "linkedin"
   ],
-  "mcpName": "com.socialneuron/mcp-server",
   "publishConfig": {
     "access": "public"
   },
   "scripts": {
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
-    "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external",
+    "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
     "build:all": "npm run build:stdio && npm run build",
     "start": "node dist/http.js",
     "start:stdio": "node dist/index.js",
@@ -63,21 +65,20 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.101.1",
+    "@supabase/supabase-js": "2.100.0",
+    "cors": "^2.8.6",
     "express": "^5.1.0",
+    "express-rate-limit": "^8.3.2",
     "jose": "^6.2.1",
-    "open": "11.0.0",
-    "zod": "^4.0.0"
-  },
-  "optionalDependencies": {
-    "posthog-node": "^5.28.0"
+    "open": "10.0.0",
+    "posthog-node": "^5.28.0",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@types/express": "^5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.27.3",
     "typescript": "^6.0.2",
-    "vitest": "^4.1.0"
+    "vitest": "^3.0.0"
   },
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0"

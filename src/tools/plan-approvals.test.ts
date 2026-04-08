@@ -1,32 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerPlanApprovalTools } from './plan-approvals.js';
-import { getSupabaseClient } from '../lib/supabase.js';
+import { callEdgeFunction } from '../lib/edge-function.js';
+import { getDefaultProjectId } from '../lib/supabase.js';
 
-const mockGetClient = vi.mocked(getSupabaseClient);
-
-function buildQueryChain(resolvedValue: { data: any; error: any }) {
-  const chain: Record<string, any> = {};
-  const methods = [
-    'select',
-    'eq',
-    'order',
-    'limit',
-    'single',
-    'maybeSingle',
-    'insert',
-    'update',
-    'upsert',
-  ];
-  for (const m of methods) {
-    chain[m] = vi.fn().mockReturnValue(chain);
-  }
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  chain.then = (resolve: Function) => resolve(resolvedValue);
-  chain.catch = () => chain;
-  chain.finally = () => chain;
-  return chain;
-}
+const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockGetProjectId = vi.mocked(getDefaultProjectId);
 
 describe('plan approval tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -35,41 +14,30 @@ describe('plan approval tools', () => {
     vi.clearAllMocks();
     server = createMockServer();
     registerPlanApprovalTools(server as any);
+    mockGetProjectId.mockResolvedValue('22222222-2222-2222-2222-222222222222');
   });
 
   it('create_plan_approvals creates rows for posts', async () => {
     const planId = '11111111-1111-1111-1111-111111111111';
     const projectId = '22222222-2222-2222-2222-222222222222';
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'projects') {
-        return buildQueryChain({
-          data: { id: projectId, organization_id: 'org-1' },
-          error: null,
-        });
-      }
-      if (table === 'organization_members') {
-        return buildQueryChain({
-          data: { organization_id: 'org-1' },
-          error: null,
-        });
-      }
-      if (table === 'content_plan_approvals') {
-        return buildQueryChain({
-          data: [
-            {
-              id: 'a1',
-              plan_id: planId,
-              post_id: 'day1-twitter-1',
-              status: 'pending',
-              created_at: '2026-02-18T00:00:00Z',
-            },
-          ],
-          error: null,
-        });
-      }
-      return buildQueryChain({ data: [], error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        plan_id: planId,
+        created: 1,
+        items: [
+          {
+            id: 'a1',
+            plan_id: planId,
+            post_id: 'day1-twitter-1',
+            status: 'pending',
+            created_at: '2026-02-18T00:00:00Z',
+          },
+        ],
+      },
+      error: null,
+    } as any);
 
     const handler = server.getHandler('create_plan_approvals')!;
     const result = await handler({
@@ -95,29 +63,30 @@ describe('plan approval tools', () => {
 
   it('list_plan_approvals returns json envelope', async () => {
     const planId = '44444444-4444-4444-4444-444444444444';
-    const fromFn = vi.fn((table: string) => {
-      if (table === 'content_plan_approvals') {
-        return buildQueryChain({
-          data: [
-            {
-              id: 'a1',
-              plan_id: planId,
-              post_id: 'day1-linkedin-1',
-              status: 'pending',
-              reason: null,
-              decided_at: null,
-              created_at: '2026-02-18T00:00:00Z',
-              updated_at: '2026-02-18T00:00:00Z',
-              original_post: { id: 'day1-linkedin-1' },
-              edited_post: null,
-            },
-          ],
-          error: null,
-        });
-      }
-      return buildQueryChain({ data: [], error: null });
-    });
-    mockGetClient.mockReturnValue({ from: fromFn } as any);
+
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        plan_id: planId,
+        total: 1,
+        items: [
+          {
+            id: 'a1',
+            plan_id: planId,
+            post_id: 'day1-linkedin-1',
+            project_id: '22222222-2222-2222-2222-222222222222',
+            status: 'pending',
+            reason: null,
+            decided_at: null,
+            created_at: '2026-02-18T00:00:00Z',
+            updated_at: '2026-02-18T00:00:00Z',
+            original_post: { id: 'day1-linkedin-1' },
+            edited_post: null,
+          },
+        ],
+      },
+      error: null,
+    } as any);
 
     const handler = server.getHandler('list_plan_approvals')!;
     const result = await handler({
@@ -129,5 +98,34 @@ describe('plan approval tools', () => {
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.data.plan_id).toBe(planId);
     expect(parsed.data.total).toBe(1);
+  });
+
+  it('respond_plan_approval approves successfully', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        approval: {
+          id: '55555555-5555-5555-5555-555555555555',
+          plan_id: '11111111-1111-1111-1111-111111111111',
+          post_id: 'day1-twitter-1',
+          status: 'approved',
+          reason: 'Looks good',
+          decided_at: '2026-02-18T12:00:00Z',
+          original_post: { id: 'day1-twitter-1' },
+          edited_post: null,
+        },
+      },
+      error: null,
+    } as any);
+
+    const handler = server.getHandler('respond_plan_approval')!;
+    const result = await handler({
+      approval_id: '55555555-5555-5555-5555-555555555555',
+      decision: 'approved',
+      reason: 'Looks good',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(result.content[0].text).toContain('updated: approved');
   });
 });

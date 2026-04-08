@@ -31,83 +31,11 @@ export function isEnabledFlag(value: string | boolean | string[] | undefined): b
   return false;
 }
 
-export type OutputFormat = 'json' | 'table' | 'csv';
-
-export function resolveOutputFormat(args: SnArgs): OutputFormat {
-  const output = args.output as string | undefined;
-  if (output === 'table' || output === 'csv') return output;
-  if (isEnabledFlag(args.json)) return 'json';
-  // When piped (not a TTY), default to json for machine consumption
-  if (!process.stdout.isTTY) return 'json';
-  return 'table';
-}
-
 export function emitSnResult(payload: Record<string, unknown>, asJson: boolean): void {
   if (asJson) {
     // Ensure schema_version is present
     const envelope = { schema_version: '1', ...payload };
     process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
-  }
-}
-
-/**
- * Format tabular data as a simple aligned table for terminal output.
- */
-export function formatTable(rows: Record<string, unknown>[], columns?: string[]): string {
-  if (rows.length === 0) return '(no data)\n';
-
-  const cols = columns ?? Object.keys(rows[0]);
-  const widths = cols.map(col =>
-    Math.max(col.length, ...rows.map(r => String(r[col] ?? '').length))
-  );
-
-  const header = cols.map((col, i) => col.padEnd(widths[i])).join('  ');
-  const separator = widths.map(w => '-'.repeat(w)).join('  ');
-  const body = rows.map(row =>
-    cols.map((col, i) => String(row[col] ?? '').padEnd(widths[i])).join('  ')
-  );
-
-  return [header, separator, ...body].join('\n') + '\n';
-}
-
-/**
- * Format tabular data as CSV.
- */
-export function formatCsv(rows: Record<string, unknown>[], columns?: string[]): string {
-  if (rows.length === 0) return '';
-
-  const cols = columns ?? Object.keys(rows[0]);
-  const escape = (val: unknown) => {
-    const s = String(val ?? '');
-    return s.includes(',') || s.includes('"') || s.includes('\n')
-      ? `"${s.replace(/"/g, '""')}"`
-      : s;
-  };
-
-  const header = cols.map(escape).join(',');
-  const body = rows.map(row => cols.map(col => escape(row[col])).join(','));
-  return [header, ...body].join('\n') + '\n';
-}
-
-/**
- * Output data in the requested format (json, table, or csv).
- */
-export function emitFormatted(
-  data: Record<string, unknown> | Record<string, unknown>[],
-  format: OutputFormat,
-  columns?: string[],
-): void {
-  if (format === 'json') {
-    const envelope = Array.isArray(data) ? { schema_version: '1', data } : { schema_version: '1', ...data };
-    process.stdout.write(JSON.stringify(envelope, null, 2) + '\n');
-    return;
-  }
-
-  const rows = Array.isArray(data) ? data : [data];
-  if (format === 'csv') {
-    process.stdout.write(formatCsv(rows, columns));
-  } else {
-    process.stdout.write(formatTable(rows, columns));
   }
 }
 
