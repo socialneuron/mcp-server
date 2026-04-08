@@ -16,6 +16,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { computeBrandConsistency } from '../lib/brandScoring.js';
+import { auditBrandColors, exportDesignTokens } from '../lib/colorAudit.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -293,6 +294,112 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       const checkResult = computeBrandConsistency(content, profile);
 
       const envelope = asEnvelope(checkResult);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // audit_brand_colors
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'audit_brand_colors',
+    'Audit content colors against the brand palette using perceptual color distance (Delta E 2000). ' +
+      'Returns per-color compliance scores and identifies the closest brand color for each input.',
+    {
+      content_colors: z
+        .array(z.string())
+        .describe('Hex color strings used in the content (e.g., ["#FF0000", "#00FF00"])'),
+      project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
+      threshold: z
+        .number()
+        .optional()
+        .describe('Max Delta E for on-brand (default 10). Lower = stricter.'),
+    },
+    async ({ content_colors, project_id, threshold }) => {
+      const projectId = project_id || (await getDefaultProjectId());
+
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        profile: Record<string, unknown> | null;
+        error?: string;
+      }>('mcp-data', { action: 'brand-profile', projectId });
+
+      const row =
+        !efError && result?.success ? (result.profile as Record<string, any> | null) : null;
+
+      if (!row?.profile_data?.colorPalette) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No brand color palette found. Extract a brand profile first.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const auditResult = auditBrandColors(
+        row.profile_data.colorPalette,
+        content_colors,
+        threshold ?? 10
+      );
+
+      const envelope = asEnvelope(auditResult);
+      return {
+        content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // export_design_tokens
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'export_design_tokens',
+    'Export brand palette and typography as design tokens. ' +
+      'Supports CSS custom properties, Tailwind config, and Figma Tokens JSON formats.',
+    {
+      format: z
+        .enum(['css', 'tailwind', 'figma'])
+        .describe(
+          'Output format: css (CSS variables), tailwind (theme.extend.colors), figma (Figma Tokens JSON)'
+        ),
+      project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
+    },
+    async ({ format, project_id }) => {
+      const projectId = project_id || (await getDefaultProjectId());
+
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        profile: Record<string, unknown> | null;
+        error?: string;
+      }>('mcp-data', { action: 'brand-profile', projectId });
+
+      const row =
+        !efError && result?.success ? (result.profile as Record<string, any> | null) : null;
+
+      if (!row?.profile_data?.colorPalette) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No brand color palette found. Extract a brand profile first.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const output = exportDesignTokens(
+        row.profile_data.colorPalette,
+        row.profile_data.typography,
+        format
+      );
+
+      const envelope = asEnvelope({ format, tokens: output });
       return {
         content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
       };

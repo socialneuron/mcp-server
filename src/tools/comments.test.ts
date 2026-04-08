@@ -83,7 +83,7 @@ describe('comments tools', () => {
       const handler = server.getHandler('list_comments')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.2');
+      expect(parsed._meta.version).toBe('1.7.4');
       expect(parsed.data.comments.length).toBe(1);
     });
   });

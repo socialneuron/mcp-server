@@ -22,6 +22,7 @@ import { registerCreditsTools } from '../tools/credits.js';
 import { registerLoopSummaryTools } from '../tools/loop-summary.js';
 import { registerUsageTools } from '../tools/usage.js';
 import { registerAutopilotTools } from '../tools/autopilot.js';
+import { registerRecipeTools } from '../tools/recipes.js';
 import { registerExtractionTools } from '../tools/extraction.js';
 import { registerQualityTools } from '../tools/quality.js';
 import { registerPlanningTools } from '../tools/planning.js';
@@ -31,6 +32,7 @@ import { registerPipelineTools } from '../tools/pipeline.js';
 import { registerSuggestTools } from '../tools/suggest.js';
 import { registerDigestTools } from '../tools/digest.js';
 import { registerBrandRuntimeTools } from '../tools/brandRuntime.js';
+import { registerCarouselTools } from '../tools/carousel.js';
 
 /**
  * Wrap server.tool() to inject scope checking before each handler.
@@ -155,6 +157,7 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerLoopSummaryTools(server);
   registerUsageTools(server);
   registerAutopilotTools(server);
+  registerRecipeTools(server);
   registerExtractionTools(server);
   registerQualityTools(server);
   registerPlanningTools(server);
@@ -164,6 +167,7 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerSuggestTools(server);
   registerDigestTools(server);
   registerBrandRuntimeTools(server);
+  registerCarouselTools(server);
 
   // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)
   applyAnnotations(server);

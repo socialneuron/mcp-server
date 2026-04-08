@@ -40,6 +40,8 @@ export const TOOL_SCOPES: Record<string, string> = {
   get_brand_runtime: 'mcp:read',
   explain_brand_system: 'mcp:read',
   check_brand_consistency: 'mcp:read',
+  audit_brand_colors: 'mcp:read',
+  export_design_tokens: 'mcp:read',
   get_ideation_context: 'mcp:read',
   get_credit_balance: 'mcp:read',
   get_budget_status: 'mcp:read',
@@ -62,6 +64,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   create_storyboard: 'mcp:write',
   generate_voiceover: 'mcp:write',
   generate_carousel: 'mcp:write',
+  create_carousel: 'mcp:write',
   upload_media: 'mcp:write',
 
   // mcp:read (media)
@@ -85,6 +88,12 @@ export const TOOL_SCOPES: Record<string, string> = {
   list_autopilot_configs: 'mcp:autopilot',
   update_autopilot_config: 'mcp:autopilot',
   get_autopilot_status: 'mcp:autopilot',
+
+  // Recipes
+  list_recipes: 'mcp:read',
+  get_recipe_details: 'mcp:read',
+  execute_recipe: 'mcp:write',
+  get_recipe_run_status: 'mcp:read',
 
   // mcp:read (content lifecycle — read-only tools)
   extract_url_content: 'mcp:read',
