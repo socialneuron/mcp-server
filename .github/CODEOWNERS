@@ -1,0 +1,14 @@
+# Code ownership for @socialneuron/mcp-server
+# Every PR requires review from the maintainers team (enforced via branch protection).
+# https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners
+
+* @socialneuron/sn-maintainers
+
+# Security-sensitive paths — explicit for clarity
+/.github/workflows/       @socialneuron/sn-maintainers
+/.github/CODEOWNERS       @socialneuron/sn-maintainers
+/.npmrc                   @socialneuron/sn-maintainers
+/package.json             @socialneuron/sn-maintainers
+/package-lock.json        @socialneuron/sn-maintainers
+/src/auth/                @socialneuron/sn-maintainers
+/src/cli/credentials.ts   @socialneuron/sn-maintainers
