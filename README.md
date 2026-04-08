@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 52 tools for AI-powered social media management. MCP, REST API, CLI — create content, schedule posts, track analytics, and optimize performance.
+> 64 tools for AI-powered social media management. MCP, REST API, CLI — create content, schedule posts, track analytics, and optimize performance.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -14,7 +14,7 @@
 | **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
 | **SDK** | TypeScript/Node.js apps | Coming Q2 2026 |
 
-All methods share the same 52 tools, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+All methods share the same 64 tools, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
 
 ## Quick Start
 
@@ -137,7 +137,7 @@ Ask Claude things like:
 - "Check my analytics and suggest improvements"
 - "Set up autopilot to post 3 times per week"
 
-## Tool Categories (52 tools)
+## Tool Categories (64 tools)
 
 All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
@@ -261,7 +261,7 @@ socialneuron-mcp sn loop
 socialneuron-mcp sn credits
 
 # Agent-native CLI v2
-socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 52 tools
+socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 64 tools
 socialneuron-mcp sn info                                            # Version, auth, credits, tool count
 socialneuron-mcp sn plan list|view|approve                          # Content plan management
 socialneuron-mcp sn preset list|show|save|delete                    # Platform presets (6 built-in)
