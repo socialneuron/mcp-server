@@ -24,6 +24,16 @@ jobs:
 
       - run: npm ci
 
+      - name: Lint package-lock.json
+        run: npm run lint:lockfile
+
+      - name: Dependency cooldown (warn-only)
+        run: npm run check:dep-age
+        # NOTE: warn-only for now so existing fresh security pins (from the
+        # 2026-04-08 Dependabot closure) don't block CI. Flip to enforce
+        # by setting SN_DEP_AGE_ENFORCE=true here once current young deps
+        # have aged past 14 days (approximately 2026-04-22).
+
       - name: Test
         run: npm test
 

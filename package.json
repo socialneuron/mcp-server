@@ -51,6 +51,8 @@
     "access": "public"
   },
   "scripts": {
+    "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --validate-https --allowed-hosts npm --validate-package-names --validate-integrity",
+    "check:dep-age": "node scripts/check-dep-age.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
     "build:all": "npm run build:stdio && npm run build",
@@ -77,6 +79,7 @@
   "devDependencies": {
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.0",
+    "lockfile-lint": "5.0.0",
     "typescript": "^5.9.3",
     "vitest": "^3.0.0"
   },
