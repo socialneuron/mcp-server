@@ -15,13 +15,14 @@ jobs:
     environment: production  # Requires manual approval before publish
 
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v4
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v4
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
           cache: npm
+          always-auth: false
 
       - run: npm ci
 
@@ -61,23 +62,6 @@ jobs:
             echo "ERROR: unexpected files found in pack output"
             exit 1
           fi
-
-      - name: Debug OIDC token claims
-        # TEMPORARY — remove after Trusted Publishing is verified working.
-        # Prints the OIDC token claims that npm receives for Trusted Publishing.
-        # Compare these against the Trusted Publisher config on npmjs.com.
-        run: |
-          echo "=== Fetching OIDC token for audience npm:registry.npmjs.org ==="
-          TOKEN=$(curl -sSL "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=npm:registry.npmjs.org" \
-            -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" | jq -r .value)
-          if [ -z "$TOKEN" ] || [ "$TOKEN" = "null" ]; then
-            echo "ERROR: failed to mint OIDC token"
-            exit 1
-          fi
-          echo "=== OIDC CLAIMS (sensitive values like sub/repo are public anyway) ==="
-          echo "$TOKEN" | awk -F. '{print $2}' | base64 -d 2>/dev/null | jq '{iss, aud, sub, repository, repository_owner, workflow_ref, job_workflow_ref, environment, ref, ref_type, event_name}' || \
-            echo "$TOKEN" | awk -F. '{print $2}' | base64 -di 2>/dev/null | jq '{iss, aud, sub, repository, repository_owner, workflow_ref, job_workflow_ref, environment, ref, ref_type, event_name}'
-          echo "=== END ==="
 
       - name: Publish
         # npm Trusted Publishing (OIDC) — no NODE_AUTH_TOKEN needed.
