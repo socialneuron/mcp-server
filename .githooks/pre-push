@@ -1,0 +1,128 @@
+#!/usr/bin/env bash
+#
+# Pre-push hook: allowlist-based identity enforcement for public commits.
+#
+# Enables: run `git config core.hooksPath .githooks` once after cloning.
+#
+# This hook is a belt-and-braces defense layered on top of GitHub's
+# account-level "Block command line pushes that expose my email" setting.
+# Reference: memory-bank/sessions/2026-04-08_session-security-sprint-1-and-2.md
+# in the private monorepo (the CRITICAL INCIDENT section on
+# `gh pr merge --squash --admin` identity leak).
+
+set -eu
+
+# ALLOWLIST model: public commits must come from one of these identities.
+# Anything else is rejected. This is safer than a blocklist because it
+# catches new personal identities you haven't thought to block yet.
+#
+# To allow a new identity, add it here with a comment explaining why.
+ALLOWED_EMAIL_PATTERNS=(
+  # Team identity used for all hand-written commits on public repos
+  '^socialneuronteam@gmail\.com$'
+  # Dependabot bot account
+  '^[0-9]+\+dependabot\[bot\]@users\.noreply\.github\.com$'
+  # GitHub Actions bot (for automated workflow commits)
+  '^[0-9]+\+github-actions\[bot\]@users\.noreply\.github\.com$'
+  '^github-actions@github\.com$'
+)
+
+# Commit message patterns that signal AI attribution we do not want on public repos.
+BLOCKED_MESSAGE_PATTERNS=(
+  'Co-Authored-By:.*Claude'
+  'Co-Authored-By:.*anthropic'
+  'Generated with.*Claude Code'
+  '🤖 Generated with'
+)
+
+has_error=0
+report_error() {
+  printf '\n\033[31m✗ pre-push: %s\033[0m\n' "$1" >&2
+  has_error=1
+}
+
+# Special hash meaning "the zero ref" (branch creation/deletion).
+ZERO='0000000000000000000000000000000000000000'
+
+# Read refs being pushed from stdin.
+# Format per line: <local_ref> <local_sha> <remote_ref> <remote_sha>
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Skip branch deletions (local_sha is zero).
+  if [ "$local_sha" = "$ZERO" ]; then
+    continue
+  fi
+
+  if [ "$remote_sha" = "$ZERO" ]; then
+    # New branch — check everything unique to this ref vs main.
+    commits=$(git rev-list "$local_sha" --not --remotes=origin 2>/dev/null | head -50 || true)
+  else
+    # Existing branch — check only new commits.
+    commits=$(git rev-list "$remote_sha..$local_sha" 2>/dev/null || true)
+  fi
+
+  for sha in $commits; do
+    author_email=$(git show -s --format='%ae' "$sha")
+    committer_email=$(git show -s --format='%ce' "$sha")
+    msg=$(git show -s --format='%B' "$sha")
+
+    # Author allowlist check
+    author_ok=0
+    for pat in "${ALLOWED_EMAIL_PATTERNS[@]}"; do
+      if [[ "$author_email" =~ $pat ]]; then
+        author_ok=1
+        break
+      fi
+    done
+    if [ "$author_ok" -eq 0 ]; then
+      report_error "commit $sha: author email '$author_email' is not on the allowlist"
+    fi
+
+    # Committer allowlist check
+    committer_ok=0
+    for pat in "${ALLOWED_EMAIL_PATTERNS[@]}"; do
+      if [[ "$committer_email" =~ $pat ]]; then
+        committer_ok=1
+        break
+      fi
+    done
+    if [ "$committer_ok" -eq 0 ]; then
+      report_error "commit $sha: committer email '$committer_email' is not on the allowlist"
+    fi
+
+    # Message blocklist check
+    for pat in "${BLOCKED_MESSAGE_PATTERNS[@]}"; do
+      if echo "$msg" | grep -qE "$pat"; then
+        report_error "commit $sha: message matches blocked pattern '$pat'"
+      fi
+    done
+  done
+done
+
+if [ "$has_error" -ne 0 ]; then
+  cat >&2 <<EOF
+
+Push rejected by .githooks/pre-push.
+
+If you see a personal email in the output above, you most likely used
+\`gh pr merge --squash --admin\` which re-authors the squash commit as the
+authenticated gh user. Use the local-squash pattern instead:
+
+    git fetch origin <pr-branch>
+    git checkout main
+    git merge --squash <branch>
+    git commit -m "..."   # uses LOCAL git config = Social Neuron
+    git push origin main
+
+To temporarily bypass (NOT RECOMMENDED), run:
+    git push --no-verify origin main
+
+This hook is opt-in — enable it once per clone with:
+    git config core.hooksPath .githooks
+
+See memory-bank/sessions/2026-04-08_session-security-sprint-1-and-2.md
+(in the private monorepo) for the incident postmortem.
+EOF
+  exit 1
+fi
+
+exit 0
