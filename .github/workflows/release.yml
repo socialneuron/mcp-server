@@ -63,12 +63,10 @@ jobs:
           fi
 
       - name: Publish
-        # FIXME(trusted-publishing): Trusted Publishing (OIDC) was attempted
-        # 2026-04-08 but npmjs.com TP config kept returning 404. Reverted to
-        # NPM_TOKEN temporarily. Follow-up task: re-verify TP config matches
-        # {org=socialneuron, repo=mcp-server, workflow=release.yml, env=production}
-        # and flip back to token-less publish. Provenance still works with
-        # NPM_TOKEN, so SLSA attestation is preserved.
+        # npm Trusted Publishing (OIDC) — no NODE_AUTH_TOKEN needed.
+        # Trust is configured on npmjs.com → package → Access → Trusted Publisher:
+        #   org=socialneuron, repo=mcp-server, workflow=release.yml, env=production
+        # Requires: permissions.id-token: write (set above) + production environment gate.
+        # --provenance generates SLSA Build L2 attestation, signed via GitHub OIDC.
+        # https://docs.npmjs.com/trusted-publishers
         run: npm publish --access public --provenance
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
