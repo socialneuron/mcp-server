@@ -9,6 +9,7 @@
   },
   "files": [
     "dist/",
+    "tools.lock.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -55,7 +56,10 @@
     "check:dep-age": "node scripts/check-dep-age.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
-    "build:all": "npm run build:stdio && npm run build",
+    "build:lock": "node scripts/build-tools-lock.mjs",
+    "build:all": "npm run build:stdio && npm run build && npm run build:lock",
+    "verify:lock": "node scripts/verify-tools-lock.mjs",
+    "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",
     "start:stdio": "node dist/index.js",
     "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
