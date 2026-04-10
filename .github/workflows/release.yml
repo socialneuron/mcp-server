@@ -45,21 +45,20 @@ jobs:
         env:
           SN_DEP_AGE_ENFORCE: "true"
         # Release is stricter than CI: young deps block publish.
-        # Emergency override: set SN_DEP_MIN_AGE_DAYS=0 on this step for
-        # a single release when shipping a vetted security patch that is
-        # under the cooldown. Revert immediately after.
+
+      - name: Lint tool descriptions
+        run: npm run lint:tools
+
+      - name: Verify tools.lock.json drift
+        run: npm run verify:lock
 
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
       # NOTE: Typecheck intentionally removed 2026-04-08 to unblock releases.
-      # There are ~40 pre-existing type errors (missing @types/express,
-      # @remotion/*, plus real errors in media.ts/recipes.ts/http.ts) that
-      # have been there through every prior release. All prior CI releases
-      # failed on this step; published versions were shipped via local
-      # `npm publish` bypassing this workflow. Removing the gate lets CI
-      # publish again. A dedicated tech-debt PR should fix the type errors
-      # and restore this step. Tests + build + pack verify gates remain.
+      # There are ~40 pre-existing type errors. A dedicated tech-debt PR
+      # should fix them and restore this step. Tests + build + pack verify
+      # gates remain.
 
       - name: Test
         run: npm test

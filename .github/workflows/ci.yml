@@ -34,6 +34,12 @@ jobs:
         # by setting SN_DEP_AGE_ENFORCE=true here once current young deps
         # have aged past 14 days (approximately 2026-04-22).
 
+      - name: Lint tool descriptions
+        run: npm run lint:tools
+
+      - name: Verify tools.lock.json drift
+        run: npm run verify:lock
+
       - name: Test
         run: npm test
 
