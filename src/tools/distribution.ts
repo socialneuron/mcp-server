@@ -429,13 +429,16 @@ export function registerDistributionTools(server: McpServer): void {
           resolvedMediaUrls = resolved as string[];
         }
 
-        // --- Auto-rehost caller-supplied URLs into R2 ---
+        // --- Auto-rehost non-R2 URLs into R2 ---
         // Keeps scheduled posts alive past ephemeral-URL expiry and feeds
-        // byte-upload platforms (X, LinkedIn, YouTube, Bluesky). Only runs
-        // for URLs that originate from the caller (not ones we just signed
-        // via r2_key / job_id, which already point at R2).
+        // byte-upload platforms (X, LinkedIn, YouTube, Bluesky). Fires for
+        // any URL that is not already R2-signed, regardless of source —
+        // this covers caller-supplied media_url(s) AND kie.ai / other
+        // generators whose job_id result_url is a raw ephemeral URL rather
+        // than a persisted R2 key. URLs already bearing X-Amz-Signature
+        // (signed by our get-signed-url EF) are skipped.
         const shouldRehost = auto_rehost !== false;
-        if (shouldRehost && media_url && !r2_key && !job_id && resolvedMediaUrl === media_url) {
+        if (shouldRehost && resolvedMediaUrl && !isAlreadyR2Signed(resolvedMediaUrl)) {
           const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
           if ('error' in rehost) {
             return {
@@ -443,7 +446,7 @@ export function registerDistributionTools(server: McpServer): void {
                 {
                   type: 'text' as const,
                   text:
-                    `Failed to persist media_url into R2: ${rehost.error}. ` +
+                    `Failed to persist media URL into R2: ${rehost.error}. ` +
                     `Try upload_media first and pass r2_key instead, or set auto_rehost=false ` +
                     `if you're sure the URL is publicly durable and every target platform ` +
                     `accepts URL ingest.`,
@@ -455,35 +458,35 @@ export function registerDistributionTools(server: McpServer): void {
           resolvedMediaUrl = rehost.signedUrl;
         }
 
-        if (
-          shouldRehost &&
-          media_urls &&
-          media_urls.length > 0 &&
-          !r2_keys &&
-          !job_ids &&
-          resolvedMediaUrls === media_urls
-        ) {
-          const rehosted = await Promise.all(
-            media_urls.map(u => rehostExternalUrl(u, project_id))
-          );
-          const failIdx = rehosted.findIndex(r => 'error' in r);
-          if (failIdx !== -1) {
-            const failed = rehosted[failIdx] as { error: string };
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text:
-                    `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
-                    `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
-                },
-              ],
-              isError: true,
-            };
+        if (shouldRehost && resolvedMediaUrls && resolvedMediaUrls.length > 0) {
+          const needsRehost = resolvedMediaUrls.map(u => !isAlreadyR2Signed(u));
+          if (needsRehost.some(Boolean)) {
+            const rehosted = await Promise.all(
+              resolvedMediaUrls.map((u, i) =>
+                needsRehost[i]
+                  ? rehostExternalUrl(u, project_id)
+                  : Promise.resolve({ signedUrl: u, r2Key: '' })
+              )
+            );
+            const failIdx = rehosted.findIndex(r => 'error' in r);
+            if (failIdx !== -1) {
+              const failed = rehosted[failIdx] as { error: string };
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text:
+                      `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
+                      `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+            resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
+              r => r.signedUrl
+            );
           }
-          resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
-            r => r.signedUrl
-          );
         }
       } catch (resolveErr) {
         return {

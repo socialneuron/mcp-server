@@ -245,7 +245,7 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('Failed to persist media_url');
+        expect(result.content[0].text).toContain('Failed to persist media URL');
         expect(mockCallEdge).not.toHaveBeenCalled();
       });
 
@@ -258,7 +258,7 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('Failed to persist media_url');
+        expect(result.content[0].text).toContain('Failed to persist media URL');
         expect(mockCallEdge).not.toHaveBeenCalled();
       });
 
@@ -294,7 +294,7 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('Failed to persist media_url');
+        expect(result.content[0].text).toContain('Failed to persist media URL');
         expect(result.content[0].text).toContain('R2 quota exceeded');
         expect(result.content[0].text).toContain('upload_media');
       });
@@ -343,6 +343,104 @@ describe('distribution tools', () => {
         schedBody.mediaUrls.forEach((u: string) => {
           expect(u).toContain('X-Amz-Signature');
         });
+      });
+
+      it('rehosts a raw (non-R2) result_url returned by a kie.ai job_id', async () => {
+        // kie.ai job that returned an ephemeral CDN URL rather than an R2 key
+        mockCallEdge
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              job: {
+                result_url: 'https://tempfile.kie.ai/abc/generated.mp4',
+                status: 'completed',
+              },
+            },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              url: 'https://r2-signed.example.com/k.mp4?X-Amz-Signature=sig',
+              key: 'org_1/user_1/videos/2026-04-21/k.mp4',
+              size: 2_000_000,
+              contentType: 'video/mp4',
+            },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              scheduledAt: '2026-04-21T14:00:00Z',
+              results: { YouTube: { success: true, jobId: 'j1', postId: 'p1' } },
+            },
+            error: null,
+          });
+
+        const handler = server.getHandler('schedule_post')!;
+        const result = await handler({
+          job_id: 'kie-job-123',
+          caption: 'ai-made',
+          platforms: ['youtube'],
+        });
+
+        expect(result.isError).toBe(false);
+        expect(mockCallEdge).toHaveBeenCalledTimes(3);
+        expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data'); // job-status lookup
+        expect(mockCallEdge.mock.calls[1][0]).toBe('upload-to-r2'); // rehost
+        expect(mockCallEdge.mock.calls[1][1]).toEqual(
+          expect.objectContaining({ url: 'https://tempfile.kie.ai/abc/generated.mp4' })
+        );
+        expect(mockCallEdge.mock.calls[2][0]).toBe('schedule-post');
+        expect(mockCallEdge.mock.calls[2][1]).toEqual(
+          expect.objectContaining({
+            mediaUrl: 'https://r2-signed.example.com/k.mp4?X-Amz-Signature=sig',
+          })
+        );
+      });
+
+      it('does not rehost a kie.ai job_id that already resolved to an R2 key', async () => {
+        // R2 key path: mcp-data returns r2_key (no http prefix) → signR2Key →
+        // already R2-signed → no rehost needed.
+        mockCallEdge
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              job: {
+                result_url: 'org_1/user_1/videos/2026-04-21/k.mp4',
+                status: 'completed',
+              },
+            },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: { signedUrl: 'https://r2.example.com/k.mp4?X-Amz-Signature=sig' },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              scheduledAt: '2026-04-21T14:00:00Z',
+              results: { YouTube: { success: true } },
+            },
+            error: null,
+          });
+
+        const handler = server.getHandler('schedule_post')!;
+        const result = await handler({
+          job_id: 'kie-job-456',
+          caption: 'from-r2',
+          platforms: ['youtube'],
+        });
+
+        expect(result.isError).toBe(false);
+        // Exactly 3: job-status, sign, schedule-post — no upload-to-r2
+        expect(mockCallEdge).toHaveBeenCalledTimes(3);
+        expect(mockCallEdge.mock.calls.map(c => c[0])).toEqual([
+          'mcp-data',
+          'get-signed-url',
+          'schedule-post',
+        ]);
       });
 
       it('does not rehost when r2_key is already provided', async () => {
