@@ -2,6 +2,36 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.5-rc.0] - 2026-04-21
+
+### Added
+- **`upload_media` base64 path**: new optional `file_data` + `file_name` params
+  let Claude Desktop, Claude Web, and other remote agents upload bytes directly
+  without a filesystem path. Content-type is validated against an allowlist,
+  base64 charset is checked, and decoded size is capped at 10MB before the EF
+  call. `file_name` is `basename()`-sanitized.
+- **`schedule_post` auto-rehost**: any `media_url` / `media_urls` / `job_id`
+  result URL that is not already R2-signed is automatically persisted into R2
+  via `upload-to-r2` before posting. Keeps scheduled posts alive past
+  ephemeral-URL expiry (Replicate, OpenAI, DALL-E, kie.ai) and feeds
+  byte-upload platforms (X, LinkedIn, YouTube, Bluesky). New optional
+  `auto_rehost` parameter (default: true) opts out.
+
+### Security
+- **SSRF guard on caller URLs**: every URL passed to auto-rehost is validated
+  by `quickSSRFCheck` — rejects localhost, RFC1918 private ranges, link-local,
+  cloud metadata endpoints (AWS/GCP/Azure), embedded credentials, and non-HTTP(S)
+  protocols.
+- **Hono dependency patched**: `hono` override bumped from 4.12.12 → 4.12.14 to
+  resolve GHSA-458j-xx4x-4375 (JSX attribute HTML injection, moderate).
+
+### Fixed
+- Missing `sanitizeError` import on the presigned-PUT error branch of `upload_media`.
+
+### Changed
+- Tool descriptions updated on `upload_media` and `schedule_post.media_url` to
+  tell agents ephemeral URLs are safe to pass directly.
+
 ## [1.7.3] - 2026-04-04
 
 ### Security
