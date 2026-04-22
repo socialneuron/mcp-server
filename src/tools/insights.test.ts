@@ -144,7 +144,7 @@ describe('insights tools', () => {
       const handler = server.getHandler('get_performance_insights')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.5');
+      expect(parsed._meta.version).toBe('1.7.6');
       expect(parsed.data.insights.length).toBe(1);
     });
   });

@@ -2,6 +2,22 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.6] - 2026-04-22
+
+### Security
+- **Dependency cooldown re-armed**: `SN_DEP_AGE_ENFORCE` flipped back to `"true"` in `release.yml`. New dependency versions under 14 days old now block publish again. (Was temporarily warn-only in 1.7.5 while Trusted Publishing was being validated — that validation is complete.)
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.6`.
+- First release published via npm Trusted Publishing (OIDC) with full SLSA provenance attestation. No tokens involved in the publish path.
+- **Reproducible `tools.lock.json`**: removed the `generated_at` timestamp so the sealed manifest is byte-identical across builds of the same source. Per-tool sha256 hashes remain the actual integrity seal.
+- **MCP Registry manifest synced**: `server.json` version fields bumped from `1.7.0` → `1.7.6` so registry discovery reflects the real latest package.
+- **Cursor plugin manifest synced**: `.cursor-plugin/plugin.json` bumped from `1.6.0` → `1.7.6`, tool count corrected from 52 → 73, and the `author.email` field (which leaked a real address) replaced with `author.url`.
+- **Docs tool-count drift fixed**: `docs/rest-api.md`, `docs/cli-guide.md`, `docs/integration-methods.md`, `docs/landing-page-brief.md`, `examples/rest/08-tool-proxy.sh`, and `examples/mcp/prompts.md` all updated from stale `52 tools` references to the current `73 tools`. CHANGELOG history entries are left intact.
+
+### Fixed
+- **Flaky CLI e2e test**: `unified JSON envelope > all JSON outputs include schema_version "1"` was occasionally hitting the default 5000ms vitest timeout on machines with slower cold-start. Raised per-test timeout to 15000ms. (Root cause is 6 sequential CLI spawns; a future PR can share the warm process.)
+
 ## [1.7.5] - 2026-04-22
 
 ### Added
