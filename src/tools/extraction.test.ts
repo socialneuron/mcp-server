@@ -165,7 +165,7 @@ describe('extract_url_content', () => {
       response_format: 'json',
     });
     const envelope = JSON.parse(result.content[0].text);
-    expect(envelope._meta.version).toBe('1.7.4');
+    expect(envelope._meta.version).toBe('1.7.5');
     expect(envelope.data.source_type).toBe('youtube_video');
   });
 
