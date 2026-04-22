@@ -139,6 +139,202 @@ describe('media tools', () => {
         expect.any(Object)
       );
     });
+
+    // -----------------------------------------------------------------------
+    // file_data / base64 path (remote-agent upload)
+    // -----------------------------------------------------------------------
+    describe('file_data (base64) path', () => {
+      // 1x1 PNG
+      const TINY_PNG_B64 =
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNgAAIAAAUAAen63NgAAAAASUVORK5CYII=';
+
+      it('uploads raw base64 + content_type and returns r2_key', async () => {
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            url: 'https://signed.example.com/tiny.png',
+            key: 'org_1/user_1/images/2026-04-21/tiny.png',
+            size: 70,
+            contentType: 'image/png',
+          },
+          error: null,
+        });
+
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({
+          file_data: TINY_PNG_B64,
+          file_name: 'tiny.png',
+          content_type: 'image/png',
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(result.content[0].text).toContain('Media uploaded successfully');
+
+        expect(mockCallEdge).toHaveBeenCalledWith(
+          'upload-to-r2',
+          expect.objectContaining({
+            contentType: 'image/png',
+            fileName: 'tiny.png',
+            fileData: expect.stringMatching(/^data:image\/png;base64,/),
+          }),
+          expect.objectContaining({ timeoutMs: 60_000 })
+        );
+      });
+
+      it('auto-extracts content_type from a data: URI prefix', async () => {
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            url: 'https://signed.example.com/x.jpg',
+            key: 'org_1/user_1/images/2026-04-21/x.jpg',
+            size: 100,
+            contentType: 'image/jpeg',
+          },
+          error: null,
+        });
+
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({
+          file_data: `data:image/jpeg;base64,${TINY_PNG_B64}`,
+          file_name: 'x.jpg',
+        });
+
+        expect(result.isError).toBeFalsy();
+        expect(mockCallEdge).toHaveBeenCalledWith(
+          'upload-to-r2',
+          expect.objectContaining({ contentType: 'image/jpeg' }),
+          expect.any(Object)
+        );
+      });
+
+      it('rejects when content_type is missing and there is no data: prefix', async () => {
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({ file_data: TINY_PNG_B64, file_name: 'mystery.bin' });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('content_type is required');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+
+      it('rejects content_type not in the upload allowlist', async () => {
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({
+          file_data: TINY_PNG_B64,
+          content_type: 'application/x-msdownload',
+          file_name: 'evil.exe',
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('not supported');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+
+      it('rejects oversized base64 (>10MB decoded) before calling the EF', async () => {
+        // ~11MB of base64 'A' chars decodes to ~8.25MB of bytes? let's use enough to exceed 10MB.
+        // MAX_BASE64_SIZE = 10MB decoded -> base64 length >= 10MB * 4/3 ≈ 13.34MB of chars.
+        const oversize = 'A'.repeat(14 * 1024 * 1024);
+
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({
+          file_data: oversize,
+          content_type: 'image/png',
+          file_name: 'huge.png',
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('10MB');
+        expect(result.content[0].text).toContain('presigned PUT');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+
+      it('rejects invalid base64 characters', async () => {
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({
+          file_data: 'not*valid*base64!!!',
+          content_type: 'image/png',
+          file_name: 'bad.png',
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('not valid base64');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+
+      it('basename-sanitizes file_name to prevent path traversal', async () => {
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            url: 'https://signed.example.com/evil.png',
+            key: 'org_1/user_1/images/2026-04-21/evil.png',
+            size: 70,
+            contentType: 'image/png',
+          },
+          error: null,
+        });
+
+        const handler = server.getHandler('upload_media')!;
+        await handler({
+          file_data: TINY_PNG_B64,
+          content_type: 'image/png',
+          file_name: '../../../etc/passwd/evil.png',
+        });
+
+        expect(mockCallEdge).toHaveBeenCalledWith(
+          'upload-to-r2',
+          expect.objectContaining({ fileName: 'evil.png' }),
+          expect.any(Object)
+        );
+      });
+
+      it('does not log raw file_data bytes in invocation details', async () => {
+        const { logMcpToolInvocation } = await import('../lib/supabase.js');
+        const logSpy = vi.mocked(logMcpToolInvocation);
+        logSpy.mockClear();
+
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            url: 'https://signed.example.com/x.png',
+            key: 'org_1/user_1/images/2026-04-21/x.png',
+            size: 70,
+            contentType: 'image/png',
+          },
+          error: null,
+        });
+
+        const handler = server.getHandler('upload_media')!;
+        await handler({
+          file_data: TINY_PNG_B64,
+          content_type: 'image/png',
+          file_name: 'x.png',
+        });
+
+        for (const call of logSpy.mock.calls) {
+          const details = JSON.stringify(call[0]?.details ?? {});
+          expect(details).not.toContain(TINY_PNG_B64);
+          expect(details).not.toMatch(/fileData|file_data/);
+        }
+      });
+
+      it('improves local-path error copy to suggest file_data for remote agents', async () => {
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({ source: '/definitely/not/a/real/path.png' });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('File not found');
+        expect(result.content[0].text).toContain('file_data');
+      });
+
+      it('errors when neither source nor file_data is provided', async () => {
+        const handler = server.getHandler('upload_media')!;
+        const result = await handler({});
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('source');
+        expect(result.content[0].text).toContain('file_data');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+    });
   });
 
   // =========================================================================
