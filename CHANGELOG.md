@@ -2,35 +2,35 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## [1.7.5-rc.0] - 2026-04-21
+## [1.7.5] - 2026-04-22
 
 ### Added
-- **`upload_media` base64 path**: new optional `file_data` + `file_name` params
-  let Claude Desktop, Claude Web, and other remote agents upload bytes directly
-  without a filesystem path. Content-type is validated against an allowlist,
-  base64 charset is checked, and decoded size is capped at 10MB before the EF
-  call. `file_name` is `basename()`-sanitized.
-- **`schedule_post` auto-rehost**: any `media_url` / `media_urls` / `job_id`
-  result URL that is not already R2-signed is automatically persisted into R2
-  via `upload-to-r2` before posting. Keeps scheduled posts alive past
-  ephemeral-URL expiry (Replicate, OpenAI, DALL-E, kie.ai) and feeds
-  byte-upload platforms (X, LinkedIn, YouTube, Bluesky). New optional
-  `auto_rehost` parameter (default: true) opts out.
+- **`upload_media` base64 path**: new optional `file_data` + `file_name` params let Claude Desktop, Claude Web, and other remote agents upload bytes directly without a filesystem path. Content-type is validated against an allowlist, base64 charset is checked, and decoded size is capped at 10MB before the Edge Function call. `file_name` is `basename()`-sanitized.
+- **`schedule_post` auto-rehost**: any `media_url` / `media_urls` / `job_id` result URL that is not already R2-signed is automatically persisted into R2 via `upload-to-r2` before posting. Keeps scheduled posts alive past ephemeral-URL expiry (Replicate, OpenAI, DALL-E, kie.ai) and feeds byte-upload platforms (X, LinkedIn, YouTube, Bluesky). New optional `auto_rehost` parameter (default: true) opts out.
+- **`create_carousel` meta-tool** (from v1.7.4): Brand-aware carousel generation that composes `generate_image` with brand color/tone constraints and auto-exports to R2. Catalog now at **73 tools**.
+- **Brand runtime scoring**: `brandScoring.ts` + `colorAudit.ts` modules power multi-dimensional brand alignment checks used by the carousel meta-tool.
 
 ### Security
-- **SSRF guard on caller URLs**: every URL passed to auto-rehost is validated
-  by `quickSSRFCheck` — rejects localhost, RFC1918 private ranges, link-local,
-  cloud metadata endpoints (AWS/GCP/Azure), embedded credentials, and non-HTTP(S)
-  protocols.
-- **Hono dependency patched**: `hono` override bumped from 4.12.12 → 4.12.14 to
-  resolve GHSA-458j-xx4x-4375 (JSX attribute HTML injection, moderate).
+- **npm Trusted Publishing (OIDC)**: Release workflow publishes to npm via OIDC — no long-lived `NPM_TOKEN` secret. Package ships with SLSA provenance.
+- **Production environment gate**: Release workflow requires manual approval of the `production` environment before publishing.
+- **Perimeter hardening (Sprint 1)**: Repo-level `.npmrc` pins registry, disables funding/audit noise in CI, and enforces `save-exact`. `CODEOWNERS` locks security-sensitive paths (workflows, `.npmrc`, `package.json`, `src/auth/`) to `@socialneuron/sn-maintainers`.
+- **Pre-push identity hook**: Blocks pushes from unexpected git identities; ships with a local allowlist.
+- **Lockfile-lint + dependency cooldown**: CI validates `package-lock.json` integrity. Release enforces a 14-day cooldown on new dependency versions (temporarily warn-only for this release during OIDC validation — re-enforced in 1.7.6).
+- **Sealed tools manifest (CVE-2025-6514 mitigation)**: `tools.lock.json` records a sha256 hash of every tool's `name`/`description`/`module`/`scope`. CI `lint:tools` blocks drift between source and manifest. Mitigates tool-poisoning attacks on MCP clients.
+- **SSRF guard on caller URLs**: every URL passed to auto-rehost is validated by `quickSSRFCheck` — rejects localhost, RFC1918 private ranges, link-local, cloud metadata endpoints (AWS/GCP/Azure), embedded credentials, and non-HTTP(S) protocols.
+- **Hono patched**: `hono` override bumped 4.12.12 → 4.12.14 to resolve GHSA-458j-xx4x-4375 (JSX attribute HTML injection, moderate).
+- Covers **11 Dependabot alerts** pinned via npm `overrides` (security patches for transitive deps).
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.5`.
+- Tool descriptions updated on `upload_media` and `schedule_post.media_url` to tell agents ephemeral URLs are safe to pass directly.
+- CI runners upgraded: `actions/checkout@v6`, `actions/setup-node@v6`.
+- Dependencies: `@supabase/supabase-js` 2.101 → 2.103, `posthog-node` 5.28 → 5.29.2, `hono` → 4.12.14, `@types/node` → 25.6, `typescript` → 6.0, `trufflehog` action → 3.94.2.
 
 ### Fixed
 - Missing `sanitizeError` import on the presigned-PUT error branch of `upload_media`.
-
-### Changed
-- Tool descriptions updated on `upload_media` and `schedule_post.media_url` to
-  tell agents ephemeral URLs are safe to pass directly.
+- Release workflow: removed stale `registry-url` directive that blocked OIDC Trusted Publishing.
+- Release workflow: removed broken typecheck gate that blocked publish.
 
 ## [1.7.3] - 2026-04-04
 
