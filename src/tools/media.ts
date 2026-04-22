@@ -68,9 +68,13 @@ export function registerMediaTools(server: McpServer): void {
     'upload_media',
     'Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to ' +
       'schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL ' +
-      'fetched by the server, (3) inline base64 via file_data — use this from Claude Desktop, ' +
-      'Claude Web, or any remote agent that cannot hand the server a filesystem path. Base64 ' +
-      'uploads are capped at 10MB decoded; larger files still need stdio + presigned PUT.',
+      'fetched by the server, (3) inline base64 via file_data (remote agents, ≤10MB decoded). ' +
+      'AGENT ROUTING GUIDE: If the media was produced by another tool here (generate_image, ' +
+      'generate_video, create_carousel, etc.), use the returned job_id or r2_key directly with ' +
+      'schedule_post — do NOT download and re-upload. For user-authored files larger than ~1MB, ' +
+      'prefer request_upload_session (returns a tokenized Dashboard URL the user uploads through ' +
+      'in their browser) so bytes never flow through the agent context. Reserve file_data for ' +
+      'small assets (thumbnails, logos, short clips).',
     {
       source: z
         .string()
@@ -204,8 +208,13 @@ export function registerMediaTools(server: McpServer): void {
                 type: 'text' as const,
                 text:
                   `file_data exceeds the 10MB base64 cap (got ~${(approxSize / 1024 / 1024).toFixed(1)}MB). ` +
-                  `For larger files, run the stdio MCP server locally and pass a file path so the ` +
-                  `server can use presigned PUT upload.`,
+                  `Alternatives, in order of preference: ` +
+                  `(1) if this media came from another tool here (generate_image/video, create_carousel), ` +
+                  `pass its job_id or r2_key directly to schedule_post — do not re-upload. ` +
+                  `(2) for user-authored files, call request_upload_session to get a tokenized Dashboard ` +
+                  `URL where the user uploads directly to R2 in their browser. ` +
+                  `(3) for stdio/local mode, pass a filesystem path via \`source\` so the server can ` +
+                  `stream and use presigned PUT.`,
               },
             ],
             isError: true,
