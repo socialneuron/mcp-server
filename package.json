@@ -71,7 +71,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.102.1",
+    "@supabase/supabase-js": "2.103.1",
     "cors": "^2.8.6",
     "express": "^5.1.0",
     "express-rate-limit": "^8.3.2",
