@@ -28,6 +28,7 @@ import { checkRateLimit } from './lib/rate-limit.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
+import { TOOL_CATALOG } from './lib/tool-catalog.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -336,6 +337,11 @@ async function authenticateRequest(
 // ── Smithery Static Server Card ──────────────────────────────────────
 // Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
 // See: https://smithery.ai/docs/build/publish#server-scanning
+//
+// Tools are auto-derived from TOOL_CATALOG (single source of truth, sealed via
+// tools.lock.json). Input schemas are intentionally omitted — clients that need
+// full schemas call the standard MCP `tools/list` RPC. The server-card is
+// discovery metadata, not a runtime validation contract.
 
 app.get('/.well-known/mcp/server-card.json', (_req, res) => {
   res.json({
@@ -347,125 +353,13 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       required: true,
       schemes: ['oauth2'],
     },
-    tools: [
-      {
-        name: 'generate_content',
-        description:
-          'Create a script, caption, hook, or blog post tailored to a specific platform.',
-        inputSchema: {
-          type: 'object',
-          properties: { prompt: { type: 'string' }, platform: { type: 'string' } },
-          required: ['prompt'],
-        },
-      },
-      {
-        name: 'schedule_post',
-        description: 'Publish or schedule a post to connected social platforms.',
-        inputSchema: {
-          type: 'object',
-          properties: { content: { type: 'string' }, platform: { type: 'string' } },
-          required: ['content', 'platform'],
-        },
-      },
-      {
-        name: 'fetch_analytics',
-        description: 'Get post performance metrics for connected platforms.',
-        inputSchema: { type: 'object', properties: { platform: { type: 'string' } } },
-      },
-      {
-        name: 'extract_brand',
-        description: 'Analyze a website URL and extract brand identity data.',
-        inputSchema: { type: 'object', properties: { url: { type: 'string' } }, required: ['url'] },
-      },
-      {
-        name: 'plan_content_week',
-        description: 'Generate a full week content plan with platform-specific drafts.',
-        inputSchema: {
-          type: 'object',
-          properties: { niche: { type: 'string' } },
-          required: ['niche'],
-        },
-      },
-      {
-        name: 'generate_video',
-        description: 'Start an async AI video generation job.',
-        inputSchema: {
-          type: 'object',
-          properties: { prompt: { type: 'string' } },
-          required: ['prompt'],
-        },
-      },
-      {
-        name: 'generate_image',
-        description: 'Start an async AI image generation job.',
-        inputSchema: {
-          type: 'object',
-          properties: { prompt: { type: 'string' } },
-          required: ['prompt'],
-        },
-      },
-      {
-        name: 'adapt_content',
-        description: 'Rewrite existing content for a different platform.',
-        inputSchema: {
-          type: 'object',
-          properties: { content: { type: 'string' }, target_platform: { type: 'string' } },
-          required: ['content', 'target_platform'],
-        },
-      },
-      {
-        name: 'quality_check',
-        description: 'Score post quality across 7 categories (0-100).',
-        inputSchema: {
-          type: 'object',
-          properties: { content: { type: 'string' } },
-          required: ['content'],
-        },
-      },
-      {
-        name: 'run_content_pipeline',
-        description: 'Full pipeline: trends → plan → quality check → schedule.',
-        inputSchema: {
-          type: 'object',
-          properties: { niche: { type: 'string' } },
-          required: ['niche'],
-        },
-      },
-      {
-        name: 'fetch_trends',
-        description: 'Get current trending topics for content inspiration.',
-        inputSchema: { type: 'object', properties: { platform: { type: 'string' } } },
-      },
-      {
-        name: 'get_credit_balance',
-        description: 'Check remaining credits and plan tier.',
-        inputSchema: { type: 'object', properties: {} },
-      },
-      {
-        name: 'list_connected_accounts',
-        description: 'Check which social platforms have active OAuth connections.',
-        inputSchema: { type: 'object', properties: {} },
-      },
-      {
-        name: 'get_brand_profile',
-        description: 'Load the active brand voice profile.',
-        inputSchema: { type: 'object', properties: {} },
-      },
-      {
-        name: 'list_comments',
-        description: 'List YouTube comments for moderation.',
-        inputSchema: { type: 'object', properties: {} },
-      },
-      {
-        name: 'reply_to_comment',
-        description: 'Reply to a YouTube comment.',
-        inputSchema: {
-          type: 'object',
-          properties: { comment_id: { type: 'string' }, text: { type: 'string' } },
-          required: ['comment_id', 'text'],
-        },
-      },
-    ],
+    toolCount: TOOL_CATALOG.length,
+    tools: TOOL_CATALOG.map(t => ({
+      name: t.name,
+      description: t.description,
+      module: t.module,
+      scope: t.scope,
+    })),
     prompts: [
       {
         name: 'create_weekly_content_plan',

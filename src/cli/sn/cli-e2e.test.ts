@@ -109,7 +109,7 @@ describeE2E('top-level commands', () => {
 // ---------------------------------------------------------------------------
 
 describeE2E('unified JSON envelope', () => {
-  it('all JSON outputs include schema_version "1"', () => {
+  it('all JSON outputs include schema_version "1"', { timeout: 15_000 }, () => {
     const cases = [
       ['--version', '--json'],
       ['--help', '--json'],

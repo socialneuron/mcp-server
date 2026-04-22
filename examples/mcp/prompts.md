@@ -1,6 +1,6 @@
 # MCP Tool Usage — Example Prompts for Claude
 
-These prompts show how to use Social Neuron's 52 MCP tools directly in Claude Code, Claude Desktop, VS Code, or Cursor.
+These prompts show how to use Social Neuron's 73 MCP tools directly in Claude Code, Claude Desktop, VS Code, or Cursor.
 
 ## Content Ideation
 

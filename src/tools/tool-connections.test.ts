@@ -1341,7 +1341,7 @@ describe('JSON envelope format (spot checks)', () => {
       response_format: 'json',
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed._meta.version).toBe('1.7.5');
+    expect(parsed._meta.version).toBe('1.7.6');
     expect(parsed._meta.timestamp).toBeDefined();
     expect(parsed.data.jobId).toBe('env-test');
   });
@@ -1361,7 +1361,7 @@ describe('JSON envelope format (spot checks)', () => {
       response_format: 'json',
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed._meta.version).toBe('1.7.5');
+    expect(parsed._meta.version).toBe('1.7.6');
     expect(parsed.data.success).toBe(true);
   });
 });
