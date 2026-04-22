@@ -155,7 +155,7 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 52 |
+| MCP tools | 73 |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |

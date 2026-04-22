@@ -67,9 +67,11 @@ try {
   }
 
   // 3. Write the lockfile.
+  // Note: `generated_at` is intentionally omitted. Same source → same output
+  // across machines and runs (reproducible builds). The per-tool sha256 is
+  // the actual integrity seal; a timestamp adds nothing and breaks diffing.
   const manifest = {
     version: 1,
-    generated_at: new Date().toISOString(),
     source: 'src/lib/tool-catalog.ts',
     hash_algorithm: 'sha256',
     hashed_fields: ['name', 'description', 'module', 'scope'],
