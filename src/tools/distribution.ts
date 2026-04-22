@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { quickSSRFCheck } from '../lib/ssrf.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import type {
@@ -59,6 +60,58 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+/**
+ * A URL is "already persisted" if it carries an S3/R2 signature — those are
+ * produced by our own get-signed-url EF and point at R2. Rehosting them
+ * would be wasteful (we'd fetch our own CDN back into R2).
+ */
+function isAlreadyR2Signed(url: string): boolean {
+  try {
+    const u = new URL(url);
+    return u.searchParams.has('X-Amz-Signature');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Rehost a caller-supplied media URL into R2 so posts survive scheduling
+ * delays and work on platforms that require byte-upload (X, LinkedIn, YouTube,
+ * Bluesky). Returns the R2-hosted signed URL plus the durable key, or an
+ * error string if SSRF validation or the upload EF fails.
+ */
+async function rehostExternalUrl(
+  mediaUrl: string,
+  projectId: string | undefined
+): Promise<{ signedUrl: string; r2Key: string } | { error: string }> {
+  if (isAlreadyR2Signed(mediaUrl)) {
+    return { signedUrl: mediaUrl, r2Key: '' };
+  }
+
+  const ssrf = quickSSRFCheck(mediaUrl);
+  if (!ssrf.isValid) {
+    return { error: ssrf.error ?? 'URL rejected by SSRF check' };
+  }
+
+  const { data, error } = await callEdgeFunction<{
+    success: boolean;
+    url: string;
+    key: string;
+    size: number;
+    contentType: string;
+  }>(
+    'upload-to-r2',
+    { url: ssrf.sanitizedUrl ?? mediaUrl, projectId },
+    { timeoutMs: 60_000 }
+  );
+
+  if (error || !data?.key || !data?.url) {
+    return { error: error ?? 'upload-to-r2 returned no key' };
+  }
+
+  return { signedUrl: data.url, r2Key: data.key };
+}
+
 export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   // schedule_post
@@ -71,14 +124,18 @@ export function registerDistributionTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'URL of the media file to post. Public URL or R2 signed URL. ' +
-            'Not needed if media_urls, r2_key, or job_id is provided.'
+          'URL of the media file to post. Any public HTTPS URL works — including ephemeral ' +
+            'generator URLs (Replicate, OpenAI, DALL-E). The server persists non-R2 URLs into ' +
+            'R2 before posting so scheduled posts and byte-upload platforms (X, LinkedIn, ' +
+            'YouTube, Bluesky) do not 404 when the source URL expires. Set auto_rehost=false ' +
+            'to skip. Not needed if media_urls, r2_key, or job_id is provided.'
         ),
       media_urls: z
         .array(z.string())
         .optional()
         .describe(
-          'Array of 2-10 image URLs for carousel posts. Each must be publicly accessible or R2 signed URL. Use with media_type=CAROUSEL_ALBUM.'
+          'Array of 2-10 image URLs for carousel posts. Same rehosting rules as media_url — ' +
+            'ephemeral URLs are persisted automatically. Use with media_type=CAROUSEL_ALBUM.'
         ),
       r2_key: z
         .string()
@@ -228,6 +285,14 @@ export function registerDistributionTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe('If true, appends "Created with Social Neuron" to the caption. Default: false.'),
+      auto_rehost: z
+        .boolean()
+        .optional()
+        .describe(
+          'Whether to persist non-R2 media_url/media_urls into R2 before posting. ' +
+            'Default: true. Set to false only if you know the source URL will outlive the ' +
+            'scheduling window and every target platform supports URL ingest.'
+        ),
     },
     async ({
       media_url,
@@ -241,6 +306,7 @@ export function registerDistributionTools(server: McpServer): void {
       project_id,
       response_format,
       attribution,
+      auto_rehost,
       r2_key,
       r2_keys,
       job_id,
@@ -361,6 +427,66 @@ export function registerDistributionTools(server: McpServer): void {
             };
           }
           resolvedMediaUrls = resolved as string[];
+        }
+
+        // --- Auto-rehost non-R2 URLs into R2 ---
+        // Keeps scheduled posts alive past ephemeral-URL expiry and feeds
+        // byte-upload platforms (X, LinkedIn, YouTube, Bluesky). Fires for
+        // any URL that is not already R2-signed, regardless of source —
+        // this covers caller-supplied media_url(s) AND kie.ai / other
+        // generators whose job_id result_url is a raw ephemeral URL rather
+        // than a persisted R2 key. URLs already bearing X-Amz-Signature
+        // (signed by our get-signed-url EF) are skipped.
+        const shouldRehost = auto_rehost !== false;
+        if (shouldRehost && resolvedMediaUrl && !isAlreadyR2Signed(resolvedMediaUrl)) {
+          const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
+          if ('error' in rehost) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text:
+                    `Failed to persist media URL into R2: ${rehost.error}. ` +
+                    `Try upload_media first and pass r2_key instead, or set auto_rehost=false ` +
+                    `if you're sure the URL is publicly durable and every target platform ` +
+                    `accepts URL ingest.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          resolvedMediaUrl = rehost.signedUrl;
+        }
+
+        if (shouldRehost && resolvedMediaUrls && resolvedMediaUrls.length > 0) {
+          const needsRehost = resolvedMediaUrls.map(u => !isAlreadyR2Signed(u));
+          if (needsRehost.some(Boolean)) {
+            const rehosted = await Promise.all(
+              resolvedMediaUrls.map((u, i) =>
+                needsRehost[i]
+                  ? rehostExternalUrl(u, project_id)
+                  : Promise.resolve({ signedUrl: u, r2Key: '' })
+              )
+            );
+            const failIdx = rehosted.findIndex(r => 'error' in r);
+            if (failIdx !== -1) {
+              const failed = rehosted[failIdx] as { error: string };
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text:
+                      `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
+                      `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
+                  },
+                ],
+                isError: true,
+              };
+            }
+            resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
+              r => r.signedUrl
+            );
+          }
         }
       } catch (resolveErr) {
         return {
