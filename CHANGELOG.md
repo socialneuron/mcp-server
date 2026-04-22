@@ -2,6 +2,15 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.6] - 2026-04-22
+
+### Security
+- **Dependency cooldown re-armed**: `SN_DEP_AGE_ENFORCE` flipped back to `"true"` in `release.yml`. New dependency versions under 14 days old now block publish again. (Was temporarily warn-only in 1.7.5 while Trusted Publishing was being validated — that validation is complete.)
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.6`.
+- First release published via npm Trusted Publishing (OIDC) with full SLSA provenance attestation. No tokens involved in the publish path.
+
 ## [1.7.5] - 2026-04-22
 
 ### Added
