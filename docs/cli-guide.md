@@ -1,6 +1,6 @@
 # CLI Guide
 
-The Social Neuron CLI provides terminal access to all 73 tools.
+The Social Neuron CLI provides terminal access to all 74 tools.
 
 ## Installation
 
