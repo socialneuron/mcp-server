@@ -93,9 +93,11 @@ describe('search_tools token efficiency', () => {
   registerDiscoveryTools(server as any);
   const handler = server.getHandler('search_tools')!;
 
-  it('"name" output is compact (<2000 chars)', async () => {
+  it('"name" output is compact (<2500 chars)', async () => {
+    // Bumped 2000 -> 2500 when start_platform_connection + wait_for_connection
+    // (76 tools) crossed the prior ceiling.
     const result = await handler({ detail: 'name' });
-    expect(result.content[0].text.length).toBeLessThan(2000);
+    expect(result.content[0].text.length).toBeLessThan(2500);
   });
 
   it('"summary" output is moderate (<10000 chars)', async () => {

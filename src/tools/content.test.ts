@@ -140,7 +140,7 @@ describe('content tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.7');
+      expect(parsed._meta.version).toBe('1.7.8');
       expect(parsed.data.jobId).toBe('vid-json-1');
       expect(parsed.data.model).toBe('veo3-fast');
       expect(parsed.data.estimatedTime).toBe(60);
@@ -279,7 +279,7 @@ describe('content tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.7');
+      expect(parsed._meta.version).toBe('1.7.8');
       expect(parsed.data.jobId).toBe('img-json-1');
       expect(parsed.data.model).toBe('midjourney');
       expect(result.isError).toBeUndefined();
@@ -471,7 +471,7 @@ describe('content tools', () => {
       const handler = server.getHandler('check_status')!;
       const result = await handler({ job_id: 'job-json', response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.7');
+      expect(parsed._meta.version).toBe('1.7.8');
       expect(parsed.data.id).toBe('job-abc');
       expect(parsed.data.status).toBe('completed');
     });
