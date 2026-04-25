@@ -217,7 +217,7 @@ describe('analytics tools', () => {
       const result = await handler({ response_format: 'json' });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.6');
+      expect(parsed._meta.version).toBe('1.7.7');
       expect(parsed.data.postCount).toBe(1);
       expect(parsed.data.totalViews).toBe(100);
     });
@@ -318,7 +318,7 @@ describe('analytics tools', () => {
       const result = await handler({ response_format: 'json' });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.6');
+      expect(parsed._meta.version).toBe('1.7.7');
       expect(parsed.data.success).toBe(true);
       expect(parsed.data.postsProcessed).toBe(3);
       expect(parsed.data.queued).toBe(2);

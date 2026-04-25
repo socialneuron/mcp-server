@@ -14,3 +14,9 @@ coverage/
 *.log
 .vscode/
 .idea/
+
+# Per ADR-0032 (private monorepo docs/02-adr/0032-mcp-roadmap-deferral-policy.md):
+# the public mirror does not host a roadmap. Internal roadmap lives at
+# docs/03-features/MCP-ROADMAP.md in the monorepo. Local scratch fine, no commits.
+docs/ROADMAP.md
+.claude/

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Use the universal tool proxy to call any of the 73 MCP tools via REST.
+# Use the universal tool proxy to call any of the 74 MCP tools via REST.
 # Useful when there's no dedicated REST endpoint for a tool.
 # Requires: curl, jq
 
