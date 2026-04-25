@@ -116,13 +116,140 @@
       #toast.error {
         background: #991b1b;
       }
+      .toolbar {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        margin-bottom: 12px;
+        flex-wrap: wrap;
+      }
+      .filter-pills {
+        display: flex;
+        gap: 6px;
+        flex-wrap: wrap;
+      }
+      .pill {
+        background: #fff;
+        border: 1px solid #e5e5e5;
+        border-radius: 999px;
+        padding: 4px 12px;
+        font-size: 11px;
+        cursor: pointer;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: #666;
+        user-select: none;
+      }
+      .pill:hover {
+        background: #f0f9ff;
+        border-color: #3b82f6;
+      }
+      .pill.active {
+        background: #3b82f6;
+        color: #fff;
+        border-color: #3b82f6;
+      }
+      .suggest-btn {
+        background: #fff;
+        border: 1px solid #3b82f6;
+        color: #3b82f6;
+        border-radius: 6px;
+        padding: 6px 12px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .suggest-btn:hover:not(:disabled) {
+        background: #eff6ff;
+      }
+      .suggest-btn:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .slot.suggested {
+        background: #f0fdf4;
+        border-color: #22c55e;
+        border-style: dashed;
+        animation: pulse 1.4s ease-in-out 3;
+      }
+      @keyframes pulse {
+        0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+        50% { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+      }
+      .post-card {
+        cursor: pointer;
+      }
+      .post-card.disabled {
+        cursor: pointer;
+      }
+      #drilldown {
+        position: fixed;
+        top: 0;
+        right: 0;
+        width: 360px;
+        max-width: 100vw;
+        height: 100vh;
+        background: #fff;
+        border-left: 1px solid #e5e5e5;
+        box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
+        padding: 20px 24px;
+        transform: translateX(100%);
+        transition: transform 0.2s;
+        overflow-y: auto;
+        z-index: 900;
+      }
+      #drilldown.open {
+        transform: translateX(0);
+      }
+      .drilldown-close {
+        position: absolute;
+        top: 12px;
+        right: 16px;
+        background: none;
+        border: none;
+        font-size: 22px;
+        cursor: pointer;
+        color: #666;
+        line-height: 1;
+      }
+      .drilldown-close:hover {
+        color: #1a1a1a;
+      }
+      .drilldown-row {
+        margin: 12px 0;
+        font-size: 13px;
+      }
+      .drilldown-row .label {
+        color: #666;
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: 600;
+        margin-bottom: 2px;
+      }
+      .drilldown-row .value {
+        word-break: break-word;
+      }
+      .status-pill {
+        display: inline-block;
+        padding: 2px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 700;
+        text-transform: uppercase;
+      }
+      .status-pill.scheduled { background: #fef3c7; color: #92400e; }
+      .status-pill.published { background: #d1fae5; color: #065f46; }
+      .status-pill.draft     { background: #e5e5e5; color: #525252; }
+      .status-pill.failed    { background: #fee2e2; color: #991b1b; }
     </style>
   </head>
   <body>
     <h1>Content Calendar</h1>
     <p class="subtitle" id="subtitle">Loading scheduled posts…</p>
     <div id="upgrade-banner-slot"></div>
+    <div class="toolbar" id="toolbar"></div>
     <div id="root"></div>
+    <aside id="drilldown" aria-hidden="true"></aside>
     <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/mcp-app.ts"></script>
   </body>
