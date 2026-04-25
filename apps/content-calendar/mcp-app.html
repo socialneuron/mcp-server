@@ -241,6 +241,111 @@
       .status-pill.published { background: #d1fae5; color: #065f46; }
       .status-pill.draft     { background: #e5e5e5; color: #525252; }
       .status-pill.failed    { background: #fee2e2; color: #991b1b; }
+      .add-btn {
+        background: transparent;
+        border: 1px dashed #d4d4d4;
+        border-radius: 4px;
+        color: #999;
+        padding: 4px;
+        font-size: 11px;
+        width: 100%;
+        cursor: pointer;
+        margin-top: 2px;
+      }
+      .add-btn:hover {
+        border-color: #3b82f6;
+        color: #3b82f6;
+      }
+      .modal-backdrop {
+        position: fixed;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.4);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 1100;
+      }
+      .modal-backdrop.open {
+        display: flex;
+      }
+      .modal {
+        background: #fff;
+        border-radius: 8px;
+        padding: 20px 24px;
+        width: 440px;
+        max-width: 95vw;
+        max-height: 90vh;
+        overflow-y: auto;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      }
+      .modal h2 {
+        font-size: 16px;
+        margin: 0 0 16px;
+      }
+      .modal label {
+        display: block;
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: 600;
+        color: #666;
+        margin-bottom: 4px;
+      }
+      .modal-row {
+        margin-bottom: 14px;
+      }
+      .modal input,
+      .modal select,
+      .modal textarea {
+        width: 100%;
+        padding: 6px 10px;
+        border: 1px solid #d4d4d4;
+        border-radius: 4px;
+        font-size: 13px;
+        font-family: inherit;
+        box-sizing: border-box;
+      }
+      .modal textarea {
+        resize: vertical;
+        min-height: 80px;
+      }
+      .modal .char-count {
+        font-size: 11px;
+        color: #999;
+        margin-top: 2px;
+      }
+      .modal .char-count.over {
+        color: #991b1b;
+        font-weight: 600;
+      }
+      .modal-actions {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+        margin-top: 16px;
+      }
+      .modal-actions button {
+        padding: 6px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        border-radius: 4px;
+        cursor: pointer;
+        border: 1px solid #d4d4d4;
+        background: #fff;
+      }
+      .modal-actions .primary {
+        background: #3b82f6;
+        color: #fff;
+        border-color: #3b82f6;
+      }
+      .modal-actions .primary:disabled {
+        opacity: 0.4;
+        cursor: not-allowed;
+      }
+      .modal .error-msg {
+        color: #991b1b;
+        font-size: 12px;
+        margin-top: 4px;
+      }
     </style>
   </head>
   <body>
@@ -250,6 +355,9 @@
     <div class="toolbar" id="toolbar"></div>
     <div id="root"></div>
     <aside id="drilldown" aria-hidden="true"></aside>
+    <div class="modal-backdrop" id="modal-backdrop" aria-hidden="true">
+      <div class="modal" id="modal" role="dialog" aria-modal="true"></div>
+    </div>
     <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/mcp-app.ts"></script>
   </body>

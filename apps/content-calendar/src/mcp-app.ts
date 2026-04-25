@@ -36,6 +36,17 @@ const PLATFORMS = [
   'bluesky',
 ] as const;
 
+const PLATFORM_CHAR_LIMITS: Record<string, number> = {
+  twitter: 280,
+  bluesky: 300,
+  threads: 500,
+  instagram: 2200,
+  tiktok: 2200,
+  linkedin: 3000,
+  youtube: 5000,
+  facebook: 63206,
+};
+
 const SCOPE_HIERARCHY: Record<string, string[]> = {
   'mcp:full': [
     'mcp:read',
@@ -70,6 +81,15 @@ const state: {
   platformFilter: string | null;
   selectedPostId: string | null;
   suggestedSlot: { date: string; platform: string } | null;
+  modal: {
+    open: boolean;
+    date: string;
+    platform: string;
+    caption: string;
+    time: string;
+    submitting: boolean;
+    error: string | null;
+  };
 } = {
   posts: [],
   scopes: [],
@@ -77,6 +97,15 @@ const state: {
   platformFilter: null,
   selectedPostId: null,
   suggestedSlot: null,
+  modal: {
+    open: false,
+    date: '',
+    platform: 'instagram',
+    caption: '',
+    time: '12:00',
+    submitting: false,
+    error: null,
+  },
 };
 
 const app = new App({ name: 'Content Calendar', version: '0.3.0' });
@@ -210,6 +239,16 @@ function renderSlot(date: string, posts: ScheduledPost[]): HTMLElement {
   }
   for (const post of posts) {
     slot.append(renderPostCard(post));
+  }
+  if (state.canSchedule) {
+    const addBtn = document.createElement('button');
+    addBtn.className = 'add-btn';
+    addBtn.textContent = '+ Post';
+    addBtn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      openQuickCreate(date);
+    });
+    slot.append(addBtn);
   }
   return slot;
 }
@@ -480,8 +519,205 @@ function showError(msg: string) {
   if (subtitle) subtitle.textContent = msg;
 }
 
+// ─── Quick-create modal ───────────────────────────────────────────────
+
+function openQuickCreate(date: string) {
+  state.modal = {
+    open: true,
+    date,
+    platform: state.platformFilter ?? 'instagram',
+    caption: '',
+    time: '12:00',
+    submitting: false,
+    error: null,
+  };
+  renderModal();
+}
+
+function closeQuickCreate() {
+  state.modal = { ...state.modal, open: false, error: null };
+  renderModal();
+}
+
+function renderModal() {
+  const backdrop = document.getElementById('modal-backdrop');
+  const modal = document.getElementById('modal');
+  if (!backdrop || !modal) return;
+
+  if (!state.modal.open) {
+    backdrop.classList.remove('open');
+    backdrop.setAttribute('aria-hidden', 'true');
+    modal.replaceChildren();
+    return;
+  }
+
+  const heading = el('h2', undefined, `Schedule post for ${state.modal.date}`);
+
+  // Platform select
+  const platformRow = el('div', 'modal-row');
+  platformRow.append(el('label', undefined, 'Platform'));
+  const platformSelect = document.createElement('select');
+  for (const p of PLATFORMS) {
+    const option = document.createElement('option');
+    option.value = p;
+    option.textContent = p;
+    if (p === state.modal.platform) option.selected = true;
+    platformSelect.append(option);
+  }
+  platformSelect.addEventListener('change', () => {
+    state.modal.platform = platformSelect.value;
+    renderModal();
+  });
+  platformRow.append(platformSelect);
+
+  // Caption textarea
+  const captionRow = el('div', 'modal-row');
+  captionRow.append(el('label', undefined, 'Caption'));
+  const captionArea = document.createElement('textarea');
+  captionArea.value = state.modal.caption;
+  captionArea.placeholder = 'What do you want to post?';
+  captionArea.addEventListener('input', () => {
+    state.modal.caption = captionArea.value;
+    updateCharCount();
+  });
+  captionRow.append(captionArea);
+
+  const limit = PLATFORM_CHAR_LIMITS[state.modal.platform] ?? 5000;
+  const charCount = el('div', 'char-count', `${state.modal.caption.length} / ${limit}`);
+  charCount.id = 'modal-char-count';
+  if (state.modal.caption.length > limit) charCount.classList.add('over');
+  captionRow.append(charCount);
+
+  // Time picker
+  const timeRow = el('div', 'modal-row');
+  timeRow.append(el('label', undefined, 'Time (24h, local)'));
+  const timeInput = document.createElement('input');
+  timeInput.type = 'time';
+  timeInput.value = state.modal.time;
+  timeInput.addEventListener('input', () => {
+    state.modal.time = timeInput.value;
+  });
+  timeRow.append(timeInput);
+
+  // Error message
+  const errorWrap = el('div');
+  if (state.modal.error) {
+    errorWrap.append(el('div', 'error-msg', state.modal.error));
+  }
+
+  // Actions
+  const actions = el('div', 'modal-actions');
+  const cancelBtn = document.createElement('button');
+  cancelBtn.textContent = 'Cancel';
+  cancelBtn.disabled = state.modal.submitting;
+  cancelBtn.addEventListener('click', closeQuickCreate);
+
+  const saveBtn = document.createElement('button');
+  saveBtn.className = 'primary';
+  saveBtn.textContent = state.modal.submitting ? 'Scheduling…' : 'Schedule';
+  saveBtn.disabled =
+    state.modal.submitting ||
+    state.modal.caption.trim().length === 0 ||
+    state.modal.caption.length > limit;
+  saveBtn.addEventListener('click', () => {
+    void submitQuickCreate();
+  });
+  actions.append(cancelBtn, saveBtn);
+
+  modal.replaceChildren(heading, platformRow, captionRow, timeRow, errorWrap, actions);
+  backdrop.classList.add('open');
+  backdrop.setAttribute('aria-hidden', 'false');
+}
+
+function updateCharCount() {
+  const node = document.getElementById('modal-char-count');
+  if (!node) return;
+  const limit = PLATFORM_CHAR_LIMITS[state.modal.platform] ?? 5000;
+  node.textContent = `${state.modal.caption.length} / ${limit}`;
+  node.classList.toggle('over', state.modal.caption.length > limit);
+}
+
+async function submitQuickCreate() {
+  const limit = PLATFORM_CHAR_LIMITS[state.modal.platform] ?? 5000;
+  if (state.modal.caption.trim().length === 0) {
+    state.modal.error = 'Caption cannot be empty.';
+    renderModal();
+    return;
+  }
+  if (state.modal.caption.length > limit) {
+    state.modal.error = `Caption exceeds ${state.modal.platform} limit (${limit} chars).`;
+    renderModal();
+    return;
+  }
+
+  // Build ISO timestamp from date + time. Validate it's not in the past.
+  const scheduleAt = `${state.modal.date}T${state.modal.time}:00`;
+  if (new Date(scheduleAt).getTime() < Date.now()) {
+    state.modal.error = 'Schedule time must be in the future.';
+    renderModal();
+    return;
+  }
+
+  state.modal.submitting = true;
+  state.modal.error = null;
+  renderModal();
+
+  try {
+    const result = await app.callServerTool({
+      name: 'schedule_post',
+      arguments: {
+        caption: state.modal.caption,
+        platforms: [state.modal.platform],
+        schedule_at: scheduleAt,
+      },
+    });
+
+    if (isScopeDenied(result)) {
+      state.modal.submitting = false;
+      state.modal.error =
+        "You don't have permission to schedule. Upgrade your plan at socialneuron.com/pricing.";
+      renderModal();
+      return;
+    }
+    if ((result as { isError?: boolean }).isError) {
+      const text =
+        result.content?.find((c) => c.type === 'text')?.text ?? 'Failed to schedule post.';
+      state.modal.submitting = false;
+      state.modal.error = text;
+      renderModal();
+      return;
+    }
+
+    closeQuickCreate();
+    showToast(`Scheduled for ${state.modal.date} ${state.modal.time}.`);
+    void refreshCalendar();
+  } catch (err) {
+    state.modal.submitting = false;
+    state.modal.error = `Failed: ${(err as Error).message}`;
+    renderModal();
+  }
+}
+
+async function refreshCalendar() {
+  try {
+    const result = await app.callServerTool({
+      name: 'open_content_calendar',
+      arguments: {},
+    });
+    const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
+    const payload = JSON.parse(text) as CalendarPayload;
+    state.posts = payload.posts ?? [];
+    state.scopes = payload.scopes ?? state.scopes;
+    state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
+    renderAll();
+  } catch (err) {
+    showError(`Failed to refresh calendar: ${(err as Error).message}`);
+  }
+}
+
 function renderAll() {
   renderToolbar();
   renderCalendar();
   renderDrilldown();
+  renderModal();
 }
