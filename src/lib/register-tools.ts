@@ -33,6 +33,7 @@ import { registerSuggestTools } from '../tools/suggest.js';
 import { registerDigestTools } from '../tools/digest.js';
 import { registerBrandRuntimeTools } from '../tools/brandRuntime.js';
 import { registerCarouselTools } from '../tools/carousel.js';
+import { registerContentCalendarApp } from '../apps/content-calendar.js';
 
 /**
  * Wrap server.tool() to inject scope checking before each handler.
@@ -168,6 +169,9 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerDigestTools(server);
   registerBrandRuntimeTools(server);
   registerCarouselTools(server);
+
+  // MCP Apps (interactive UI rendered inside the host)
+  registerContentCalendarApp(server);
 
   // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)
   applyAnnotations(server);

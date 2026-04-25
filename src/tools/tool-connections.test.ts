@@ -42,6 +42,7 @@ import { registerDigestTools } from './digest.js';
 import { registerBrandRuntimeTools } from './brandRuntime.js';
 import { registerRecipeTools } from './recipes.js';
 import { registerCarouselTools } from './carousel.js';
+import { registerContentCalendarApp } from '../apps/content-calendar.js';
 // Screenshot tools require browser mocks; tested separately below.
 import { registerScreenshotTools } from './screenshot.js';
 
@@ -245,6 +246,7 @@ describe('Registration & Scope Coverage', () => {
     registerBrandRuntimeTools(server as any);
     registerRecipeTools(server as any);
     registerCarouselTools(server as any);
+    registerContentCalendarApp(server as any);
   });
 
   it('every tool in TOOL_SCOPES is actually registered (no orphaned scope entries)', () => {

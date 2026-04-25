@@ -479,6 +479,15 @@ export const TOOL_CATALOG: ToolEntry[] = [
 
   // carousel (already listed in content section above)
 
+  // apps (MCP Apps — interactive UI inside the host)
+  {
+    name: 'open_content_calendar',
+    description:
+      "Open an interactive drag-drop calendar of the user's scheduled posts inside the host (Claude Desktop / claude.ai). Renders an MCP App; backed by list_recent_posts, schedule_post, find_next_slots — no new tools needed.",
+    module: 'apps',
+    scope: 'mcp:read',
+  },
+
   // recipes
   {
     name: 'list_recipes',
