@@ -2,6 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>Social Neuron — Content Calendar</title>
     <style>
       :root {
@@ -37,8 +38,18 @@
       }
       .week-grid {
         display: grid;
-        grid-template-columns: 60px repeat(7, 1fr);
+        grid-template-columns: 60px repeat(7, minmax(80px, 1fr));
         gap: 4px;
+        overflow-x: auto;
+      }
+      @media (max-width: 640px) {
+        .week-grid {
+          grid-template-columns: 56px repeat(7, minmax(64px, 1fr));
+          font-size: 10px;
+        }
+        .header { padding: 4px; }
+        .slot { min-height: 44px; padding: 2px; }
+        .post-card { font-size: 10px; padding: 3px 4px; }
       }
       .header {
         font-size: 11px;
@@ -179,9 +190,6 @@
       .post-card {
         cursor: pointer;
       }
-      .post-card.disabled {
-        cursor: pointer;
-      }
       #drilldown {
         position: fixed;
         top: 0;
@@ -193,10 +201,21 @@
         border-left: 1px solid #e5e5e5;
         box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
         padding: 20px 24px;
+        box-sizing: border-box;
         transform: translateX(100%);
         transition: transform 0.2s;
         overflow-y: auto;
         z-index: 900;
+      }
+      @media (max-width: 640px) {
+        #drilldown {
+          width: 100vw;
+        }
+      }
+      .drilldown-heading {
+        font-size: 15px;
+        margin: 4px 32px 16px 0;
+        font-weight: 600;
       }
       #drilldown.open {
         transform: translateX(0);
@@ -276,7 +295,14 @@
         max-width: 95vw;
         max-height: 90vh;
         overflow-y: auto;
+        box-sizing: border-box;
         box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+      }
+      @media (max-width: 480px) {
+        .modal {
+          padding: 16px;
+          border-radius: 6px;
+        }
       }
       .modal h2 {
         font-size: 16px;

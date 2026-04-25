@@ -108,8 +108,21 @@ const state: {
   },
 };
 
-const app = new App({ name: 'Content Calendar', version: '0.3.0' });
+const app = new App({ name: 'Content Calendar', version: '0.5.0' });
 app.connect();
+
+// Global Escape key — close whichever overlay is open (modal first, then drilldown).
+document.addEventListener('keydown', (ev) => {
+  if (ev.key !== 'Escape') return;
+  if (state.modal.open && !state.modal.submitting) {
+    closeQuickCreate();
+    return;
+  }
+  if (state.selectedPostId !== null) {
+    state.selectedPostId = null;
+    renderDrilldown();
+  }
+});
 
 app.ontoolresult = (result) => {
   const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
@@ -179,15 +192,20 @@ function renderToolbar() {
   const suggest = document.createElement('button');
   suggest.className = 'suggest-btn';
   suggest.textContent = 'Suggest next slot';
-  suggest.disabled = !state.canSchedule || !state.platformFilter;
+  // Need at least one platform to suggest for. If a filter is set, use it; otherwise
+  // use any platforms that have at least one post (so the button stays useful in "All").
+  const candidatePlatforms = state.platformFilter
+    ? [state.platformFilter]
+    : Array.from(presentPlatforms);
+  suggest.disabled = !state.canSchedule || candidatePlatforms.length === 0;
   if (suggest.disabled) {
     suggest.title = !state.canSchedule
       ? 'Upgrade to schedule posts'
-      : 'Pick a platform first';
+      : 'No platforms with posts to suggest for';
   }
   suggest.addEventListener('click', () => {
-    if (!state.platformFilter) return;
-    void suggestNextSlot(state.platformFilter);
+    if (candidatePlatforms.length === 0) return;
+    void suggestNextSlot(candidatePlatforms);
   });
 
   bar.replaceChildren(pills, suggest);
@@ -330,10 +348,7 @@ function renderDrilldown() {
     renderDrilldown();
   });
 
-  const heading = el('h2', undefined, post.title ?? 'Post');
-  (heading.style as CSSStyleDeclaration).fontSize = '15px';
-  (heading.style as CSSStyleDeclaration).margin = '4px 32px 16px 0';
-  (heading.style as CSSStyleDeclaration).fontWeight = '600';
+  const heading = el('h2', 'drilldown-heading', post.title ?? 'Post');
 
   const fields: Array<[string, string]> = [
     ['Platform', post.platform],
@@ -344,11 +359,14 @@ function renderDrilldown() {
     ['Internal ID', post.id],
   ];
 
+  const KNOWN_STATUSES = new Set(['scheduled', 'published', 'draft', 'failed']);
+
   const rows = fields.map(([label, value]) => {
     const row = el('div', 'drilldown-row');
     row.append(el('div', 'label', label));
     if (label === 'Status') {
-      const pill = el('span', `status-pill ${value.toLowerCase()}`, value);
+      const statusClass = KNOWN_STATUSES.has(value.toLowerCase()) ? value.toLowerCase() : 'draft';
+      const pill = el('span', `status-pill ${statusClass}`, value);
       const wrap = el('div', 'value');
       wrap.append(pill);
       row.append(wrap);
@@ -361,16 +379,19 @@ function renderDrilldown() {
   panel.replaceChildren(close, heading, ...rows);
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
+  // Move focus into the panel so screen readers announce it and Escape works
+  // even if the user dragged-and-dropped just before clicking a card.
+  close.focus();
 }
 
 // ─── Suggest next slot ────────────────────────────────────────────────
 
-async function suggestNextSlot(platform: string) {
+async function suggestNextSlot(platforms: string[]) {
   try {
     const result = await app.callServerTool({
       name: 'find_next_slots',
       arguments: {
-        platforms: [platform],
+        platforms,
         count: 1,
         response_format: 'json',
       },
@@ -391,8 +412,9 @@ async function suggestNextSlot(platform: string) {
     })();
 
     const slots: PostingSlot[] = parsed?.data?.slots ?? parsed?.slots ?? [];
+    const label = platforms.length === 1 ? platforms[0] : 'any platform';
     if (slots.length === 0) {
-      showError(`No available slots found for ${platform} this week.`);
+      showError(`No available slots found for ${label} this week.`);
       return;
     }
 
@@ -400,13 +422,13 @@ async function suggestNextSlot(platform: string) {
     const date = slot.datetime.split('T')[0];
     const dates = getWeekDates();
     if (!dates.includes(date)) {
-      showToast(`Next ${platform} slot: ${slot.datetime} (outside current week view).`);
+      showToast(`Next ${slot.platform} slot: ${slot.datetime} (outside current week view).`);
       return;
     }
 
-    state.suggestedSlot = { date, platform };
+    state.suggestedSlot = { date, platform: slot.platform };
     renderCalendar();
-    showToast(`Suggested ${platform} slot: ${slot.datetime}`);
+    showToast(`Suggested ${slot.platform} slot: ${slot.datetime}`);
   } catch (err) {
     showError(`Failed to find slots: ${(err as Error).message}`);
   }
@@ -508,6 +530,9 @@ function showToast(msg: string, kind: 'info' | 'error' = 'info') {
   if (!node) return;
   node.textContent = msg;
   node.classList.toggle('error', kind === 'error');
+  // Errors should be announced immediately; info toasts can wait for the next
+  // screen-reader pause. See WAI-ARIA aria-live spec.
+  node.setAttribute('aria-live', kind === 'error' ? 'assertive' : 'polite');
   node.classList.add('show');
   if (toastTimer !== null) window.clearTimeout(toastTimer);
   toastTimer = window.setTimeout(() => node.classList.remove('show'), 4000);
@@ -539,10 +564,27 @@ function closeQuickCreate() {
   renderModal();
 }
 
+// Backdrop click handler — closes only when the click is on the backdrop itself,
+// not bubbled up from inside the modal. Wired once on first render.
+let backdropHandlerAttached = false;
+function ensureBackdropHandler() {
+  if (backdropHandlerAttached) return;
+  const backdrop = document.getElementById('modal-backdrop');
+  if (!backdrop) return;
+  backdrop.addEventListener('click', (ev) => {
+    if (ev.target === backdrop && !state.modal.submitting) {
+      closeQuickCreate();
+    }
+  });
+  backdropHandlerAttached = true;
+}
+
 function renderModal() {
   const backdrop = document.getElementById('modal-backdrop');
   const modal = document.getElementById('modal');
   if (!backdrop || !modal) return;
+
+  ensureBackdropHandler();
 
   if (!state.modal.open) {
     backdrop.classList.remove('open');
@@ -551,7 +593,10 @@ function renderModal() {
     return;
   }
 
+  const headingId = 'modal-heading';
+  modal.setAttribute('aria-labelledby', headingId);
   const heading = el('h2', undefined, `Schedule post for ${state.modal.date}`);
+  heading.id = headingId;
 
   // Platform select
   const platformRow = el('div', 'modal-row');
@@ -627,6 +672,11 @@ function renderModal() {
   modal.replaceChildren(heading, platformRow, captionRow, timeRow, errorWrap, actions);
   backdrop.classList.add('open');
   backdrop.setAttribute('aria-hidden', 'false');
+  // Auto-focus the caption on open so the user can start typing immediately.
+  // Use rAF to ensure the textarea exists in the DOM before focusing.
+  if (!state.modal.submitting) {
+    requestAnimationFrame(() => captionArea.focus());
+  }
 }
 
 function updateCharCount() {
