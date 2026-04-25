@@ -7,7 +7,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { callEdgeFunction } from '../lib/edge-function.js';
 
 const CALENDAR_URI = 'ui://content-calendar/mcp-app.html';
@@ -107,8 +106,13 @@ export function registerContentCalendarApp(server: McpServer): void {
     CALENDAR_URI,
     { mimeType: RESOURCE_MIME_TYPE },
     async () => {
-      const here = path.dirname(fileURLToPath(import.meta.url));
-      const htmlPath = path.join(here, '../../apps/content-calendar/dist/mcp-app.html');
+      // process.cwd() resolves consistently across source mode (vitest, tsx)
+      // and bundled mode (`node dist/http.js` from the package root), because
+      // both start with cwd at the package root. The previous implementation
+      // used `import.meta.url` + `../../`, which worked in source mode but
+      // resolved to the parent of the package after esbuild bundling
+      // collapsed src/apps/content-calendar.ts into dist/http.js.
+      const htmlPath = path.join(process.cwd(), 'apps/content-calendar/dist/mcp-app.html');
       try {
         const html = await fs.readFile(htmlPath, 'utf-8');
         return {
