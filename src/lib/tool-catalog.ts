@@ -513,6 +513,21 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'recipes',
     scope: 'mcp:read',
   },
+
+  // platform connection deep-link flow
+  {
+    name: 'start_platform_connection',
+    description:
+      'Mint a single-use deep link for a user to complete platform OAuth in their browser',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+  },
+  {
+    name: 'wait_for_connection',
+    description: 'Poll until a platform connection becomes active or timeout',
+    module: 'distribution',
+    scope: 'mcp:read',
+  },
 ];
 
 /** Get all tools belonging to a module. */
