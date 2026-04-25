@@ -198,7 +198,7 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'post_comment',
-    'Post a new top-level comment on a YouTube video.',
+    'Post a new top-level comment on a YouTube video, authored as the connected channel. Use for proactive engagement on your own videos. For replies to existing comments use reply_to_comment instead — this tool only creates top-level comments. video_id comes from list_recent_posts (platform_post_id field) or any YouTube URL (the v= parameter, 11 chars). Subject to YouTube anti-spam rate limits; calls return rate_limited if exceeded.',
     {
       video_id: z.string().describe('The YouTube video ID to comment on.'),
       text: z.string().min(1).describe('The comment text.'),
@@ -277,7 +277,7 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'moderate_comment',
-    'Moderate a YouTube comment by setting its status to published or rejected.',
+    'Moderate a YouTube comment on your channel — set status to "published" (approve) or "rejected" (hide from public view but kept in moderation queue). Use after list_comments surfaces a comment that needs action. For permanent removal use delete_comment instead. comment_id comes from list_comments results.',
     {
       comment_id: z.string().describe('The comment ID to moderate.'),
       moderation_status: z

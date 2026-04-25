@@ -573,7 +573,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     'get_content_plan',
-    'Retrieve a persisted content plan by ID.',
+    'Load a persisted content plan by its UUID — returns the full plan including all posts, scheduling status, and approval state. Use to inspect a plan before update_content_plan or schedule_content_plan. plan_id comes from save_content_plan, plan_content_week (when persisted), or list_plan_approvals. For just the approval state, list_plan_approvals is cheaper.',
     {
       plan_id: z.string().uuid().describe('Persisted content plan ID'),
       response_format: z.enum(['text', 'json']).default('json'),
@@ -644,7 +644,7 @@ export function registerPlanningTools(server: McpServer): void {
 
   server.tool(
     'update_content_plan',
-    'Update individual posts in a persisted content plan.',
+    'Edit individual posts in a persisted content plan — change caption, title, hashtags, hook, or angle. Use after get_content_plan when the user wants to revise drafts before scheduling. Each post_updates entry must include post_id from the loaded plan; only the fields you pass get updated, others stay as-is. Does NOT trigger publishing — call schedule_content_plan separately when ready.',
     {
       plan_id: z.string().uuid(),
       post_updates: z

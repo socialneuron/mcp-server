@@ -202,7 +202,7 @@ export function registerBrandTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'save_brand_profile',
-    'Persist a brand profile as the active profile for a project.',
+    'Save (or replace) the active brand profile for a project — voice, target audience, content pillars, claims, etc. Use after extract_brand has produced a draft AND the user has reviewed it, or when the user explicitly edits the profile. brand_context is the full profile payload from extract_brand or get_brand_profile. project_id defaults to the active project context. Overwrites the previous active profile (one per project) — pass the complete profile, no merge semantics. Use change_summary to leave an audit trail.',
     {
       project_id: z
         .string()
