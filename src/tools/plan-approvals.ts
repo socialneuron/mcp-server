@@ -18,7 +18,7 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 export function registerPlanApprovalTools(server: McpServer): void {
   server.tool(
     'create_plan_approvals',
-    'Create pending approval rows for each post in a content plan.',
+    'Create pending approval rows for each post in a content plan — one row per post, status="pending". Use after submit_content_plan_for_approval to materialize the approval queue. Each entry in posts becomes a row that respond_plan_approval can later approve, reject, or edit. Idempotent on (plan_id, post_id) — calling twice with the same posts is a no-op for already-existing rows. Returns IDs of created items for use with list_plan_approvals.',
     {
       plan_id: z.string().uuid().describe('Content plan ID'),
       posts: z
@@ -126,7 +126,7 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
   server.tool(
     'list_plan_approvals',
-    'List MCP-native approval items for a specific content plan.',
+    'List approval items for a content plan, optionally filtered by status (pending / approved / rejected / edited). Use to check what needs review before scheduling, or to audit decisions after the fact. plan_id comes from get_content_plan or save_content_plan. For a single item\'s full state, get the plan via get_content_plan instead — that includes per-post approval data inline.',
     {
       plan_id: z.string().uuid().describe('Content plan ID'),
       status: z.enum(['pending', 'approved', 'rejected', 'edited']).optional(),
@@ -210,7 +210,7 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
   server.tool(
     'respond_plan_approval',
-    'Approve, reject, or edit a pending plan approval item.',
+    'Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an error. Once decided, an item cannot be re-decided (immutable transition). reason is optional but recommended for "rejected" or "edited" to leave a paper trail. After all items are decided, schedule_content_plan publishes only the approved (and edited) ones.',
     {
       approval_id: z.string().uuid().describe('Approval item ID'),
       decision: z.enum(['approved', 'rejected', 'edited']),
