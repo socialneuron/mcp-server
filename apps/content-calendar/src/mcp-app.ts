@@ -36,13 +36,20 @@ function hasScope(userScopes: string[], required: string): boolean {
   return false;
 }
 
+// Scope-denied responses arrive as success-shaped tool calls with a content
+// prefix. See `superpowers/specs/2026-04-24-mcp-app-content-calendar.md` Auth flow.
+function isScopeDenied(result: { content?: Array<{ type: string; text?: string }> }): boolean {
+  const text = result.content?.find((c) => c.type === 'text')?.text ?? '';
+  return text.startsWith('Permission denied:');
+}
+
 const state: { posts: ScheduledPost[]; scopes: string[]; canSchedule: boolean } = {
   posts: [],
   scopes: [],
   canSchedule: false,
 };
 
-const app = new App({ name: 'Content Calendar', version: '0.1.0' });
+const app = new App({ name: 'Content Calendar', version: '0.2.0' });
 app.connect();
 
 app.ontoolresult = (result) => {
@@ -93,10 +100,29 @@ function renderUpgradeBanner(): HTMLElement | null {
 function renderPostCard(post: ScheduledPost): HTMLElement {
   const card = el('div', `post-card${state.canSchedule ? '' : ' disabled'}`);
   card.dataset.postId = post.id;
+  if (state.canSchedule) {
+    card.draggable = true;
+    card.addEventListener('dragstart', onCardDragStart);
+    card.addEventListener('dragend', onCardDragEnd);
+  }
   card.append(el('div', 'post-platform', post.platform));
   const label = (post.title ?? post.external_post_id ?? post.id).slice(0, 80);
   card.append(el('div', undefined, label));
   return card;
+}
+
+function renderSlot(date: string, posts: ScheduledPost[]): HTMLElement {
+  const slot = el('div', 'slot');
+  slot.dataset.date = date;
+  if (state.canSchedule) {
+    slot.addEventListener('dragover', onSlotDragOver);
+    slot.addEventListener('dragleave', onSlotDragLeave);
+    slot.addEventListener('drop', onSlotDrop);
+  }
+  for (const post of posts) {
+    slot.append(renderPostCard(post));
+  }
+  return slot;
 }
 
 function renderCalendar() {
@@ -136,18 +162,117 @@ function renderCalendar() {
 
   grid.append(el('div', 'hour-label', 'All day'));
   for (const date of dates) {
-    const slot = el('div', 'slot');
-    const posts = postsByDate.get(date) ?? [];
-    for (const post of posts) {
-      slot.append(renderPostCard(post));
-    }
-    grid.append(slot);
+    grid.append(renderSlot(date, postsByDate.get(date) ?? []));
   }
 
   root.replaceChildren(grid);
 }
 
+// ─── Drag-drop reschedule ──────────────────────────────────────────────
+
+let draggingPostId: string | null = null;
+
+function onCardDragStart(ev: DragEvent) {
+  const card = ev.currentTarget as HTMLElement;
+  const postId = card.dataset.postId;
+  if (!postId || !ev.dataTransfer) return;
+  draggingPostId = postId;
+  ev.dataTransfer.effectAllowed = 'move';
+  ev.dataTransfer.setData('text/plain', postId);
+  card.classList.add('dragging');
+}
+
+function onCardDragEnd(ev: DragEvent) {
+  const card = ev.currentTarget as HTMLElement;
+  card.classList.remove('dragging');
+  draggingPostId = null;
+}
+
+function onSlotDragOver(ev: DragEvent) {
+  ev.preventDefault();
+  if (ev.dataTransfer) ev.dataTransfer.dropEffect = 'move';
+  (ev.currentTarget as HTMLElement).classList.add('drop-target');
+}
+
+function onSlotDragLeave(ev: DragEvent) {
+  (ev.currentTarget as HTMLElement).classList.remove('drop-target');
+}
+
+async function onSlotDrop(ev: DragEvent) {
+  ev.preventDefault();
+  const slot = ev.currentTarget as HTMLElement;
+  slot.classList.remove('drop-target');
+  const newDate = slot.dataset.date;
+  const postId = ev.dataTransfer?.getData('text/plain') ?? draggingPostId;
+  if (!postId || !newDate) return;
+
+  const post = state.posts.find((p) => p.id === postId);
+  if (!post) return;
+
+  const oldScheduledAt = post.scheduled_at ?? post.published_at ?? post.created_at;
+  const oldDate = oldScheduledAt?.split('T')[0];
+  if (oldDate === newDate) return; // no-op
+
+  // Build new ISO timestamp: keep original time-of-day, swap the date.
+  const time = oldScheduledAt && oldScheduledAt.includes('T')
+    ? oldScheduledAt.split('T')[1]
+    : '12:00:00.000Z';
+  const newScheduledAt = `${newDate}T${time}`;
+
+  // Optimistic: update local state and re-render before the round-trip.
+  post.scheduled_at = newScheduledAt;
+  renderCalendar();
+
+  try {
+    const result = await app.callServerTool({
+      name: 'schedule_post',
+      arguments: {
+        post_id: postId,
+        update: true,
+        schedule_at: newScheduledAt,
+      },
+    });
+    if (isScopeDenied(result)) {
+      revertPost(postId, oldScheduledAt);
+      showError("You don't have permission to reschedule. Upgrade your plan to schedule posts.");
+      return;
+    }
+    if ((result as { isError?: boolean }).isError) {
+      const text = result.content?.find((c) => c.type === 'text')?.text ?? 'Reschedule failed.';
+      revertPost(postId, oldScheduledAt);
+      showError(text);
+      return;
+    }
+    showToast(`Rescheduled to ${newDate}.`);
+  } catch (err) {
+    revertPost(postId, oldScheduledAt);
+    showError(`Reschedule failed: ${(err as Error).message}`);
+  }
+}
+
+function revertPost(postId: string, oldScheduledAt: string | null) {
+  const post = state.posts.find((p) => p.id === postId);
+  if (!post) return;
+  post.scheduled_at = oldScheduledAt;
+  renderCalendar();
+}
+
+// ─── Toast / error UI ──────────────────────────────────────────────
+
+let toastTimer: number | null = null;
+
+function showToast(msg: string, kind: 'info' | 'error' = 'info') {
+  const node = document.getElementById('toast');
+  if (!node) return;
+  node.textContent = msg;
+  node.classList.toggle('error', kind === 'error');
+  node.classList.add('show');
+  if (toastTimer !== null) window.clearTimeout(toastTimer);
+  toastTimer = window.setTimeout(() => node.classList.remove('show'), 4000);
+}
+
 function showError(msg: string) {
+  showToast(msg, 'error');
   const subtitle = document.getElementById('subtitle');
-  if (subtitle) subtitle.textContent = `Error: ${msg}`;
+  if (subtitle) subtitle.textContent = msg;
 }

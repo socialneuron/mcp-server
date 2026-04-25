@@ -85,6 +85,37 @@
         color: #999;
         padding: 48px 16px;
       }
+      .post-card.dragging {
+        opacity: 0.4;
+      }
+      .slot.drop-target {
+        background: #eff6ff;
+        border-color: #3b82f6;
+        border-style: dashed;
+      }
+      #toast {
+        position: fixed;
+        bottom: 16px;
+        right: 16px;
+        background: #1f2937;
+        color: #fff;
+        padding: 10px 14px;
+        border-radius: 6px;
+        font-size: 13px;
+        max-width: 320px;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 0.18s, transform 0.18s;
+        pointer-events: none;
+        z-index: 1000;
+      }
+      #toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      #toast.error {
+        background: #991b1b;
+      }
     </style>
   </head>
   <body>
@@ -92,6 +123,7 @@
     <p class="subtitle" id="subtitle">Loading scheduled posts…</p>
     <div id="upgrade-banner-slot"></div>
     <div id="root"></div>
+    <div id="toast" role="status" aria-live="polite"></div>
     <script type="module" src="/src/mcp-app.ts"></script>
   </body>
 </html>

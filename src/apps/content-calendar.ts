@@ -55,7 +55,8 @@ export function registerContentCalendarApp(server: McpServer): void {
         },
       },
     },
-    async ({ start_date }) => {
+    async ({ start_date }, extra) => {
+      const userScopes = extra.authInfo?.scopes ?? [];
       const fromDate = start_date ?? startOfCurrentWeekMonday();
       const { data: result, error } = await callEdgeFunction<{
         success: boolean;
@@ -89,13 +90,11 @@ export function registerContentCalendarApp(server: McpServer): void {
         return ts.split('T')[0] >= fromDate;
       });
 
-      // Day 1: scopes payload is empty — drives read-only UI for everyone.
-      // Day 2 reads extra.authInfo?.scopes once the SDK signature is verified.
       return {
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ posts, scopes: [] as string[] }),
+            text: JSON.stringify({ posts, scopes: userScopes }),
           },
         ],
       };
