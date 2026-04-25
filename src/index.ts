@@ -233,7 +233,9 @@ const server = new McpServer({
 
 // ── Scope Enforcement + Tool Registration ────────────────────────────
 applyScopeEnforcement(server, getAuthenticatedScopes);
-registerAllTools(server);
+// Stdio mode: skip MCP Apps. The npm package doesn't ship the app HTML
+// bundle, and Apps surface via HTTP custom connectors only.
+registerAllTools(server, { skipApps: true });
 
 // ── Prompts & Resources ──────────────────────────────────────────────
 registerPrompts(server);

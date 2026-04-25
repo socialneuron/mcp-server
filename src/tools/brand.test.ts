@@ -141,7 +141,7 @@ describe('brand tools', () => {
       const handler = server.getHandler('extract_brand')!;
       const result = await handler({ url: 'https://example.com', response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.6');
+      expect(parsed._meta.version).toBe('1.7.7');
       expect(parsed.data.brandName).toBe('JsonBrand');
     });
   });

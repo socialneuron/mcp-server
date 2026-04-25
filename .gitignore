@@ -19,3 +19,4 @@ coverage/
 # the public mirror does not host a roadmap. Internal roadmap lives at
 # docs/03-features/MCP-ROADMAP.md in the monorepo. Local scratch fine, no commits.
 docs/ROADMAP.md
+.claude/

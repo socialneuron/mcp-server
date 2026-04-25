@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.7.6",
+  "version": "1.7.7",
   "description": "MCP server for Social Neuron - AI content creation platform",
   "type": "module",
   "main": "dist/index.js",
@@ -57,7 +57,8 @@
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
     "build:lock": "node scripts/build-tools-lock.mjs",
-    "build:all": "npm run build:stdio && npm run build && npm run build:lock",
+    "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --no-audit --no-fund) && npm run build",
+    "build:all": "npm run build:stdio && npm run build && npm run build:lock && npm run build:app",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",
@@ -70,6 +71,7 @@
     "prepublishOnly": "npm run clean && npm run build:all && npm test"
   },
   "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "2.104.0",
     "cors": "^2.8.6",

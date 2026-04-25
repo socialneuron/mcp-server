@@ -1,0 +1,19 @@
+{
+  "name": "@socialneuron/content-calendar-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "INPUT=mcp-app.html vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.0"
+  },
+  "devDependencies": {
+    "typescript": "^6.0.2",
+    "vite": "^7.3.2",
+    "vite-plugin-singlefile": "^2.3.0"
+  }
+}
