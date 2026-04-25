@@ -109,10 +109,28 @@ export function registerContentCalendarApp(server: McpServer): void {
     async () => {
       const here = path.dirname(fileURLToPath(import.meta.url));
       const htmlPath = path.join(here, '../../apps/content-calendar/dist/mcp-app.html');
-      const html = await fs.readFile(htmlPath, 'utf-8');
-      return {
-        contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
-      };
+      try {
+        const html = await fs.readFile(htmlPath, 'utf-8');
+        return {
+          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+        };
+      } catch (err) {
+        // Most likely cause: deploy was built with `npm run build` only and
+        // never ran `npm run build:app` to produce the calendar dist. Surface
+        // a readable error rather than crashing the resource handler.
+        const errorHtml = `<!DOCTYPE html>
+<html><head><title>Content Calendar — unavailable</title></head>
+<body style="font-family:sans-serif;padding:24px;color:#444;">
+  <h2>Content Calendar app bundle missing</h2>
+  <p>The server registered <code>open_content_calendar</code> but
+  <code>apps/content-calendar/dist/mcp-app.html</code> is not built.
+  Run <code>npm run build:app</code> in the mcp-server directory and redeploy.</p>
+  <p style="color:#999;font-size:12px;">${(err as Error).message}</p>
+</body></html>`;
+        return {
+          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: errorHtml }],
+        };
+      }
     }
   );
 }

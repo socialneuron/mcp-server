@@ -138,8 +138,13 @@ function truncateResponse(result: any): any {
 /**
  * Register all tool groups on a McpServer instance.
  * @param options.skipScreenshots - Skip screenshot tools (requires local Playwright, unavailable on Railway)
+ * @param options.skipApps - Skip MCP App registrations. Pass true for stdio mode where the npm
+ *   package doesn't ship the app HTML bundle (Apps render via HTTP custom connectors only).
  */
-export function registerAllTools(server: McpServer, options?: { skipScreenshots?: boolean }): void {
+export function registerAllTools(
+  server: McpServer,
+  options?: { skipScreenshots?: boolean; skipApps?: boolean }
+): void {
   registerIdeationTools(server);
   registerContentTools(server);
   registerDistributionTools(server);
@@ -170,8 +175,13 @@ export function registerAllTools(server: McpServer, options?: { skipScreenshots?
   registerBrandRuntimeTools(server);
   registerCarouselTools(server);
 
-  // MCP Apps (interactive UI rendered inside the host)
-  registerContentCalendarApp(server);
+  // MCP Apps (interactive UI rendered inside the host).
+  // Apps require an HTTP transport — postMessage iframe surfaces in
+  // Custom Connectors / claude.ai. The npm-shipped stdio package
+  // doesn't bundle the app HTML so skip registration there.
+  if (!options?.skipApps) {
+    registerContentCalendarApp(server);
+  }
 
   // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)
   applyAnnotations(server);
