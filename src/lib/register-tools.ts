@@ -34,6 +34,7 @@ import { registerDigestTools } from '../tools/digest.js';
 import { registerBrandRuntimeTools } from '../tools/brandRuntime.js';
 import { registerCarouselTools } from '../tools/carousel.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
+import { registerConnectionTools } from '../tools/connections.js';
 
 /**
  * Wrap server.tool() to inject scope checking before each handler.
@@ -174,6 +175,7 @@ export function registerAllTools(
   registerDigestTools(server);
   registerBrandRuntimeTools(server);
   registerCarouselTools(server);
+  registerConnectionTools(server);
 
   // MCP Apps (interactive UI rendered inside the host).
   // Apps require an HTTP transport — postMessage iframe surfaces in

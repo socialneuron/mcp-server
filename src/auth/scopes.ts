@@ -136,6 +136,10 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:read (Apps — entry tool for the Content Calendar MCP App; reads recent posts)
   open_content_calendar: 'mcp:read',
+
+  // platform connection deep-link flow
+  start_platform_connection: 'mcp:distribute',
+  wait_for_connection: 'mcp:read',
 };
 
 /**

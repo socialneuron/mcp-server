@@ -118,7 +118,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'schedule_post',
-    'Publish or schedule a post to connected social platforms. Check list_connected_accounts first to verify active OAuth for each target platform. For Instagram carousels: use media_type=CAROUSEL_ALBUM with 2-10 media_urls. For YouTube: title is required. schedule_at uses ISO 8601 (e.g. "2026-03-20T14:00:00Z") — omit to post immediately.',
+    'Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete the platform OAuth (this is a one-time setup on socialneuron.com, not another OAuth in Claude). After they approve, call `wait_for_connection` and only then call schedule_post. For Instagram carousels: use media_type=CAROUSEL_ALBUM with 2-10 media_urls. For YouTube: title is required. schedule_at uses ISO 8601 (e.g. "2026-03-20T14:00:00Z") — omit to post immediately.',
     {
       media_url: z
         .string()
