@@ -133,6 +133,9 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:analytics (digest and anomalies are analytics-scoped)
   generate_performance_digest: 'mcp:analytics',
   detect_anomalies: 'mcp:analytics',
+
+  // mcp:read (Apps — entry tool for the Content Calendar MCP App; reads recent posts)
+  open_content_calendar: 'mcp:read',
 };
 
 /**

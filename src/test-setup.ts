@@ -94,13 +94,20 @@ vi.mock('./lib/edge-function.js', () => ({
 
 export interface MockServer {
   tool: ReturnType<typeof vi.fn>;
+  registerTool: ReturnType<typeof vi.fn>;
+  registerResource: ReturnType<typeof vi.fn>;
   getHandler: (name: string) => ((...args: any[]) => Promise<any>) | undefined;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   _handlers: Map<string, Function>;
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  _resources: Map<string, Function>;
 }
 
 /**
  * Creates a lightweight mock of McpServer that captures tool registrations.
+ * Supports both .tool() (legacy) and .registerTool() / .registerResource() (current SDK
+ * + MCP Apps via @modelcontextprotocol/ext-apps).
+ *
  * Usage:
  *   const server = createMockServer();
  *   registerXxxTools(server as any);
@@ -110,6 +117,8 @@ export interface MockServer {
 export function createMockServer(): MockServer {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   const handlers = new Map<string, Function>();
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  const resources = new Map<string, Function>();
 
   const tool = vi.fn(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
@@ -125,9 +134,28 @@ export function createMockServer(): MockServer {
     }
   );
 
+  // McpServer.registerTool(name, config, handler) — current SDK API. ext-apps' registerAppTool
+  // wraps this. Mock just records the handler under the tool name.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
+  const registerTool = vi.fn((name: string, _config: any, handler: Function) => {
+    handlers.set(name, handler);
+  });
+
+  // McpServer.registerResource(name, uri, metadata, handler) — current SDK API. ext-apps'
+  // registerAppResource wraps this. Mock records the handler under the URI.
+  const registerResource = vi.fn(
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
+    (_name: string, uri: string, _metadata: any, handler: Function) => {
+      resources.set(uri, handler);
+    }
+  );
+
   return {
     tool,
+    registerTool,
+    registerResource,
     getHandler: (name: string) => handlers.get(name) as any,
     _handlers: handlers,
+    _resources: resources,
   };
 }

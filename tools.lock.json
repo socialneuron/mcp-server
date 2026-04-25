@@ -8,7 +8,7 @@
     "module",
     "scope"
   ],
-  "tool_count": 73,
+  "tool_count": 74,
   "tools": {
     "generate_content": "28f6f8a510503cde7a25c8e26656d541e194bfad38f8722dd636af31a564f43d",
     "fetch_trends": "72cc67d1ed88428182256ece7cca80fa7d66f98fecbd9f20725a02ae06c8f575",
@@ -79,6 +79,7 @@
     "create_autopilot_config": "a3478a9c8c9c5094b9fa6ec2deee20022c35505f28ba8d5f0bafba0263e108d1",
     "audit_brand_colors": "83d552462dd81807845c0ffca20bdf97cd9b80dd7c80d95566126ef0fe92d483",
     "export_design_tokens": "2140f5a6a5b3c9c9da473b3ae034b0be9215ee1ba6bbd03bb737113f0db8d33a",
+    "open_content_calendar": "faad8d5163ed852cd9ee8a3768986c5cd11714a23093a4f38cace389fa07e04a",
     "list_recipes": "c0d873cd9dda5745ee22e10db29ff61b109929763c688a311e6e3b711200c377",
     "get_recipe_details": "ea83373e49eb48514d695a6e4ebacbe6ccf423a7e08e825363dc0eec117fd49d",
     "execute_recipe": "ea8c6fa406e709ee81be589447201e78acd7ca8e158c0798df754d472d4ec2fa",

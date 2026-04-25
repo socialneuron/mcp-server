@@ -19,3 +19,4 @@ coverage/
 # the public mirror does not host a roadmap. Internal roadmap lives at
 # the internal roadmap in the main repository. Local scratch fine, no commits.
 docs/ROADMAP.md
+.claude/
