@@ -63,7 +63,7 @@ curl -X POST \
 
 ## Endpoints
 
-### Tool Proxy (recommended for all 73 tools)
+### Tool Proxy (recommended for all 74 tools)
 
 | Method | Path | Description |
 |--------|------|-------------|
