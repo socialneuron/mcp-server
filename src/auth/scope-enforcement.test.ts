@@ -47,7 +47,7 @@ function enforceScopeForTool(toolName: string, userScopes: string[]): Enforcemen
         content: [
           {
             type: 'text' as const,
-            text: `Permission denied: '${toolName}' requires scope '${requiredScope}'. Your key has: [${userScopes.join(', ')}]. Generate a new key with the required scope.`,
+            text: `Permission denied: '${toolName}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`,
           },
         ],
         isError: true,
@@ -234,9 +234,18 @@ describe('scope enforcement', () => {
       expect(result.error?.content[0].text).toContain('[mcp:read, mcp:write]');
     });
 
-    it('includes regeneration hint in the error message', () => {
+    it('includes API-key remediation for API-key users', () => {
       const result = enforceScopeForTool('delete_comment', []);
-      expect(result.error?.content[0].text).toContain('Generate a new key with the required scope');
+      expect(result.error?.content[0].text).toContain(
+        'API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer'
+      );
+    });
+
+    it('includes OAuth-specific remediation for Custom Connector users', () => {
+      const result = enforceScopeForTool('delete_comment', []);
+      expect(result.error?.content[0].text).toContain(
+        'OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier'
+      );
     });
 
     it('error response has isError: true', () => {
