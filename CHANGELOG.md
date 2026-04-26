@@ -2,6 +2,28 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.8] - 2026-04-25
+
+### Added
+- **Platform connection deep-link tools**: `start_platform_connection` mints a single-use deep link the user opens in their browser to complete platform OAuth (X/LinkedIn/IG/etc.) in their already-authenticated session; `wait_for_connection` polls until the connection becomes active or the timeout elapses. Closes the "agent can't trigger OAuth from the chat" gap.
+- **Scope mapping**: `start_platform_connection` is `mcp:distribute`; `wait_for_connection` is `mcp:read`.
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.8` (live `mcp.socialneuron.com` continues at `1.7.7` until next monorepo deploy carries this surface).
+- Tool count: **76** (sealed via `tools.lock.json`).
+
+## [1.7.7] - 2026-04-25
+
+### Added
+- **MCP Apps — Calendar (Day 1 read-only scaffold)**: First inline UI surface inside Claude Desktop / claude.ai using `@modelcontextprotocol/ext-apps`. The `open_content_calendar` tool renders a drag-drop calendar of scheduled posts. Backed by existing tools (`list_recent_posts`, `schedule_post`, `find_next_slots`) — no new server-side work required.
+- **Connector icon**: OAuth metadata `logo_uri` points at `https://socialneuron.com/logo-icon.svg`. Custom Connector tile in claude.ai now renders the SN brand mark.
+- **Persistent OAuth client store**: Dynamic Client Registrations are persisted to `public.mcp_oauth_clients` (Supabase). Survives Railway redeploys — claude.ai's saved `client_id` no longer becomes invalid each deploy. Falls back to in-memory mode if the table is unreachable.
+- **Scope-denied OAuth-aware message**: Permission-denied responses now branch the remediation hint between API-key users (regenerate at `/settings/developer`) and OAuth Custom Connector users (scope is plan-tier-gated). [PR #73]
+
+### Changed
+- `MCP_VERSION` bumped to `1.7.7`.
+- Tool count: **74** at this release; subsequent backports brought public surface to 76.
+
 ## [1.7.6] - 2026-04-22
 
 ### Security
