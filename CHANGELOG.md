@@ -9,7 +9,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 - **Scope mapping**: `start_platform_connection` is `mcp:distribute`; `wait_for_connection` is `mcp:read`.
 
 ### Changed
-- `MCP_VERSION` bumped to `1.7.8` (live `mcp.socialneuron.com` continues at `1.7.7` until next monorepo deploy carries this surface).
+- `MCP_VERSION` bumped to `1.7.8` (live `mcp.socialneuron.com` continues at `1.7.7` until the next deploy carries this surface).
 - Tool count: **76** (sealed via `tools.lock.json`).
 
 ## [1.7.7] - 2026-04-25

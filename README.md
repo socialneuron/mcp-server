@@ -2,7 +2,7 @@
 
 > 76 tools for AI-powered social media management. MCP, REST API, CLI — create content, schedule posts, track analytics, and optimize performance.
 >
-> The live Railway endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) may surface a small number of additional monorepo-only tools — see [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for runtime truth.
+> The live Railway endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) may surface a small number of additional integrated tools beyond the npm-published surface — see [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for runtime truth.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
