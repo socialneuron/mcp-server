@@ -1,9 +1,77 @@
 # Authentication Architecture
 
-The Social Neuron MCP Server supports two authentication modes:
+The Social Neuron MCP Server supports three authentication modes:
 
-1. **API Key** (recommended) — zero-config for end users
-2. **Service Role** (legacy, deprecated) — self-hosted only
+1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven, no manual key handling
+2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
+3. **Service Role** (legacy, deprecated) — self-hosted only
+
+## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
+
+This is the path most agent users take. There is no API key in the user's hands. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token.
+
+```
+Claude.ai (or Desktop/Smithery/Glama)
+   ↓
+   Fetch /.well-known/oauth-authorization-server
+   ↓ (metadata: authorization_endpoint, token_endpoint, registration_endpoint, scopes_supported, logo_uri)
+   ↓
+   Dynamic Client Registration: POST /register
+   ↓ (server returns client_id + client_secret, persisted to public.mcp_oauth_clients)
+   ↓
+   User opens consent page at socialneuron.com/mcp/authorize
+   ↓ (user signs in if needed, approves the requested scopes)
+   ↓
+   Authorization code + PKCE code_verifier sent to /token
+   ↓
+   Server exchanges via mcp-auth Edge Function → returns snk_live_* as access_token
+   ↓
+   Claude.ai stores the token; future tool calls send Authorization: Bearer snk_live_...
+```
+
+### Adding the connector in Claude.ai
+
+1. **Settings → Integrations → Custom Connector**.
+2. **MCP Server URL**: `https://mcp.socialneuron.com/`.
+3. Approve the OAuth consent prompt that opens. Scopes are derived from your **plan tier** — they are not chosen during connection.
+4. The connector tile renders the SN icon (served via OAuth metadata `logo_uri`).
+
+### Persistence and durability
+
+DCR clients are stored in `public.mcp_oauth_clients` (Supabase, RLS-locked, service-role only). Registrations survive every Railway redeploy — once you connect, you should not have to remove + re-add the connector after server updates.
+
+If you do see "Authorization with the MCP server failed" after a deploy, the table is unreachable and the server is operating in graceful in-memory fallback mode. Remove + re-add the connector to register a fresh `client_id`. Once the persistent table is reachable again on the next deploy, the new `client_id` will be persisted automatically.
+
+### Scopes and plan tier
+
+OAuth users **cannot self-grant scopes** the way API-key users can. Scopes are determined by the user's plan:
+
+| Plan | Granted scopes |
+|---|---|
+| Starter | `mcp:read`, `mcp:analytics` |
+| Pro | `mcp:full` (all of the below) |
+| Team | `mcp:full` |
+
+If a tool returns `Permission denied: '<tool>' requires scope '<scope>'` and you are connected via OAuth, upgrade your plan — there is no key-regeneration step.
+
+### Allowed redirect URIs
+
+The DCR endpoint accepts:
+- `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`
+- `https://smithery.ai/callback`, `https://www.smithery.ai/callback`
+- `https://glama.ai/callback`, `https://mcp.so/callback`
+- `http://localhost:6274/oauth/callback` (Claude Code/Desktop debug)
+- Any other valid `https://` URI (per the MCP spec)
+
+Disallowed URIs return `400 invalid_client_metadata` (not 500).
+
+### Discovery URLs
+
+| What | URL |
+|---|---|
+| OAuth metadata | `https://mcp.socialneuron.com/.well-known/oauth-authorization-server` |
+| Server card | `https://mcp.socialneuron.com/.well-known/mcp/server-card.json` |
+| Health | `https://mcp.socialneuron.com/health` |
 
 ## API Key Flow
 

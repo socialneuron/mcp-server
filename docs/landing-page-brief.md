@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "52 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI."
+**Subheadline:** "76 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
