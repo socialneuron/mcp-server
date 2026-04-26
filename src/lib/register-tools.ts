@@ -74,7 +74,7 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
             content: [
               {
                 type: 'text' as const,
-                text: `Permission denied: '${name}' requires scope '${requiredScope}'. Generate a new key with the required scope at https://socialneuron.com/settings/developer`,
+                text: `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`,
               },
             ],
             isError: true,
