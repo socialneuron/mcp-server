@@ -1,6 +1,6 @@
 # Integration Methods
 
-Social Neuron provides 4 ways to integrate. All share the same 74 tools, auth system, scopes, rate limits, and credit pool.
+Social Neuron provides 4 ways to integrate. All share the same 76 tools, auth system, scopes, rate limits, and credit pool.
 
 ## Comparison
 

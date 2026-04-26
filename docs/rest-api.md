@@ -1,6 +1,6 @@
 # Social Neuron REST API
 
-REST interface to 52 AI content tools. Same auth, scopes, and rate limits as MCP.
+REST interface to 76 AI content tools. Same auth, scopes, and rate limits as MCP.
 
 ## Base URL
 
@@ -63,7 +63,7 @@ curl -X POST \
 
 ## Endpoints
 
-### Tool Proxy (recommended for all 74 tools)
+### Tool Proxy (recommended for all 76 tools)
 
 | Method | Path | Description |
 |--------|------|-------------|
