@@ -1,8 +1,8 @@
 {
   "name": "socialneuron-mcp-server",
   "displayName": "Social Neuron MCP Server",
-  "version": "1.7.6",
-  "description": "74 MCP tools for AI-powered social media content lifecycle — create, distribute, analyze, and optimize content across YouTube, TikTok, and Instagram",
+  "version": "1.7.8",
+  "description": "76 MCP tools for AI-powered social media content lifecycle — create, distribute, analyze, and optimize content across YouTube, TikTok, Instagram, X, LinkedIn, and Bluesky",
   "author": {
     "name": "Social Neuron",
     "url": "https://socialneuron.com"
