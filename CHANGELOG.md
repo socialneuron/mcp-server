@@ -2,12 +2,13 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## Unreleased
+## [1.7.9] - 2026-05-01
 
 ### Security
 - Hardened OAuth Dynamic Client Registration: production defaults now allow only known callback URIs plus localhost Claude development callbacks. Unknown HTTPS callbacks require `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` for staging/onboarding.
 - Made OAuth token revocation authoritative: backend revocation failures now surface as failures instead of silently succeeding after local cache eviction.
 - Reduced auth error detail returned to clients and added no-store cache headers on protected HTTP responses.
+- `MCP_VERSION` bumped to `1.7.9`.
 
 ### Fixed
 - Corrected auth documentation: this public server package currently uses an in-memory Dynamic Client Registration store. The earlier 1.7.7 changelog entry overstated persistent DCR storage; persistent DCR storage and separate short-lived connector tokens require companion backend changes outside this repo.
