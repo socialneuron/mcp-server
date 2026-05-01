@@ -157,7 +157,7 @@ const cleanupInterval = setInterval(
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json());
+app.use(express.json({ limit: '1mb' }));
 
 // Trust Railway's proxy
 app.set('trust proxy', 1);
@@ -286,6 +286,10 @@ interface AuthenticatedRequest extends express.Request {
   };
 }
 
+function setNoStore(res: express.Response): void {
+  res.setHeader('Cache-Control', 'no-store');
+}
+
 async function authenticateRequest(
   req: AuthenticatedRequest,
   res: express.Response,
@@ -293,6 +297,7 @@ async function authenticateRequest(
 ): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
+    setNoStore(res);
     res.status(401).json({
       error: 'unauthorized',
       error_description: 'Bearer token required',
@@ -326,10 +331,12 @@ async function authenticateRequest(
     };
     next();
   } catch (err) {
-    const message = err instanceof Error ? err.message : 'Token verification failed';
+    const message = err instanceof Error ? sanitizeError(err) : 'Token verification failed';
+    console.error(`[MCP HTTP] Token verification failed: ${message}`);
+    setNoStore(res);
     res.status(401).json({
       error: 'invalid_token',
-      error_description: message,
+      error_description: 'Token verification failed',
     });
   }
 }
@@ -429,6 +436,7 @@ app.get('/health', (_req, res) => {
 
 // Authenticated health details — memory, sessions, uptime
 app.get('/health/details', authenticateRequest, (_req: AuthenticatedRequest, res) => {
+  setNoStore(res);
   res.json({
     status: 'ok',
     version: MCP_VERSION,
@@ -447,6 +455,7 @@ app.get('/health/details', authenticateRequest, (_req: AuthenticatedRequest, res
 app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
   const auth = req.auth!;
   const existingSessionId = req.headers['mcp-session-id'] as string | undefined;
+  setNoStore(res);
 
   // Per-user rate limiting
   const rl = checkRateLimit('read', auth.userId);
@@ -551,6 +560,7 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
 // GET /mcp — SSE streaming for existing sessions
 app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
+  setNoStore(res);
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !sessions.has(sessionId)) {
     res.status(400).json({ error: 'Invalid or missing session ID' });
@@ -566,7 +576,7 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
 
   // SSE headers for Cloudflare proxy compatibility
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Cache-Control', 'no-store');
 
   await requestContext.run(
     { userId: req.auth!.userId, scopes: req.auth!.scopes, creditsUsed: 0, assetsGenerated: 0 },
@@ -576,6 +586,7 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
 
 // DELETE /mcp — Session teardown
 app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
+  setNoStore(res);
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !sessions.has(sessionId)) {
     res.status(400).json({ error: 'Invalid or missing session ID' });

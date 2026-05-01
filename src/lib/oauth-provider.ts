@@ -11,8 +11,8 @@
  *   4. Claude calls /token with code_verifier → provider exchanges via mcp-auth EF
  *   5. Provider decrypts and returns snk_live_* as access_token
  *
- * Dynamic client registrations are in-memory (standard MCP pattern — clients
- * re-register on server restart).
+ * Dynamic client registrations are in-memory in this public server package —
+ * clients re-register on server restart.
  */
 import type { Response as ExpressResponse } from 'express';
 import type {
@@ -59,8 +59,8 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Allow any HTTPS callback (MCP spec: dynamic clients can register any valid HTTPS URI)
-    if (parsed.protocol === 'https:') {
+    // Staging/testing escape hatch for new MCP clients before explicit allowlisting.
+    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
       return true;
     }
   } catch {
@@ -250,7 +250,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       const timer = setTimeout(() => controller.abort(), 10_000);
 
       try {
-        await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=revoke-by-token`, {
+        const response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=revoke-by-token`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${supabaseAnonKey}`,
@@ -259,10 +259,22 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
           body: JSON.stringify({ token: request.token }),
           signal: controller.signal,
         });
+
+        if (!response.ok) {
+          throw new Error(`Token revocation failed: HTTP ${response.status}`);
+        }
+
+        const data = (await response.json().catch(() => ({ success: true }))) as {
+          success?: boolean;
+          error?: string;
+        };
+        if (data.success === false) {
+          throw new Error(data.error ?? 'Token revocation failed');
+        }
       } catch (err) {
-        // Log but don't throw — RFC 7009 says revocation endpoint should be best-effort
         const msg = err instanceof Error ? err.message : 'unknown';
         console.error(`[oauth] Token revocation call failed: ${msg}`);
+        throw err;
       } finally {
         clearTimeout(timer);
       }

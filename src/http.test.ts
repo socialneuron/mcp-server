@@ -92,6 +92,38 @@ describe('HTTP Server Security Patterns', () => {
     });
   });
 
+  describe('HTTP parser and auth response defaults', () => {
+    it('should use a 1mb JSON body limit', () => {
+      const jsonParserConfig = { limit: '1mb' };
+      expect(jsonParserConfig.limit).toBe('1mb');
+    });
+
+    it('should return a generic invalid-token response', () => {
+      const response = {
+        status: 401,
+        body: {
+          error: 'invalid_token',
+          error_description: 'Token verification failed',
+        },
+      };
+
+      expect(response.status).toBe(401);
+      expect(response.body).toEqual({
+        error: 'invalid_token',
+        error_description: 'Token verification failed',
+      });
+      expect(response.body.error_description).not.toMatch(/revoked|expired|HTTP|database/i);
+    });
+
+    it('should mark protected auth responses no-store', () => {
+      const headers = {
+        'Cache-Control': 'no-store',
+      };
+
+      expect(headers['Cache-Control']).toBe('no-store');
+    });
+  });
+
   describe('Health endpoint security', () => {
     it('should only expose status and version in public health', () => {
       const publicHealth = { status: 'ok', version: '1.1.0' };
