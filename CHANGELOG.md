@@ -2,6 +2,14 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.10] - 2026-05-01
+
+### Fixed
+- Fixed stdio MCP `tools/list` runtime serialization by updating `execute_recipe.inputs` to use the Zod 4-compatible `z.record(z.string(), z.unknown())` form. The 1.7.9 package could start but failed tool listing with `Cannot read properties of undefined (reading '_zod')`.
+- Added a regression test that serializes the real registered stdio tool schemas through the MCP SDK JSON-schema conversion path.
+- Pinned `posthog-node` to `5.20.0` to keep public installs compatible with the advertised Node `>=20.0.0 <21.0.0 || >=22.0.0` engine range.
+- `MCP_VERSION` bumped to `1.7.10`.
+
 ## [1.7.9] - 2026-05-01
 
 ### Security
