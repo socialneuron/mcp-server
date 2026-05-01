@@ -6,12 +6,12 @@
     "url": "https://github.com/socialneuron/mcp-server",
     "source": "github"
   },
-  "version": "1.7.9",
+  "version": "1.7.10",
   "packages": [
     {
       "registryType": "npm",
       "identifier": "@socialneuron/mcp-server",
-      "version": "1.7.9",
+      "version": "1.7.10",
       "transport": {
         "type": "stdio"
       },
