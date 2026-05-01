@@ -26,6 +26,9 @@ jobs:
           # and export NODE_AUTH_TOKEN, which blocks OIDC Trusted Publishing.
           # npm publish defaults to registry.npmjs.org without this.
 
+      - name: Use npm with trusted publishing support
+        run: npm install -g npm@latest
+
       - run: npm ci
 
       - name: Verify version matches tag
