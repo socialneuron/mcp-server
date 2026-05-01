@@ -12,6 +12,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Fixed
 - Corrected auth documentation: this public server package currently uses an in-memory Dynamic Client Registration store. The earlier 1.7.7 changelog entry overstated persistent DCR storage; persistent DCR storage and separate short-lived connector tokens require companion backend changes outside this repo.
+- Synced `server.json` registry manifest version fields to `1.7.9` so MCP registry metadata matches the published npm package.
 
 ## [1.7.8] - 2026-04-25
 
