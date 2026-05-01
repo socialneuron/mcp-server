@@ -2,13 +2,13 @@
 
 The Social Neuron MCP Server supports three authentication modes:
 
-1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven, no manual key handling
+1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven connector setup
 2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
 3. **Service Role** (legacy, deprecated) — self-hosted only
 
 ## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
 
-This is the path most agent users take. There is no API key in the user's hands. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token.
+This is the path most agent users take. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token. In the current public server package, that bearer token is still backed by the existing `snk_*` API-key exchange. A separate short-lived connector-token backend is planned but requires Supabase Edge Function and database changes outside this repo.
 
 ```
 Claude.ai (or Desktop/Smithery/Glama)
@@ -17,7 +17,7 @@ Claude.ai (or Desktop/Smithery/Glama)
    ↓ (metadata: authorization_endpoint, token_endpoint, registration_endpoint, scopes_supported, logo_uri)
    ↓
    Dynamic Client Registration: POST /register
-   ↓ (server returns client_id + client_secret, persisted to public.mcp_oauth_clients)
+   ↓ (server returns client_id + client_secret, stored in memory by this public server)
    ↓
    User opens consent page at socialneuron.com/mcp/authorize
    ↓ (user signs in if needed, approves the requested scopes)
@@ -38,9 +38,29 @@ Claude.ai (or Desktop/Smithery/Glama)
 
 ### Persistence and durability
 
-DCR clients are stored in `public.mcp_oauth_clients` (Supabase, RLS-locked, service-role only). Registrations survive every Railway redeploy — once you connect, you should not have to remove + re-add the connector after server updates.
+Dynamic Client Registrations are in-memory in this public server package. Registrations do not survive a process restart unless the deployment is paired with a persistent client-store implementation outside this repo.
 
-If you do see "Authorization with the MCP server failed" after a deploy, the table is unreachable and the server is operating in graceful in-memory fallback mode. Remove + re-add the connector to register a fresh `client_id`. Once the persistent table is reachable again on the next deploy, the new `client_id` will be persisted automatically.
+If you see "Authorization with the MCP server failed" after a deploy, remove and re-add the connector to register a fresh `client_id`.
+
+### Connector-token backend work
+
+The current OAuth connector flow still returns an `snk_*` bearer token from `mcp-auth?action=exchange-key`. To make connector auth security-complete, the backend should add a separate connector-token class instead of returning long-lived API keys as OAuth access tokens.
+
+Required backend actions:
+- Issue connector access token: exchange an authorization code and PKCE verifier for a short-lived connector access token plus refresh token.
+- Validate connector token: return user id, client id, scopes, expiry, and revocation state without exposing token material.
+- Rotate refresh token: one-time refresh-token use that revokes the previous refresh token and issues a new pair.
+- Revoke connector token: revoke access and refresh tokens authoritatively, with audit metadata.
+
+Minimum stored fields:
+- Hashed token value with lookup prefix
+- User id
+- OAuth client id
+- Scopes
+- Expires at
+- Revoked at
+- Last used at
+- Created-by flow/source metadata
 
 ### Scopes and plan tier
 
@@ -61,9 +81,8 @@ The DCR endpoint accepts:
 - `https://smithery.ai/callback`, `https://www.smithery.ai/callback`
 - `https://glama.ai/callback`, `https://mcp.so/callback`
 - `http://localhost:6274/oauth/callback` (Claude Code/Desktop debug)
-- Any other valid `https://` URI (per the MCP spec)
 
-Disallowed URIs return `400 invalid_client_metadata` (not 500).
+Unknown HTTPS redirect URIs are rejected by default. Staging environments can set `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` while onboarding a new client before adding its callback to the allowlist. Disallowed URIs return `400 invalid_client_metadata` (not 500).
 
 ### Discovery URLs
 
