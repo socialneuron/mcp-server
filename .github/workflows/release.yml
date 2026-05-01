@@ -80,10 +80,18 @@ jobs:
           fi
 
       - name: Publish
-        # npm Trusted Publishing (OIDC) — no NODE_AUTH_TOKEN needed.
+        # Prefer npm Trusted Publishing (OIDC). If npm package-side Trusted
+        # Publishing is not configured, fall back to the repository NPM_TOKEN
+        # secret so emergency security releases can still publish.
         # Trust is configured on npmjs.com → package → Access → Trusted Publisher:
         #   org=socialneuron, repo=mcp-server, workflow=release.yml, env=production
         # Requires: permissions.id-token: write (set above) + production environment gate.
         # --provenance generates SLSA Build L2 attestation, signed via GitHub OIDC.
         # https://docs.npmjs.com/trusted-publishers
-        run: npm publish --access public --provenance
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
+          fi
+          npm publish --access public --provenance
