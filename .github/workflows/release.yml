@@ -45,9 +45,10 @@ jobs:
         run: npm run check:dep-age
         env:
           SN_DEP_AGE_ENFORCE: "true"
-          # Emergency security release: v1.7.9 carries OAuth hardening and
-          # intentionally bypasses young-dependency blocking for this tag only.
-          SN_DEP_MIN_AGE_DAYS: ${{ github.ref_name == 'v1.7.9' && '0' || '14' }}
+          # Emergency patch releases: v1.7.9 carries OAuth hardening; v1.7.10
+          # fixes the published stdio tools/list runtime failure. Both
+          # intentionally bypass young-dependency blocking for their tags only.
+          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10') && '0' || '14' }}
         # Release is stricter than CI: young deps block publish.
 
       - name: Lint tool descriptions

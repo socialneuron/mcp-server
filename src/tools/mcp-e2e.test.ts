@@ -4,6 +4,9 @@
  * and combined filtering — all in-process via createMockServer().
  */
 import { describe, it, expect } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { normalizeObjectSchema } from '@modelcontextprotocol/sdk/server/zod-compat.js';
+import { toJsonSchemaCompat } from '@modelcontextprotocol/sdk/server/zod-json-schema-compat.js';
 import { createMockServer } from '../test-setup.js';
 import { TOOL_CATALOG } from '../lib/tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
@@ -48,6 +51,27 @@ describe('Tool catalog integrity', () => {
     // .registerTool() API (used by @modelcontextprotocol/ext-apps for MCP Apps).
     // _handlers unifies both; count it instead of the individual spies.
     expect(server._handlers.size).toBe(TOOL_CATALOG.length);
+  });
+
+  it('stdio tool schemas serialize through the real MCP SDK tools/list path', () => {
+    const server = new McpServer({ name: 'schema-smoke', version: '0.0.0' });
+    registerAllTools(server, { skipApps: true });
+
+    const registeredTools = (server as unknown as { _registeredTools: Record<string, any> })
+      ._registeredTools;
+    expect(Object.keys(registeredTools).length).toBe(TOOL_CATALOG.length - 1);
+
+    for (const [name, tool] of Object.entries(registeredTools)) {
+      expect(() => {
+        const objectSchema = normalizeObjectSchema(tool.inputSchema);
+        if (objectSchema) {
+          toJsonSchemaCompat(objectSchema, {
+            strictUnions: true,
+            pipeStrategy: 'input',
+          });
+        }
+      }, `invalid MCP input schema for ${name}`).not.toThrow();
+    }
   });
 });
 

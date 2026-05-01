@@ -138,7 +138,7 @@ describe('distribution tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.9');
+      expect(parsed._meta.version).toBe('1.7.10');
       expect(parsed.data.success).toBe(true);
     });
 

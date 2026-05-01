@@ -235,7 +235,7 @@ export function registerRecipeTools(server: McpServer): void {
     {
       slug: z.string().describe('Recipe slug (e.g., "weekly-instagram-calendar")'),
       inputs: z
-        .record(z.unknown())
+        .record(z.string(), z.unknown())
         .describe(
           'Input values matching the recipe input schema. Use get_recipe_details to see required inputs.'
         ),
