@@ -29,6 +29,7 @@ function makeClient(
 describe('createOAuthProvider', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+    delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
   });
 
   describe('clientsStore', () => {
@@ -49,10 +50,32 @@ describe('createOAuthProvider', () => {
       expect(retrieved).toBeUndefined();
     });
 
-    it('allows any HTTPS redirect URI (MCP dynamic registration)', async () => {
+    it('allows known HTTPS redirect URIs', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://smithery.ai/callback'],
+      });
+
+      const registered = await provider.clientsStore.registerClient!(client);
+      expect(registered.client_id).toBe('test-client-123');
+    });
+
+    it('rejects unknown HTTPS redirect URIs by default', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        redirect_uris: ['https://evil.com/oauth/callback'],
+      });
+
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'Redirect URI not allowed'
+      );
+    });
+
+    it('allows unknown HTTPS redirect URIs only with staging escape hatch', async () => {
+      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        redirect_uris: ['https://new-client.example.com/oauth/callback'],
       });
 
       const registered = await provider.clientsStore.registerClient!(client);
@@ -79,14 +102,15 @@ describe('createOAuthProvider', () => {
       expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('allows HTTPS localhost (treated as valid HTTPS)', async () => {
+    it('rejects HTTPS localhost unless explicitly allowlisted', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://localhost:6274/oauth/callback'],
       });
 
-      const registered = await provider.clientsStore.registerClient!(client);
-      expect(registered.client_id).toBe('test-client-123');
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'Redirect URI not allowed'
+      );
     });
   });
 
@@ -245,17 +269,53 @@ describe('createOAuthProvider', () => {
       expect(body.token).toBe('snk_test_fake_token'); // gitleaks:allow (test fixture)
     });
 
-    it('does not throw on fetch failure (best-effort)', async () => {
+    it('throws on fetch failure after cache eviction', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient();
 
       mockFetch.mockRejectedValueOnce(new Error('Network error'));
 
-      // Should not throw
-      await provider.revokeToken(client, {
-        token: 'snk_test_fake_token',
-        token_type_hint: 'access_token',
-      } as any); // gitleaks:allow (test fixture)
+      await expect(
+        provider.revokeToken(client, {
+          token: 'snk_test_fake_token',
+          token_type_hint: 'access_token',
+        } as any)
+      ).rejects.toThrow('Network error'); // gitleaks:allow (test fixture)
+    });
+
+    it('throws on non-OK revocation response', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: false,
+        status: 500,
+        json: async () => ({ error: 'backend failed' }),
+      });
+
+      await expect(
+        provider.revokeToken(client, {
+          token: 'snk_test_fake_token',
+          token_type_hint: 'access_token',
+        } as any)
+      ).rejects.toThrow('Token revocation failed: HTTP 500'); // gitleaks:allow (test fixture)
+    });
+
+    it('throws when revocation response reports failure', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: false, error: 'already revoked' }),
+      });
+
+      await expect(
+        provider.revokeToken(client, {
+          token: 'snk_test_fake_token',
+          token_type_hint: 'access_token',
+        } as any)
+      ).rejects.toThrow('already revoked'); // gitleaks:allow (test fixture)
     });
   });
 
