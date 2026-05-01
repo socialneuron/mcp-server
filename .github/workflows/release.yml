@@ -19,15 +19,11 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # npm Trusted Publishing requires npm >= 11.5.1. GitHub's Node 24
+          # toolchain includes a compatible npm without a brittle global upgrade.
+          node-version: 24
           cache: npm
-          # NOTE: registry-url intentionally omitted. Setting it causes
-          # setup-node to write _authToken=${NODE_AUTH_TOKEN} to .npmrc
-          # and export NODE_AUTH_TOKEN, which blocks OIDC Trusted Publishing.
-          # npm publish defaults to registry.npmjs.org without this.
-
-      - name: Use npm with trusted publishing support
-        run: npm install -g npm@latest
+          registry-url: "https://registry.npmjs.org"
 
       - run: npm ci
 
@@ -83,9 +79,10 @@ jobs:
           fi
 
       - name: Publish
-        # Prefer npm Trusted Publishing (OIDC). If npm package-side Trusted
-        # Publishing is not configured, fall back to the repository NPM_TOKEN
-        # secret so emergency security releases can still publish.
+        # Prefer npm Trusted Publishing (OIDC). npm CLI uses OIDC in eligible
+        # GitHub environments before falling back to traditional token auth.
+        # NPM_TOKEN remains configured only as an emergency fallback for this
+        # security release path.
         # Trust is configured on npmjs.com → package → Access → Trusted Publisher:
         #   org=socialneuron, repo=mcp-server, workflow=release.yml, env=production
         # Requires: permissions.id-token: write (set above) + production environment gate.
