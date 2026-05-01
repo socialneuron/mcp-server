@@ -71,7 +71,7 @@
     "prepublishOnly": "npm run clean && npm run build:all && npm test"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.0",
+    "@modelcontextprotocol/ext-apps": "1.7.1",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "2.104.0",
     "cors": "^2.8.6",
