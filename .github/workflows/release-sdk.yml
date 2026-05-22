@@ -12,6 +12,7 @@ permissions:
 jobs:
   publish:
     runs-on: ubuntu-latest
+    environment: production  # Requires manual approval before publish
     defaults:
       run:
         working-directory: packages/sdk
@@ -21,12 +22,17 @@ jobs:
 
       - uses: actions/setup-node@v6
         with:
-          node-version: 22
+          # npm Trusted Publishing requires npm >= 11.5.1. Node 24's bundled
+          # npm is compatible; matches the main release.yml runner setup.
+          node-version: 24
           registry-url: https://registry.npmjs.org
           cache: npm
 
       - name: Install SDK dependencies
-        run: npm install
+        # Use `npm ci` for a reproducible install from package-lock.json.
+        # `npm install` resolves versions afresh and can drift from the
+        # lockfile that CI / typecheck ran against.
+        run: npm ci
 
       - name: Verify version matches tag
         env:
@@ -51,6 +57,16 @@ jobs:
           fi
 
       - name: Publish
-        run: npm publish --provenance --access public
+        # Prefer npm Trusted Publishing (OIDC). Mirrors the main release.yml
+        # flow: NODE_AUTH_TOKEN is only used as an emergency fallback for
+        # environments where Trusted Publishing isn't yet configured.
+        # Trust configured on npmjs.com → @socialneuron/sdk → Access →
+        # Trusted Publisher: org=socialneuron, repo=mcp-server,
+        # workflow=release-sdk.yml, env=production.
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+        run: |
+          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
+            printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
+          fi
+          npm publish --access public --provenance

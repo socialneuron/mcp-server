@@ -122,12 +122,16 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   lastActivity: number;
+  /** Hard ceiling — sessions are torn down at this point regardless of
+   *  activity, so a slow-read SSE consumer cannot pin a slot forever. */
+  expiresAt: number;
   userId: string;
 }
 
 const sessions = new Map<string, SessionEntry>();
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes (idle)
+const SESSION_HARD_TTL_MS = Number(process.env.SESSION_HARD_TTL_MS ?? 4 * 60 * 60 * 1000); // 4h default
 
 function countUserSessions(userId: string): number {
   let count = 0;
@@ -137,16 +141,20 @@ function countUserSessions(userId: string): number {
   return count;
 }
 
-// Clean up stale sessions every 5 minutes
+// Clean up stale sessions every 5 minutes. Two reasons to evict: idle
+// past SESSION_TIMEOUT_MS, or alive past the absolute SESSION_HARD_TTL_MS.
 const cleanupInterval = setInterval(
   () => {
     const now = Date.now();
     for (const [sessionId, entry] of sessions) {
-      if (now - entry.lastActivity > SESSION_TIMEOUT_MS) {
+      const idle = now - entry.lastActivity > SESSION_TIMEOUT_MS;
+      const expired = now >= entry.expiresAt;
+      if (idle || expired) {
         entry.transport.close();
         entry.server.close();
         sessions.delete(sessionId);
-        console.log(`[MCP HTTP] Cleaned up stale session: ${sessionId}`);
+        const reason = expired ? 'expired (hard TTL)' : 'idle';
+        console.log(`[MCP HTTP] Cleaned up ${reason} session: ${sessionId}`);
       }
     }
   },
@@ -227,9 +235,17 @@ app.use((req, res, next) => {
 });
 
 // ── Security headers ────────────────────────────────────────────────
+// ── Security headers ────────────────────────────────────────────────
 app.use((_req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Defense-in-depth: this is a JSON API so any browser embedding it as
+  // an iframe or chasing referrers represents misuse. CSP locks down all
+  // active content; frame-ancestors blocks clickjacking even if an
+  // error page accidentally returns HTML in the future.
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 
@@ -544,10 +560,12 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId: string) => {
+        const now = Date.now();
         sessions.set(sessionId, {
           transport,
           server,
-          lastActivity: Date.now(),
+          lastActivity: now,
+          expiresAt: now + SESSION_HARD_TTL_MS,
           userId: auth.userId,
         });
       },
@@ -590,6 +608,13 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
   const entry = sessions.get(sessionId)!;
   if (entry.userId !== req.auth!.userId) {
     res.status(403).json({ error: 'Session belongs to another user' });
+    return;
+  }
+  if (Date.now() >= entry.expiresAt) {
+    entry.transport.close();
+    entry.server.close();
+    sessions.delete(sessionId);
+    res.status(440).json({ error: 'session_expired', error_description: 'Session hard TTL exceeded.' });
     return;
   }
   entry.lastActivity = Date.now();

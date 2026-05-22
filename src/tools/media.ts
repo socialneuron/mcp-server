@@ -5,6 +5,7 @@ import { basename, extname } from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
+import { assertSafeLocalPath } from '../lib/safe-path.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
@@ -326,10 +327,33 @@ export function registerMediaTools(server: McpServer): void {
           projectId: project_id,
         };
       } else {
-        // Local file — read, check size, base64 encode
+        // Local file — read, check size, base64 encode.
+        // Canonicalize first and refuse known-sensitive paths (~/.ssh,
+        // /etc, etc.) so a prompt-injected agent cannot exfiltrate
+        // credentials from the user's machine via this tool.
+        let safeSrc: string;
+        try {
+          safeSrc = await assertSafeLocalPath(src);
+        } catch (err) {
+          await logMcpToolInvocation({
+            toolName: 'upload_media',
+            status: 'error',
+            durationMs: Date.now() - startedAt,
+            details: { error: 'sensitive_path_rejected' },
+          });
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Refused: ${sanitizeError(err)}. Upload from a non-sensitive location, or pass bytes via \`file_data\`.`,
+              },
+            ],
+            isError: true,
+          };
+        }
         let fileBuffer: Buffer;
         try {
-          fileBuffer = await readFile(src);
+          fileBuffer = await readFile(safeSrc);
         } catch {
           await logMcpToolInvocation({
             toolName: 'upload_media',

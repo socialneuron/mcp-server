@@ -4,6 +4,7 @@ import {
   getDefaultUserId,
   getAuthenticatedApiKey,
 } from './supabase.js';
+import { getRequestUserId } from './request-context.js';
 
 function getServiceKeyOrNull(): string | null {
   try {
@@ -44,20 +45,35 @@ export async function callEdgeFunction<T = unknown>(
   const timeoutMs = options?.timeoutMs ?? 60_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  // Enrich payload with userId/projectId when available.
-  // Cloud mode also benefits from this, but mcp-gateway will inject if missing.
+  // Enrich payload with userId/projectId. The userId is ALWAYS sourced
+  // from the authenticated request context (HTTP mode) or the local
+  // credential's default user (stdio mode) — any caller-supplied
+  // userId/user_id is ignored. This stops a tool argument from
+  // re-targeting an Edge Function call at another tenant even if the
+  // tool code accidentally forwards user-controlled IDs into the body.
+  // projectId is intentionally left caller-controlled because a single
+  // user may own multiple projects; the gateway/Edge Function is the
+  // source of truth for project ownership.
   const enrichedBody = { ...body } as Record<string, unknown>;
-  if (!enrichedBody.userId && !enrichedBody.user_id) {
+  let authoritativeUserId: string | null = getRequestUserId();
+  if (!authoritativeUserId) {
     try {
-      const defaultId = await getDefaultUserId();
-      enrichedBody.userId = defaultId;
-      enrichedBody.user_id = defaultId;
+      authoritativeUserId = await getDefaultUserId();
     } catch {
-      // Non-fatal
+      authoritativeUserId = null;
     }
-  } else {
-    if (enrichedBody.userId && !enrichedBody.user_id) enrichedBody.user_id = enrichedBody.userId;
-    if (enrichedBody.user_id && !enrichedBody.userId) enrichedBody.userId = enrichedBody.user_id;
+  }
+  if (authoritativeUserId) {
+    if (
+      (enrichedBody.userId && enrichedBody.userId !== authoritativeUserId) ||
+      (enrichedBody.user_id && enrichedBody.user_id !== authoritativeUserId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied userId for ${functionName} ignored in favour of authenticated user.`
+      );
+    }
+    enrichedBody.userId = authoritativeUserId;
+    enrichedBody.user_id = authoritativeUserId;
   }
 
   if (!enrichedBody.projectId && !enrichedBody.project_id) {
