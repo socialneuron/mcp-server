@@ -159,8 +159,17 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
-// Trust Railway's proxy
-app.set('trust proxy', 1);
+// Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
+// (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
+// trusted reverse proxy in front, otherwise X-Forwarded-For becomes
+// attacker-controlled and the per-IP rate limit below can be trivially
+// rotated past. Accepts an integer hop count or any value Express
+// supports ('loopback', 'linklocal', CIDR, …).
+const trustProxyEnv = process.env.TRUST_PROXY ?? '1';
+if (trustProxyEnv !== '0' && trustProxyEnv.toLowerCase() !== 'false') {
+  const trustProxy = /^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv) : trustProxyEnv;
+  app.set('trust proxy', trustProxy);
+}
 
 // ── Per-IP rate limiting ────────────────────────────────────────────
 // Prevents burst abuse before auth is even checked. 60 req/min per IP.
@@ -310,7 +319,11 @@ async function authenticateRequest(
   try {
     const authInfo = await tokenVerifier.verifyAccessToken(token);
 
-    // Allow URL param scope override (downgrade only, never upgrade)
+    // Allow URL param scope override (downgrade only, never upgrade).
+    // Reject — rather than silently fall back to full scopes — when the
+    // requested set has no overlap with the token's scopes. Previous
+    // behaviour turned a typo like `?scope=read` (missing prefix) into a
+    // silent grant of every scope the token already had.
     let scopes = authInfo.scopes;
     const scopeParam = req.query.scope as string | undefined;
     if (scopeParam) {
@@ -318,9 +331,16 @@ async function authenticateRequest(
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      // Only keep scopes the token already has (intersection = downgrade only)
-      scopes = requestedScopes.filter(s => authInfo.scopes.includes(s));
-      if (scopes.length === 0) scopes = authInfo.scopes; // fallback if none match
+      const intersection = requestedScopes.filter(s => authInfo.scopes.includes(s));
+      if (intersection.length === 0) {
+        setNoStore(res);
+        res.status(400).json({
+          error: 'invalid_scope',
+          error_description: 'Requested scope is not a subset of the token scopes.',
+        });
+        return;
+      }
+      scopes = intersection;
     }
 
     req.auth = {
@@ -607,7 +627,9 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
 
 // ── Global error handler (catches errors SDK swallows) ──────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[MCP HTTP] Unhandled Express error:', err.stack || err.message || err);
+  // Never log raw .stack — absolute container paths and framework
+  // internals can leak to centralised log sinks.
+  console.error(`[MCP HTTP] Unhandled Express error: ${sanitizeError(err)}`);
   if (!res.headersSent) {
     res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
   }

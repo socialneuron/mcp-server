@@ -5,6 +5,7 @@
  *   1. Supabase JWTs (from OAuth flow) - verified via JWKS
  *   2. API keys (snk_live_...) - validated via mcp-auth Edge Function // gitleaks:allow
  */
+import { createHash } from 'node:crypto';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
 import * as jose from 'jose';
 
@@ -23,13 +24,19 @@ function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
   return jwks;
 }
 
-// Cache validated API keys to avoid hitting mcp-auth rate limits (5/min per IP)
+// Cache validated API keys to avoid hitting mcp-auth rate limits (5/min per IP).
+// Keys are stored as sha256(token) so a heap/core dump never exposes the
+// plaintext secret (A7).
 const apiKeyCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
-const API_KEY_CACHE_TTL_MS = 10_000; // 10 seconds — reduced from 60s to limit revocation window (H-1)
+const API_KEY_CACHE_TTL_MS = 10_000; // 10 seconds — limits revocation window.
+
+function cacheKey(token: string): string {
+  return createHash('sha256').update(token).digest('hex');
+}
 
 /** Evict a token from the validation cache (used by revocation). */
 export function evictFromCache(token: string): void {
-  apiKeyCache.delete(token);
+  apiKeyCache.delete(cacheKey(token));
 }
 
 export function createTokenVerifier(options: TokenVerifierOptions) {
@@ -39,15 +46,15 @@ export function createTokenVerifier(options: TokenVerifierOptions) {
     async verifyAccessToken(token: string): Promise<AuthInfo> {
       // Path 1: API key (snk_live_... or snk_test_...) // gitleaks:allow
       if (token.startsWith('snk_')) {
-        // Check cache first
-        const cached = apiKeyCache.get(token);
+        const key = cacheKey(token);
+        const cached = apiKeyCache.get(key);
         if (cached && cached.expiresAt > Date.now()) {
           return cached.authInfo;
         }
-        if (cached) apiKeyCache.delete(token);
+        if (cached) apiKeyCache.delete(key);
 
         const authInfo = await verifyApiKey(token, supabaseUrl, supabaseAnonKey);
-        apiKeyCache.set(token, { authInfo, expiresAt: Date.now() + API_KEY_CACHE_TTL_MS });
+        apiKeyCache.set(key, { authInfo, expiresAt: Date.now() + API_KEY_CACHE_TTL_MS });
 
         // Evict stale entries if cache grows
         if (apiKeyCache.size > 100) {
@@ -69,8 +76,14 @@ export function createTokenVerifier(options: TokenVerifierOptions) {
 async function verifySupabaseJwt(token: string, supabaseUrl: string): Promise<AuthInfo> {
   const jwksKeySet = getJWKS(supabaseUrl);
 
+  // Pin algorithms to prevent JWKS-supplied alg confusion, require the
+  // Supabase 'authenticated' audience so tokens minted for other services
+  // sharing this project URL are rejected, and tolerate small clock skew.
   const { payload } = await jose.jwtVerify(token, jwksKeySet, {
     issuer: `${supabaseUrl}/auth/v1`,
+    audience: 'authenticated',
+    algorithms: ['RS256', 'ES256'],
+    clockTolerance: '30s',
   });
 
   const userId = payload.sub;
