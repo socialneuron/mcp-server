@@ -131,7 +131,20 @@ interface SessionEntry {
 const sessions = new Map<string, SessionEntry>();
 
 const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes (idle)
-const SESSION_HARD_TTL_MS = Number(process.env.SESSION_HARD_TTL_MS ?? 4 * 60 * 60 * 1000); // 4h default
+const SESSION_HARD_TTL_DEFAULT_MS = 4 * 60 * 60 * 1000; // 4h
+function parseSessionHardTtl(): number {
+  const raw = process.env.SESSION_HARD_TTL_MS;
+  if (raw === undefined || raw === '') return SESSION_HARD_TTL_DEFAULT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `[MCP HTTP] Invalid SESSION_HARD_TTL_MS=${raw}; falling back to ${SESSION_HARD_TTL_DEFAULT_MS}ms.`
+    );
+    return SESSION_HARD_TTL_DEFAULT_MS;
+  }
+  return parsed;
+}
+const SESSION_HARD_TTL_MS = parseSessionHardTtl();
 
 function countUserSessions(userId: string): number {
   let count = 0;
@@ -514,6 +527,19 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
         res.status(403).json({
           error: 'forbidden',
           error_description: 'Session belongs to another user',
+        });
+        return;
+      }
+
+      // Mirror the GET-path hard-TTL check so POST traffic cannot keep
+      // an expired session alive until the 5-minute cleanup loop runs.
+      if (Date.now() >= entry.expiresAt) {
+        entry.transport.close();
+        entry.server.close();
+        sessions.delete(existingSessionId);
+        res.status(440).json({
+          error: 'session_expired',
+          error_description: 'Session hard TTL exceeded.',
         });
         return;
       }

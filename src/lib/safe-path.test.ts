@@ -30,20 +30,13 @@ describe('assertSafeLocalPath', () => {
     await expect(assertSafeLocalPath(join(homedir(), '.ssh', 'id_rsa'))).rejects.toThrow(/sensitive/i);
   });
 
-  it('rejects a symlink that points into ~/.ssh', async () => {
-    const target = join(homedir(), '.ssh');
-    const link = join(scratch, 'evil-link');
-    try {
-      await symlink(target, link);
-    } catch {
-      // ~/.ssh may not exist in CI; create a fake target then symlink
-      const fake = join(scratch, 'fake-ssh');
-      await mkdir(fake, { recursive: true });
-      await symlink(fake, link);
-      // This variant should NOT throw — fake-ssh isn't sensitive.
-      await expect(assertSafeLocalPath(link)).resolves.toBeTruthy();
-      return;
-    }
+  it('rejects a symlink that resolves into a sensitive system path', async () => {
+    // Use /etc rather than ~/.ssh because /etc is guaranteed to exist on
+    // every Linux/macOS host. ~/.ssh may not exist on CI runners, which
+    // would cause realpath to fail and canonicalizePath to fall back to
+    // the walk-up branch — mis-classifying the link as safe.
+    const link = join(scratch, 'evil-link-system');
+    await symlink('/etc', link);
     await expect(assertSafeLocalPath(link)).rejects.toThrow(/sensitive/i);
   });
 });
