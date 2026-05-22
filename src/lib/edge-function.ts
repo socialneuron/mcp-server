@@ -14,6 +14,19 @@ function getServiceKeyOrNull(): string | null {
   }
 }
 
+let selfHostWarningEmitted = false;
+function warnSelfHostOnce(): void {
+  if (selfHostWarningEmitted) return;
+  selfHostWarningEmitted = true;
+  console.warn(
+    '[edge-function] DEPRECATED: running in self-host (service-role-key) mode. ' +
+      'Service-role calls bypass Supabase RLS, making caller-supplied IDs ' +
+      '(project_id, approval_id, comment_id) higher-risk for cross-tenant access. ' +
+      'Switch to cloud mode by setting SOCIALNEURON_API_KEY, or set ' +
+      'SN_ALLOW_SELF_HOST=1 to acknowledge and silence this warning.'
+  );
+}
+
 function getApiKeyOrNull(): string | null {
   const envKey = process.env.SOCIALNEURON_API_KEY;
   if (envKey && envKey.trim().length) return envKey.trim();
@@ -117,7 +130,14 @@ export async function callEdgeFunction<T = unknown>(
     // The gateway owns the outbound timeout to the target function.
     method = 'POST';
   } else if (serviceKey) {
-    // Self-host mode (DEPRECATED): call Edge Function directly with service role key
+    // Self-host mode (DEPRECATED): call Edge Function directly with service role key.
+    // Emit a one-time deprecation warning unless the operator has explicitly
+    // acknowledged via SN_ALLOW_SELF_HOST=1. RLS is bypassed in this path, so
+    // any caller-supplied ID that a tool forwards into the body relies entirely
+    // on the target function's own ownership checks for tenant isolation.
+    if (process.env.SN_ALLOW_SELF_HOST !== '1') {
+      warnSelfHostOnce();
+    }
     const urlBase = `${supabaseUrl}/functions/v1/${functionName}`;
     url = new URL(urlBase);
     if (options?.query) {
