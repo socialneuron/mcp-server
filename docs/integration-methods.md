@@ -11,7 +11,7 @@ Social Neuron provides 4 ways to integrate. All share the same 76 tools, auth sy
 | **Response** | SSE streaming | JSON | Text / JSON | Async/await |
 | **Setup** | 1 command | 1 curl | 1 command | npm install |
 | **Languages** | Any MCP client | Any language | Bash/shell | TypeScript |
-| **Status** | Stable | Stable | Stable | Coming Soon |
+| **Status** | Stable | Stable | Stable | [Preview](sdk-guide.md) |
 
 ## MCP (AI Agents)
 
@@ -79,17 +79,17 @@ npx @socialneuron/mcp-server sn publish \
 
 Full reference: [CLI guide](cli-guide.md)
 
-## SDK (Coming Soon)
+## SDK (Preview)
 
-**Status**: Q2 2026. Will be auto-generated from the OpenAPI spec.
+**Status**: In development, not yet published to npm. APIs documented in the [SDK guide](sdk-guide.md) may change before the first stable release. For production today, use the REST API.
 
 ```typescript
-// Coming soon — use REST API for now
+// Preview — surface may change before stable release
 import { SocialNeuron } from '@socialneuron/sdk';
 
 const sn = new SocialNeuron({ apiKey: 'snk_live_...' });
-const credits = await sn.credits.get();
-const content = await sn.content.generate({ topic: '...', platforms: ['instagram'] });
+const credits = await sn.account.credits();
+const content = await sn.content.generate({ prompt: '...', platform: 'instagram' });
 ```
 
 ## Decision Guide
@@ -97,7 +97,7 @@ const content = await sn.content.generate({ topic: '...', platforms: ['instagram
 - **Building an AI agent?** Use MCP
 - **Building a web app or service?** Use REST API
 - **Automating from CI/CD or scripts?** Use CLI
-- **Building a TypeScript app?** Use REST API (SDK coming soon)
+- **Building a TypeScript app?** Use REST API (SDK in preview)
 - **Integrating with Zapier or Make.com?** Use REST API
 - **Need type safety?** Wait for SDK or use OpenAPI codegen
 
