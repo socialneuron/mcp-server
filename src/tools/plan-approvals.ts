@@ -1,7 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId } from '../lib/supabase.js';
+import { checkRateLimit } from '../lib/rate-limit.js';
+import { getDefaultProjectId, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -219,10 +220,34 @@ export function registerPlanApprovalTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).optional(),
     },
     async ({ approval_id, decision, edited_post, reason, response_format }) => {
+      const startedAt = Date.now();
       if (decision === 'edited' && !edited_post) {
         return {
           content: [
             { type: 'text' as const, text: 'edited_post is required when decision is "edited".' },
+          ],
+          isError: true,
+        };
+      }
+
+      // Approving / editing flips a post into the schedulable pool and
+      // typically triggers a downstream schedule_post call. Share the
+      // `posting` bucket so mass-approval is rate-limited like mass-posting.
+      const rlUserId = await getDefaultUserId();
+      const rateLimit = checkRateLimit('posting', `respond_plan_approval:${rlUserId}`);
+      if (!rateLimit.allowed) {
+        logMcpToolInvocation({
+          toolName: 'respond_plan_approval',
+          status: 'rate_limited',
+          durationMs: Date.now() - startedAt,
+          details: { retryAfter: rateLimit.retryAfter },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
+            },
           ],
           isError: true,
         };

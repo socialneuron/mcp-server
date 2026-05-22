@@ -1,6 +1,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { checkRateLimit } from '../lib/rate-limit.js';
+import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -138,6 +140,30 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_run,
       max_credits_per_week,
     }) => {
+      const startedAt = Date.now();
+      // Autopilot configs drive recurring automated posting. Rate-limit
+      // mutations on the `posting` bucket so an agent cannot rapidly
+      // re-tune the automation to flood platforms with content.
+      const apUserId = await getDefaultUserId();
+      const apRateLimit = checkRateLimit('posting', `update_autopilot_config:${apUserId}`);
+      if (!apRateLimit.allowed) {
+        logMcpToolInvocation({
+          toolName: 'update_autopilot_config',
+          status: 'rate_limited',
+          durationMs: Date.now() - startedAt,
+          details: { retryAfter: apRateLimit.retryAfter },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit exceeded. Retry in ~${apRateLimit.retryAfter}s.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
       if (
         is_active === undefined &&
         !schedule_days &&
@@ -317,6 +343,27 @@ export function registerAutopilotTools(server: McpServer): void {
       is_active,
       response_format,
     }) => {
+      const startedAt = Date.now();
+      const crUserId = await getDefaultUserId();
+      const crRateLimit = checkRateLimit('posting', `create_autopilot_config:${crUserId}`);
+      if (!crRateLimit.allowed) {
+        logMcpToolInvocation({
+          toolName: 'create_autopilot_config',
+          status: 'rate_limited',
+          durationMs: Date.now() - startedAt,
+          details: { retryAfter: crRateLimit.retryAfter },
+        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit exceeded. Retry in ~${crRateLimit.retryAfter}s.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
       const format = response_format ?? 'text';
 
       const { data: result, error: efError } = await callEdgeFunction<{
