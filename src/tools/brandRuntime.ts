@@ -32,10 +32,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'get_brand_runtime',
-    'Get the full brand runtime for a project. Returns the 4-layer brand system: ' +
-      'messaging (value props, pillars, proof points), voice (tone, vocabulary, avoid patterns), ' +
-      'visual (palette, typography, composition), and operating constraints (audience, archetype). ' +
-      'Also returns extraction confidence metadata.',
+    "Fetches a project's 4-layer brand runtime: messaging (value props, pillars, proof points), " +
+      'voice (tone, vocabulary, blocked terms), visual identity (palette, typography, composition), ' +
+      'and audience details (archetype, target). Includes extraction confidence scores.',
     {
       project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
     },
