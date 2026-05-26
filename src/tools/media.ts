@@ -60,7 +60,11 @@ function approxBase64Size(raw: string): number {
   return Math.floor((len * 3) / 4) - padding;
 }
 
-export function registerMediaTools(server: McpServer): void {
+export function registerMediaTools(
+  server: McpServer,
+  options?: { allowLocalFileSource?: boolean }
+): void {
+  const allowLocalFileSource = options?.allowLocalFileSource ?? true;
   // ---------------------------------------------------------------------------
   // upload_media — Upload local file, external URL, or inline base64 to R2
   // ---------------------------------------------------------------------------
@@ -326,6 +330,19 @@ export function registerMediaTools(server: McpServer): void {
           projectId: project_id,
         };
       } else {
+        if (!allowLocalFileSource) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  'Local filesystem paths are disabled in this transport. Use an https:// URL or provide file_data (base64).',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         // Local file — read, check size, base64 encode
         let fileBuffer: Buffer;
         try {

@@ -140,6 +140,18 @@ describe('media tools', () => {
       );
     });
 
+    it('rejects local file paths when disabled for transport', async () => {
+      const httpLikeServer = createMockServer();
+      registerMediaTools(httpLikeServer as any, { allowLocalFileSource: false });
+
+      const handler = httpLikeServer.getHandler('upload_media')!;
+      const result = await handler({ source: '/etc/passwd' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Local filesystem paths are disabled');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
     // -----------------------------------------------------------------------
     // file_data / base64 path (remote-agent upload)
     // -----------------------------------------------------------------------
