@@ -73,6 +73,22 @@ export interface SSRFValidationResult {
 
 function isBlockedIP(ip: string): boolean {
   const normalized = ip.replace(/^\[/, '').replace(/\]$/, '');
+  const ipv4MappedMatch = normalized.match(/^::ffff:(.+)$/i);
+  if (ipv4MappedMatch) {
+    const mapped = ipv4MappedMatch[1];
+    if (mapped.includes('.')) {
+      return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(mapped));
+    }
+    const parts = mapped.split(':').filter(Boolean);
+    if (parts.length === 2) {
+      const high = Number.parseInt(parts[0], 16);
+      const low = Number.parseInt(parts[1], 16);
+      if (!Number.isNaN(high) && !Number.isNaN(low)) {
+        const ipv4 = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+        return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(ipv4));
+      }
+    }
+  }
   if (normalized.includes(':')) {
     return BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(normalized));
   }

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId } from '../lib/supabase.js';
 import type { GenerateContentResponse, FetchTrendsResponse } from '../types/index.js';
 
@@ -279,6 +280,16 @@ export function registerIdeationTools(server: McpServer): void {
           ],
           isError: true,
         };
+      }
+
+      if (url) {
+        const ssrfCheck = await validateUrlForSSRF(url);
+        if (!ssrfCheck.isValid) {
+          return {
+            content: [{ type: 'text' as const, text: `URL blocked: ${ssrfCheck.error}` }],
+            isError: true,
+          };
+        }
       }
 
       const { data, error } = await callEdgeFunction<FetchTrendsResponse>(
