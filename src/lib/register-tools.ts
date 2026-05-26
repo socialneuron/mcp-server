@@ -42,9 +42,13 @@ import { registerConnectionTools } from '../tools/connections.js';
 export function applyScopeEnforcement(server: McpServer, scopeResolver: () => string[]): void {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const originalTool = server.tool.bind(server) as (...args: any[]) => any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const originalRegisterTool = (server as any).registerTool?.bind(server) as
+    | ((...args: any[]) => any)
+    | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  (server as any).tool = function wrappedTool(...args: any[]) {
+  const wrapRegistration = (...args: any[]) => {
     const name = args[0] as string;
     const requiredScope = TOOL_SCOPES[name];
 
@@ -85,8 +89,20 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       };
     }
 
-    return originalTool(...args);
+    return args;
   };
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (server as any).tool = function wrappedTool(...args: any[]) {
+    return originalTool(...wrapRegistration(...args));
+  };
+
+  if (originalRegisterTool) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    (server as any).registerTool = function wrappedRegisterTool(...args: any[]) {
+      return originalRegisterTool(...wrapRegistration(...args));
+    };
+  }
 }
 
 // ── Response truncation ───────────────────────────────────────────
