@@ -144,12 +144,12 @@ function truncateResponse(result: any): any {
  */
 export function registerAllTools(
   server: McpServer,
-  options?: { skipScreenshots?: boolean; skipApps?: boolean }
+  options?: { skipScreenshots?: boolean; skipApps?: boolean; skipLocalMediaPaths?: boolean }
 ): void {
   registerIdeationTools(server);
   registerContentTools(server);
   registerDistributionTools(server);
-  registerMediaTools(server);
+  registerMediaTools(server, { allowLocalFileSource: !options?.skipLocalMediaPaths });
   registerAnalyticsTools(server);
   registerBrandTools(server);
   if (!options?.skipScreenshots) {
