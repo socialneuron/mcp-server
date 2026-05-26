@@ -169,6 +169,18 @@ describe('SSRF protection', () => {
       expect(result.error).toContain('internal');
     });
 
+    it('blocks IPv4-mapped IPv6 localhost in normalized hex form', async () => {
+      const result = await validateUrlForSSRF('http://[::ffff:7f00:1]/');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('internal');
+    });
+
+    it('blocks IPv4-mapped IPv6 private ranges in normalized hex form', async () => {
+      const result = await validateUrlForSSRF('http://[::ffff:a00:1]/');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('internal');
+    });
+
     it('skips DNS check for direct IP addresses', async () => {
       // A public IP should pass without DNS lookup
       const result = await validateUrlForSSRF('https://93.184.216.34/');
