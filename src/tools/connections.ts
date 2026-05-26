@@ -171,18 +171,18 @@ export function registerConnectionTools(server: McpServer): void {
     'wait_for_connection',
     'Poll until a platform connection becomes active. Use after `start_platform_connection` ' +
       'while the user completes the browser OAuth flow. Returns when the account row appears ' +
-      'with status=active, or when the timeout elapses. Default timeout 120s, max 600s.',
+      'with status=active, or when the timeout elapses. Default timeout 30s, max 60s.',
     {
       platform: z.enum(PLATFORM_ENUM).describe('Platform to wait for.'),
       timeout_s: z
         .number()
         .min(5)
-        .max(600)
+        .max(60)
         .optional()
-        .describe('How long to wait, in seconds. Default 120.'),
+        .describe('How long to wait, in seconds. Default 30.'),
       poll_interval_s: z
         .number()
-        .min(2)
+        .min(5)
         .max(30)
         .optional()
         .describe('Poll interval in seconds. Default 5.'),
@@ -194,25 +194,27 @@ export function registerConnectionTools(server: McpServer): void {
     async ({ platform, timeout_s, poll_interval_s, response_format }) => {
       const format = response_format ?? 'text';
       const startedAt = Date.now();
-      const timeoutMs = (timeout_s ?? 120) * 1000;
+      const timeoutMs = (timeout_s ?? 30) * 1000;
       const intervalMs = (poll_interval_s ?? 5) * 1000;
       const deadline = startedAt + timeoutMs;
 
-      const rl = checkRateLimit('read', `wait_for_connection:${platform}`);
-      if (!rl.allowed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rl.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
       let attempts = 0;
       while (Date.now() < deadline) {
+        const rl = checkRateLimit('read', `wait_for_connection:${platform}`);
+        if (!rl.allowed) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `Rate limit exceeded while waiting for ${platform}. ` +
+                  `Completed ${attempts} poll(s). Retry in ~${rl.retryAfter}s.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         attempts++;
         const { data, error } = await callEdgeFunction<{
           success: boolean;
@@ -284,7 +286,7 @@ export function registerConnectionTools(server: McpServer): void {
       });
 
       const message =
-        `${platform} did not connect within ${timeout_s ?? 120}s (${attempts} polls). ` +
+        `${platform} did not connect within ${timeout_s ?? 30}s (${attempts} polls). ` +
         'The user may not have completed the browser OAuth yet, or the link expired. ' +
         'Mint a new link with `start_platform_connection` and try again, or have the user ' +
         'go directly to socialneuron.com/settings/connections.';
