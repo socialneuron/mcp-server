@@ -1,5 +1,7 @@
 # TypeScript SDK Guide
 
+> **Preview.** The SDK is in development and not yet published to npm. APIs documented here may change before the first stable release. For production use today, see the [REST API guide](./rest-api.md).
+
 The `@socialneuron/sdk` package provides a typed client for the Social Neuron REST API.
 
 ## Installation
@@ -101,7 +103,7 @@ await sn.posts.schedule({
   caption: 'New video! #productivity',
   title: 'Productivity Tips',
   platforms: ['youtube', 'tiktok', 'instagram'],
-  scheduled_at: '2026-03-22T14:00:00Z',
+  scheduled_at: '<ISO-8601 timestamp>',
 });
 
 // List recent posts
@@ -287,4 +289,4 @@ console.log('Credits remaining:', credits.data);
 - [REST API Guide](./rest-api.md) — curl examples for every endpoint
 - [CLI Guide](./cli-guide.md) — terminal commands for scripting
 - [Examples](../examples/) — runnable code examples
-- [OpenAPI Spec](../openapi.yaml) — full API specification
+- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) — full API specification

@@ -31,7 +31,7 @@ Every release is published from GitHub Actions with [npm provenance attestation]
 | **MCP** | AI agents (Claude, Cursor, VS Code) | [Setup](#quick-start) |
 | **REST API** | Any HTTP client, webhooks, Zapier | [Guide](docs/rest-api.md) |
 | **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
-| **SDK** | TypeScript/Node.js apps | Coming Q2 2026 |
+| **SDK** | TypeScript/Node.js apps | [Preview](docs/sdk-guide.md) |
 
 All methods share the same 76 tools, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
 
@@ -71,7 +71,12 @@ The package is published to npmjs.com with provenance attestation; any registry-
 #### 2. Add to Claude Code
 
 ```bash
+# Local stdio (uses key from step 1)
 claude mcp add socialneuron -- npx -y @socialneuron/mcp-server
+
+# Or HTTP transport — no local process, key in header
+claude mcp add --transport http socialneuron https://mcp.socialneuron.com/mcp \
+  --header "Authorization: Bearer $SOCIALNEURON_API_KEY"
 ```
 
 <details>
@@ -357,32 +362,43 @@ These commands run directly in your terminal — no AI agent needed. Useful for 
 # Auth
 socialneuron-mcp login [--device|--paste]
 socialneuron-mcp logout
+socialneuron-mcp whoami
+socialneuron-mcp health
 
-# Deterministic CLI (no LLM)
-socialneuron-mcp sn publish --media-url <url> --caption <text> --platforms <list> --confirm
-socialneuron-mcp sn status --job-id <id>
-socialneuron-mcp sn posts --days 7 --platform youtube
-socialneuron-mcp sn refresh-analytics
-socialneuron-mcp sn preflight --check-urls
-socialneuron-mcp sn oauth-health --json
-socialneuron-mcp sn oauth-refresh --platform instagram
-socialneuron-mcp sn quality-check --content "your text here"
-socialneuron-mcp sn autopilot
-socialneuron-mcp sn usage
-socialneuron-mcp sn loop
-socialneuron-mcp sn credits
+# Content (publish, quality-check, e2e workflows, plan, preset)
+socialneuron-mcp sn content publish --media-url <url> --caption <text> --platforms <list> --confirm
+socialneuron-mcp sn content e2e --media-url <url> --caption <text> --platforms <list> --confirm
+socialneuron-mcp sn content quality-check --content "your text here"
+socialneuron-mcp sn content plan list|view|approve
+socialneuron-mcp sn content preset list|show|save|delete
 
-# Agent-native CLI v2
-socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 76 tools
-socialneuron-mcp sn info                                            # Version, auth, credits, tool count
-socialneuron-mcp sn plan list|view|approve                          # Content plan management
-socialneuron-mcp sn preset list|show|save|delete                    # Platform presets (6 built-in)
+# Analytics
+socialneuron-mcp sn analytics posts --days 7 --platform youtube
+socialneuron-mcp sn analytics refresh
+socialneuron-mcp sn analytics loop
+
+# System (status, credits, usage, autopilot)
+socialneuron-mcp sn system status
+socialneuron-mcp sn system credits
+socialneuron-mcp sn system usage
+socialneuron-mcp sn system autopilot
+
+# Account (platform connections)
+socialneuron-mcp sn account preflight --check-urls
+socialneuron-mcp sn account oauth-health
+socialneuron-mcp sn account oauth-refresh --platform instagram
+
+# Discovery (find tools)
+socialneuron-mcp sn discovery tools [--module ideation] [--scope mcp:write]
+socialneuron-mcp sn discovery info
 
 # Interactive REPL
 socialneuron-mcp repl
 
 # Add --json to any command for machine-readable output
 ```
+
+> Each grouped command also has a flat alias (e.g. `sn credits` ≡ `sn system credits`, `sn publish` ≡ `sn content publish`). The grouped form is the documented surface; flat aliases exist for shell ergonomics.
 
 ## Automation Flow (E2E Loop)
 

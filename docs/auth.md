@@ -95,7 +95,7 @@ Unknown HTTPS redirect URIs are rejected by default. Staging environments can se
 ## API Key Flow
 
 ```
-User → `npx @socialneuron/mcp-server setup`
+User → `npx @socialneuron/mcp-server login`
        ↓
   Opens browser → socialneuron.com/mcp/authorize
        ↓
@@ -119,6 +119,8 @@ API keys are stored securely via OS-native mechanisms:
 | Windows / fallback | `~/.config/social-neuron/credentials.json` | `chmod 0600` |
 | CI/headless | `SOCIALNEURON_API_KEY` env var | Highest priority |
 
+> **Windows users**: The file fallback does not have strong permission enforcement on NTFS. For production use on Windows, set the `SOCIALNEURON_API_KEY` environment variable instead.
+
 See `src/cli/credentials.ts` for implementation.
 
 ### Key Validation
@@ -139,7 +141,7 @@ See `src/auth/api-keys.ts` for the client-side validation call.
 
 ### PKCE Setup Flow
 
-The setup command uses PKCE (Proof Key for Code Exchange) to securely deliver the API key:
+The `login` command uses PKCE (Proof Key for Code Exchange) to securely deliver the API key:
 
 1. Generate `code_verifier` (32 random bytes, base64url)
 2. Compute `code_challenge` = SHA-256(code_verifier), base64url
@@ -216,7 +218,7 @@ When no API key is configured, the server falls back to using `SUPABASE_SERVICE_
 - Bypasses credit enforcement
 - Logs deprecation warnings on startup
 
-**This mode is deprecated.** Use `npx @socialneuron/mcp-server setup` to migrate to API key auth.
+**This mode is deprecated.** Use `npx @socialneuron/mcp-server login` to migrate to API key auth.
 
 ## Intentionally Public Values
 

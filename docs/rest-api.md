@@ -57,7 +57,7 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["instagram"], "schedule_at": "2026-03-25T14:00:00Z"}' \
+  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["instagram"], "schedule_at": "<ISO-8601 timestamp>"}' \
   https://mcp.socialneuron.com/v1/distribution/schedule
 ```
 
@@ -157,7 +157,7 @@ These are thin wrappers over the tool proxy for common operations.
   "_meta": {
     "tool": "get_credit_balance",
     "version": "1.5.2",
-    "timestamp": "2026-03-21T10:30:00.000Z"
+    "timestamp": "<ISO-8601 timestamp>"
   }
 }
 ```

@@ -17,7 +17,7 @@ socialneuron-mcp <command>
 
 ```bash
 # Browser OAuth flow (recommended)
-socialneuron-mcp setup
+socialneuron-mcp login
 
 # Device code flow (headless environments)
 socialneuron-mcp login --device
@@ -31,6 +31,8 @@ socialneuron-mcp whoami
 # Verify connection
 socialneuron-mcp health
 ```
+
+> `setup` is accepted as an alias of `login` for backwards compatibility.
 
 Credentials are stored in your OS keychain (macOS Keychain, Linux secret-tool).
 
