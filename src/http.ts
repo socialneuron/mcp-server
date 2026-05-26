@@ -517,7 +517,7 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
     // Apply scope enforcement using per-request scopes
     applyScopeEnforcement(server, () => getRequestScopes() ?? auth.scopes);
-    registerAllTools(server, { skipScreenshots: true });
+    registerAllTools(server, { skipScreenshots: true, skipLocalMediaPaths: true });
     registerPrompts(server);
     registerResources(server);
 
