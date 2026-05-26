@@ -34,11 +34,11 @@ curl -X POST https://mcp.socialneuron.com/v1/content/video \
   -d '{"prompt": "AI productivity tips", "model": "veo3-fast"}'
 
 # Poll for completion
-curl https://mcp.socialneuron.com/v1/jobs/job_abc \
+curl https://mcp.socialneuron.com/v1/content/status/job_abc \
   -H "Authorization: Bearer snk_live_..."
 
 # Schedule to platforms
-curl -X POST https://mcp.socialneuron.com/v1/posts \
+curl -X POST https://mcp.socialneuron.com/v1/distribution/schedule \
   -H "Authorization: Bearer snk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"media_url": "https://...", "platforms": ["youtube", "tiktok"]}'
@@ -90,13 +90,13 @@ socialneuron-mcp sn publish \
 **Icon:** Sparkle / Wand
 **Title:** "AI-Powered Content"
 **Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 20+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
-**Endpoints:** `POST /v1/content/video`, `POST /v1/content/image`, `POST /v1/content/generate`
+**Endpoints:** `POST /v1/content/video`, `POST /v1/content/image`, `POST /v1/content/generate`, `POST /v1/tools/generate_carousel`
 
 ### Card 2: Multi-Platform Scheduling
 **Icon:** Calendar
 **Title:** "Schedule Everywhere"
 **Copy:** "Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky. AI-optimized posting times."
-**Endpoints:** `POST /v1/posts`, `GET /v1/analytics/posting-times`
+**Endpoints:** `POST /v1/distribution/schedule`, `GET /v1/analytics/best-times`
 
 ### Card 3: Analytics & Insights
 **Icon:** Chart
@@ -108,7 +108,7 @@ socialneuron-mcp sn publish \
 **Icon:** Clipboard / Plan
 **Title:** "Plan → Approve → Publish"
 **Copy:** "Generate weekly content plans, review with your team, approve, and schedule everything with one call."
-**Endpoints:** `POST /v1/plans`, `POST /v1/plans/:id/approve`, `POST /v1/plans/:id/schedule`
+**Endpoints:** `POST /v1/tools/plan_content_week`, `POST /v1/tools/respond_plan_approval`, `POST /v1/tools/schedule_content_plan`
 
 ---
 
@@ -155,7 +155,7 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 73 |
+| MCP tools | 76 |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |
@@ -171,7 +171,7 @@ See Pricing (socialneuron.com/pricing)
 | GitHub | https://github.com/socialneuron/mcp-server |
 | npm (MCP server) | https://www.npmjs.com/package/@socialneuron/mcp-server |
 | npm (SDK) | https://www.npmjs.com/package/@socialneuron/sdk |
-| OpenAPI Spec | https://github.com/socialneuron/mcp-server/blob/main/openapi.yaml |
+| OpenAPI Spec | https://mcp.socialneuron.com/v1/openapi.json |
 | Examples | https://github.com/socialneuron/mcp-server/tree/main/examples |
 | API Docs | https://socialneuron.com/docs/api |
 | SDK Docs | https://socialneuron.com/docs/sdk |
@@ -187,5 +187,5 @@ See Pricing (socialneuron.com/pricing)
 [![npm SDK](https://img.shields.io/npm/v/@socialneuron/sdk?label=sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-green.svg)](https://github.com/socialneuron/mcp-server/blob/main/openapi.yaml)
+[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-green.svg)](https://mcp.socialneuron.com/v1/openapi.json)
 ```
