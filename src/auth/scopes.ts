@@ -92,7 +92,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   // Recipes
   list_recipes: 'mcp:read',
   get_recipe_details: 'mcp:read',
-  execute_recipe: 'mcp:write',
+  execute_recipe: 'mcp:autopilot',
   get_recipe_run_status: 'mcp:read',
 
   // mcp:read (content lifecycle — read-only tools)

@@ -505,7 +505,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     name: 'execute_recipe',
     description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
     module: 'recipes',
-    scope: 'mcp:write',
+    scope: 'mcp:autopilot',
   },
   {
     name: 'get_recipe_run_status',
