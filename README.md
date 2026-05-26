@@ -5,7 +5,24 @@
 > The live Railway endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) may surface a small number of additional integrated tools beyond the npm-published surface — see [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for runtime truth.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
+[![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Node](https://img.shields.io/node/v/@socialneuron/mcp-server)](https://nodejs.org/)
+
+## Compatibility
+
+| Surface | Minimum |
+|--------|---------|
+| Node.js | 20.x or 22.x+ |
+| Claude Desktop | 0.7.0+ |
+| Claude Code | any |
+| Cursor | 0.42.0+ (MCP support) |
+| VS Code | 1.99+ (MCP preview) |
+| Zed | 0.151.0+ |
+| Windsurf | 1.4.0+ |
+| Continue.dev | 0.9.230+ |
+
+Every release is published from GitHub Actions with [npm provenance attestation](https://docs.npmjs.com/generating-provenance-statements) (SLSA Build L2 via OIDC Trusted Publishing) — verify with `npm view @socialneuron/mcp-server --json | jq .dist.attestations`.
 
 ## Integration Methods
 
@@ -29,6 +46,27 @@ npx -y @socialneuron/mcp-server login --device
 ```
 
 This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
+
+<details>
+<summary><strong>Using pnpm, bun, or yarn?</strong></summary>
+
+```bash
+# pnpm
+pnpm dlx -y @socialneuron/mcp-server login --device
+
+# bun
+bunx -y @socialneuron/mcp-server login --device
+
+# yarn (Classic / Berry)
+yarn dlx -y @socialneuron/mcp-server login --device
+
+# Global install (any package manager)
+npm install -g @socialneuron/mcp-server   # or: pnpm add -g … / bun add -g …
+socialneuron-mcp login --device
+```
+
+The package is published to npmjs.com with provenance attestation; any registry-compatible client works.
+</details>
 
 #### 2. Add to Claude Code
 
@@ -85,6 +123,76 @@ Add to `.cursor/mcp.json` in your workspace:
     "socialneuron": {
       "command": "npx",
       "args": ["-y", "@socialneuron/mcp-server"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Windsurf</strong></summary>
+
+Add to `~/.codeium/windsurf/mcp_config.json` (or via Settings → MCP servers):
+
+```json
+{
+  "mcpServers": {
+    "socialneuron": {
+      "command": "npx",
+      "args": ["-y", "@socialneuron/mcp-server"]
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Zed</strong></summary>
+
+Add to `~/.config/zed/settings.json` under `context_servers`:
+
+```json
+{
+  "context_servers": {
+    "socialneuron": {
+      "command": {
+        "path": "npx",
+        "args": ["-y", "@socialneuron/mcp-server"]
+      }
+    }
+  }
+}
+```
+</details>
+
+<details>
+<summary><strong>Continue.dev</strong></summary>
+
+Add to `~/.continue/config.yaml` under `mcpServers`:
+
+```yaml
+mcpServers:
+  - name: socialneuron
+    command: npx
+    args:
+      - "-y"
+      - "@socialneuron/mcp-server"
+```
+</details>
+
+<details>
+<summary><strong>Cline (VS Code)</strong></summary>
+
+Add via Cline → MCP Servers → Edit config, or directly to `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (macOS path):
+
+```json
+{
+  "mcpServers": {
+    "socialneuron": {
+      "command": "npx",
+      "args": ["-y", "@socialneuron/mcp-server"],
+      "disabled": false,
+      "autoApprove": []
     }
   }
 }
