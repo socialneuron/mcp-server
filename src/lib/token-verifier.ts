@@ -28,7 +28,12 @@ function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
 // Keys are stored as sha256(token) so a heap/core dump never exposes the
 // plaintext secret (A7).
 const apiKeyCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
-const API_KEY_CACHE_TTL_MS = 10_000; // 10 seconds — limits revocation window.
+// 30s. The cache exists to keep validation under mcp-auth's rate limits
+// (5/min/IP soft + 10/5min brute-force). At 10s a continuously-polling client
+// missed every 10s (~6/min → ~30/5min), tripping BOTH limits and defeating the
+// cache. 30s yields <=10 misses/5min, respecting the binding brute-force layer.
+// Tradeoff: a revoked key may stay cached up to 30s (was 10s).
+const API_KEY_CACHE_TTL_MS = 30_000;
 
 function cacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
