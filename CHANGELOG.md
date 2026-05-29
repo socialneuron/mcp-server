@@ -2,6 +2,20 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.13] - 2026-05-29
+
+### Changed
+- Corrected the MCP pricing surfaces (README tier table + the `socialneuron://docs/capabilities` resource that ships to every client) to the canonical tiers from socialneuron.com: Free $0/100/—, Starter $19/500/—, Pro $49/1,500/Read+Analytics, Team $99/3,500/Full, Agency $249/10,000/Full. Earlier tables advertised wrong prices/credits and stated MCP access starts at Starter — it starts at **Pro**.
+- Synced all version fields (`package.json`, `server.json` ×2, `MCP_VERSION`) to 1.7.13. The unreleased 1.7.11 had drifted from `server.json`/`MCP_VERSION` (still 1.7.10), so builds reported the wrong version to clients.
+- Marked Instagram as "pending platform approval" in `server.json` + README examples; live publish is YouTube + TikTok.
+
+### Fixed
+- `applyAnnotations` now logs to **stderr** (`console.error`) instead of stdout. A stray stdout write corrupted the JSON-RPC stream for stdio clients (pydantic "Invalid JSON"; `tools/list` registering 0 tools).
+
+### Documentation
+- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
+- Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
+
 ## [1.7.10] - 2026-05-01
 
 ### Fixed

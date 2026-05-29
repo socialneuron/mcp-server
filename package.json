@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.7.10",
-  "description": "MCP server for Social Neuron - AI content creation platform",
+  "version": "1.7.13",
+  "description": "Official MCP server, REST API & CLI for Social Neuron \u2014 create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -46,10 +46,16 @@
     "youtube",
     "tiktok",
     "instagram",
-    "linkedin"
+    "linkedin",
+    "claude",
+    "anthropic",
+    "content-marketing",
+    "llm-tools",
+    "agent-tools"
   ],
   "publishConfig": {
-    "access": "public"
+    "access": "public",
+    "provenance": true
   },
   "scripts": {
     "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --validate-https --allowed-hosts npm --validate-package-names --validate-integrity",
@@ -68,7 +74,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "clean": "rm -rf dist/",
-    "prepublishOnly": "npm run clean && npm run build:all && npm test"
+    "prepublishOnly": "npm run clean && npm run build:all && npm test",
+    "build:docs": "node scripts/build-tools-reference.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.2",
