@@ -19,6 +19,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
+import { hasScope } from './auth/scopes.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { requestContext, getRequestScopes } from './lib/request-context.js';
@@ -360,7 +361,10 @@ async function authenticateRequest(
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      const intersection = requestedScopes.filter(s => authInfo.scopes.includes(s));
+      // Hierarchy-aware: a requested child scope (e.g. mcp:read) is a valid
+      // downgrade of a parent the token holds (e.g. mcp:full). Literal
+      // .includes() rejected every such downgrade with 400 invalid_scope.
+      const intersection = requestedScopes.filter(s => hasScope(authInfo.scopes, s));
       if (intersection.length === 0) {
         setNoStore(res);
         res.status(400).json({
