@@ -127,11 +127,29 @@ describe('supabase module', () => {
       expect(isTelemetryDisabled()).toBe(true);
     });
 
-    it('returns false when no opt-out env vars set', async () => {
+    it('returns true by default — off unless explicitly opted in', async () => {
       delete process.env.DO_NOT_TRACK;
       delete process.env.SOCIALNEURON_NO_TELEMETRY;
+      delete process.env.SOCIALNEURON_TELEMETRY;
+      const { isTelemetryDisabled } = await import('./supabase.js');
+      expect(isTelemetryDisabled()).toBe(true);
+    });
+
+    it('returns false when opted in via SOCIALNEURON_TELEMETRY=1', async () => {
+      delete process.env.DO_NOT_TRACK;
+      delete process.env.SOCIALNEURON_NO_TELEMETRY;
+      process.env.SOCIALNEURON_TELEMETRY = '1';
       const { isTelemetryDisabled } = await import('./supabase.js');
       expect(isTelemetryDisabled()).toBe(false);
+    });
+
+    it('hard opt-out wins even when opted in', async () => {
+      process.env.SOCIALNEURON_TELEMETRY = '1';
+      process.env.DO_NOT_TRACK = '1';
+      const { isTelemetryDisabled } = await import('./supabase.js');
+      expect(isTelemetryDisabled()).toBe(true);
+      delete process.env.DO_NOT_TRACK;
+      delete process.env.SOCIALNEURON_TELEMETRY;
     });
   });
 

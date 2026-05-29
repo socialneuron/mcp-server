@@ -276,11 +276,17 @@ export function getAuthenticatedApiKey(): string | null {
  * Respects the DO_NOT_TRACK standard (https://consoledonottrack.com/).
  */
 export function isTelemetryDisabled(): boolean {
-  return (
+  // Hard opt-out always wins (DO_NOT_TRACK standard + our own kill switch).
+  if (
     process.env.DO_NOT_TRACK === '1' ||
     process.env.DO_NOT_TRACK === 'true' ||
     process.env.SOCIALNEURON_NO_TELEMETRY === '1'
-  );
+  ) {
+    return true;
+  }
+  // Off by default (README contract): disabled unless explicitly opted in.
+  // Gates BOTH PostHog (posthog.ts) and the activity_logs audit write.
+  return process.env.SOCIALNEURON_TELEMETRY !== '1';
 }
 
 /**
