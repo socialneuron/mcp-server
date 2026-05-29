@@ -25,6 +25,21 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const pkgPath = resolve(__dirname, '..', 'package.json');
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
 
+// Resolve the EXACT installed version from the lockfile, not the package.json
+// range floor. A range like ^1.2.3 can resolve to a freshly-published 1.2.9
+// patch; checking only the floor's age would let a same-range malicious patch
+// bypass the cooldown entirely (this is what supply-chain attacks exploit).
+const lockPath = resolve(__dirname, '..', 'package-lock.json');
+let lockPackages = {};
+try {
+  lockPackages = JSON.parse(readFileSync(lockPath, 'utf8')).packages ?? {};
+} catch {
+  console.warn('⚠️  Could not read package-lock.json — falling back to range floor (less safe).');
+}
+function resolvedVersion(name) {
+  return lockPackages[`node_modules/${name}`]?.version;
+}
+
 const MIN_AGE_DAYS = Number(process.env.SN_DEP_MIN_AGE_DAYS ?? 14);
 const MIN_AGE_MS = MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
 
@@ -65,7 +80,8 @@ function stripRangeChars(version) {
 for (const [name, versionRange] of Object.entries(deps)) {
   if (isExempt(name)) continue;
 
-  const version = stripRangeChars(versionRange);
+  // Prefer the locked/installed version; fall back to range floor only if absent.
+  const version = resolvedVersion(name) ?? stripRangeChars(versionRange);
   if (!version || !/^\d/.test(version)) {
     // Skip non-version specs (git urls, file: deps, etc.) — .npmrc blocks these anyway
     continue;
