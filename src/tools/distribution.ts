@@ -132,6 +132,8 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       media_urls: z
         .array(z.string())
+        .min(1)
+        .max(10)
         .optional()
         .describe(
           'Array of 2-10 image URLs for carousel posts. Same rehosting rules as media_url — ' +
@@ -146,6 +148,8 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       r2_keys: z
         .array(z.string())
+        .min(1)
+        .max(10)
         .optional()
         .describe(
           'Array of R2 object keys for carousel posts. Each is signed on demand. Alternative to media_urls.'
@@ -159,6 +163,8 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       job_ids: z
         .array(z.string())
+        .min(1)
+        .max(10)
         .optional()
         .describe(
           'Array of async job IDs for carousel posts. Each resolved to its R2 key. Alternative to media_urls/r2_keys.'
