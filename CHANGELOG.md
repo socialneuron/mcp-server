@@ -2,6 +2,13 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.13] - 2026-05-29
+
+### Changed
+- Corrected the MCP pricing surfaces (README tier table + the `socialneuron://docs/capabilities` resource that ships to every client) to the canonical tiers from socialneuron.com: Free $0/100/—, Starter $19/500/—, Pro $49/1,500/Read+Analytics, Team $99/3,500/Full, Agency $249/10,000/Full. Earlier tables advertised wrong prices/credits and stated MCP access starts at Starter — it starts at **Pro**.
+- Synced all version fields (`package.json`, `server.json` ×2, `MCP_VERSION`) to 1.7.13. The unreleased 1.7.11 had drifted from `server.json`/`MCP_VERSION` (still 1.7.10), so builds reported the wrong version to clients.
+- Marked Instagram as "pending platform approval" in `server.json` + README examples; live publish is YouTube + TikTok.
+
 ## [1.7.10] - 2026-05-01
 
 ### Fixed

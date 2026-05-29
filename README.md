@@ -45,7 +45,7 @@ All methods share the same 76 tools, auth, scopes, and credit system. [Compare m
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
+This opens your browser to authorize access. Requires a Social Neuron Pro plan or above (Pro = MCP read + analytics; Team/Agency = full MCP). See [pricing](https://socialneuron.com/pricing).
 
 <details>
 <summary><strong>Using pnpm, bun, or yarn?</strong></summary>
@@ -246,7 +246,7 @@ Ask Claude things like:
 
 - "Generate 5 content ideas about sustainable fashion for Gen Z"
 - "Create a 30-second video ad for my product launch"
-- "Schedule this image to Instagram and LinkedIn at 9am tomorrow"
+- "Schedule this video to YouTube and TikTok at 9am tomorrow"
 - "Show me my best-performing content this month"
 - "What are the trending topics in my niche right now?"
 - "Check my analytics and suggest improvements"
@@ -326,14 +326,15 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
-MCP access requires a paid plan:
+MCP access requires a Pro plan or higher:
 
 | Plan | Price | Credits/mo | MCP Access |
 |------|-------|-----------|------------|
 | Free | $0 | 100 | — |
-| Starter | $29/mo | 800 | Read + Analytics |
-| Pro | $79/mo | 2,000 | Full access |
-| Team | $199/mo | 6,500 | Full access + Multi-user |
+| Starter | $19/mo | 500 | — |
+| Pro | $49/mo | 1,500 | Read + Analytics |
+| Team | $99/mo | 3,500 | Full + 5 keys |
+| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |
 
 Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 
