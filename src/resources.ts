@@ -7,8 +7,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { callEdgeFunction } from './lib/edge-function.js';
 import { MCP_VERSION } from './lib/version.js';
+import { getAuthenticatedScopes } from './lib/supabase.js';
+import { hasScope } from './auth/scopes.js';
 
-export function registerResources(server: McpServer): void {
+export function registerResources(
+  server: McpServer,
+  // Same resolver applyScopeEnforcement uses (getAuthenticatedScopes in stdio,
+  // per-request scopes in HTTP) so resource reads enforce scope like tools do.
+  scopeResolver: () => string[] = getAuthenticatedScopes
+): void {
   // ── 1. Brand Profile ────────────────────────────────────────────────
   server.resource(
     'brand-profile',
@@ -19,6 +26,25 @@ export function registerResources(server: McpServer): void {
       mimeType: 'application/json',
     },
     async () => {
+      if (!hasScope(scopeResolver(), 'mcp:read')) {
+        return {
+          contents: [
+            {
+              uri: 'socialneuron://brand/profile',
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  _meta: { version: MCP_VERSION, status: 'forbidden' },
+                  error:
+                    "Permission denied: reading this resource requires the 'mcp:read' scope.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
       try {
         const { data, error } = await callEdgeFunction<{
           success: boolean;
@@ -88,6 +114,25 @@ export function registerResources(server: McpServer): void {
       mimeType: 'application/json',
     },
     async () => {
+      if (!hasScope(scopeResolver(), 'mcp:read')) {
+        return {
+          contents: [
+            {
+              uri: 'socialneuron://account/overview',
+              mimeType: 'application/json',
+              text: JSON.stringify(
+                {
+                  _meta: { version: MCP_VERSION, status: 'forbidden' },
+                  error:
+                    "Permission denied: reading this resource requires the 'mcp:read' scope.",
+                },
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
       try {
         const { data, error } = await callEdgeFunction<{
           success: boolean;

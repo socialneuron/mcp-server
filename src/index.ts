@@ -239,7 +239,7 @@ registerAllTools(server, { skipApps: true });
 
 // ── Prompts & Resources ──────────────────────────────────────────────
 registerPrompts(server);
-registerResources(server);
+registerResources(server, getAuthenticatedScopes);
 
 // Graceful shutdown
 async function shutdown() {

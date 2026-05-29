@@ -519,7 +519,7 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
     applyScopeEnforcement(server, () => getRequestScopes() ?? auth.scopes);
     registerAllTools(server, { skipScreenshots: true, skipLocalMediaPaths: true });
     registerPrompts(server);
-    registerResources(server);
+    registerResources(server, () => getRequestScopes() ?? auth.scopes);
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
