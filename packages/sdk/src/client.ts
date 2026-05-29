@@ -260,19 +260,19 @@ class PlansResource {
   }
 
   get(id: string) {
-    return this.http.get<unknown>(`/plans/${id}`);
+    return this.http.get<unknown>(`/plans/${encodeURIComponent(id)}`);
   }
 
   update(id: string, params: UpdatePlanParams) {
-    return this.http.put<unknown>(`/plans/${id}`, params as Record<string, unknown>);
+    return this.http.put<unknown>(`/plans/${encodeURIComponent(id)}`, params as Record<string, unknown>);
   }
 
   schedule(id: string, params?: SchedulePlanParams) {
-    return this.http.post<unknown>(`/plans/${id}/schedule`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/schedule`, params as Record<string, unknown>);
   }
 
   approve(id: string, params?: ApprovePlanParams) {
-    return this.http.post<unknown>(`/plans/${id}/approve`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/approve`, params as Record<string, unknown>);
   }
 
   approvals(params?: { plan_id?: string; status?: string; limit?: number }) {
@@ -292,15 +292,15 @@ class CommentsResource {
   }
 
   reply(commentId: string, params: ReplyCommentParams) {
-    return this.http.post<unknown>(`/comments/${commentId}/reply`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/reply`, params as Record<string, unknown>);
   }
 
   moderate(commentId: string, params: ModerateCommentParams) {
-    return this.http.post<unknown>(`/comments/${commentId}/moderate`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/moderate`, params as Record<string, unknown>);
   }
 
   delete(commentId: string) {
-    return this.http.delete<void>(`/comments/${commentId}`);
+    return this.http.delete<void>(`/comments/${encodeURIComponent(commentId)}`);
   }
 }
 
@@ -308,7 +308,7 @@ class JobsResource {
   constructor(private http: HttpClient) {}
 
   check(jobId: string) {
-    return this.http.get<JobResult>(`/jobs/${jobId}`);
+    return this.http.get<JobResult>(`/jobs/${encodeURIComponent(jobId)}`);
   }
 
   /**
@@ -347,7 +347,7 @@ class ToolsResource {
   }
 
   execute(toolName: string, params?: Record<string, unknown>) {
-    return this.http.post<unknown>(`/tools/${toolName}`, params);
+    return this.http.post<unknown>(`/tools/${encodeURIComponent(toolName)}`, params);
   }
 }
 
