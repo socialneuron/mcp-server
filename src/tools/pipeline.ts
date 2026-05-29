@@ -390,7 +390,12 @@ export function registerPipelineTools(server: McpServer): void {
         // Parse posts from AI response
         const rawText = String(planData.text ?? planData.content ?? '');
         const postsArray = extractJsonArray(rawText);
-        const posts: ContentPlanPost[] = (postsArray ?? []).map((p: any) => ({
+        // Cap to the requested plan size (days <= 7, posts_per_day <= 3 are
+        // schema-enforced) so a runaway LLM response cannot schedule an
+        // unbounded number of posts in the downstream scheduling loop.
+        const maxPosts = platforms.length * days * posts_per_day;
+        const boundedPostsArray = (postsArray ?? []).slice(0, maxPosts);
+        const posts: ContentPlanPost[] = boundedPostsArray.map((p: any) => ({
           id: String(p.id ?? randomUUID().slice(0, 8)),
           day: Number(p.day ?? 1),
           date: String(p.date ?? ''),
