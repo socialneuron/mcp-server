@@ -62,6 +62,7 @@ function jwtPayload(overrides: Record<string, unknown> = {}) {
       sub: 'user-jwt-123',
       exp: Math.floor(Date.now() / 1000) + 3600,
       iss: `${SUPABASE_URL}/auth/v1`,
+      aud: 'authenticated',
       ...overrides,
     },
     protectedHeader: { alg: 'RS256' },
@@ -151,6 +152,9 @@ describe('createTokenVerifier', () => {
       // cached at module level. Verify jwtVerify receives the cached keyset.
       expect(mockJwtVerify).toHaveBeenCalledWith('jwt-token-abc', 'mock-jwks-keyset', {
         issuer: `${SUPABASE_URL}/auth/v1`,
+        audience: 'authenticated',
+        algorithms: ['RS256', 'ES256'],
+        clockTolerance: '30s',
       });
     });
 
