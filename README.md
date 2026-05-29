@@ -1,13 +1,32 @@
 # @socialneuron/mcp-server
 
-> 76 tools for AI-powered social media management. MCP, REST API, CLI — create content, schedule posts, track analytics, and optimize performance.
+> 75 MCP tools for AI-powered social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
 >
-> The live Railway endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) may surface a small number of additional integrated tools beyond the npm-published surface — see [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for runtime truth.
+> This npm package registers **75 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **92-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Node](https://img.shields.io/node/v/@socialneuron/mcp-server)](https://nodejs.org/)
+[![CI](https://github.com/socialneuron/mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/socialneuron/mcp-server/actions/workflows/ci.yml)
+
+## Contents
+
+- [Compatibility](#compatibility)
+- [Integration Methods](#integration-methods)
+- [Platform Status](#platform-status)
+- [Quick Start](#quick-start)
+- [What You Can Do](#what-you-can-do)
+- [Tool Categories](#tool-categories)
+- [Authentication](#authentication)
+- [Pricing](#pricing)
+- [Scopes](#scopes)
+- [CLI Reference](#cli-reference)
+- [Automation Flow](#automation-flow-e2e-loop)
+- [Security](#security)
+- [Telemetry](#telemetry)
+- [Examples](#examples)
+- [Documentation](#documentation)
 
 ## Compatibility
 
@@ -33,7 +52,18 @@ Every release is published from GitHub Actions with [npm provenance attestation]
 | **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
 | **SDK** | TypeScript/Node.js apps | [Preview](docs/sdk-guide.md) |
 
-All methods share the same 76 tools, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+All methods share the same tool catalog, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+
+## Platform Status
+
+| Platform | Status |
+|----------|--------|
+| YouTube | ✅ Live |
+| TikTok | ✅ Live |
+| Instagram | 🔶 Pending app review |
+| LinkedIn · X · Facebook · Threads · Bluesky | Supported — see [integrations](https://socialneuron.com/integrations) for live status |
+
+The hosted endpoint and REST API track the live matrix; check [socialneuron.com/integrations](https://socialneuron.com/integrations) for current availability.
 
 ## Quick Start
 
@@ -45,7 +75,7 @@ All methods share the same 76 tools, auth, scopes, and credit system. [Compare m
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
+This opens your browser to authorize access. Requires a Social Neuron Pro plan or above (Pro = MCP read + analytics; Team/Agency = full MCP). See [pricing](https://socialneuron.com/pricing).
 
 <details>
 <summary><strong>Using pnpm, bun, or yarn?</strong></summary>
@@ -246,13 +276,13 @@ Ask Claude things like:
 
 - "Generate 5 content ideas about sustainable fashion for Gen Z"
 - "Create a 30-second video ad for my product launch"
-- "Schedule this image to Instagram and LinkedIn at 9am tomorrow"
+- "Schedule this video to YouTube and TikTok at 9am tomorrow"
 - "Show me my best-performing content this month"
 - "What are the trending topics in my niche right now?"
 - "Check my analytics and suggest improvements"
 - "Set up autopilot to post 3 times per week"
 
-## Tool Categories (76 tools)
+## Tool Categories
 
 > Full machine-readable listing in [`tools.lock.json`](tools.lock.json) (sealed manifest, verified in CI).
 
@@ -326,14 +356,15 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
-MCP access requires a paid plan:
+MCP access requires a Pro plan or higher:
 
 | Plan | Price | Credits/mo | MCP Access |
 |------|-------|-----------|------------|
 | Free | $0 | 100 | — |
-| Starter | $29/mo | 800 | Read + Analytics |
-| Pro | $79/mo | 2,000 | Full access |
-| Team | $199/mo | 6,500 | Full access + Multi-user |
+| Starter | $19/mo | 500 | — |
+| Pro | $49/mo | 1,500 | Read + Analytics |
+| Team | $99/mo | 3,500 | Full + 5 keys |
+| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |
 
 Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 
@@ -456,18 +487,24 @@ See the [`examples/`](examples/) directory:
 - Brand-aligned content generation
 - Comment engagement automation
 
+## Documentation
+
+- [Tool Reference](docs/tools-reference.md) — every tool, by scope
+- [Authentication](docs/auth.md) — device-code, browser, and API-key flows
+- [REST API](docs/rest-api.md) — endpoint reference
+- [CLI Guide](docs/cli-guide.md) — terminal commands
+- [TypeScript SDK](docs/sdk-guide.md) — `@socialneuron/sdk`
+- [Integration Methods](docs/integration-methods.md) — MCP vs REST vs CLI vs SDK
+- [Troubleshooting](docs/troubleshooting.md) — common issues & fixes
+- [Verifying tools.lock.json](docs/verifying-tools-lock.md) — supply-chain integrity
+
 ## Links
 
-- [For Developers](https://socialneuron.com/for-developers) — Integration methods, tools, pricing
-- [REST API Docs](docs/rest-api.md) — Endpoint reference
-- [CLI Guide](docs/cli-guide.md) — Terminal commands
-- [Integration Methods](docs/integration-methods.md) — Compare MCP vs REST vs CLI
-- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) — Machine-readable API spec
-- [Developer Settings](https://socialneuron.com/settings/developer) — Generate API keys
-- [Documentation](https://socialneuron.com/docs)
-- [Pricing](https://socialneuron.com/pricing)
-- [Agent Protocol](https://socialneuron.com/system-prompt.txt)
+- [For Developers](https://socialneuron.com/for-developers) · [Pricing](https://socialneuron.com/pricing) · [Developer Settings](https://socialneuron.com/settings/developer)
+- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) · [Server Card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)
+- [Docs Site](https://socialneuron.com/docs) · [Report an Issue](https://github.com/socialneuron/mcp-server/issues) · [Agent Protocol](https://socialneuron.com/system-prompt.txt)
 
 ## License
 
-MIT - see [LICENSE](./LICENSE)
+[MIT](LICENSE) © Social Neuron
+
