@@ -160,7 +160,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
     },
 
     async exchangeAuthorizationCode(
-      _client: OAuthClientInformationFull,
+      client: OAuthClientInformationFull,
       authorizationCode: string,
       codeVerifier?: string,
       redirectUri?: string
@@ -169,8 +169,17 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         throw new Error('code_verifier is required for PKCE exchange');
       }
 
-      // Call mcp-auth EF to complete the PKCE exchange
-      // The auth code is the server-generated authorization_code (not client state)
+      // SECURITY ASSUMPTIONS (delegated to the mcp-auth Edge Function):
+      //   1. SHA-256(code_verifier) is validated against the code_challenge
+      //      stored at /authorize time.
+      //   2. authorization_code is single-use; second exchange returns
+      //      invalid_grant.
+      //   3. client_id from this request is matched against the client_id
+      //      the code was issued to (defends against client confusion).
+      //   4. authorization_code lifetime is ≤10 min per RFC 6749.
+      // The Edge Function source lives in the supabase-functions repo at
+      // supabase/functions/mcp-auth/index.ts. Any change to PKCE handling
+      // must preserve those invariants.
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -186,6 +195,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
             code_verifier: codeVerifier,
             authorization_code: authorizationCode,
             return_token: true,
+            // Forward client_id so the Edge Function can match it against
+            // the client that the code was originally issued to.
+            client_id: client.client_id,
             // Pass redirect_uri for server-side verification (OAuth spec)
             ...(redirectUri && { redirect_uri: redirectUri }),
           }),

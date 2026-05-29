@@ -157,44 +157,46 @@ describe('callEdgeFunction', () => {
   });
 
   // 9. Preserves existing userId
-  it('preserves existing userId and does not override it', async () => {
+  it('overrides caller-supplied userId with the authenticated default', async () => {
+    // Defense-in-depth: a caller-supplied userId must never re-target an
+    // Edge Function call at another tenant. The authenticated user wins.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { userId: 'custom-id' });
+    await callEdgeFunction('test-fn', { userId: 'attacker-supplied' });
 
     const body = sentBody();
-    expect(body.userId).toBe('custom-id');
+    expect(body.userId).toBe('test-user-id');
   });
 
-  // 10. Syncs userId to user_id
-  it('syncs userId to user_id when only userId is provided', async () => {
+  // 10. Always sets both userId and user_id from auth context
+  it('sets both userId and user_id from auth context, ignoring caller userId', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { userId: 'custom-id' });
+    await callEdgeFunction('test-fn', { userId: 'attacker-supplied' });
 
     const body = sentBody();
-    expect(body.userId).toBe('custom-id');
-    expect(body.user_id).toBe('custom-id');
+    expect(body.userId).toBe('test-user-id');
+    expect(body.user_id).toBe('test-user-id');
   });
 
-  // 11. Syncs user_id to userId
-  it('syncs user_id to userId when only user_id is provided', async () => {
+  // 11. Same for user_id (snake_case)
+  it('ignores caller-supplied user_id and uses auth context', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { user_id: 'snake-id' });
+    await callEdgeFunction('test-fn', { user_id: 'attacker-supplied' });
 
     const body = sentBody();
-    expect(body.user_id).toBe('snake-id');
-    expect(body.userId).toBe('snake-id');
+    expect(body.user_id).toBe('test-user-id');
+    expect(body.userId).toBe('test-user-id');
   });
 
   // 12. Auto-injects projectId and project_id

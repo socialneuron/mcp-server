@@ -458,6 +458,16 @@ Each iteration produces smarter content as performance data feeds back into the 
 
 See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy and credential safety details.
 
+### HTTP server tuning (cloud / Railway)
+
+The HTTP MCP server reads a few security-related env vars. Defaults are safe for the standard Railway deployment.
+
+| Variable | Default | Purpose |
+| --- | --- | --- |
+| `TRUST_PROXY` | `1` | Number of upstream proxy hops to trust for `req.ip` / `X-Forwarded-For`. Set to `0` (or `false`) when running the server without a trusted reverse proxy in front — otherwise the per-IP rate limit can be bypassed by spoofing `X-Forwarded-For`. Accepts any value Express's `trust proxy` accepts (integer, `'loopback'`, CIDR, …). |
+| `SESSION_HARD_TTL_MS` | `14400000` (4 h) | Hard ceiling on session lifetime regardless of activity. Prevents a slow-read SSE client from pinning a session slot indefinitely. |
+| `SN_ALLOW_SELF_HOST` | unset | Acknowledge running in self-host (service-role-key) mode. Suppresses the deprecation warning emitted on first Edge Function call. Self-host bypasses Supabase RLS, so caller-supplied IDs are higher-risk; the recommended path is cloud mode (`SOCIALNEURON_API_KEY`). |
+
 ## Telemetry
 
 Telemetry is **off by default**. No data is collected unless you explicitly opt in.

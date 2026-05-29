@@ -1066,6 +1066,31 @@ export function registerDistributionTools(server: McpServer): void {
     }) => {
       const startedAt = Date.now();
       try {
+        // schedule_content_plan fans out to one schedule_post per plan post,
+        // which itself touches a third-party social platform. Without a rate
+        // limit here a single agent call can bulk-schedule across every
+        // connected platform; share the `posting` bucket with schedule_post
+        // so the user-level budget is honoured.
+        const rateLimitUserId = await getDefaultUserId();
+        const rateLimit = checkRateLimit('posting', `schedule_content_plan:${rateLimitUserId}`);
+        if (!rateLimit.allowed) {
+          logMcpToolInvocation({
+            toolName: 'schedule_content_plan',
+            status: 'rate_limited',
+            durationMs: Date.now() - startedAt,
+            details: { retryAfter: rateLimit.retryAfter },
+          });
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
         let workingPlan = plan;
         let effectivePlanId = plan_id;
         let effectiveProjectId: string | undefined;

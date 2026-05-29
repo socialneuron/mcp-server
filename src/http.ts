@@ -22,6 +22,7 @@ import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { requestContext, getRequestScopes } from './lib/request-context.js';
+import { hasScope } from './auth/scopes.js';
 import { createTokenVerifier } from './lib/token-verifier.js';
 import { createOAuthProvider } from './lib/oauth-provider.js';
 import { checkRateLimit } from './lib/rate-limit.js';
@@ -122,12 +123,29 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   lastActivity: number;
+  /** Hard ceiling — sessions are torn down at this point regardless of
+   *  activity, so a slow-read SSE consumer cannot pin a slot forever. */
+  expiresAt: number;
   userId: string;
 }
 
 const sessions = new Map<string, SessionEntry>();
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes (idle)
+const SESSION_HARD_TTL_DEFAULT_MS = 4 * 60 * 60 * 1000; // 4h
+function parseSessionHardTtl(): number {
+  const raw = process.env.SESSION_HARD_TTL_MS;
+  if (raw === undefined || raw === '') return SESSION_HARD_TTL_DEFAULT_MS;
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    console.warn(
+      `[MCP HTTP] Invalid SESSION_HARD_TTL_MS=${raw}; falling back to ${SESSION_HARD_TTL_DEFAULT_MS}ms.`
+    );
+    return SESSION_HARD_TTL_DEFAULT_MS;
+  }
+  return parsed;
+}
+const SESSION_HARD_TTL_MS = parseSessionHardTtl();
 
 function countUserSessions(userId: string): number {
   let count = 0;
@@ -137,16 +155,20 @@ function countUserSessions(userId: string): number {
   return count;
 }
 
-// Clean up stale sessions every 5 minutes
+// Clean up stale sessions every 5 minutes. Two reasons to evict: idle
+// past SESSION_TIMEOUT_MS, or alive past the absolute SESSION_HARD_TTL_MS.
 const cleanupInterval = setInterval(
   () => {
     const now = Date.now();
     for (const [sessionId, entry] of sessions) {
-      if (now - entry.lastActivity > SESSION_TIMEOUT_MS) {
+      const idle = now - entry.lastActivity > SESSION_TIMEOUT_MS;
+      const expired = now >= entry.expiresAt;
+      if (idle || expired) {
         entry.transport.close();
         entry.server.close();
         sessions.delete(sessionId);
-        console.log(`[MCP HTTP] Cleaned up stale session: ${sessionId}`);
+        const reason = expired ? 'expired (hard TTL)' : 'idle';
+        console.log(`[MCP HTTP] Cleaned up ${reason} session: ${sessionId}`);
       }
     }
   },
@@ -159,8 +181,17 @@ const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
 
-// Trust Railway's proxy
-app.set('trust proxy', 1);
+// Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
+// (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
+// trusted reverse proxy in front, otherwise X-Forwarded-For becomes
+// attacker-controlled and the per-IP rate limit below can be trivially
+// rotated past. Accepts an integer hop count or any value Express
+// supports ('loopback', 'linklocal', CIDR, …).
+const trustProxyEnv = process.env.TRUST_PROXY ?? '1';
+if (trustProxyEnv !== '0' && trustProxyEnv.toLowerCase() !== 'false') {
+  const trustProxy = /^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv) : trustProxyEnv;
+  app.set('trust proxy', trustProxy);
+}
 
 // ── Per-IP rate limiting ────────────────────────────────────────────
 // Prevents burst abuse before auth is even checked. 60 req/min per IP.
@@ -218,9 +249,17 @@ app.use((req, res, next) => {
 });
 
 // ── Security headers ────────────────────────────────────────────────
+// ── Security headers ────────────────────────────────────────────────
 app.use((_req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Defense-in-depth: this is a JSON API so any browser embedding it as
+  // an iframe or chasing referrers represents misuse. CSP locks down all
+  // active content; frame-ancestors blocks clickjacking even if an
+  // error page accidentally returns HTML in the future.
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 
@@ -310,7 +349,11 @@ async function authenticateRequest(
   try {
     const authInfo = await tokenVerifier.verifyAccessToken(token);
 
-    // Allow URL param scope override (downgrade only, never upgrade)
+    // Allow URL param scope override (downgrade only, never upgrade).
+    // Reject — rather than silently fall back to full scopes — when the
+    // requested set has no overlap with the token's scopes. Previous
+    // behaviour turned a typo like `?scope=read` (missing prefix) into a
+    // silent grant of every scope the token already had.
     let scopes = authInfo.scopes;
     const scopeParam = req.query.scope as string | undefined;
     if (scopeParam) {
@@ -318,9 +361,19 @@ async function authenticateRequest(
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      // Only keep scopes the token already has (intersection = downgrade only)
-      scopes = requestedScopes.filter(s => authInfo.scopes.includes(s));
-      if (scopes.length === 0) scopes = authInfo.scopes; // fallback if none match
+      // Hierarchy-aware: a requested child scope (e.g. mcp:read) is a valid
+      // downgrade of a parent the token holds (e.g. mcp:full); literal
+      // .includes() rejected every such downgrade with 400 invalid_scope.
+      const intersection = requestedScopes.filter(s => hasScope(authInfo.scopes, s));
+      if (intersection.length === 0) {
+        setNoStore(res);
+        res.status(400).json({
+          error: 'invalid_scope',
+          error_description: 'Requested scope is not a subset of the token scopes.',
+        });
+        return;
+      }
+      scopes = intersection;
     }
 
     req.auth = {
@@ -482,6 +535,19 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
         return;
       }
 
+      // Mirror the GET-path hard-TTL check so POST traffic cannot keep
+      // an expired session alive until the 5-minute cleanup loop runs.
+      if (Date.now() >= entry.expiresAt) {
+        entry.transport.close();
+        entry.server.close();
+        sessions.delete(existingSessionId);
+        res.status(440).json({
+          error: 'session_expired',
+          error_description: 'Session hard TTL exceeded.',
+        });
+        return;
+      }
+
       entry.lastActivity = Date.now();
 
       // Run in request context for per-user isolation
@@ -524,10 +590,12 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId: string) => {
+        const now = Date.now();
         sessions.set(sessionId, {
           transport,
           server,
-          lastActivity: Date.now(),
+          lastActivity: now,
+          expiresAt: now + SESSION_HARD_TTL_MS,
           userId: auth.userId,
         });
       },
@@ -572,6 +640,13 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
     res.status(403).json({ error: 'Session belongs to another user' });
     return;
   }
+  if (Date.now() >= entry.expiresAt) {
+    entry.transport.close();
+    entry.server.close();
+    sessions.delete(sessionId);
+    res.status(440).json({ error: 'session_expired', error_description: 'Session hard TTL exceeded.' });
+    return;
+  }
   entry.lastActivity = Date.now();
 
   // SSE headers for Cloudflare proxy compatibility
@@ -607,7 +682,9 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
 
 // ── Global error handler (catches errors SDK swallows) ──────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  console.error('[MCP HTTP] Unhandled Express error:', err.stack || err.message || err);
+  // Never log raw .stack — absolute container paths and framework
+  // internals can leak to centralised log sinks.
+  console.error(`[MCP HTTP] Unhandled Express error: ${sanitizeError(err)}`);
   if (!res.headersSent) {
     res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
   }

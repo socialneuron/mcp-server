@@ -14,6 +14,7 @@ import { mkdir } from 'node:fs/promises';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
+import { assertPathWithin } from '../lib/safe-path.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
 export function registerScreenshotTools(server: McpServer): void {
@@ -299,23 +300,28 @@ export function registerScreenshotTools(server: McpServer): void {
         }
 
         const screenshotDir = resolve('public/assets/screenshots');
+        await mkdir(screenshotDir, { recursive: true });
         let outputPath: string;
         if (output_path) {
-          // Path traversal protection: resolved path must be inside screenshotDir
-          outputPath = resolve(output_path);
-          if (!outputPath.startsWith(screenshotDir + '/') && outputPath !== screenshotDir) {
+          // Canonicalize both sides (following symlinks) before comparing.
+          // The previous substring check on resolve() was bypassable when an
+          // intermediate component of `output_path` was a symlink pointing
+          // outside the screenshot dir.
+          try {
+            outputPath = await assertPathWithin(output_path, screenshotDir);
+          } catch (err) {
             await browserPage.context().close();
             await logMcpToolInvocation({
               toolName: 'capture_screenshot',
               status: 'error',
               durationMs: Date.now() - startedAt,
-              details: { error: 'Invalid output_path', outputPath },
+              details: { error: 'Invalid output_path' },
             });
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Invalid output_path: must be inside public/assets/screenshots/. Path traversal is not allowed.`,
+                  text: `Invalid output_path: ${sanitizeError(err)}. Path must resolve inside public/assets/screenshots/.`,
                 },
               ],
               isError: true,

@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
 import { getSupabaseClient } from '../../lib/supabase.js';
+import { safeFetch } from '../../lib/safe-fetch.js';
 import type { SnArgs } from './types.js';
 
 export function parseSnArgs(argv: string[]): SnArgs {
@@ -53,23 +54,17 @@ export async function checkUrlReachability(url: string): Promise<{
   status?: number;
   error?: string;
 }> {
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 8_000);
+  // safeFetch enforces SSRF protection, DNS pinning, and per-hop
+  // redirect validation. Without this, a user-supplied privacy/terms
+  // URL could probe the local network or VPN-reachable services from
+  // whichever machine the CLI runs on.
   try {
-    const head = await fetch(url, {
-      method: 'HEAD',
-      redirect: 'follow',
-      signal: controller.signal,
-    });
+    const head = await safeFetch(url, { method: 'HEAD', timeoutMs: 8_000 });
     if (head.ok) {
       return { ok: true, status: head.status };
     }
     if (head.status === 405 || head.status === 501) {
-      const get = await fetch(url, {
-        method: 'GET',
-        redirect: 'follow',
-        signal: controller.signal,
-      });
+      const get = await safeFetch(url, { method: 'GET', timeoutMs: 8_000 });
       return { ok: get.ok, status: get.status };
     }
     return { ok: false, status: head.status };
@@ -78,8 +73,6 @@ export async function checkUrlReachability(url: string): Promise<{
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     };
-  } finally {
-    clearTimeout(timer);
   }
 }
 

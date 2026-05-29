@@ -5,6 +5,7 @@ import { basename, extname } from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
+import { assertSafeLocalPath } from '../lib/safe-path.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
@@ -330,13 +331,44 @@ export function registerMediaTools(
           projectId: project_id,
         };
       } else {
+        // Local file path.
+        // (1) HTTP transport disables local file access entirely.
         if (!allowLocalFileSource) {
+          await logMcpToolInvocation({
+            toolName: 'upload_media',
+            status: 'error',
+            durationMs: Date.now() - startedAt,
+            details: { error: 'local_path_disabled_on_transport' },
+          });
           return {
             content: [
               {
                 type: 'text' as const,
-                text:
-                  'Local filesystem paths are disabled in this transport. Use an https:// URL or provide file_data (base64).',
+                text: 'Local filesystem paths are disabled in this transport. Use an https:// URL or provide file_data (base64).',
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // (2) stdio: local allowed — canonicalize and refuse known-sensitive
+        // paths (~/.ssh, /etc, …) so a prompt-injected agent cannot exfiltrate
+        // credentials from the user's machine via this tool.
+        let safeSrc: string;
+        try {
+          safeSrc = await assertSafeLocalPath(src);
+        } catch (err) {
+          await logMcpToolInvocation({
+            toolName: 'upload_media',
+            status: 'error',
+            durationMs: Date.now() - startedAt,
+            details: { error: 'sensitive_path_rejected' },
+          });
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Refused: ${sanitizeError(err)}. Upload from a non-sensitive location, or pass bytes via \`file_data\`.`,
               },
             ],
             isError: true,
@@ -346,7 +378,7 @@ export function registerMediaTools(
         // Local file — read, check size, base64 encode
         let fileBuffer: Buffer;
         try {
-          fileBuffer = await readFile(src);
+          fileBuffer = await readFile(safeSrc);
         } catch {
           await logMcpToolInvocation({
             toolName: 'upload_media',
