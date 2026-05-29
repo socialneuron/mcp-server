@@ -22,9 +22,11 @@ let client: PostHog | null = null;
 export function initPostHog(): void {
   if (isTelemetryDisabled()) return;
 
-  const key = process.env.POSTHOG_KEY || process.env.VITE_POSTHOG_KEY;
-  const host =
-    process.env.POSTHOG_HOST || process.env.VITE_POSTHOG_HOST || 'https://eu.i.posthog.com';
+  // Server-only env vars. VITE_* is a frontend convention and must not be
+  // consumed here — sharing keys across runtimes risks promoting a browser
+  // key to a server context (or vice versa).
+  const key = process.env.POSTHOG_KEY;
+  const host = process.env.POSTHOG_HOST || 'https://eu.i.posthog.com';
 
   if (!key) return;
 

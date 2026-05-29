@@ -4,6 +4,7 @@ import {
   getDefaultUserId,
   getAuthenticatedApiKey,
 } from './supabase.js';
+import { getRequestUserId } from './request-context.js';
 
 function getServiceKeyOrNull(): string | null {
   try {
@@ -11,6 +12,19 @@ function getServiceKeyOrNull(): string | null {
   } catch {
     return null;
   }
+}
+
+let selfHostWarningEmitted = false;
+function warnSelfHostOnce(): void {
+  if (selfHostWarningEmitted) return;
+  selfHostWarningEmitted = true;
+  console.warn(
+    '[edge-function] DEPRECATED: running in self-host (service-role-key) mode. ' +
+      'Service-role calls bypass Supabase RLS, making caller-supplied IDs ' +
+      '(project_id, approval_id, comment_id) higher-risk for cross-tenant access. ' +
+      'Switch to cloud mode by setting SOCIALNEURON_API_KEY, or set ' +
+      'SN_ALLOW_SELF_HOST=1 to acknowledge and silence this warning.'
+  );
 }
 
 function getApiKeyOrNull(): string | null {
@@ -44,20 +58,35 @@ export async function callEdgeFunction<T = unknown>(
   const timeoutMs = options?.timeoutMs ?? 60_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
 
-  // Enrich payload with userId/projectId when available.
-  // Cloud mode also benefits from this, but mcp-gateway will inject if missing.
+  // Enrich payload with userId/projectId. The userId is ALWAYS sourced
+  // from the authenticated request context (HTTP mode) or the local
+  // credential's default user (stdio mode) — any caller-supplied
+  // userId/user_id is ignored. This stops a tool argument from
+  // re-targeting an Edge Function call at another tenant even if the
+  // tool code accidentally forwards user-controlled IDs into the body.
+  // projectId is intentionally left caller-controlled because a single
+  // user may own multiple projects; the gateway/Edge Function is the
+  // source of truth for project ownership.
   const enrichedBody = { ...body } as Record<string, unknown>;
-  if (!enrichedBody.userId && !enrichedBody.user_id) {
+  let authoritativeUserId: string | null = getRequestUserId();
+  if (!authoritativeUserId) {
     try {
-      const defaultId = await getDefaultUserId();
-      enrichedBody.userId = defaultId;
-      enrichedBody.user_id = defaultId;
+      authoritativeUserId = await getDefaultUserId();
     } catch {
-      // Non-fatal
+      authoritativeUserId = null;
     }
-  } else {
-    if (enrichedBody.userId && !enrichedBody.user_id) enrichedBody.user_id = enrichedBody.userId;
-    if (enrichedBody.user_id && !enrichedBody.userId) enrichedBody.userId = enrichedBody.user_id;
+  }
+  if (authoritativeUserId) {
+    if (
+      (enrichedBody.userId && enrichedBody.userId !== authoritativeUserId) ||
+      (enrichedBody.user_id && enrichedBody.user_id !== authoritativeUserId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied userId for ${functionName} ignored in favour of authenticated user.`
+      );
+    }
+    enrichedBody.userId = authoritativeUserId;
+    enrichedBody.user_id = authoritativeUserId;
   }
 
   if (!enrichedBody.projectId && !enrichedBody.project_id) {
@@ -101,7 +130,14 @@ export async function callEdgeFunction<T = unknown>(
     // The gateway owns the outbound timeout to the target function.
     method = 'POST';
   } else if (serviceKey) {
-    // Self-host mode (DEPRECATED): call Edge Function directly with service role key
+    // Self-host mode (DEPRECATED): call Edge Function directly with service role key.
+    // Emit a one-time deprecation warning unless the operator has explicitly
+    // acknowledged via SN_ALLOW_SELF_HOST=1. RLS is bypassed in this path, so
+    // any caller-supplied ID that a tool forwards into the body relies entirely
+    // on the target function's own ownership checks for tenant isolation.
+    if (process.env.SN_ALLOW_SELF_HOST !== '1') {
+      warnSelfHostOnce();
+    }
     const urlBase = `${supabaseUrl}/functions/v1/${functionName}`;
     url = new URL(urlBase);
     if (options?.query) {
