@@ -20,3 +20,7 @@ coverage/
 # docs/03-features/MCP-ROADMAP.md in the monorepo. Local scratch fine, no commits.
 docs/ROADMAP.md
 .claude/
+
+# Local agent tooling (not part of the npm package)
+.agents/
+plugins/
