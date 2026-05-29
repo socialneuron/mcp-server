@@ -212,5 +212,5 @@ export function applyAnnotations(server: McpServer): void {
     }
   }
 
-  console.log(`[annotations] Applied annotations to ${applied}/${entries.length} tools`);
+  console.error(`[annotations] Applied annotations to ${applied}/${entries.length} tools`);
 }
