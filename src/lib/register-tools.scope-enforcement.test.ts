@@ -28,5 +28,14 @@ describe('applyScopeEnforcement', () => {
 
     expect(toolResult).toMatchObject({ isError: true });
     expect(appResult).toMatchObject({ isError: true });
+
+    const error = JSON.parse((toolResult as any).content[0].text);
+    expect(error).toMatchObject({
+      error: 'permission_denied',
+      tool: 'fetch_trends',
+      required_scope: 'mcp:read',
+      available_scopes: ['mcp:distribute'],
+    });
+    expect(error.recover_with.join(' ')).toContain('available_only=true');
   });
 });

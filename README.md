@@ -315,12 +315,12 @@ All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
 | Category | Tools | What It Does |
 |----------|-------|-------------|
-| Extraction | extract_url_content | Extract content from URLs, YouTube, articles |
+| Extraction | extract_url_content | Extract content from URLs, YouTube transcripts, comments, and articles |
 | Screenshots | capture_app_page, capture_screenshot | Visual documentation and monitoring |
 | Remotion | list_compositions, render_demo_video | Programmatic video rendering |
 | Usage | get_mcp_usage | API usage monitoring |
 | YouTube | fetch_youtube_analytics | YouTube-specific deep analytics |
-| Discovery | search_tools | Find tools by keyword with progressive detail levels (saves 98% tokens vs loading all tools) |
+| Discovery | search_tools | Find the smallest task-intent tool set with progressive detail levels (saves 98% tokens vs loading all tools) |
 
 ## Authentication
 

@@ -21,6 +21,8 @@ interface ScrapeYouTubeResponse {
   comments?: Array<{ text: string; author: string; likes: number }>;
 }
 
+type TextMode = 'summary' | 'full' | 'transcript';
+
 interface FetchUrlContentResponse {
   title?: string;
   description?: string;
@@ -42,15 +44,31 @@ function isYouTubeUrl(url: string): 'video' | 'channel' | false {
   return false;
 }
 
-function formatExtractedContentAsText(content: ExtractedContent): string {
+function formatExtractedContentAsText(
+  content: ExtractedContent,
+  textMode: TextMode = 'summary'
+): string {
   const lines: string[] = [];
   lines.push(`Source: ${content.source_type} (${content.url})`);
   lines.push(`Title: ${content.title}`);
+
+  if (textMode === 'transcript') {
+    if (content.transcript) {
+      lines.push(`\nTranscript:\n${content.transcript}`);
+    } else {
+      lines.push('\nTranscript: Not available');
+    }
+    return lines.join('\n');
+  }
+
   if (content.description) lines.push(`\nDescription:\n${content.description}`);
-  if (content.transcript)
-    lines.push(
-      `\nTranscript:\n${content.transcript.slice(0, 3000)}${content.transcript.length > 3000 ? '\n... (truncated)' : ''}`
-    );
+  if (content.transcript) {
+    const transcript =
+      textMode === 'full'
+        ? content.transcript
+        : `${content.transcript.slice(0, 3000)}${content.transcript.length > 3000 ? '\n... (truncated; set text_mode=full or transcript for complete text)' : ''}`;
+    lines.push(`\nTranscript:\n${transcript}`);
+  }
   if (content.video_metadata) {
     const m = content.video_metadata;
     lines.push(`\nMetadata:`);
@@ -69,13 +87,19 @@ function formatExtractedContentAsText(content: ExtractedContent): string {
     lines.push(
       `\nSuggested Hooks:\n${content.suggested_hooks.map((h: string) => `  - ${h}`).join('\n')}`
     );
+  if (content.comments?.length)
+    lines.push(
+      `\nTop Comments:\n${content.comments
+        .map(comment => `  - ${comment.author} (${comment.likes} likes): ${comment.text}`)
+        .join('\n')}`
+    );
   return lines.join('\n');
 }
 
 export function registerExtractionTools(server: McpServer): void {
   server.tool(
     'extract_url_content',
-    'Extract text content from any URL — YouTube video transcripts, article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript extraction with optional comments. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.',
+    'Extract text content from any URL — YouTube video transcripts (summary/full/transcript-only), top comments, article text, or product page features/benefits/USP. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.',
     {
       url: z.string().url().describe('URL to extract content from'),
       extract_type: z
@@ -85,8 +109,14 @@ export function registerExtractionTools(server: McpServer): void {
       include_comments: z.boolean().default(false).describe('Include top comments (YouTube only)'),
       max_results: z.number().min(1).max(100).default(10).describe('Max comments to include'),
       response_format: z.enum(['text', 'json']).default('text'),
+      text_mode: z
+        .enum(['summary', 'full', 'transcript'])
+        .default('summary')
+        .describe(
+          'Text output mode: summary truncates long transcripts, full includes all extracted fields and the complete transcript, transcript returns only source/title/transcript'
+        ),
     },
-    async ({ url, extract_type, include_comments, max_results, response_format }) => {
+    async ({ url, extract_type, include_comments, max_results, response_format, text_mode }) => {
       const startedAt = Date.now();
 
       const ssrfCheck = await validateUrlForSSRF(url);
@@ -146,6 +176,7 @@ export function registerExtractionTools(server: McpServer): void {
                   channel_name: data.metadata.channelName ?? '',
                 }
               : undefined,
+            comments: data.comments,
           };
         } else if (youtubeType === 'channel') {
           const { data, error } = await callEdgeFunction<ScrapeYouTubeResponse>(
@@ -247,7 +278,9 @@ export function registerExtractionTools(server: McpServer): void {
         }
 
         return {
-          content: [{ type: 'text' as const, text: formatExtractedContentAsText(extracted) }],
+          content: [
+            { type: 'text' as const, text: formatExtractedContentAsText(extracted, text_mode) },
+          ],
           isError: false,
         };
       } catch (err) {

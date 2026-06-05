@@ -62,27 +62,11 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       args[handlerIndex] = async function scopeEnforcedHandler(...handlerArgs: any[]) {
         // Default-deny: if a tool is not in TOOL_SCOPES, reject the call
         if (!requiredScope) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' has no scope defined. Contact support.`,
-              },
-            ],
-            isError: true,
-          };
+          return scopeDeniedResult(name, undefined, scopeResolver());
         }
         const userScopes = scopeResolver();
         if (!hasScope(userScopes, requiredScope)) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`,
-              },
-            ],
-            isError: true,
-          };
+          return scopeDeniedResult(name, requiredScope, userScopes);
         }
         const result = await originalHandler(...handlerArgs);
         return truncateResponse(result);
@@ -103,6 +87,33 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       return originalRegisterTool(...wrapRegistration(...args));
     };
   }
+}
+
+function scopeDeniedResult(name: string, requiredScope: string | undefined, userScopes: string[]) {
+  const error = requiredScope
+    ? {
+        error: 'permission_denied',
+        tool: name,
+        required_scope: requiredScope,
+        available_scopes: userScopes,
+        recover_with: [
+          'Call search_tools with available_only=true to find tools this key can use.',
+          'Use a read-only alternative if one is available for the task.',
+          'Regenerate the API key with the required scope or upgrade the plan tier.',
+        ],
+        developer_url: 'https://socialneuron.com/settings/developer',
+      }
+    : {
+        error: 'tool_scope_missing',
+        tool: name,
+        available_scopes: userScopes,
+        recover_with: ['Contact support; this tool is not mapped to a required scope.'],
+      };
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }],
+    isError: true,
+  };
 }
 
 // ── Response truncation ───────────────────────────────────────────

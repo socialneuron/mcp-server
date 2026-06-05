@@ -354,6 +354,7 @@ export interface ExtractedContent {
   benefits?: string[];
   usp?: string;
   suggested_hooks?: string[];
+  comments?: Array<{ text: string; author: string; likes: number }>;
 }
 
 // ============================================================================

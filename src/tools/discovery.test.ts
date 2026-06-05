@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockServer, type MockServer } from '../test-setup.js';
 import { registerDiscoveryTools } from './discovery.js';
+import { requestContext } from '../lib/request-context.js';
 
 describe('search_tools', () => {
   let server: MockServer;
@@ -18,7 +19,8 @@ describe('search_tools', () => {
     const result = await server.getHandler('search_tools')!({});
     const parsed = JSON.parse(result.content[0].text);
     expect(parsed.toolCount).toBeGreaterThanOrEqual(50);
-    // summary level should have name + description
+    // summary level should have name + description plus progressive-discovery guidance
+    expect(parsed.guidance.selection[0]).toContain('single task-intent tool');
     expect(parsed.tools[0]).toHaveProperty('name');
     expect(parsed.tools[0]).toHaveProperty('description');
   });
@@ -41,6 +43,53 @@ describe('search_tools', () => {
     expect(parsed.toolCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('matches task-intent guidance, not just names and descriptions', async () => {
+    const result = await server.getHandler('search_tools')!({
+      query: 'avoiding unnecessary chains',
+      detail: 'summary',
+    });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).toContain('search_tools');
+    expect(parsed.tools[0]).toHaveProperty('task_intent');
+  });
+
+  it('marks unavailable tools for the current request scopes', async () => {
+    const result = await requestContext.run(
+      { userId: 'user-1', scopes: ['mcp:read'], creditsUsed: 0, assetsGenerated: 0 },
+      () =>
+        server.getHandler('search_tools')!({
+          query: 'full content workflow',
+          detail: 'summary',
+        })
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    const pipelineTool = parsed.tools.find((tool: { name: string }) =>
+      tool.name === 'run_content_pipeline'
+    );
+    expect(pipelineTool.available).toBe(false);
+    expect(pipelineTool.required_scope).toBe('mcp:autopilot');
+    expect(parsed.scopes.unavailable_matches).toBeGreaterThanOrEqual(1);
+    expect(parsed.guidance.selection.join(' ')).toContain('available=false');
+  });
+
+  it('filters to available tools when available_only is true', async () => {
+    const result = await requestContext.run(
+      { userId: 'user-1', scopes: ['mcp:read'], creditsUsed: 0, assetsGenerated: 0 },
+      () =>
+        server.getHandler('search_tools')!({
+          module: 'planning',
+          available_only: true,
+          detail: 'summary',
+        })
+    );
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.tools.length).toBeGreaterThan(0);
+    expect(parsed.tools.every((tool: { available: boolean }) => tool.available)).toBe(true);
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).not.toContain(
+      'plan_content_week'
+    );
+  });
+
   it('returns names only at name detail level', async () => {
     const result = await server.getHandler('search_tools')!({ detail: 'name' });
     const parsed = JSON.parse(result.content[0].text);
@@ -48,10 +97,17 @@ describe('search_tools', () => {
   });
 
   it('returns full info at full detail level', async () => {
-    const result = await server.getHandler('search_tools')!({ detail: 'full', module: 'credits' });
+    const result = await server.getHandler('search_tools')!({
+      detail: 'full',
+      query: 'full content workflow',
+    });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.tools[0]).toHaveProperty('scope');
-    expect(parsed.tools[0]).toHaveProperty('module');
+    const pipelineTool = parsed.tools.find((tool: { name: string }) =>
+      tool.name === 'run_content_pipeline'
+    );
+    expect(pipelineTool).toHaveProperty('scope');
+    expect(pipelineTool).toHaveProperty('module');
+    expect(pipelineTool).toHaveProperty('task_intent');
   });
 
   it('combines module and scope filters', async () => {

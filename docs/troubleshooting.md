@@ -35,6 +35,21 @@ npx clear-npx-cache 2>/dev/null || rm -rf "$(npm config get cache)/_npx"
 ### "Requires a Pro plan or above" / a tool returns a permission error
 MCP access is **tier-gated**: Free/Starter have **no** MCP access; **Pro** grants `mcp:read` + `mcp:analytics`; **Team/Agency** grant full MCP (write, distribute, comments, autopilot). See [Pricing](../README.md#pricing) and [Scopes](../README.md#scopes). If a *specific* tool is denied, your key/tier lacks that tool's scope — regenerate the key with the needed scope (Team/Agency) or upgrade your plan.
 
+Permission errors are returned as structured JSON with `required_scope`, `available_scopes`, and `recover_with`. If an agent keeps selecting denied tools, ask it to call:
+
+```json
+{
+  "tool": "search_tools",
+  "arguments": {
+    "query": "the user goal",
+    "available_only": true,
+    "detail": "summary"
+  }
+}
+```
+
+This filters discovery to tools allowed by the current API key/OAuth scopes.
+
 ### OAuth (Claude Custom Connector) connects but tools are limited
 The OAuth/JWT path derives scopes from your subscription tier. A Pro account gets read+analytics only — write/distribute tools won't appear. Upgrade to Team/Agency for the full set.
 
