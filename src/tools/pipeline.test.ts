@@ -323,6 +323,46 @@ describe('pipeline tools', () => {
       expect(parsed.data.stages_skipped).toContain('quality_check');
       expect(parsed.data.posts_approved).toBe(1); // auto-approved when quality skipped
     });
+
+
+    it('caps generated posts, drops unrequested platforms, and enforces scheduling credit budget', async () => {
+      mockCallEdgeFunction.mockResolvedValueOnce({ data: { success: true, credits: 500 }, error: null } as any);
+      mockCallEdgeFunction.mockResolvedValueOnce({ data: { success: true }, error: null } as any);
+      mockCallEdgeFunction.mockResolvedValueOnce({
+        data: {
+          text: JSON.stringify([
+            { id: '1', day: 1, platform: 'tiktok', content_type: 'caption', caption: 'A', hook: 'H', angle: 'X' },
+            { id: '2', day: 1, platform: 'linkedin', content_type: 'caption', caption: 'B', hook: 'H', angle: 'X' },
+            { id: '3', day: 1, platform: 'tiktok', content_type: 'caption', caption: 'C', hook: 'H', angle: 'X' },
+          ]),
+        },
+        error: null,
+      } as any);
+      mockCallEdgeFunction.mockResolvedValueOnce({ data: { success: true }, error: null } as any); // persist-plan
+      mockCallEdgeFunction.mockResolvedValueOnce({ data: { success: true }, error: null } as any); // upsert approvals
+      mockCallEdgeFunction.mockResolvedValue({ data: { success: true }, error: null } as any); // schedule + final update
+
+      const handler = server.getHandler('run_content_pipeline')!;
+      const result = await handler({
+        topic: 'AI tips',
+        platforms: ['tiktok'],
+        days: 1,
+        posts_per_day: 1,
+        approval_mode: 'auto',
+        dry_run: false,
+        skip_stages: ['quality'],
+        max_credits: 16,
+        response_format: 'json',
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.posts_generated).toBe(1);
+      expect(parsed.data.posts_scheduled).toBe(1);
+      expect(parsed.data.credits_used).toBe(16);
+      const scheduleCalls = mockCallEdgeFunction.mock.calls.filter(c => c[0] === 'schedule-post');
+      expect(scheduleCalls).toHaveLength(1);
+      expect(scheduleCalls[0][1].platform).toBe('tiktok');
+    });
   });
 
   // =========================================================================
