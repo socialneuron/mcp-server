@@ -28,5 +28,20 @@ describe('applyScopeEnforcement', () => {
 
     expect(toolResult).toMatchObject({ isError: true });
     expect(appResult).toMatchObject({ isError: true });
+
+    const error = JSON.parse((toolResult as any).content[0].text);
+    expect(error).toMatchObject({
+      error: 'permission_denied',
+      tool: 'fetch_trends',
+      required_scope: 'mcp:read',
+      available_scopes: ['mcp:distribute'],
+    });
+    expect(error.recover_with.join(' ')).toContain('available_only=true');
+
+    const challenge = (toolResult as any)._meta['mcp/www_authenticate'][0] as string;
+    expect(challenge).toContain('resource_metadata="');
+    expect(challenge).toContain('/.well-known/oauth-protected-resource"');
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="mcp:read"');
   });
 });

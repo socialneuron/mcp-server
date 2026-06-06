@@ -10,7 +10,7 @@ Per [CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514), a compromis
 
 At build time, `scripts/build-tools-lock.mjs`:
 
-1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered tools — exactly the 75 tools a stdio (npm) client receives from `tools/list`, using the **runtime descriptions the model actually reads** (not the static `src/lib/tool-catalog.ts` strings, which are the CLI/`search_tools` data and can drift from runtime). The HTTP-only `open_content_calendar` app is not shipped in the stdio package and is intentionally not sealed here.
+1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered tools — exactly the tools a stdio (npm) client receives from `tools/list`, using the **runtime descriptions the model actually reads** (not the static `src/lib/tool-catalog.ts` strings, which are the CLI/`search_tools` data and can drift from runtime). HTTP-only MCP Apps are not shipped in the stdio package and are intentionally not sealed here.
 2. For each tool, canonicalizes `{ name, description, scope }` as `JSON.stringify(...)`.
 3. SHA-256 hashes the UTF-8 bytes.
 4. Writes `tools.lock.json` with one hex hash per tool.

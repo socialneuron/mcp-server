@@ -6,7 +6,7 @@ export default defineConfig({
   build: {
     outDir: 'dist',
     rollupOptions: {
-      input: process.env.INPUT,
+      input: process.env.INPUT ?? 'mcp-app.html',
     },
   },
 });

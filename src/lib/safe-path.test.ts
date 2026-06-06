@@ -1,13 +1,15 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
 import { mkdtemp, mkdir, writeFile, symlink, rm } from 'node:fs/promises';
-import { tmpdir, homedir } from 'node:os';
+import { homedir } from 'node:os';
 import { join } from 'node:path';
 import { assertSafeLocalPath, assertPathWithin, canonicalizePath } from './safe-path.js';
 
 let scratch: string;
 
 beforeAll(async () => {
-  scratch = await mkdtemp(join(tmpdir(), 'safepath-'));
+  const scratchRoot = join(process.cwd(), '.tmp');
+  await mkdir(scratchRoot, { recursive: true });
+  scratch = await mkdtemp(join(scratchRoot, 'safepath-'));
 });
 
 afterAll(async () => {

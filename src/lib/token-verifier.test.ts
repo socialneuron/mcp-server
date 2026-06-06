@@ -28,6 +28,7 @@ import { createTokenVerifier } from './token-verifier.js';
 const SUPABASE_URL = 'https://test-project.supabase.co';
 const SUPABASE_ANON_KEY = 'test-anon-key';
 const VALIDATE_URL = `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-key-public`;
+const CONNECTOR_VALIDATE_URL = `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-connector-token`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -135,6 +136,22 @@ describe('createTokenVerifier', () => {
       expect(fetchSpy).not.toHaveBeenCalled();
       expect(result.clientId).toBe('supabase-oauth');
       fetchSpy.mockRestore();
+    });
+
+    it('routes opaque non-JWT tokens to connector-token verification', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-route',
+        clientId: 'claude-client',
+        scopes: ['mcp:read'],
+        resource: 'https://mcp.socialneuron.com',
+      });
+
+      const result = await verifier.verifyAccessToken('sno_route_test_token');
+
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+      expect(mockJwtVerify).not.toHaveBeenCalled();
+      expect(result.clientId).toBe('claude-client');
     });
   });
 
@@ -441,6 +458,119 @@ describe('createTokenVerifier', () => {
       const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(options.signal).toBeDefined();
       expect(options.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  // =========================================================================
+  // Connector token path
+  // =========================================================================
+
+  describe('connector token verification', () => {
+    it('calls mcp-auth connector-token validation with correct body', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-1',
+        clientId: 'client-connector-1',
+        scopes: ['mcp:read', 'mcp:write'],
+        resource: 'https://mcp.socialneuron.com',
+      });
+
+      await verifier.verifyAccessToken('sno_connector_test_1');
+
+      const fetchMock = vi.mocked(globalThis.fetch);
+      expect(fetchMock).toHaveBeenCalledOnce();
+
+      const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(CONNECTOR_VALIDATE_URL);
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(options.body as string)).toEqual({
+        access_token: 'sno_connector_test_1',
+        resource: 'https://mcp.socialneuron.com',
+      });
+    });
+
+    it('returns AuthInfo for a valid connector token', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-full',
+        clientId: 'claude-ai',
+        scopes: ['mcp:read', 'mcp:analytics'],
+        email: 'connector@socialneuron.ai',
+        expiresAt: '2027-06-15T00:00:00Z',
+        audience: ['https://mcp.socialneuron.com'],
+      });
+
+      const result = await verifier.verifyAccessToken('sno_connector_full');
+
+      expect(result.token).toBe('sno_connector_full');
+      expect(result.clientId).toBe('claude-ai');
+      expect(result.scopes).toEqual(['mcp:read', 'mcp:analytics']);
+      expect(result.extra).toEqual({
+        userId: 'user-connector-full',
+        email: 'connector@socialneuron.ai',
+        resource: 'https://mcp.socialneuron.com',
+      });
+      expect(result.expiresAt).toBe(Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000));
+    });
+
+    it('defaults connector scopes and client id when omitted', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-defaults',
+        aud: 'https://mcp.socialneuron.com',
+      });
+
+      const result = await verifier.verifyAccessToken('sno_connector_defaults');
+
+      expect(result.clientId).toBe('connector-oauth');
+      expect(result.scopes).toEqual(['mcp:read']);
+    });
+
+    it('throws when connector token is invalid', async () => {
+      mockFetchResponse(200, {
+        valid: false,
+        error: 'Connector token revoked',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_revoked')).rejects.toThrow(
+        'Connector token revoked'
+      );
+    });
+
+    it('throws when connector token is expired', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-expired',
+        expiresAt: new Date(Date.now() - 60_000).toISOString(),
+        resource: 'https://mcp.socialneuron.com',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_expired')).rejects.toThrow(
+        'Connector token expired'
+      );
+    });
+
+    it('rejects connector tokens minted for a different resource', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-wrong-audience',
+        resource: 'https://other.example.com',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_wrong_audience')).rejects.toThrow(
+        'Connector token audience/resource mismatch'
+      );
+    });
+
+    it('rejects connector tokens with no audience or resource', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-no-audience',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_no_audience')).rejects.toThrow(
+        'Connector token audience/resource mismatch'
+      );
     });
   });
 

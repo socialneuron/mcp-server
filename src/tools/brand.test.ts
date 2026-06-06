@@ -171,6 +171,31 @@ describe('brand tools', () => {
         expect.objectContaining({ action: 'brand-profile' })
       );
     });
+
+    it('delegates default project resolution to mcp-data when local project context is missing', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          profile: {
+            project_id: 'resolved-project',
+            brand_name: 'Resolved Brand',
+            version: 1,
+            updated_at: '2026-06-05T00:00:00Z',
+            brand_context: {},
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_brand_profile')!;
+      const result = await handler({});
+
+      expect(result.isError).not.toBe(true);
+      expect(result.content[0].text).toContain('Resolved Brand');
+      expect(result.content[0].text).toContain('Project: resolved-project');
+      expect(mockCallEdge).toHaveBeenCalledWith('mcp-data', { action: 'brand-profile' });
+    });
   });
 
   describe('save_brand_profile', () => {

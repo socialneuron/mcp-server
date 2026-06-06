@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
+import { buildWwwAuthenticateHeader } from './www-authenticate.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -34,6 +35,7 @@ import { registerDigestTools } from '../tools/digest.js';
 import { registerBrandRuntimeTools } from '../tools/brandRuntime.js';
 import { registerCarouselTools } from '../tools/carousel.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
+import { registerGenerationWorkspaceApp } from '../apps/generation-workspace.js';
 import { registerConnectionTools } from '../tools/connections.js';
 
 /**
@@ -62,27 +64,11 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       args[handlerIndex] = async function scopeEnforcedHandler(...handlerArgs: any[]) {
         // Default-deny: if a tool is not in TOOL_SCOPES, reject the call
         if (!requiredScope) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' has no scope defined. Contact support.`,
-              },
-            ],
-            isError: true,
-          };
+          return scopeDeniedResult(name, undefined, scopeResolver());
         }
         const userScopes = scopeResolver();
         if (!hasScope(userScopes, requiredScope)) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`,
-              },
-            ],
-            isError: true,
-          };
+          return scopeDeniedResult(name, requiredScope, userScopes);
         }
         const result = await originalHandler(...handlerArgs);
         return truncateResponse(result);
@@ -105,6 +91,59 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
   }
 }
 
+function scopeDeniedResult(name: string, requiredScope: string | undefined, userScopes: string[]) {
+  const error = requiredScope
+    ? {
+        error: 'permission_denied',
+        tool: name,
+        required_scope: requiredScope,
+        available_scopes: userScopes,
+        recover_with: [
+          'Call search_tools with available_only=true to find tools this key can use.',
+          'Use a read-only alternative if one is available for the task.',
+          'Regenerate the API key with the required scope or upgrade the plan tier.',
+        ],
+        developer_url: 'https://socialneuron.com/settings/developer',
+      }
+    : {
+        error: 'tool_scope_missing',
+        tool: name,
+        available_scopes: userScopes,
+        recover_with: ['Contact support; this tool is not mapped to a required scope.'],
+      };
+
+  const challenge = requiredScope
+    ? buildWwwAuthenticateHeader({
+        issuerUrl: getChallengeIssuerUrl(),
+        error: 'insufficient_scope',
+        errorDescription: `Tool ${name} requires scope ${requiredScope}.`,
+        scope: requiredScope,
+      })
+    : undefined;
+
+  return {
+    content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }],
+    ...(challenge ? { _meta: { 'mcp/www_authenticate': [challenge] } } : {}),
+    isError: true,
+  };
+}
+
+function getChallengeIssuerUrl(): string {
+  if (process.env.OAUTH_ISSUER_URL) return process.env.OAUTH_ISSUER_URL;
+
+  const mcpServerUrl = process.env.MCP_SERVER_URL;
+  if (mcpServerUrl) {
+    try {
+      const parsed = new URL(mcpServerUrl);
+      return `${parsed.protocol}//${parsed.host}`;
+    } catch {
+      // Fall through to production default.
+    }
+  }
+
+  return 'https://mcp.socialneuron.com';
+}
+
 // ── Response truncation ───────────────────────────────────────────
 
 const RESPONSE_CHAR_LIMIT = 100_000; // ~25K tokens at ~4 chars/token
@@ -115,19 +154,53 @@ const RESPONSE_CHAR_LIMIT = 100_000; // ~25K tokens at ~4 chars/token
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function truncateResponse(result: any): any {
-  if (!result?.content || !Array.isArray(result.content)) return result;
+  if (!result) return result;
 
-  let totalChars = 0;
+  let structuredContent = result.structuredContent;
+  let structuredChars = 0;
+  if (structuredContent !== undefined) {
+    try {
+      structuredChars = JSON.stringify(structuredContent).length;
+      if (structuredChars > RESPONSE_CHAR_LIMIT) {
+        structuredContent = {
+          _meta: {
+            ...extractMeta(structuredContent),
+            truncated: true,
+            original_chars: structuredChars,
+            message: `Structured content exceeded ${RESPONSE_CHAR_LIMIT.toLocaleString()} chars. Use filters to narrow the query.`,
+          },
+          data: null,
+        };
+      }
+    } catch {
+      structuredChars = RESPONSE_CHAR_LIMIT + 1;
+      structuredContent = {
+        _meta: {
+          truncated: true,
+          message: 'Structured content could not be serialized safely.',
+        },
+        data: null,
+      };
+    }
+  }
+
+  if (!result.content || !Array.isArray(result.content)) {
+    return structuredContent === result.structuredContent
+      ? result
+      : { ...result, structuredContent, _meta: { ...(result._meta ?? {}), truncated: true } };
+  }
+
+  let totalChars = structuredChars;
   for (const part of result.content) {
     if (part.type === 'text' && typeof part.text === 'string') {
       totalChars += part.text.length;
     }
   }
 
-  if (totalChars <= RESPONSE_CHAR_LIMIT) return result;
+  if (totalChars <= RESPONSE_CHAR_LIMIT && structuredContent === result.structuredContent) return result;
 
   // Truncate the last text part to fit within the limit
-  let remaining = RESPONSE_CHAR_LIMIT;
+  let remaining = Math.max(0, RESPONSE_CHAR_LIMIT - Math.min(structuredChars, RESPONSE_CHAR_LIMIT));
   const truncated = [];
   for (const part of result.content) {
     if (part.type === 'text' && typeof part.text === 'string') {
@@ -138,9 +211,7 @@ function truncateResponse(result: any): any {
       } else {
         truncated.push({
           ...part,
-          text:
-            part.text.slice(0, remaining) +
-            `\n\n[Response truncated: ${totalChars.toLocaleString()} chars exceeded ${RESPONSE_CHAR_LIMIT.toLocaleString()} limit. Use filters to narrow your query.]`,
+          text: truncateText(part.text, totalChars, remaining),
         });
         remaining = 0;
       }
@@ -149,7 +220,52 @@ function truncateResponse(result: any): any {
     }
   }
 
-  return { ...result, content: truncated };
+  return {
+    ...result,
+    structuredContent,
+    content: truncated,
+    _meta: {
+      ...(result._meta ?? {}),
+      truncated: true,
+      original_chars: totalChars,
+    },
+  };
+}
+
+function extractMeta(value: unknown): Record<string, unknown> {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const meta = (value as Record<string, unknown>)._meta;
+    if (meta && typeof meta === 'object' && !Array.isArray(meta)) {
+      return meta as Record<string, unknown>;
+    }
+  }
+  return {};
+}
+
+function truncateText(text: string, totalChars: number, maxChars: number): string {
+  try {
+    const parsed = JSON.parse(text) as Record<string, unknown>;
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      return JSON.stringify(
+        {
+          _meta: {
+            ...extractMeta(parsed),
+            truncated: true,
+            original_chars: totalChars,
+            message: `Response exceeded ${RESPONSE_CHAR_LIMIT.toLocaleString()} chars. Use filters to narrow the query.`,
+          },
+          data: null,
+        },
+        null,
+        2
+      );
+    }
+  } catch {
+    // Fall through to plain-text truncation.
+  }
+
+  const suffix = `\n\n[Response truncated: ${totalChars.toLocaleString()} chars exceeded ${RESPONSE_CHAR_LIMIT.toLocaleString()} limit. Use filters to narrow your query.]`;
+  return text.slice(0, Math.max(0, maxChars - suffix.length)) + suffix;
 }
 
 /**
@@ -199,6 +315,7 @@ export function registerAllTools(
   // doesn't bundle the app HTML so skip registration there.
   if (!options?.skipApps) {
     registerContentCalendarApp(server);
+    registerGenerationWorkspaceApp(server);
   }
 
   // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)

@@ -8,15 +8,25 @@ export type ToolEntry = {
   description: string;
   module: string;
   scope: string;
+  /** Human goal this tool is meant to satisfy; used by search_tools for task-intent discovery. */
+  task_intent?: string;
+  /** Positive selection guidance for agents after a tool is discovered. */
+  use_when?: string;
+  /** Negative selection guidance to avoid API-wrapper-style over-selection. */
+  avoid_when?: string;
+  /** Common follow-up tools when this tool intentionally does not complete the full workflow. */
+  next_tools?: string[];
 };
 
 export const TOOL_CATALOG: ToolEntry[] = [
   // ideation
   {
     name: 'generate_content',
-    description: 'Generate social media content ideas based on brand profile and trends',
+    description: 'Generate platform-ready social content ideas, captions, hooks, or scripts from a user goal, brand context, and trends.',
     module: 'ideation',
     scope: 'mcp:write',
+    task_intent: 'create draft social content for a topic or campaign',
+    next_tools: ['quality_check', 'schedule_post'],
   },
   {
     name: 'fetch_trends',
@@ -28,9 +38,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // ideation-context
   {
     name: 'get_ideation_context',
-    description: 'Get full ideation context including brand, analytics, and trends',
+    description: 'Gather brand, analytics, winning-pattern, trend, and timing context before generating content.',
     module: 'ideation-context',
     scope: 'mcp:read',
+    task_intent: 'prepare context for content ideation without manually chaining analytics and brand lookups',
+    next_tools: ['generate_content', 'plan_content_week'],
   },
 
   // content
@@ -78,9 +90,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'create_carousel',
-    description: 'End-to-end carousel: generate text + kick off image jobs for each slide',
+    description: 'Create an end-to-end carousel by generating slide copy and starting image jobs for each slide.',
     module: 'carousel',
     scope: 'mcp:write',
+    task_intent: 'turn a topic into a ready-to-review carousel workflow',
+    next_tools: ['check_status', 'quality_check'],
   },
 
   // media
@@ -100,9 +114,62 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // distribution
   {
     name: 'schedule_post',
-    description: 'Schedule content for publishing to social platforms',
+    description: 'Schedule one finished post for publishing to one or more connected social platforms.',
     module: 'distribution',
     scope: 'mcp:distribute',
+    task_intent: 'publish or schedule a specific completed post',
+    avoid_when: 'Use schedule_content_plan instead when scheduling many posts from a saved plan.',
+  },
+  {
+    name: 'reschedule_post',
+    description: 'Move an existing scheduled or draft post to a new posting time.',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+    task_intent: 'reschedule an existing calendar post without creating a duplicate',
+    next_tools: ['list_recent_posts'],
+  },
+  {
+    name: 'update_post',
+    description: 'Edit fields on an existing draft or scheduled post before publish.',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+    task_intent: 'edit a scheduled calendar post before it publishes',
+    next_tools: ['list_recent_posts'],
+  },
+  {
+    name: 'cancel_scheduled_post',
+    description: 'Cancel a scheduled post before it publishes.',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+    task_intent: 'cancel a scheduled post that has not published yet',
+  },
+  {
+    name: 'list_content_drafts',
+    description: 'List unscheduled content drafts that can be edited or scheduled later.',
+    module: 'distribution',
+    scope: 'mcp:read',
+    task_intent: 'review unscheduled draft posts before scheduling',
+  },
+  {
+    name: 'save_content_draft',
+    description: 'Save a new unscheduled content draft.',
+    module: 'distribution',
+    scope: 'mcp:write',
+    task_intent: 'save a draft post without scheduling it',
+  },
+  {
+    name: 'update_content_draft',
+    description: 'Edit an unscheduled content draft.',
+    module: 'distribution',
+    scope: 'mcp:write',
+    task_intent: 'revise a saved draft post',
+  },
+  {
+    name: 'delete_draft',
+    description: 'Delete an unscheduled content draft.',
+    module: 'distribution',
+    scope: 'mcp:write',
+    task_intent: 'remove a saved draft post',
   },
   {
     name: 'list_recent_posts',
@@ -266,9 +333,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // planning
   {
     name: 'plan_content_week',
-    description: 'Generate a weekly content plan',
+    description: 'Plan a full week of posts from a topic, source URL, brand profile, analytics context, and platform goals.',
     module: 'planning',
     scope: 'mcp:write',
+    task_intent: 'create a multi-day content plan without separately chaining ideation, brand, and timing tools',
+    next_tools: ['save_content_plan', 'quality_check_plan', 'submit_content_plan_for_approval'],
   },
   {
     name: 'save_content_plan',
@@ -296,9 +365,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'schedule_content_plan',
-    description: 'Schedule all posts in an approved content plan',
+    description: 'Schedule every approved post in a saved content plan, using plan data instead of scheduling posts one by one.',
     module: 'planning',
     scope: 'mcp:distribute',
+    task_intent: 'publish or schedule an approved multi-post plan',
+    avoid_when: 'Use schedule_post for a single standalone post.',
   },
   {
     name: 'find_next_slots',
@@ -378,17 +449,22 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // extraction
   {
     name: 'extract_url_content',
-    description: 'Extract content from a URL for repurposing',
+    description: 'Extract reusable source material from a URL, including YouTube transcripts, top comments, articles, and product pages.',
     module: 'extraction',
     scope: 'mcp:read',
+    task_intent: 'research or repurpose an external source before creating content',
+    use_when: 'Use text_mode=transcript for a complete YouTube transcript; use text_mode=full when comments and metadata matter.',
+    next_tools: ['generate_content', 'plan_content_week'],
   },
 
   // loop-summary
   {
     name: 'get_loop_summary',
-    description: 'Get growth loop summary and recommendations',
+    description: 'Summarize the closed-loop state across brand profile, recent content, insights, and next recommendations.',
     module: 'loop-summary',
     scope: 'mcp:read',
+    task_intent: 'understand what is working and what to do next without manually chaining analytics tools',
+    next_tools: ['suggest_next_content', 'plan_content_week'],
   },
 
   // usage
@@ -402,9 +478,30 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // discovery
   {
     name: 'search_tools',
-    description: 'Search and discover available MCP tools',
+    description: 'Find the smallest task-intent tool set for a user goal using progressive discovery.',
     module: 'discovery',
     scope: 'mcp:read',
+    task_intent: 'choose tools by user intent while minimizing context and avoiding unnecessary chains',
+    use_when: 'Start with detail=name or summary; request detail=full only after narrowing to a few candidates.',
+  },
+  {
+    name: 'search',
+    description:
+      'Search public Social Neuron product, integration, developer, and MCP tool knowledge using the ChatGPT-compatible search schema.',
+    module: 'discovery',
+    scope: 'mcp:read',
+    task_intent: 'find public Social Neuron knowledge for ChatGPT company knowledge, deep research, or connector citations',
+    use_when:
+      'Use when the client expects the standard MCP search schema. For tool-selection strategy use search_tools instead.',
+  },
+  {
+    name: 'fetch',
+    description:
+      'Fetch one public Social Neuron knowledge document by ID using the ChatGPT-compatible fetch schema.',
+    module: 'discovery',
+    scope: 'mcp:read',
+    task_intent: 'retrieve a cited public Social Neuron knowledge document after search returns its id',
+    use_when: 'Use only with IDs returned by the search tool.',
   },
 
   // pipeline
@@ -416,9 +513,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'run_content_pipeline',
-    description: 'End-to-end content pipeline: plan → quality → approve → schedule',
+    description: 'Run an end-to-end content pipeline that plans posts, checks quality, handles approvals, and schedules output.',
     module: 'pipeline',
     scope: 'mcp:autopilot',
+    task_intent: 'complete the full content workflow without asking the agent to chain planning, quality, approval, and scheduling tools',
+    use_when: 'Use when the user asks for an automated campaign or weekly workflow, not a single isolated post.',
   },
   {
     name: 'get_pipeline_status',
@@ -436,9 +535,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // suggest
   {
     name: 'suggest_next_content',
-    description: 'Suggest next content topics based on performance data',
+    description: 'Suggest the next best content topics and angles from performance data and winning patterns.',
     module: 'suggest',
     scope: 'mcp:read',
+    task_intent: 'decide what to make next based on prior performance',
+    next_tools: ['generate_content', 'plan_content_week'],
   },
 
   // digest
@@ -487,6 +588,13 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'apps',
     scope: 'mcp:read',
   },
+  {
+    name: 'open_generation_workspace',
+    description:
+      'Open an MCP App for live image/video generation progress, result review, retry, and scheduling. Pass job_id to inspect an existing async job, or prompt plus auto_start=true to begin generation inside the app.',
+    module: 'apps',
+    scope: 'mcp:read',
+  },
 
   // recipes
   {
@@ -503,9 +611,11 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'execute_recipe',
-    description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
+    description: 'Execute a recipe template that bundles a multi-step content workflow behind one task-oriented call.',
     module: 'recipes',
     scope: 'mcp:autopilot',
+    task_intent: 'run a known repeatable workflow without manually chaining each step',
+    use_when: 'Call list_recipes or get_recipe_details first if the recipe name or required inputs are unknown.',
   },
   {
     name: 'get_recipe_run_status',
@@ -540,11 +650,13 @@ export function getToolsByScope(scope: string): ToolEntry[] {
   return TOOL_CATALOG.filter(t => t.scope === scope);
 }
 
-/** Case-insensitive search across tool name and description. */
+/** Case-insensitive search across tool identity, description, and task-intent guidance. */
 export function searchTools(query: string): ToolEntry[] {
   const q = query.toLowerCase();
-  return TOOL_CATALOG.filter(
-    t => t.name.toLowerCase().includes(q) || t.description.toLowerCase().includes(q)
+  return TOOL_CATALOG.filter(t =>
+    [t.name, t.description, t.module, t.scope, t.task_intent, t.use_when, t.avoid_when]
+      .filter(Boolean)
+      .some(value => value!.toLowerCase().includes(q))
   );
 }
 
@@ -554,6 +666,10 @@ export function getModules(): string[] {
 }
 
 /** Get minimal tool summaries for token efficiency. */
-export function getToolSummaries(): { name: string; description: string }[] {
-  return TOOL_CATALOG.map(({ name, description }) => ({ name, description }));
+export function getToolSummaries(): { name: string; description: string; task_intent?: string }[] {
+  return TOOL_CATALOG.map(({ name, description, task_intent }) => ({
+    name,
+    description,
+    ...(task_intent ? { task_intent } : {}),
+  }));
 }

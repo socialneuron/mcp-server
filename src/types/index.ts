@@ -155,6 +155,7 @@ export interface IdeationContext {
 }
 
 export interface ResponseEnvelope<T> {
+  [key: string]: unknown;
   _meta: {
     version: string;
     timestamp: string;
@@ -354,6 +355,7 @@ export interface ExtractedContent {
   benefits?: string[];
   usp?: string;
   suggested_hooks?: string[];
+  comments?: Array<{ text: string; author: string; likes: number }>;
 }
 
 // ============================================================================

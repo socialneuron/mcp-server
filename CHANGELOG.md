@@ -2,19 +2,25 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## [1.7.13] - 2026-05-29
+## [1.7.13] - 2026-06-05
 
 ### Changed
-- Corrected the MCP pricing surfaces (README tier table + the `socialneuron://docs/capabilities` resource that ships to every client) to the canonical tiers from socialneuron.com: Free $0/100/—, Starter $19/500/—, Pro $49/1,500/Read+Analytics, Team $99/3,500/Full, Agency $249/10,000/Full. Earlier tables advertised wrong prices/credits and stated MCP access starts at Starter — it starts at **Pro**.
-- Synced all version fields (`package.json`, `server.json` ×2, `MCP_VERSION`) to 1.7.13. The unreleased 1.7.11 had drifted from `server.json`/`MCP_VERSION` (still 1.7.10), so builds reported the wrong version to clients.
-- Marked Instagram as "pending platform approval" in `server.json` + README examples; live publish is YouTube + TikTok.
+- Added ChatGPT custom connector compatibility: ChatGPT OAuth redirect URIs, protected-resource auth challenge handling, OAuth `resource` propagation, and tool-level OAuth `securitySchemes`.
+- Added standard ChatGPT-compatible `search` and `fetch` tools for public Social Neuron product, integration, developer, and MCP tool knowledge.
+- Converted high-value tools to return `structuredContent` alongside JSON text fallbacks, including brand, runtime, content generation/adaptation, planning, scheduling, recent posts, analytics, insights, and Content Calendar app output.
+- Added `sno_*` connector-token validation hooks with audience/resource checks and hashed token-cache keys. The backend still needs production connector-token issuance, refresh rotation, revocation, and audit storage before retiring legacy `snk_*` OAuth access tokens.
+- Updated platform status: YouTube, TikTok, Instagram, LinkedIn, X/Twitter, and Facebook are live; Threads and Bluesky remain supported but not live for publishing.
+- Synced `package.json`, `package-lock.json`, `server.json`, `.cursor-plugin/plugin.json`, `tools.lock.json`, and docs to the 77-tool npm stdio package.
 
 ### Fixed
 - `applyAnnotations` now logs to **stderr** (`console.error`) instead of stdout. A stray stdout write corrupted the JSON-RPC stream for stdio clients (pydantic "Invalid JSON"; `tools/list` registering 0 tools).
+- Scope enforcement now wraps both `server.tool(...)` and `server.registerTool(...)`, so MCP Apps and newer SDK-registered tools cannot bypass the default-deny scope map.
+- Scope-denied tool results now include structured remediation and `_meta["mcp/www_authenticate"]` for ChatGPT reauthorization flows.
 
 ### Documentation
-- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
-- Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
+- Production-grade README + docs pass: clarified connection paths for ChatGPT, Claude, Gemini CLI, Perplexity, Cursor, Codex, local stdio, REST, CLI, and the SDK preview.
+- Added [MCP Goals](docs/mcp-goals.md) and [ChatGPT security/privacy hardening notes](docs/chatgpt-security-privacy-hardening-2026-06-05.md).
+- Rebuilt [Tool Reference](docs/tools-reference.md) from the runtime registry and updated the sealed 77-tool `tools.lock.json`.
 
 ## [1.7.10] - 2026-05-01
 

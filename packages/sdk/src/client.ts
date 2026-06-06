@@ -12,6 +12,7 @@ import type {
   ApiResponse,
   ApiError,
   GenerateContentParams,
+  GenerateContentResult,
   GenerateVideoParams,
   GenerateImageParams,
   GenerateCarouselParams,
@@ -19,8 +20,14 @@ import type {
   AdaptContentParams,
   FetchTrendsParams,
   SchedulePostParams,
+  SchedulePostResult,
+  ReschedulePostParams,
+  UpdatePostParams,
+  PostMutationResult,
   ListPostsParams,
+  ListPostsResult,
   FetchAnalyticsParams,
+  AnalyticsSummary,
   YouTubeAnalyticsParams,
   InsightsParams,
   PostingTimesParams,
@@ -38,6 +45,10 @@ import type {
   JobResult,
   ListToolsParams,
   Tool,
+  GenerateJobResult,
+  ListAccountsResult,
+  CreditBalance,
+  BudgetStatus,
 } from "./types.js";
 
 // ── Configuration ───────────────────────────────────────────────────
@@ -160,31 +171,31 @@ class ContentResource {
   constructor(private http: HttpClient) {}
 
   generate(params: GenerateContentParams) {
-    return this.http.post<unknown>("/content/generate", params as Record<string, unknown>);
+    return this.http.post<GenerateContentResult>("/content/generate", params as Record<string, unknown>);
   }
 
   generateVideo(params: GenerateVideoParams) {
-    return this.http.post<unknown>("/content/video", params as Record<string, unknown>);
+    return this.http.post<GenerateJobResult>("/content/video", params as Record<string, unknown>);
   }
 
   generateImage(params: GenerateImageParams) {
-    return this.http.post<unknown>("/content/image", params as Record<string, unknown>);
+    return this.http.post<GenerateJobResult>("/content/image", params as Record<string, unknown>);
   }
 
   generateCarousel(params: GenerateCarouselParams) {
-    return this.http.post<unknown>("/content/carousel", params as Record<string, unknown>);
+    return this.http.post<GenerateJobResult>("/tools/generate_carousel", params as Record<string, unknown>);
   }
 
   generateVoiceover(params: GenerateVoiceoverParams) {
-    return this.http.post<unknown>("/content/voiceover", params as Record<string, unknown>);
+    return this.http.post<GenerateJobResult>("/tools/generate_voiceover", params as Record<string, unknown>);
   }
 
   adapt(params: AdaptContentParams) {
-    return this.http.post<unknown>("/content/adapt", params as Record<string, unknown>);
+    return this.http.post<GenerateContentResult>("/content/adapt", params as Record<string, unknown>);
   }
 
   trends(params?: FetchTrendsParams) {
-    return this.http.get<unknown>("/content/trends", params as Record<string, string | number | boolean | undefined>);
+    return this.http.get<{ trends: unknown[] }>("/tools/fetch_trends", params as Record<string, string | number | boolean | undefined>);
   }
 }
 
@@ -192,15 +203,35 @@ class PostsResource {
   constructor(private http: HttpClient) {}
 
   schedule(params: SchedulePostParams) {
-    return this.http.post<unknown>("/posts", params as Record<string, unknown>);
+    return this.http.post<SchedulePostResult>("/distribution/schedule", params as Record<string, unknown>);
   }
 
   list(params?: ListPostsParams) {
-    return this.http.get<unknown>("/posts", params as Record<string, string | number | boolean | undefined>);
+    return this.http.get<ListPostsResult>("/posts", params as Record<string, string | number | boolean | undefined>);
   }
 
   accounts() {
-    return this.http.get<unknown>("/posts/accounts");
+    return this.http.get<ListAccountsResult>("/accounts");
+  }
+
+  reschedule(postId: string, params: ReschedulePostParams) {
+    return this.http.request<PostMutationResult>(
+      "PATCH",
+      `/posts/${encodeURIComponent(postId)}/schedule`,
+      params as Record<string, unknown>,
+    );
+  }
+
+  update(postId: string, params: UpdatePostParams) {
+    return this.http.request<PostMutationResult>(
+      "PATCH",
+      `/posts/${encodeURIComponent(postId)}`,
+      params as Record<string, unknown>,
+    );
+  }
+
+  cancel(postId: string) {
+    return this.http.delete<PostMutationResult>(`/posts/${encodeURIComponent(postId)}/schedule`);
   }
 }
 
@@ -208,11 +239,11 @@ class AnalyticsResource {
   constructor(private http: HttpClient) {}
 
   fetch(params?: FetchAnalyticsParams) {
-    return this.http.get<unknown>("/analytics", params as Record<string, string | number | boolean | undefined>);
+    return this.http.get<AnalyticsSummary>("/analytics", params as Record<string, string | number | boolean | undefined>);
   }
 
   refresh(params?: { platform?: string }) {
-    return this.http.post<unknown>("/analytics/refresh", params);
+    return this.http.post<{ success: boolean; postsProcessed?: number; queued?: number; errored?: number }>("/tools/refresh_platform_analytics", params);
   }
 
   youtube(params?: YouTubeAnalyticsParams) {
@@ -220,7 +251,7 @@ class AnalyticsResource {
       days: params?.days,
       metrics: params?.metrics?.join(","),
     };
-    return this.http.get<unknown>("/analytics/youtube", query);
+    return this.http.get<unknown>("/tools/fetch_youtube_analytics", query);
   }
 
   insights(params?: InsightsParams) {
@@ -228,7 +259,7 @@ class AnalyticsResource {
   }
 
   postingTimes(params?: PostingTimesParams) {
-    return this.http.get<unknown>("/analytics/posting-times", params as Record<string, string | number | boolean | undefined>);
+    return this.http.get<unknown>("/analytics/best-times", params as Record<string, string | number | boolean | undefined>);
   }
 }
 
@@ -308,7 +339,7 @@ class JobsResource {
   constructor(private http: HttpClient) {}
 
   check(jobId: string) {
-    return this.http.get<JobResult>(`/jobs/${encodeURIComponent(jobId)}`);
+    return this.http.get<JobResult>(`/content/status/${encodeURIComponent(jobId)}`);
   }
 
   /**
@@ -355,11 +386,11 @@ class AccountResource {
   constructor(private http: HttpClient) {}
 
   credits() {
-    return this.http.get<unknown>("/credits");
+    return this.http.get<CreditBalance>("/credits");
   }
 
   usage() {
-    return this.http.get<unknown>("/usage");
+    return this.http.get<BudgetStatus>("/credits/budget");
   }
 }
 

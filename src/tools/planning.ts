@@ -436,14 +436,17 @@ export function registerPlanningTools(server: McpServer): void {
           details: { topic, platforms, posts: posts.length, days },
         });
 
+        const structuredContent = asEnvelope(plan);
         if (response_format === 'json') {
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(plan), null, 2) }],
+            structuredContent,
+            content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
             isError: false,
           };
         }
 
         return {
+          structuredContent,
           content: [{ type: 'text' as const, text: formatPlanAsText(plan) }],
           isError: false,
         };

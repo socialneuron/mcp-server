@@ -197,8 +197,9 @@ export function registerResources(
       const capabilities = {
         _meta: { version: MCP_VERSION, generated: new Date().toISOString() },
         platforms: {
-          available: ['YouTube', 'Instagram', 'TikTok'],
-          coming_soon: ['LinkedIn', 'X/Twitter', 'Facebook', 'Pinterest'],
+          available: ['YouTube', 'Instagram', 'TikTok', 'LinkedIn', 'X/Twitter', 'Facebook'],
+          not_live_for_publishing: ['Threads', 'Bluesky'],
+          coming_soon: ['Pinterest'],
         },
         content_formats: {
           text: ['Social post', 'Thread', 'Caption', 'Newsletter', 'Blog draft', 'Script'],

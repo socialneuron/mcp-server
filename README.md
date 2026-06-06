@@ -1,8 +1,8 @@
 # @socialneuron/mcp-server
 
-> 75 MCP tools for AI-powered social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
+> 77 MCP tools for AI-powered social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
 >
-> This npm package registers **75 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **92-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+> This npm package registers **77 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **92-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
@@ -33,9 +33,12 @@
 | Surface | Minimum |
 |--------|---------|
 | Node.js | 20.x or 22.x+ |
+| ChatGPT Developer Mode | Plus, Pro, Business, Enterprise, or Education |
 | Claude Desktop | 0.7.0+ |
 | Claude Code | any |
 | Cursor | 0.42.0+ (MCP support) |
+| Gemini CLI | MCP support |
+| Perplexity Mac app | Local MCP support |
 | VS Code | 1.99+ (MCP preview) |
 | Zed | 0.151.0+ |
 | Windsurf | 1.4.0+ |
@@ -47,12 +50,12 @@ Every release is published from GitHub Actions with [npm provenance attestation]
 
 | Method | Best For | Docs |
 |--------|----------|------|
-| **MCP** | AI agents (Claude, Cursor, VS Code) | [Setup](#quick-start) |
+| **MCP** | AI agents and ChatGPT custom connectors | [Setup](#quick-start) |
 | **REST API** | Any HTTP client, webhooks, Zapier | [Guide](docs/rest-api.md) |
 | **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
 | **SDK** | TypeScript/Node.js apps | [Preview](docs/sdk-guide.md) |
 
-All methods share the same tool catalog, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+All methods share auth, scopes, and the same product contract; the exact tool count differs between the hosted endpoint and npm stdio package. [Compare methods and client connection paths](docs/integration-methods.md).
 
 ## Platform Status
 
@@ -60,8 +63,12 @@ All methods share the same tool catalog, auth, scopes, and credit system. [Compa
 |----------|--------|
 | YouTube | ✅ Live |
 | TikTok | ✅ Live |
-| Instagram | 🔶 Pending app review |
-| LinkedIn · X · Facebook · Threads · Bluesky | Supported — see [integrations](https://socialneuron.com/integrations) for live status |
+| Instagram | ✅ Live |
+| LinkedIn | ✅ Live |
+| X/Twitter | ✅ Live |
+| Facebook | ✅ Live |
+| Threads | 🔶 Supported, not live for publishing |
+| Bluesky | 🔶 Supported, not live for publishing |
 
 The hosted endpoint and REST API track the live matrix; check [socialneuron.com/integrations](https://socialneuron.com/integrations) for current availability.
 
@@ -234,9 +241,28 @@ Add via Cline → MCP Servers → Edit config, or directly to `~/Library/Applica
 ```
 </details>
 
+<details>
+<summary><strong>ChatGPT Developer Mode</strong></summary>
+
+Use the hosted MCP connector URL:
+
+```text
+https://mcp.socialneuron.com/mcp
+```
+
+In ChatGPT, open Settings → Apps & Connectors → Developer Mode, create a custom connector, and paste that URL. ChatGPT uses OAuth linking and lists the exposed MCP tools after the connector is authorized.
+
+Requirements and current behavior:
+
+- ChatGPT Plus, Pro, Business, Enterprise, or Education.
+- Social Neuron Pro or higher for MCP read/analytics; Team or Agency for write and publishing tools.
+- Publishing tools such as `schedule_post` require the `mcp:distribute` scope and should be confirmed before external publication.
+
+</details>
+
 #### 3. Start using
 
-Ask Claude: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
+Ask your MCP client: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
 
 ### REST API (Any Language)
 
@@ -258,7 +284,7 @@ curl -X POST -H "Authorization: Bearer snk_live_..." \
   https://mcp.socialneuron.com/v1/tools/get_brand_profile
 ```
 
-See [REST API docs](docs/rest-api.md) | [OpenAPI spec](https://mcp.socialneuron.com/v1/openapi.json) | [Examples](examples/rest/)
+See [REST API docs](docs/rest-api.md) | [Examples](examples/rest/)
 
 ### CLI (Terminal & CI/CD)
 
@@ -272,7 +298,7 @@ See [CLI guide](docs/cli-guide.md) | [Examples](examples/cli/)
 
 ## What You Can Do
 
-Ask Claude things like:
+Ask your MCP client things like:
 
 - "Generate 5 content ideas about sustainable fashion for Gen Z"
 - "Create a 30-second video ad for my product launch"
@@ -315,12 +341,12 @@ All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
 | Category | Tools | What It Does |
 |----------|-------|-------------|
-| Extraction | extract_url_content | Extract content from URLs, YouTube, articles |
+| Extraction | extract_url_content | Extract content from URLs, YouTube transcripts, comments, and articles |
 | Screenshots | capture_app_page, capture_screenshot | Visual documentation and monitoring |
 | Remotion | list_compositions, render_demo_video | Programmatic video rendering |
 | Usage | get_mcp_usage | API usage monitoring |
 | YouTube | fetch_youtube_analytics | YouTube-specific deep analytics |
-| Discovery | search_tools | Find tools by keyword with progressive detail levels (saves 98% tokens vs loading all tools) |
+| Discovery | search_tools | Find the smallest task-intent tool set with progressive detail levels (saves 98% tokens vs loading all tools) |
 
 ## Authentication
 
@@ -466,6 +492,8 @@ The HTTP MCP server reads a few security-related env vars. Defaults are safe for
 | --- | --- | --- |
 | `TRUST_PROXY` | `1` | Number of upstream proxy hops to trust for `req.ip` / `X-Forwarded-For`. Set to `0` (or `false`) when running the server without a trusted reverse proxy in front — otherwise the per-IP rate limit can be bypassed by spoofing `X-Forwarded-For`. Accepts any value Express's `trust proxy` accepts (integer, `'loopback'`, CIDR, …). |
 | `SESSION_HARD_TTL_MS` | `14400000` (4 h) | Hard ceiling on session lifetime regardless of activity. Prevents a slow-read SSE client from pinning a session slot indefinitely. |
+| `MCP_OAUTH_CLIENT_STORE` | `memory` | Dynamic OAuth client registration store. Use `supabase` for hosted multi-instance deployments so connector client registrations survive deploys and horizontal scaling. |
+| `MCP_ALLOW_ANY_HTTPS_REDIRECT` | unset | Staging-only escape hatch for onboarding a new connector redirect URI before adding it to the allowlist. Do not enable in production. |
 | `SN_ALLOW_SELF_HOST` | unset | Acknowledge running in self-host (service-role-key) mode. Suppresses the deprecation warning emitted on first Edge Function call. Self-host bypasses Supabase RLS, so caller-supplied IDs are higher-risk; the recommended path is cloud mode (`SOCIALNEURON_API_KEY`). |
 
 ## Telemetry
@@ -499,11 +527,12 @@ See the [`examples/`](examples/) directory:
 
 ## Documentation
 
+- [MCP Goals](docs/mcp-goals.md) — product, app, security, OAuth, SDK, and scale goals
 - [Tool Reference](docs/tools-reference.md) — every tool, by scope
 - [Authentication](docs/auth.md) — device-code, browser, and API-key flows
 - [REST API](docs/rest-api.md) — endpoint reference
 - [CLI Guide](docs/cli-guide.md) — terminal commands
-- [TypeScript SDK](docs/sdk-guide.md) — `@socialneuron/sdk`
+- [TypeScript SDK](docs/sdk-guide.md) — preview package, not yet published to npm
 - [Integration Methods](docs/integration-methods.md) — MCP vs REST vs CLI vs SDK
 - [Troubleshooting](docs/troubleshooting.md) — common issues & fixes
 - [Verifying tools.lock.json](docs/verifying-tools-lock.md) — supply-chain integrity
@@ -511,10 +540,9 @@ See the [`examples/`](examples/) directory:
 ## Links
 
 - [For Developers](https://socialneuron.com/for-developers) · [Pricing](https://socialneuron.com/pricing) · [Developer Settings](https://socialneuron.com/settings/developer)
-- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) · [Server Card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)
+- [Server Card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)
 - [Docs Site](https://socialneuron.com/docs) · [Report an Issue](https://github.com/socialneuron/mcp-server/issues) · [Agent Protocol](https://socialneuron.com/system-prompt.txt)
 
 ## License
 
 [MIT](LICENSE) © Social Neuron
-

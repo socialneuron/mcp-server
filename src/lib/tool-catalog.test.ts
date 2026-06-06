@@ -68,11 +68,13 @@ describe('tool-catalog', () => {
     expect(new Set(modules).size).toBe(modules.length);
   });
 
-  it('getToolSummaries returns name + description only', () => {
+  it('getToolSummaries returns compact selection fields', () => {
     const summaries = getToolSummaries();
     expect(summaries.length).toBe(TOOL_CATALOG.length);
     for (const s of summaries) {
-      expect(Object.keys(s).sort()).toEqual(['description', 'name']);
+      const keys = Object.keys(s).sort();
+      expect(keys).toEqual(expect.arrayContaining(['description', 'name']));
+      expect(keys.every(key => ['description', 'name', 'task_intent'].includes(key))).toBe(true);
     }
   });
 });

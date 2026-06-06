@@ -7,7 +7,7 @@ Common issues and fixes for `@socialneuron/mcp-server`. If none of these help, o
 ### The server doesn't appear in my MCP client
 1. Confirm the config points at the right command. The canonical stdio command is `npx -y @socialneuron/mcp-server` with your key in `SOCIALNEURON_API_KEY`.
 2. Fully **restart** the client after editing its MCP config (Claude Desktop/Cursor cache the server list at launch).
-3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 75/75 tools` **to stderr** and then waits on stdio.
+3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 77/77 tools` **to stderr** and then waits on stdio.
 
 ### `tools/list` returns 0 tools, or the client reports "Invalid JSON" / pydantic parse errors
 This was a stdout-corruption bug fixed in **1.7.13** — any log written to stdout corrupts the JSON-RPC channel. Upgrade:
@@ -35,6 +35,21 @@ npx clear-npx-cache 2>/dev/null || rm -rf "$(npm config get cache)/_npx"
 ### "Requires a Pro plan or above" / a tool returns a permission error
 MCP access is **tier-gated**: Free/Starter have **no** MCP access; **Pro** grants `mcp:read` + `mcp:analytics`; **Team/Agency** grant full MCP (write, distribute, comments, autopilot). See [Pricing](../README.md#pricing) and [Scopes](../README.md#scopes). If a *specific* tool is denied, your key/tier lacks that tool's scope — regenerate the key with the needed scope (Team/Agency) or upgrade your plan.
 
+Permission errors are returned as structured JSON with `required_scope`, `available_scopes`, and `recover_with`. If an agent keeps selecting denied tools, ask it to call:
+
+```json
+{
+  "tool": "search_tools",
+  "arguments": {
+    "query": "the user goal",
+    "available_only": true,
+    "detail": "summary"
+  }
+}
+```
+
+This filters discovery to tools allowed by the current API key/OAuth scopes.
+
 ### OAuth (Claude Custom Connector) connects but tools are limited
 The OAuth/JWT path derives scopes from your subscription tier. A Pro account gets read+analytics only — write/distribute tools won't appear. Upgrade to Team/Agency for the full set.
 
@@ -44,7 +59,7 @@ The OAuth/JWT path derives scopes from your subscription tier. A Pro account get
 1. Call `list_connected_accounts` to see status.
 2. If disconnected, call `start_platform_connection` — it returns a one-time browser link to complete the platform OAuth on socialneuron.com.
 3. Then `wait_for_connection`, and retry `schedule_post`.
-- **Instagram** is pending platform review — publishing is live for **YouTube** and **TikTok**. See [Platform Status](../README.md#platform-status).
+- Publishing is live for **YouTube**, **TikTok**, **Instagram**, **LinkedIn**, **X/Twitter**, and **Facebook**. **Threads** and **Bluesky** are supported in schemas/tooling but are not live for publishing yet. See [Platform Status](../README.md#platform-status).
 
 ### `schedule_post` returns "mediaUrl required" or a carousel error
 - Single media: pass `media_url`, `r2_key`, or `job_id`.

@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "76 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
+**Subheadline:** "92 hosted MCP tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK preview, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
@@ -45,7 +45,7 @@ curl -X POST https://mcp.socialneuron.com/v1/distribution/schedule \
 ```
 
 **Label:** "REST API — Any Language"
-**Description:** "35 endpoints. OpenAPI spec included. Works from any language."
+**Description:** "35 endpoints. Public server card included. Works from any language."
 
 ### Tab 3: TypeScript SDK
 
@@ -95,7 +95,7 @@ socialneuron-mcp sn publish \
 ### Card 2: Multi-Platform Scheduling
 **Icon:** Calendar
 **Title:** "Schedule Everywhere"
-**Copy:** "Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky. AI-optimized posting times."
+**Copy:** "Publish to YouTube, TikTok, Instagram, X/Twitter, LinkedIn, and Facebook. AI-optimized posting times. Threads and Bluesky are supported in tooling but not live for publishing yet."
 **Endpoints:** `POST /v1/distribution/schedule`, `GET /v1/analytics/best-times`
 
 ### Card 3: Analytics & Insights
@@ -142,7 +142,7 @@ Get API Key (socialneuron.com/settings/developer)
     ↓
 Run First Call (quickstart in README)
     ↓
-Explore API (docs, examples, OpenAPI spec)
+Explore API (docs, examples, server card)
     ↓
 Build Workflow (combine endpoints)
     ↓
@@ -155,9 +155,11 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 76 |
+| Hosted MCP tools | 92 |
+| npm stdio tools | 77 |
 | REST endpoints | 35 |
-| Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
+| Live publishing platforms | 6 (YouTube, TikTok, Instagram, X/Twitter, LinkedIn, Facebook) |
+| Supported but not live for publishing | Threads, Bluesky |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |
 | Image models | 10 (Midjourney, Nano Banana/Pro, Ideogram, Flux Pro/Max, GPT-4o, Imagen 4/Fast, Seedream) |
 | SDK resources | 9 (content, posts, analytics, brand, plans, comments, jobs, tools, account) |
@@ -170,8 +172,8 @@ See Pricing (socialneuron.com/pricing)
 |------|-----|
 | GitHub | https://github.com/socialneuron/mcp-server |
 | npm (MCP server) | https://www.npmjs.com/package/@socialneuron/mcp-server |
-| npm (SDK) | https://www.npmjs.com/package/@socialneuron/sdk |
-| OpenAPI Spec | https://mcp.socialneuron.com/v1/openapi.json |
+| npm (SDK) | Not published yet; preview docs live in this repo |
+| Server Card | https://mcp.socialneuron.com/.well-known/mcp/server-card.json |
 | Examples | https://github.com/socialneuron/mcp-server/tree/main/examples |
 | API Docs | https://socialneuron.com/docs/api |
 | SDK Docs | https://socialneuron.com/docs/sdk |
@@ -184,8 +186,7 @@ See Pricing (socialneuron.com/pricing)
 
 ```markdown
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
-[![npm SDK](https://img.shields.io/npm/v/@socialneuron/sdk?label=sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-green.svg)](https://mcp.socialneuron.com/v1/openapi.json)
+[![Server Card](https://img.shields.io/badge/MCP-server%20card-green.svg)](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)
 ```

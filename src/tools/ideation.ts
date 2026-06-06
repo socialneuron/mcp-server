@@ -4,7 +4,18 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId } from '../lib/supabase.js';
-import type { GenerateContentResponse, FetchTrendsResponse } from '../types/index.js';
+import { MCP_VERSION } from '../lib/version.js';
+import type { GenerateContentResponse, FetchTrendsResponse, ResponseEnvelope } from '../types/index.js';
+
+function asEnvelope<T>(data: T): ResponseEnvelope<T> {
+  return {
+    _meta: {
+      version: MCP_VERSION,
+      timestamp: new Date().toISOString(),
+    },
+    data,
+  };
+}
 
 export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -228,7 +239,14 @@ export function registerIdeationTools(server: McpServer): void {
       }
 
       const text = data?.text ?? '(empty response)';
+      const structuredContent = asEnvelope({
+        text,
+        content_type,
+        platform: platform ?? null,
+        model: model ?? 'gemini-2.5-flash',
+      });
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text }],
       };
     }
@@ -521,7 +539,14 @@ export function registerIdeationTools(server: McpServer): void {
 
       const text = data?.text ?? '(empty response)';
       const header = `Adapted for ${target_platform}${source_platform ? ` (from ${source_platform})` : ''}:\n\n`;
+      const structuredContent = asEnvelope({
+        text,
+        source_platform: source_platform ?? null,
+        target_platform,
+        model: 'gemini-2.5-flash',
+      });
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: header + text }],
       };
     }

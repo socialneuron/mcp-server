@@ -8,6 +8,7 @@
  *   POST /mcp          — MCP JSON-RPC requests
  *   GET  /mcp          — SSE streaming for existing sessions
  *   DELETE /mcp        — Session teardown
+ *   /v1/*              — REST API wrappers over MCP tools
  *   GET  /health       — Railway health check
  *   /authorize, /token, /register — OAuth 2.0 (via mcpAuthRouter)
  *   /.well-known/oauth-authorization-server — OAuth AS metadata
@@ -30,6 +31,8 @@ import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
 import { TOOL_CATALOG } from './lib/tool-catalog.js';
+import { buildWwwAuthenticateHeader } from './lib/www-authenticate.js';
+import { createRestRouter } from './lib/rest-api.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -78,6 +81,15 @@ function deriveOAuthIssuerUrl(): string {
 }
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
+const SCOPES_SUPPORTED = [
+  'mcp:full',
+  'mcp:read',
+  'mcp:write',
+  'mcp:distribute',
+  'mcp:analytics',
+  'mcp:comments',
+  'mcp:autopilot',
+];
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
@@ -155,6 +167,40 @@ function countUserSessions(userId: string): number {
   return count;
 }
 
+async function closeSession(sessionId: string, reason: string): Promise<void> {
+  const entry = sessions.get(sessionId);
+  if (!entry) return;
+
+  // Delete first so recursive close notifications cannot re-enter the same
+  // session, and so capacity is released even if transport/server close fails.
+  sessions.delete(sessionId);
+  const results = await Promise.allSettled([entry.transport.close(), entry.server.close()]);
+  const failures = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+  if (failures.length > 0) {
+    const messages = failures
+      .map(f => (f.reason instanceof Error ? f.reason.message : String(f.reason)))
+      .join('; ');
+    console.warn(`[MCP HTTP] Session close failed (${reason}) for ${sessionId}: ${messages}`);
+    return;
+  }
+  console.log(`[MCP HTTP] Closed ${reason} session: ${sessionId}`);
+}
+
+function jsonRpcSessionError(id: unknown, code: number, message: string) {
+  return {
+    jsonrpc: '2.0',
+    id: id ?? null,
+    error: {
+      code,
+      message,
+      data: {
+        error: 'session_not_found',
+        recover: 'Reinitialize the MCP session, then retry the request.',
+      },
+    },
+  };
+}
+
 // Clean up stale sessions every 5 minutes. Two reasons to evict: idle
 // past SESSION_TIMEOUT_MS, or alive past the absolute SESSION_HARD_TTL_MS.
 const cleanupInterval = setInterval(
@@ -164,11 +210,8 @@ const cleanupInterval = setInterval(
       const idle = now - entry.lastActivity > SESSION_TIMEOUT_MS;
       const expired = now >= entry.expiresAt;
       if (idle || expired) {
-        entry.transport.close();
-        entry.server.close();
-        sessions.delete(sessionId);
         const reason = expired ? 'expired (hard TTL)' : 'idle';
-        console.log(`[MCP HTTP] Cleaned up ${reason} session: ${sessionId}`);
+        void closeSession(sessionId, reason);
       }
     }
   },
@@ -272,8 +315,11 @@ app.use((_req, res, next) => {
 app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
-  res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version'
+  );
+  res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, WWW-Authenticate');
   if (_req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -287,21 +333,47 @@ const oauthProvider = createOAuthProvider({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
   appBaseUrl: APP_BASE_URL,
+  clientStoreMode: process.env.MCP_OAUTH_CLIENT_STORE === 'supabase' ? 'supabase' : 'memory',
+});
+
+app.get('/.well-known/oauth-protected-resource', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=3600');
+  res.json({
+    resource: OAUTH_ISSUER_URL,
+    authorization_servers: [OAUTH_ISSUER_URL],
+    scopes_supported: SCOPES_SUPPORTED,
+    resource_documentation: 'https://socialneuron.com/for-developers',
+    token_endpoint_auth_methods_supported: ['none'],
+  });
 });
 
 const authRouter = mcpAuthRouter({
   provider: oauthProvider,
   issuerUrl: new URL(OAUTH_ISSUER_URL),
   serviceDocumentationUrl: new URL('https://socialneuron.com/for-developers'),
-  scopesSupported: [
-    'mcp:full',
-    'mcp:read',
-    'mcp:write',
-    'mcp:distribute',
-    'mcp:analytics',
-    'mcp:comments',
-    'mcp:autopilot',
-  ],
+  scopesSupported: SCOPES_SUPPORTED,
+});
+
+function normalizeOAuthResourceParam(value: unknown): string | undefined {
+  const values = Array.isArray(value) ? value : [value];
+  const strings = values.filter(
+    (item): item is string => typeof item === 'string' && item.length > 0
+  );
+  const issuer = OAUTH_ISSUER_URL.replace(/\/$/, '');
+  return strings.find(item => item.replace(/\/$/, '') === issuer) ?? strings[0];
+}
+
+app.use((req, _res, next) => {
+  if ((req.path === '/authorize' || req.path === '/token') && Array.isArray(req.query.resource)) {
+    const normalized = normalizeOAuthResourceParam(req.query.resource);
+    if (normalized) {
+      const normalizedUrl = new URL(req.originalUrl, OAUTH_ISSUER_URL);
+      normalizedUrl.searchParams.delete('resource');
+      normalizedUrl.searchParams.set('resource', normalized);
+      req.url = `${normalizedUrl.pathname}${normalizedUrl.search}`;
+    }
+  }
+  next();
 });
 
 // Wrap auth router with error logging (SDK swallows errors silently)
@@ -337,6 +409,10 @@ async function authenticateRequest(
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     setNoStore(res);
+    res.setHeader(
+      'WWW-Authenticate',
+      buildWwwAuthenticateHeader({ issuerUrl: OAUTH_ISSUER_URL })
+    );
     res.status(401).json({
       error: 'unauthorized',
       error_description: 'Bearer token required',
@@ -387,12 +463,22 @@ async function authenticateRequest(
     const message = err instanceof Error ? sanitizeError(err) : 'Token verification failed';
     console.error(`[MCP HTTP] Token verification failed: ${message}`);
     setNoStore(res);
+    res.setHeader(
+      'WWW-Authenticate',
+      buildWwwAuthenticateHeader({
+        issuerUrl: OAUTH_ISSUER_URL,
+        error: 'invalid_token',
+        errorDescription: 'Token verification failed',
+      })
+    );
     res.status(401).json({
       error: 'invalid_token',
       error_description: 'Token verification failed',
     });
   }
 }
+
+app.use('/v1', authenticateRequest, createRestRouter());
 
 // ── Smithery Static Server Card ──────────────────────────────────────
 // Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
@@ -523,6 +609,27 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
   }
 
   try {
+    if (existingSessionId && !sessions.has(existingSessionId)) {
+      res
+        .status(404)
+        .json(jsonRpcSessionError(req.body?.id, -32001, 'Session not found. Reinitialize the MCP session and retry.'));
+      return;
+    }
+
+    const method = typeof req.body?.method === 'string' ? req.body.method : undefined;
+    if (!existingSessionId && method && method !== 'initialize') {
+      res.status(400).json({
+        jsonrpc: '2.0',
+        id: req.body?.id ?? null,
+        error: {
+          code: -32000,
+          message: 'Missing MCP session ID. Initialize a session before sending tool requests.',
+          data: { error: 'missing_session' },
+        },
+      });
+      return;
+    }
+
     // Existing session — verify ownership
     if (existingSessionId && sessions.has(existingSessionId)) {
       const entry = sessions.get(existingSessionId)!;
@@ -538,9 +645,7 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
       // Mirror the GET-path hard-TTL check so POST traffic cannot keep
       // an expired session alive until the 5-minute cleanup loop runs.
       if (Date.now() >= entry.expiresAt) {
-        entry.transport.close();
-        entry.server.close();
-        sessions.delete(existingSessionId);
+        await closeSession(existingSessionId, 'expired (hard TTL)');
         res.status(440).json({
           error: 'session_expired',
           error_description: 'Session hard TTL exceeded.',
@@ -604,7 +709,7 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
     // Track session cleanup
     transport.onclose = () => {
       if (transport.sessionId) {
-        sessions.delete(transport.sessionId);
+        void closeSession(transport.sessionId, 'transport close');
       }
     };
 
@@ -641,9 +746,7 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
     return;
   }
   if (Date.now() >= entry.expiresAt) {
-    entry.transport.close();
-    entry.server.close();
-    sessions.delete(sessionId);
+    await closeSession(sessionId, 'expired (hard TTL)');
     res.status(440).json({ error: 'session_expired', error_description: 'Session hard TTL exceeded.' });
     return;
   }
@@ -673,9 +776,7 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
     res.status(403).json({ error: 'Session belongs to another user' });
     return;
   }
-  await entry.transport.close();
-  await entry.server.close();
-  sessions.delete(sessionId);
+  await closeSession(sessionId, 'client teardown');
 
   res.status(200).json({ status: 'session_closed' });
 });
@@ -708,15 +809,7 @@ async function shutdown(signal: string) {
   await shutdownPostHog();
 
   // Close all sessions
-  for (const [sessionId, entry] of sessions) {
-    try {
-      await entry.transport.close();
-      await entry.server.close();
-    } catch {
-      // Best effort
-    }
-    sessions.delete(sessionId);
-  }
+  await Promise.all([...sessions.keys()].map(sessionId => closeSession(sessionId, 'shutdown')));
 
   httpServer.close(() => {
     console.log('[MCP HTTP] Server closed');

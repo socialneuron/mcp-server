@@ -43,6 +43,7 @@ import { registerBrandRuntimeTools } from './brandRuntime.js';
 import { registerRecipeTools } from './recipes.js';
 import { registerCarouselTools } from './carousel.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
+import { registerGenerationWorkspaceApp } from '../apps/generation-workspace.js';
 import { registerConnectionTools } from './connections.js';
 // Screenshot tools require browser mocks; tested separately below.
 import { registerScreenshotTools } from './screenshot.js';
@@ -248,6 +249,7 @@ describe('Registration & Scope Coverage', () => {
     registerRecipeTools(server as any);
     registerCarouselTools(server as any);
     registerContentCalendarApp(server as any);
+    registerGenerationWorkspaceApp(server as any);
     registerConnectionTools(server as any);
   });
 

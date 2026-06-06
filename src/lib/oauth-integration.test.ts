@@ -345,8 +345,11 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'http://localhost:3000/oauth/callback',
       'http://127.0.0.1:6274/oauth/callback',
       'http://127.0.0.1:6274/oauth/callback/debug',
+      'http://127.0.0.1:59654/callback/fJrDj_kRVVhE',
       'https://claude.ai/api/mcp/auth_callback',
       'https://claude.com/api/mcp/auth_callback',
+      'https://chatgpt.com/connector/oauth/callback-123',
+      'https://chatgpt.com/connector_platform_oauth_redirect',
       'https://smithery.ai/callback', // MCP registries
     ];
 

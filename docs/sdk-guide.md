@@ -4,10 +4,36 @@
 
 The `@socialneuron/sdk` package provides a typed client for the Social Neuron REST API.
 
+## ChatGPT Connector Note
+
+ChatGPT does not use this SDK. ChatGPT Developer Mode connects to the hosted MCP endpoint:
+
+```text
+https://mcp.socialneuron.com/mcp
+```
+
+Use the SDK when building TypeScript or Node.js applications against the REST API. Use MCP for ChatGPT, Claude, Cursor, VS Code, and other agent clients.
+
+## Platform Availability
+
+Live publishing platforms: YouTube, TikTok, Instagram, LinkedIn, X/Twitter, and Facebook.
+
+Threads and Bluesky remain in schemas/tooling for forward compatibility, but are not live for publishing yet. Check [socialneuron.com/integrations](https://socialneuron.com/integrations) for the hosted matrix before enabling a platform in production code.
+
 ## Installation
+
+After the first public release:
 
 ```bash
 npm install @socialneuron/sdk
+```
+
+For local development in this repository:
+
+```bash
+cd packages/sdk
+npm install
+npm run build
 ```
 
 ## Setup
@@ -102,7 +128,7 @@ await sn.posts.schedule({
   media_url: 'https://example.com/video.mp4',
   caption: 'New video! #productivity',
   title: 'Productivity Tips',
-  platforms: ['youtube', 'tiktok', 'instagram'],
+  platforms: ['youtube', 'tiktok', 'instagram', 'linkedin', 'twitter', 'facebook'],
   scheduled_at: '<ISO-8601 timestamp>',
 });
 
@@ -289,4 +315,4 @@ console.log('Credits remaining:', credits.data);
 - [REST API Guide](./rest-api.md) — curl examples for every endpoint
 - [CLI Guide](./cli-guide.md) — terminal commands for scripting
 - [Examples](../examples/) — runnable code examples
-- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) — full API specification
+- [MCP Goals](./mcp-goals.md) — SDK and canonical contract goals

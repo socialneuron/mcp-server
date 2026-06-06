@@ -107,7 +107,14 @@ const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
 
   // Distribution is open-world (publishes to external platforms)
   schedule_post: { openWorldHint: true },
+  reschedule_post: { openWorldHint: true, idempotentHint: true },
+  update_post: { openWorldHint: true, idempotentHint: true },
+  cancel_scheduled_post: { openWorldHint: true },
   schedule_content_plan: { openWorldHint: true },
+  list_content_drafts: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  save_content_draft: { destructiveHint: false },
+  update_content_draft: { idempotentHint: true },
+  delete_draft: { destructiveHint: true },
 
   // Extraction reads external URLs
   extract_url_content: { openWorldHint: true },
@@ -137,6 +144,16 @@ export interface ToolAnnotation {
   destructiveHint: boolean;
   idempotentHint: boolean;
   openWorldHint: boolean;
+}
+
+export interface ToolSecurityScheme {
+  type: 'oauth2';
+  scopes: string[];
+}
+
+export function buildToolSecuritySchemes(toolName: string): ToolSecurityScheme[] {
+  const scope = TOOL_SCOPES[toolName];
+  return scope ? [{ type: 'oauth2', scopes: [scope] }] : [];
 }
 
 /** Build the complete annotations map for all registered tools. */
@@ -207,6 +224,7 @@ export function applyAnnotations(server: McpServer): void {
           idempotentHint: ann.idempotentHint,
           openWorldHint: ann.openWorldHint,
         },
+        securitySchemes: buildToolSecuritySchemes(toolName),
       });
       applied++;
     }

@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildWwwAuthenticateHeader } from './lib/www-authenticate.js';
 
 // Since http.ts starts a server on import (express.listen, process handlers),
 // we test the key security behaviors via isolated unit tests that validate
@@ -99,8 +100,16 @@ describe('HTTP Server Security Patterns', () => {
     });
 
     it('should return a generic invalid-token response', () => {
+      const challenge = buildWwwAuthenticateHeader({
+        issuerUrl: 'https://mcp.socialneuron.com',
+        error: 'invalid_token',
+        errorDescription: 'Token verification failed',
+      });
       const response = {
         status: 401,
+        headers: {
+          'WWW-Authenticate': challenge,
+        },
         body: {
           error: 'invalid_token',
           error_description: 'Token verification failed',
@@ -112,6 +121,10 @@ describe('HTTP Server Security Patterns', () => {
         error: 'invalid_token',
         error_description: 'Token verification failed',
       });
+      expect(response.headers['WWW-Authenticate']).toContain(
+        'resource_metadata="https://mcp.socialneuron.com/.well-known/oauth-protected-resource"'
+      );
+      expect(response.headers['WWW-Authenticate']).toContain('error="invalid_token"');
       expect(response.body.error_description).not.toMatch(/revoked|expired|HTTP|database/i);
     });
 
@@ -205,13 +218,16 @@ describe('HTTP Server Security Patterns', () => {
       const corsMiddleware = {
         'Access-Control-Allow-Origin': '*',
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
-        'Access-Control-Expose-Headers': 'Mcp-Session-Id',
+        'Access-Control-Allow-Headers':
+          'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version',
+        'Access-Control-Expose-Headers': 'Mcp-Session-Id, WWW-Authenticate',
       };
 
       for (const header of requiredHeaders) {
         expect(corsMiddleware).toHaveProperty(header);
       }
+      expect(corsMiddleware['Access-Control-Allow-Headers']).toContain('MCP-Protocol-Version');
+      expect(corsMiddleware['Access-Control-Expose-Headers']).toContain('WWW-Authenticate');
     });
   });
 

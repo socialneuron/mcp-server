@@ -110,6 +110,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
 
       const envelope = asEnvelope(runtime);
       return {
+        structuredContent: envelope,
         content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
       };
     }

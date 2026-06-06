@@ -34,6 +34,61 @@ function getApiKeyOrNull(): string | null {
   return getAuthenticatedApiKey();
 }
 
+const DEFAULT_MAX_RESPONSE_BYTES = 1_000_000;
+
+class EdgeResponseTooLargeError extends Error {
+  constructor(readonly maxBytes: number) {
+    super(`Edge Function response exceeded ${maxBytes} bytes`);
+    this.name = 'EdgeResponseTooLargeError';
+  }
+}
+
+function maxResponseBytes(): number {
+  const raw = process.env.EDGE_FUNCTION_MAX_RESPONSE_BYTES;
+  if (!raw) return DEFAULT_MAX_RESPONSE_BYTES;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : DEFAULT_MAX_RESPONSE_BYTES;
+}
+
+async function readResponseText(response: Response, maxBytes: number): Promise<string> {
+  const contentLength = Number(response.headers.get('content-length') ?? '0');
+  if (Number.isFinite(contentLength) && contentLength > maxBytes) {
+    throw new EdgeResponseTooLargeError(maxBytes);
+  }
+
+  if (!response.body) {
+    const text = await response.text();
+    if (new TextEncoder().encode(text).byteLength > maxBytes) {
+      throw new EdgeResponseTooLargeError(maxBytes);
+    }
+    return text;
+  }
+
+  const reader = response.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let total = 0;
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    if (!value) continue;
+    total += value.byteLength;
+    if (total > maxBytes) {
+      await reader.cancel().catch(() => {});
+      throw new EdgeResponseTooLargeError(maxBytes);
+    }
+    chunks.push(value);
+  }
+
+  const bytes = new Uint8Array(total);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return new TextDecoder().decode(bytes);
+}
+
 /**
  * Call a Supabase Edge Function by name.
  *
@@ -57,6 +112,7 @@ export async function callEdgeFunction<T = unknown>(
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 60_000;
   const timer = setTimeout(() => controller.abort(), timeoutMs);
+  const maxBytes = maxResponseBytes();
 
   // Enrich payload with userId/projectId. The userId is ALWAYS sourced
   // from the authenticated request context (HTTP mode) or the local
@@ -170,9 +226,7 @@ export async function callEdgeFunction<T = unknown>(
       signal: controller.signal,
     });
 
-    clearTimeout(timer);
-
-    const responseText = await response.text();
+    const responseText = await readResponseText(response, maxBytes);
 
     if (!response.ok) {
       let errorMessage: string;
@@ -205,14 +259,21 @@ export async function callEdgeFunction<T = unknown>(
       return { data: { text: responseText } as T, error: null };
     }
   } catch (err) {
-    clearTimeout(timer);
     if (err instanceof Error && err.name === 'AbortError') {
       return {
         data: null,
         error: `Edge Function '${functionName}' timed out after ${timeoutMs}ms`,
       };
     }
+    if (err instanceof EdgeResponseTooLargeError) {
+      return {
+        data: null,
+        error: `Edge Function '${functionName}' response exceeded ${err.maxBytes} bytes`,
+      };
+    }
     const message = err instanceof Error ? err.message : String(err);
     return { data: null, error: message };
+  } finally {
+    clearTimeout(timer);
   }
 }

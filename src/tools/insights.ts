@@ -105,19 +105,17 @@ export function registerInsightsTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({
+            insights: [],
+            days: lookbackDays,
+            insightType: insight_type ?? null,
+          });
           return {
+            structuredContent,
             content: [
               {
                 type: 'text' as const,
-                text: JSON.stringify(
-                  asEnvelope({
-                    insights: [],
-                    days: lookbackDays,
-                    insightType: insight_type ?? null,
-                  }),
-                  null,
-                  2
-                ),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
           };
@@ -133,21 +131,19 @@ export function registerInsightsTools(server: McpServer): void {
       }
 
       const insights = rows as PerformanceInsight[];
+      const structuredContent = asEnvelope({
+        insights,
+        days: lookbackDays,
+        insightType: insight_type ?? null,
+      });
 
       if (format === 'json') {
         return {
+          structuredContent,
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                asEnvelope({
-                  insights,
-                  days: lookbackDays,
-                  insightType: insight_type ?? null,
-                }),
-                null,
-                2
-              ),
+              text: JSON.stringify(structuredContent, null, 2),
             },
           ],
         };
@@ -177,6 +173,7 @@ export function registerInsightsTools(server: McpServer): void {
       }
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }

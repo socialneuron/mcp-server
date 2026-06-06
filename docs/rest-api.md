@@ -1,6 +1,8 @@
 # Social Neuron REST API
 
-REST interface to 76 AI content tools. Same auth, scopes, and rate limits as MCP.
+REST interface for Social Neuron's hosted API surface. The hosted MCP endpoint currently advertises its live tool count through the public [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json); the npm stdio package ships a smaller sealed local tool set in [`tools.lock.json`](../tools.lock.json).
+
+> Implementation note: this document describes the hosted `/v1` API. The public source entry point in this repo is the MCP HTTP transport (`/mcp`) plus discovery/auth/health routes.
 
 ## Base URL
 
@@ -63,7 +65,7 @@ curl -X POST \
 
 ## Endpoints
 
-### Tool Proxy (recommended for all 76 tools)
+### Tool Proxy
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -140,7 +142,6 @@ These are thin wrappers over the tool proxy for common operations.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/v1/` | Required | API info and endpoint directory |
-| GET | `/v1/openapi.json` | **None** | OpenAPI 3.1 specification |
 
 ## Response Format
 
@@ -210,10 +211,4 @@ Per-IP rate limit: 60 requests/minute (before auth).
 
 ## OpenAPI Spec
 
-The full OpenAPI 3.1 specification is served at:
-
-```
-GET https://mcp.socialneuron.com/v1/openapi.json
-```
-
-Import into Postman, generate client SDKs, or use with Swagger UI.
+OpenAPI generation is a roadmap item. Do not treat `https://mcp.socialneuron.com/v1/openapi.json` as a live contract until the endpoint is published and covered by contract tests.

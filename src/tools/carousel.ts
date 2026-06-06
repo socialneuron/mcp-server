@@ -210,6 +210,10 @@ export function registerCarouselTools(server: McpServer): void {
         .describe(
           'Style suffix appended to every image prompt for visual consistency across slides. Example: "dark moody lighting, cinematic, 35mm film grain".'
         ),
+      brand_id: z
+        .string()
+        .optional()
+        .describe('Brand or project ID to use for visual context. Falls back to project_id.'),
       project_id: z.string().optional().describe('Project ID to associate the carousel with.'),
       response_format: z
         .enum(['text', 'json'])

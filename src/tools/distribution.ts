@@ -600,14 +600,346 @@ export function registerDistributionTools(server: McpServer): void {
         },
       });
       if (format === 'json') {
+        const structuredContent = asEnvelope(data);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
           isError: !data.success,
         };
       }
       return {
+        structuredContent: asEnvelope(data),
         content: [{ type: 'text' as const, text: lines.join('\n') }],
         isError: !data.success,
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // post lifecycle tools
+  // ---------------------------------------------------------------------------
+
+  server.tool(
+    'reschedule_post',
+    'Move an existing scheduled or draft post to a new time. Use this for calendar drag-drop rescheduling; do not call schedule_post with update flags.',
+    {
+      post_id: z.string().min(1).describe('Existing post ID from list_recent_posts.'),
+      schedule_at: z
+        .string()
+        .describe('New ISO 8601 UTC datetime for the scheduled post. Must be in the future.'),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ post_id, schedule_at, response_format }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        post?: PostRecord;
+        error?: string;
+      }>('mcp-data', { action: 'reschedule-post', post_id, schedule_at }, { timeoutMs: 15_000 });
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to reschedule post: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const payload = { success: true, post: data.post ?? null, scheduled_at: schedule_at };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: `Post rescheduled to ${schedule_at}.` }],
+      };
+    }
+  );
+
+  server.tool(
+    'update_post',
+    'Edit an existing draft or scheduled post. Supports caption, title, hashtags, media, platform list, and schedule time changes before publish.',
+    {
+      post_id: z.string().min(1),
+      caption: z.string().optional(),
+      title: z.string().optional(),
+      hashtags: z.array(z.string()).optional(),
+      media_url: z.string().optional(),
+      media_type: z.enum(['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']).optional(),
+      platforms: z
+        .array(z.enum(['youtube', 'tiktok', 'instagram', 'twitter', 'linkedin', 'facebook', 'threads', 'bluesky']))
+        .optional(),
+      schedule_at: z.string().optional(),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ post_id, response_format, ...updates }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        post?: PostRecord;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'update-post', post_id, updates },
+        { timeoutMs: 15_000 }
+      );
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to update post: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { success: true, post: data.post ?? null };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: 'Post updated.' }],
+      };
+    }
+  );
+
+  server.tool(
+    'cancel_scheduled_post',
+    'Cancel a scheduled post before it publishes. This does not delete already-published platform posts.',
+    {
+      post_id: z.string().min(1),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ post_id, response_format }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        post?: PostRecord;
+        error?: string;
+      }>('mcp-data', { action: 'cancel-scheduled-post', post_id }, { timeoutMs: 15_000 });
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to cancel scheduled post: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { success: true, post: data.post ?? null };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: 'Scheduled post cancelled.' }],
+      };
+    }
+  );
+
+  server.tool(
+    'list_content_drafts',
+    'List unscheduled content drafts that can be edited or dragged onto the calendar.',
+    {
+      platform: z
+        .enum(['youtube', 'tiktok', 'instagram', 'twitter', 'linkedin', 'facebook', 'threads', 'bluesky'])
+        .optional(),
+      limit: z.number().min(1).max(50).optional(),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ platform, limit, response_format }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        drafts?: PostRecord[];
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'content-drafts', platform, limit: limit ?? 20 },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to list drafts: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { drafts: data.drafts ?? [] };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: `${payload.drafts.length} draft(s) found.` }],
+      };
+    }
+  );
+
+  server.tool(
+    'save_content_draft',
+    'Save a new unscheduled content draft for later calendar scheduling.',
+    {
+      caption: z.string().min(1),
+      platform: z.enum(['youtube', 'tiktok', 'instagram', 'twitter', 'linkedin', 'facebook', 'threads', 'bluesky']),
+      title: z.string().optional(),
+      media_url: z.string().optional(),
+      media_type: z.enum(['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']).optional(),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ response_format, ...draft }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        draft?: PostRecord;
+        error?: string;
+      }>('mcp-data', { action: 'save-content-draft', draft }, { timeoutMs: 15_000 });
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to save draft: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { success: true, draft: data.draft ?? null };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: 'Draft saved.' }],
+      };
+    }
+  );
+
+  server.tool(
+    'update_content_draft',
+    'Edit an unscheduled content draft.',
+    {
+      draft_id: z.string().min(1),
+      caption: z.string().optional(),
+      platform: z
+        .enum(['youtube', 'tiktok', 'instagram', 'twitter', 'linkedin', 'facebook', 'threads', 'bluesky'])
+        .optional(),
+      title: z.string().optional(),
+      media_url: z.string().optional(),
+      media_type: z.enum(['IMAGE', 'VIDEO', 'CAROUSEL_ALBUM']).optional(),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ draft_id, response_format, ...updates }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        draft?: PostRecord;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'update-content-draft', draft_id, updates },
+        { timeoutMs: 15_000 }
+      );
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to update draft: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { success: true, draft: data.draft ?? null };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: 'Draft updated.' }],
+      };
+    }
+  );
+
+  server.tool(
+    'delete_draft',
+    'Delete an unscheduled content draft.',
+    {
+      draft_id: z.string().min(1),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ draft_id, response_format }) => {
+      const format = response_format ?? 'text';
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        error?: string;
+      }>('mcp-data', { action: 'delete-draft', draft_id }, { timeoutMs: 15_000 });
+
+      if (error || !data?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to delete draft: ${error || data?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+      const payload = { success: true, draft_id };
+      if (format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+        };
+      }
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [{ type: 'text' as const, text: 'Draft deleted.' }],
       };
     }
   );
@@ -776,9 +1108,11 @@ export function registerDistributionTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({ posts: [] });
           return {
+            structuredContent,
             content: [
-              { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts: [] }), null, 2) },
+              { type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) },
             ],
           };
         }
@@ -793,10 +1127,12 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       const posts = rows as PostRecord[];
+      const structuredContent = asEnvelope({ posts });
       if (format === 'json') {
         return {
+          structuredContent,
           content: [
-            { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts }), null, 2) },
+            { type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) },
           ],
         };
       }
@@ -831,6 +1167,7 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }

@@ -1,0 +1,481 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Social Neuron - Generation Workspace</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f8fb;
+        --surface: #ffffff;
+        --surface-2: #f2f5f9;
+        --text: #17181c;
+        --muted: #687084;
+        --line: #dfe4ec;
+        --accent: #2563eb;
+        --accent-2: #0f766e;
+        --danger: #b91c1c;
+        --warning: #a16207;
+        --ok: #047857;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      .shell {
+        display: grid;
+        grid-template-columns: minmax(300px, 360px) minmax(0, 1fr);
+        gap: 1px;
+        min-height: 100vh;
+        background: var(--line);
+      }
+
+      .panel,
+      .stage {
+        background: var(--surface);
+      }
+
+      .panel {
+        padding: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+      }
+
+      .stage {
+        padding: 18px;
+        display: grid;
+        grid-template-rows: auto 1fr auto;
+        gap: 16px;
+        min-width: 0;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: 18px;
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin: 0 0 10px;
+        font-size: 13px;
+        line-height: 1.25;
+        text-transform: uppercase;
+        letter-spacing: 0;
+        color: var(--muted);
+      }
+
+      .subhead {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      .section {
+        border-top: 1px solid var(--line);
+        padding-top: 14px;
+      }
+
+      label {
+        display: block;
+        margin: 0 0 6px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 650;
+      }
+
+      textarea,
+      input,
+      select {
+        width: 100%;
+        border: 1px solid var(--line);
+        border-radius: 6px;
+        background: #fff;
+        color: var(--text);
+        padding: 8px 10px;
+        font-size: 13px;
+      }
+
+      textarea {
+        min-height: 112px;
+        resize: vertical;
+        line-height: 1.4;
+      }
+
+      .field {
+        margin-bottom: 12px;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+
+      .segmented {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        overflow: hidden;
+        background: var(--surface-2);
+      }
+
+      .segmented button {
+        border: 0;
+        background: transparent;
+        padding: 8px 10px;
+        font-size: 12px;
+        font-weight: 700;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .segmented button.active {
+        background: var(--surface);
+        color: var(--accent);
+        box-shadow: 0 0 0 1px var(--line);
+      }
+
+      .primary,
+      .secondary,
+      .danger {
+        min-height: 34px;
+        border-radius: 6px;
+        padding: 8px 12px;
+        font-size: 12px;
+        font-weight: 750;
+        cursor: pointer;
+      }
+
+      .primary {
+        border: 1px solid var(--accent);
+        background: var(--accent);
+        color: #fff;
+      }
+
+      .secondary {
+        border: 1px solid var(--line);
+        background: #fff;
+        color: var(--text);
+      }
+
+      .danger {
+        border: 1px solid #fecaca;
+        background: #fff1f2;
+        color: var(--danger);
+      }
+
+      button:disabled {
+        opacity: 0.45;
+        cursor: not-allowed;
+      }
+
+      .status-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 24px;
+        border-radius: 999px;
+        padding: 4px 9px;
+        background: var(--surface-2);
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 750;
+        text-transform: uppercase;
+      }
+
+      .pill.ok {
+        background: #ecfdf5;
+        color: var(--ok);
+      }
+
+      .pill.warn {
+        background: #fffbeb;
+        color: var(--warning);
+      }
+
+      .pill.error {
+        background: #fef2f2;
+        color: var(--danger);
+      }
+
+      .preview {
+        min-height: 360px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background:
+          linear-gradient(45deg, #f2f5f9 25%, transparent 25%),
+          linear-gradient(-45deg, #f2f5f9 25%, transparent 25%),
+          linear-gradient(45deg, transparent 75%, #f2f5f9 75%),
+          linear-gradient(-45deg, transparent 75%, #f2f5f9 75%);
+        background-size: 24px 24px;
+        background-position: 0 0, 0 12px, 12px -12px, -12px 0;
+        display: grid;
+        place-items: center;
+        overflow: hidden;
+        position: relative;
+      }
+
+      .preview-inner {
+        width: min(100%, 760px);
+        padding: 18px;
+        text-align: center;
+      }
+
+      .preview img,
+      .preview video {
+        max-width: 100%;
+        max-height: 66vh;
+        border-radius: 6px;
+        background: #000;
+        box-shadow: 0 18px 48px rgba(15, 23, 42, 0.18);
+      }
+
+      .empty-title {
+        margin: 0 0 8px;
+        font-size: 16px;
+        font-weight: 750;
+      }
+
+      .empty-copy {
+        margin: 0 auto;
+        max-width: 420px;
+        color: var(--muted);
+        font-size: 13px;
+        line-height: 1.45;
+      }
+
+      .progress-wrap {
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 12px;
+        background: var(--surface);
+      }
+
+      .progress-top {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 10px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .progress {
+        height: 8px;
+        border-radius: 999px;
+        background: var(--surface-2);
+        overflow: hidden;
+      }
+
+      .progress-fill {
+        height: 100%;
+        width: 0%;
+        border-radius: inherit;
+        background: var(--accent-2);
+        transition: width 0.2s ease;
+      }
+
+      .job-meta {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 8px;
+      }
+
+      .metric {
+        border: 1px solid var(--line);
+        border-radius: 7px;
+        padding: 9px 10px;
+        background: #fff;
+        min-width: 0;
+      }
+
+      .metric .label {
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+
+      .metric .value {
+        font-size: 13px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+      }
+
+      .schedule-row {
+        display: grid;
+        grid-template-columns: minmax(110px, 150px) 1fr minmax(130px, 180px) auto;
+        gap: 10px;
+        align-items: end;
+      }
+
+      .caption-input {
+        min-height: 44px;
+      }
+
+      #toast {
+        position: fixed;
+        right: 16px;
+        bottom: 16px;
+        max-width: 360px;
+        background: #111827;
+        color: #fff;
+        padding: 10px 13px;
+        border-radius: 7px;
+        font-size: 13px;
+        opacity: 0;
+        transform: translateY(8px);
+        transition: opacity 0.18s, transform 0.18s;
+        pointer-events: none;
+        z-index: 20;
+      }
+
+      #toast.show {
+        opacity: 1;
+        transform: translateY(0);
+      }
+
+      #toast.error {
+        background: #991b1b;
+      }
+
+      @media (max-width: 860px) {
+        .shell {
+          grid-template-columns: 1fr;
+        }
+
+        .panel,
+        .stage {
+          padding: 14px;
+        }
+
+        .job-meta {
+          grid-template-columns: repeat(2, minmax(0, 1fr));
+        }
+
+        .schedule-row {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <aside class="panel">
+        <header>
+          <h1>Generation Workspace</h1>
+          <p class="subhead" id="subtitle">Create, monitor, review, and schedule generated assets.</p>
+        </header>
+
+        <section class="section">
+          <h2>Generate</h2>
+          <div class="field">
+            <label>Type</label>
+            <div class="segmented" id="type-toggle"></div>
+          </div>
+          <div class="field">
+            <label for="prompt">Prompt</label>
+            <textarea id="prompt" placeholder="Describe the asset to generate. Include platform, visual style, audience, and brand constraints."></textarea>
+          </div>
+          <div class="grid-2">
+            <div class="field">
+              <label for="model">Model</label>
+              <select id="model"></select>
+            </div>
+            <div class="field">
+              <label for="aspect">Aspect</label>
+              <select id="aspect"></select>
+            </div>
+          </div>
+          <div class="grid-2" id="video-fields">
+            <div class="field">
+              <label for="duration">Seconds</label>
+              <input id="duration" type="number" min="3" max="30" value="5" />
+            </div>
+            <div class="field">
+              <label for="platform">Platform</label>
+              <select id="platform"></select>
+            </div>
+          </div>
+          <button class="primary" id="generate">Generate</button>
+        </section>
+
+        <section class="section">
+          <h2>Job</h2>
+          <div class="actions">
+            <button class="secondary" id="poll">Poll status</button>
+            <button class="secondary" id="auto-poll">Auto-poll off</button>
+            <button class="danger" id="clear">Clear</button>
+          </div>
+        </section>
+      </aside>
+
+      <section class="stage">
+        <div class="status-bar" id="status-bar"></div>
+        <div class="preview" id="preview"></div>
+        <div class="progress-wrap">
+          <div class="progress-top">
+            <span id="progress-label">No active job</span>
+            <span id="progress-value">0%</span>
+          </div>
+          <div class="progress"><div class="progress-fill" id="progress-fill"></div></div>
+        </div>
+        <div class="job-meta" id="job-meta"></div>
+        <section class="section">
+          <h2>Schedule Result</h2>
+          <div class="schedule-row">
+            <div>
+              <label for="schedule-platform">Platform</label>
+              <select id="schedule-platform"></select>
+            </div>
+            <div>
+              <label for="caption">Caption</label>
+              <textarea class="caption-input" id="caption" placeholder="Caption or description"></textarea>
+            </div>
+            <div>
+              <label for="schedule-at">Schedule at</label>
+              <input id="schedule-at" type="datetime-local" />
+            </div>
+            <button class="primary" id="schedule">Schedule</button>
+          </div>
+        </section>
+      </section>
+    </main>
+    <div id="toast" role="status" aria-live="polite"></div>
+    <script type="module" src="/src/generation-workspace.ts"></script>
+  </body>
+</html>

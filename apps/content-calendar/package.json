@@ -4,7 +4,7 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "INPUT=mcp-app.html vite build",
+    "build": "INPUT=mcp-app.html vite build && INPUT=generation-workspace.html vite build --emptyOutDir false",
     "dev": "vite",
     "typecheck": "tsc --noEmit"
   },

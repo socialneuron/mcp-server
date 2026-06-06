@@ -2,32 +2,48 @@
 
 The Social Neuron MCP Server supports three authentication modes:
 
-1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven connector setup
+1. **OAuth Custom Connector** (ChatGPT, Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven connector setup
 2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
 3. **Service Role** (legacy, deprecated) — self-hosted only
 
-## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
+## OAuth Custom Connector Flow (ChatGPT, Claude Web/Desktop, Smithery, Glama)
 
-This is the path most agent users take. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token. In the current public server package, that bearer token is still backed by the existing `snk_*` API-key exchange. A separate short-lived connector-token backend is planned but requires Supabase Edge Function and database changes outside this repo.
+This is the path most agent users take. ChatGPT, Claude.ai, and other connector hosts discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token.
+
+The server supports two connector-token modes:
+
+- **Legacy compatibility:** `mcp-auth?action=exchange-key` returns an `snk_*` API key as the OAuth access token.
+- **Production connector tokens:** the same exchange returns a short-lived `sno_*` access token plus rotating refresh token. The MCP server validates `sno_*` tokens through the connector-token validation endpoint instead of treating them as API keys.
 
 ```
-Claude.ai (or Desktop/Smithery/Glama)
+ChatGPT, Claude.ai, or another connector host
+   ↓
+   Fetch /.well-known/oauth-protected-resource
+   ↓ (metadata: resource, authorization_servers, scopes_supported)
    ↓
    Fetch /.well-known/oauth-authorization-server
    ↓ (metadata: authorization_endpoint, token_endpoint, registration_endpoint, scopes_supported, logo_uri)
    ↓
    Dynamic Client Registration: POST /register
-   ↓ (server returns client_id + client_secret, stored in memory by this public server)
+   ↓ (server returns client_id + client_secret, stored in memory or Supabase-backed DCR)
    ↓
    User opens consent page at socialneuron.com/mcp/authorize
    ↓ (user signs in if needed, approves the requested scopes)
    ↓
    Authorization code + PKCE code_verifier sent to /token
    ↓
-   Server exchanges via mcp-auth Edge Function → returns snk_live_* as access_token
+   Server exchanges via mcp-auth Edge Function
+   ↓ (returns legacy snk_* access_token or short-lived sno_* access_token + refresh_token)
    ↓
-   Claude.ai stores the token; future tool calls send Authorization: Bearer snk_live_...
+   Connector host stores the token; future tool calls send Authorization: Bearer <access_token>
 ```
+
+### Adding the connector in ChatGPT Developer Mode
+
+1. Open ChatGPT Settings → Apps & Connectors → Developer Mode.
+2. Create a custom connector.
+3. **MCP Server URL**: `https://mcp.socialneuron.com/mcp`.
+4. Approve the OAuth consent prompt that opens. Scopes are derived from your **plan tier** — they are not chosen during connection.
 
 ### Adding the connector in Claude.ai
 
@@ -38,24 +54,39 @@ Claude.ai (or Desktop/Smithery/Glama)
 
 ### Persistence and durability
 
-Dynamic Client Registrations are in-memory in this public server package. Registrations do not survive a process restart unless the deployment is paired with a persistent client-store implementation outside this repo.
+Dynamic Client Registrations default to in-memory storage for self-hosted development. Hosted deployments should set:
 
-If you see "Authorization with the MCP server failed" after a deploy, remove and re-add the connector to register a fresh `client_id`.
+```
+MCP_OAUTH_CLIENT_STORE=supabase
+```
+
+With that setting, `/register` and authorization lookup use the `mcp-auth` Edge Function actions `register-oauth-client` and `get-oauth-client`. That store must persist the full RFC 7591 client metadata, including `client_id`, redirect URIs, client secret metadata, grant types, response types, client name, logo URI, and timestamps.
+
+If the hosted deployment uses the default memory store, a process restart can still invalidate DCR state. In that case users may see "Authorization with the MCP server failed" after a deploy and need to remove and re-add the connector.
 
 ### Connector-token backend work
 
-The current OAuth connector flow still returns an `snk_*` bearer token from `mcp-auth?action=exchange-key`. To make connector auth security-complete, the backend should add a separate connector-token class instead of returning long-lived API keys as OAuth access tokens.
+The MCP server now has compatibility hooks for a separate connector-token class. To make connector auth security-complete, the backend should stop returning long-lived API keys as OAuth access tokens and instead return short-lived opaque connector tokens.
 
 Required backend actions:
-- Issue connector access token: exchange an authorization code and PKCE verifier for a short-lived connector access token plus refresh token.
-- Validate connector token: return user id, client id, scopes, expiry, and revocation state without exposing token material.
-- Rotate refresh token: one-time refresh-token use that revokes the previous refresh token and issues a new pair.
-- Revoke connector token: revoke access and refresh tokens authoritatively, with audit metadata.
+
+- `exchange-key`: exchange an authorization code and PKCE verifier for either a legacy `snk_*` token or a short-lived `sno_*` access token plus refresh token.
+- Copy the OAuth `resource` value into the connector access token audience/resource metadata so the MCP server can verify the token was minted for `https://mcp.socialneuron.com`.
+- `validate-connector-token`: return user id, client id, scopes, expiry, and revocation state for `sno_*` tokens without exposing token material.
+- `refresh-connector-token`: rotate a one-time refresh token and issue a new access/refresh pair.
+- `revoke-connector-token`: revoke connector access and refresh tokens authoritatively, with audit metadata.
+- `register-oauth-client`: persist dynamic client registration metadata.
+- `get-oauth-client`: fetch persisted dynamic client registration metadata by `client_id`.
 
 Minimum stored fields:
+
+- OAuth client id
+- OAuth client metadata JSON
+- Client secret hash or encrypted secret, if issued
+- Client id issued at
+- Client secret expires at
 - Hashed token value with lookup prefix
 - User id
-- OAuth client id
 - Scopes
 - Expires at
 - Revoked at
@@ -77,10 +108,13 @@ If a tool returns `Permission denied: '<tool>' requires scope '<scope>'` and you
 ### Allowed redirect URIs
 
 The DCR endpoint accepts:
+- `https://chatgpt.com/connector/oauth/{callback_id}`
+- `https://chatgpt.com/connector_platform_oauth_redirect` (legacy)
 - `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`
 - `https://smithery.ai/callback`, `https://www.smithery.ai/callback`
 - `https://glama.ai/callback`, `https://mcp.so/callback`
 - `http://localhost:6274/oauth/callback` (Claude Code/Desktop debug)
+- `http://127.0.0.1:{port}/callback/{nonce}` (Codex CLI OAuth loopback)
 
 Unknown HTTPS redirect URIs are rejected by default. Staging environments can set `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` while onboarding a new client before adding its callback to the allowlist. Disallowed URIs return `400 invalid_client_metadata` (not 500).
 
@@ -88,9 +122,12 @@ Unknown HTTPS redirect URIs are rejected by default. Staging environments can se
 
 | What | URL |
 |---|---|
+| OAuth protected resource metadata | `https://mcp.socialneuron.com/.well-known/oauth-protected-resource` |
 | OAuth metadata | `https://mcp.socialneuron.com/.well-known/oauth-authorization-server` |
 | Server card | `https://mcp.socialneuron.com/.well-known/mcp/server-card.json` |
 | Health | `https://mcp.socialneuron.com/health` |
+
+Unauthenticated or invalid-token HTTP requests return `401` with a `WWW-Authenticate` challenge pointing at the protected-resource metadata. Tool-level scope failures include `_meta["mcp/www_authenticate"]` so ChatGPT can launch OAuth linking or reauthorization from a tool call.
 
 ## API Key Flow
 

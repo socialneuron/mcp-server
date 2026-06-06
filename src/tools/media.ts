@@ -436,7 +436,7 @@ export function registerMediaTools(
             const putResp = await fetch(putData.signedUrl, {
               method: 'PUT',
               headers: { 'Content-Type': ct },
-              body: fileBuffer,
+              body: fileBuffer as unknown as BodyInit,
             });
 
             if (!putResp.ok) {

@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **75 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **77 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -19,7 +19,8 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `explain_brand_system` | Explains what brand data is available vs missing for a project. Returns a human-readable summary of completeness, confidence levels, and recommendations for improving the brand profile. |
 | `export_design_tokens` | Export brand palette and typography as design tokens. Supports CSS custom properties, Tailwind config, and Figma Tokens JSON formats. |
 | `extract_brand` | Analyze a website URL and extract brand identity data including brand name, colors, voice/tone, target audience, and logo. Uses AI-powered analysis of the page HTML. Useful for understanding a brand before generating content for it. |
-| `extract_url_content` | Extract text content from any URL — YouTube video transcripts, article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript extraction with optional comments. Use before generate_content to repurpose existing c |
+| `extract_url_content` | Extract text content from any URL — YouTube video transcripts (summary/full/transcript-only), top comments, article text, or product page features/benefits/USP. Use before generate_content to repurpose existing content, or before plan_conte |
+| `fetch` | Fetch a public Social Neuron knowledge document by ID. Use IDs returned by the search tool. |
 | `fetch_analytics` | Get post performance metrics — views, likes, comments, shares, and engagement rate. Filter by platform, time range (default 30 days), or specific content_id. Call refresh_platform_analytics first if data seems stale. Results sorted by most  |
 | `fetch_trends` | Get current trending topics for content inspiration. Source "youtube" returns trending videos with view counts, "google_trends" returns rising search terms, "rss"/"url" extracts topics from any feed or page. Results cached 1 hour — set forc |
 | `find_next_slots` | Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score. |
@@ -44,7 +45,8 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `list_recipes` | List available recipe templates. Recipes are pre-built multi-step workflows like "Weekly Instagram Calendar" or "Product Launch Sequence" that automate common content operations. Use this to discover what recipes are available before runnin |
 | `quality_check` | Score post quality across 7 categories: Hook Strength, Message Clarity, Platform Fit, Brand Alignment, Novelty, CTA Strength, and Safety/Claims. Each scored 0-5, total 35. Default pass threshold is 26 (~75%). Run after generate_content and  |
 | `quality_check_plan` | Batch quality check all posts in a content plan. Returns per-post scores and aggregate pass/fail summary. Use after plan_content_week and before schedule_content_plan to catch low-quality posts before publishing. |
-| `search_tools` | Search available tools by name, description, module, or scope. Use "name" detail (~50 tokens) for quick lookup, "summary" (~500 tokens) for descriptions, "full" for complete input schemas. Start here if unsure which tool to call — filter by |
+| `search` | Search public Social Neuron product, integration, developer, and MCP tool knowledge. Uses the standard ChatGPT MCP search schema and never returns private account content. |
+| `search_tools` | Find the smallest task-intent tool set for a user goal using progressive discovery. Prefer one tool that completes the task over chaining API-wrapper tools. Use detail=name for broad lookup, summary for selection, and full only after narrow |
 | `suggest_next_content` | Suggest next content topics based on performance insights, past content, and competitor patterns. No AI call, no credit cost — purely data-driven recommendations. |
 | `wait_for_connection` | Poll until a platform connection becomes active. Use after `start_platform_connection` while the user completes the browser OAuth flow. Returns when the account row appears with status=active, or when the timeout elapses. Default timeout 30 |
 

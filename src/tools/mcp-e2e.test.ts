@@ -21,6 +21,10 @@ function parseResult(result: { content: { text: string }[] }) {
   return JSON.parse(result.content[0].text) as { toolCount: number; tools: unknown[] | string[] };
 }
 
+function appToolCount(): number {
+  return TOOL_CATALOG.filter(t => t.module === 'apps').length;
+}
+
 // ---------------------------------------------------------------------------
 // 1. Tool catalog integrity
 // ---------------------------------------------------------------------------
@@ -59,7 +63,7 @@ describe('Tool catalog integrity', () => {
 
     const registeredTools = (server as unknown as { _registeredTools: Record<string, any> })
       ._registeredTools;
-    expect(Object.keys(registeredTools).length).toBe(TOOL_CATALOG.length - 1);
+    expect(Object.keys(registeredTools).length).toBe(TOOL_CATALOG.length - appToolCount());
 
     for (const [name, tool] of Object.entries(registeredTools)) {
       expect(() => {
@@ -118,15 +122,15 @@ describe('search_tools token efficiency', () => {
   const handler = server.getHandler('search_tools')!;
 
   it('"name" output is compact (<2500 chars)', async () => {
-    // Bumped 2000 -> 2500 when start_platform_connection + wait_for_connection
-    // (76 tools) crossed the prior ceiling.
+    // Bumped 2000 -> 2500 as the catalog grew past the original ceiling.
     const result = await handler({ detail: 'name' });
     expect(result.content[0].text.length).toBeLessThan(2500);
   });
 
-  it('"summary" output is moderate (<10000 chars)', async () => {
+  it('"summary" output stays token-efficient (<160 chars/tool, scales with catalog)', async () => {
     const result = await handler({ detail: 'summary' });
-    expect(result.content[0].text.length).toBeLessThan(10000);
+    const avgPerTool = result.content[0].text.length / TOOL_CATALOG.length;
+    expect(avgPerTool).toBeLessThan(160);
   });
 
   it('"full" is at least 3x larger than "name"', async () => {

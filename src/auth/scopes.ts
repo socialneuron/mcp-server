@@ -72,6 +72,13 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:distribute
   schedule_post: 'mcp:distribute',
+  reschedule_post: 'mcp:distribute',
+  update_post: 'mcp:distribute',
+  cancel_scheduled_post: 'mcp:distribute',
+  list_content_drafts: 'mcp:read',
+  save_content_draft: 'mcp:write',
+  update_content_draft: 'mcp:write',
+  delete_draft: 'mcp:write',
 
   // mcp:analytics
   refresh_platform_analytics: 'mcp:analytics',
@@ -117,6 +124,8 @@ export const TOOL_SCOPES: Record<string, string> = {
   get_mcp_usage: 'mcp:read',
   list_plan_approvals: 'mcp:read',
   search_tools: 'mcp:read',
+  search: 'mcp:read',
+  fetch: 'mcp:read',
 
   // mcp:read (pipeline readiness + status are read-only)
   check_pipeline_readiness: 'mcp:read',
@@ -134,8 +143,9 @@ export const TOOL_SCOPES: Record<string, string> = {
   generate_performance_digest: 'mcp:analytics',
   detect_anomalies: 'mcp:analytics',
 
-  // mcp:read (Apps — entry tool for the Content Calendar MCP App; reads recent posts)
+  // mcp:read (Apps — entry tools for interactive MCP App surfaces)
   open_content_calendar: 'mcp:read',
+  open_generation_workspace: 'mcp:read',
 
   // platform connection deep-link flow
   start_platform_connection: 'mcp:distribute',

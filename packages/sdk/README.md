@@ -1,15 +1,42 @@
 # @socialneuron/sdk
 
-[![npm version](https://img.shields.io/npm/v/@socialneuron/sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
+> Preview package. `@socialneuron/sdk` is not published to npm yet. Use the hosted REST API for production until the SDK is generated from the canonical contract and published.
+
 TypeScript SDK for the [Social Neuron](https://socialneuron.com) REST API. 9 resource classes, full TypeScript types, and auto-polling for async jobs.
+
+## ChatGPT Connector Note
+
+ChatGPT does not use this SDK. ChatGPT Developer Mode connects to the hosted MCP endpoint:
+
+```text
+https://mcp.socialneuron.com/mcp
+```
+
+Use this SDK for TypeScript or Node.js applications that call the REST API.
+
+## Platform Availability
+
+Live publishing platforms: YouTube, TikTok, Instagram, LinkedIn, X/Twitter, and Facebook.
+
+Threads and Bluesky are present in schemas/tooling for forward compatibility, but are not live for publishing yet. Check [socialneuron.com/integrations](https://socialneuron.com/integrations) for the hosted matrix before enabling a platform in production code.
 
 ## Installation
 
+After the first public release:
+
 ```bash
 npm install @socialneuron/sdk
+```
+
+For local development in this repository:
+
+```bash
+cd packages/sdk
+npm install
+npm run build
 ```
 
 ## Quick Start
@@ -40,7 +67,7 @@ console.log('Video URL:', result.data.resultUrl);
 await sn.posts.schedule({
   media_url: result.data.resultUrl!,
   caption: 'Beautiful sunrise #nature',
-  platforms: ['youtube', 'tiktok', 'instagram'],
+  platforms: ['youtube', 'tiktok', 'instagram', 'linkedin', 'twitter', 'facebook'],
 });
 
 // Get analytics
@@ -105,7 +132,7 @@ const sn = new SocialNeuron({
 - [SDK Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/sdk-guide.md) — complete walkthrough with all resources
 - [REST API Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) — curl examples for every endpoint
 - [Examples](https://github.com/socialneuron/mcp-server/tree/main/examples/sdk) — runnable TypeScript examples
-- [OpenAPI Spec](https://github.com/socialneuron/mcp-server/blob/main/openapi.yaml) — full API specification
+- [MCP Goals](https://github.com/socialneuron/mcp-server/blob/main/docs/mcp-goals.md) — SDK and canonical contract goals
 
 ## License
 

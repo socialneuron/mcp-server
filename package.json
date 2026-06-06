@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "version": "1.7.13",
-  "description": "Official MCP server, REST API & CLI for Social Neuron \u2014 create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
+  "description": "Official MCP server, REST API & CLI for Social Neuron — create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -66,6 +66,7 @@
     "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --no-audit --no-fund) && npm run build",
     "build:all": "npm run build:stdio && npm run build && npm run build:lock && npm run build:app",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
+    "audit:contract-docs": "node scripts/audit-contract-docs.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",
     "start:stdio": "node dist/index.js",
@@ -80,16 +81,17 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.2",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.106.2",
+    "@supabase/supabase-js": "2.105.0",
     "cors": "^2.8.6",
     "express": "^5.1.0",
     "express-rate-limit": "^8.3.2",
     "jose": "^6.2.1",
     "open": "10.0.0",
-    "posthog-node": "5.35.4",
+    "posthog-node": "5.34.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.0",
     "lockfile-lint": "5.0.0",

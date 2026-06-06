@@ -78,8 +78,10 @@ export function registerBrandTools(server: McpServer): void {
       }
 
       if ((response_format || 'text') === 'json') {
+        const structuredContent = asEnvelope(data);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
         };
       }
 
@@ -135,24 +137,15 @@ export function registerBrandTools(server: McpServer): void {
     async ({ project_id, response_format }) => {
       const projectId = project_id || (await getDefaultProjectId());
 
-      if (!projectId) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
         profile: Record<string, unknown> | null;
         error?: string;
-      }>('mcp-data', { action: 'brand-profile', projectId });
+      }>('mcp-data', {
+        action: 'brand-profile',
+        ...(projectId ? { projectId } : {}),
+      });
 
       if (efError || (result && !result.success)) {
         return {
@@ -176,22 +169,27 @@ export function registerBrandTools(server: McpServer): void {
         };
       }
 
+      const structuredContent = asEnvelope(data);
+
       if ((response_format || 'text') === 'json') {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
         };
       }
 
+      const brandContext = data.brand_context as { name?: string } | undefined;
       const lines = [
         `Active Brand Profile`,
-        `Project: ${projectId}`,
-        `Brand Name: ${data.brand_name || data.brand_context?.name || 'N/A'}`,
+        `Project: ${data.project_id || projectId || 'default'}`,
+        `Brand Name: ${data.brand_name || brandContext?.name || 'N/A'}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,
         `Extraction Method: ${data.extraction_method || 'manual'}`,
       ];
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }

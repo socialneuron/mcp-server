@@ -108,22 +108,20 @@ export function registerAnalyticsTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({
+            platform: platform ?? null,
+            days: lookbackDays,
+            totalViews: 0,
+            totalEngagement: 0,
+            postCount: 0,
+            posts: [],
+          });
           return {
+            structuredContent,
             content: [
               {
                 type: 'text' as const,
-                text: JSON.stringify(
-                  asEnvelope({
-                    platform: platform ?? null,
-                    days: lookbackDays,
-                    totalViews: 0,
-                    totalEngagement: 0,
-                    postCount: 0,
-                    posts: [],
-                  }),
-                  null,
-                  2
-                ),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
           };
@@ -266,20 +264,18 @@ export function registerAnalyticsTools(server: McpServer): void {
         },
       });
       if (format === 'json') {
+        const structuredContent = asEnvelope({
+          success: true,
+          postsProcessed: result.postsProcessed,
+          queued,
+          errored,
+        });
         return {
+          structuredContent,
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                asEnvelope({
-                  success: true,
-                  postsProcessed: result.postsProcessed,
-                  queued,
-                  errored,
-                }),
-                null,
-                2
-              ),
+              text: JSON.stringify(structuredContent, null, 2),
             },
           ],
         };
@@ -290,10 +286,13 @@ export function registerAnalyticsTools(server: McpServer): void {
 }
 
 function formatAnalytics(summary: AnalyticsSummary, days: number, format: 'text' | 'json') {
+  const structuredContent = asEnvelope({ ...summary, days });
+
   if (format === 'json') {
     return {
+      structuredContent,
       content: [
-        { type: 'text' as const, text: JSON.stringify(asEnvelope({ ...summary, days }), null, 2) },
+        { type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) },
       ],
     };
   }
@@ -326,6 +325,7 @@ function formatAnalytics(summary: AnalyticsSummary, days: number, format: 'text'
   }
 
   return {
+    structuredContent,
     content: [{ type: 'text' as const, text: lines.join('\n') }],
   };
 }

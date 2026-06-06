@@ -5,6 +5,12 @@ interface ScheduledPost {
   platform: string;
   status: string;
   title: string | null;
+  caption?: string | null;
+  media_type?: string | null;
+  media_url?: string | null;
+  r2_key?: string | null;
+  thumbnail_url?: string | null;
+  job_id?: string | null;
   scheduled_at: string | null;
   published_at: string | null;
   external_post_id: string | null;
@@ -12,8 +18,14 @@ interface ScheduledPost {
 }
 
 interface CalendarPayload {
+  start_date?: string;
   posts: ScheduledPost[];
   scopes: string[];
+}
+
+interface CalendarToolResult {
+  structuredContent?: Partial<CalendarPayload>;
+  content?: Array<{ type: string; text?: string }>;
 }
 
 interface PostingSlot {
@@ -69,15 +81,28 @@ function hasScope(userScopes: string[], required: string): boolean {
 
 // Scope-denied responses arrive as success-shaped tool calls with a content
 // prefix. See `superpowers/specs/2026-04-24-mcp-app-content-calendar.md` Auth flow.
-function isScopeDenied(result: { content?: Array<{ type: string; text?: string }> }): boolean {
+function isScopeDenied(result: {
+  _meta?: { 'mcp/www_authenticate'?: unknown };
+  content?: Array<{ type: string; text?: string }>;
+}): boolean {
+  if (result._meta?.['mcp/www_authenticate']) return true;
+
   const text = result.content?.find((c) => c.type === 'text')?.text ?? '';
-  return text.startsWith('Permission denied:');
+  if (text.startsWith('Permission denied:')) return true;
+
+  try {
+    const parsed = JSON.parse(text) as { error?: string };
+    return parsed.error === 'permission_denied';
+  } catch {
+    return false;
+  }
 }
 
 const state: {
   posts: ScheduledPost[];
   scopes: string[];
   canSchedule: boolean;
+  startDate: string | null;
   platformFilter: string | null;
   selectedPostId: string | null;
   suggestedSlot: { date: string; platform: string } | null;
@@ -94,6 +119,7 @@ const state: {
   posts: [],
   scopes: [],
   canSchedule: false,
+  startDate: null,
   platformFilter: null,
   selectedPostId: null,
   suggestedSlot: null,
@@ -125,26 +151,42 @@ document.addEventListener('keydown', (ev) => {
 });
 
 app.ontoolresult = (result) => {
-  const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
   try {
-    const payload = JSON.parse(text) as CalendarPayload;
-    state.posts = payload.posts ?? [];
+    const payload = readCalendarPayload(result as CalendarToolResult);
+    state.posts = normalizePosts(payload.posts ?? []);
     state.scopes = payload.scopes ?? [];
     state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
+    state.startDate = payload.start_date ?? state.startDate;
     renderAll();
   } catch (err) {
     showError(`Failed to parse calendar payload: ${(err as Error).message}`);
   }
 };
 
+function readCalendarPayload(result: CalendarToolResult): CalendarPayload {
+  if (result.structuredContent && typeof result.structuredContent === 'object') {
+    return result.structuredContent as CalendarPayload;
+  }
+
+  const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
+  return JSON.parse(text) as CalendarPayload;
+}
+
+function normalizePosts(posts: ScheduledPost[]): ScheduledPost[] {
+  return posts.map((post) => ({ ...post, platform: post.platform.toLowerCase() }));
+}
+
 function getWeekDates(): string[] {
-  const now = new Date();
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
+  const monday = state.startDate ? new Date(`${state.startDate}T00:00:00Z`) : (() => {
+    const now = new Date();
+    const day = now.getUTCDay();
+    const d = new Date(now);
+    d.setUTCDate(now.getUTCDate() - day + (day === 0 ? -6 : 1));
+    return d;
+  })();
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
+    d.setUTCDate(monday.getUTCDate() + i);
     return d.toISOString().split('T')[0];
   });
 }
@@ -158,7 +200,7 @@ function el(tag: string, className?: string, text?: string): HTMLElement {
 
 function visiblePosts(): ScheduledPost[] {
   if (!state.platformFilter) return state.posts;
-  return state.posts.filter((p) => p.platform === state.platformFilter);
+  return state.posts.filter((p) => p.platform.toLowerCase() === state.platformFilter);
 }
 
 // ─── Toolbar (filter pills + suggest button) ──────────────────────────
@@ -238,6 +280,15 @@ function renderPostCard(post: ScheduledPost): HTMLElement {
     state.selectedPostId = post.id;
     renderDrilldown();
   });
+  const previewUrl = post.thumbnail_url ?? post.media_url;
+  if (previewUrl) {
+    const preview = document.createElement('img');
+    preview.className = 'post-preview';
+    preview.alt = '';
+    preview.loading = 'lazy';
+    preview.src = previewUrl;
+    card.append(preview);
+  }
   card.append(el('div', 'post-platform', post.platform));
   const label = (post.title ?? post.external_post_id ?? post.id).slice(0, 80);
   card.append(el('div', undefined, label));
@@ -349,12 +400,18 @@ function renderDrilldown() {
   });
 
   const heading = el('h2', 'drilldown-heading', post.title ?? 'Post');
+  const mediaUrl = post.media_url ?? post.thumbnail_url;
+  const preview = mediaUrl ? renderMediaPreview(post, mediaUrl) : null;
 
   const fields: Array<[string, string]> = [
     ['Platform', post.platform],
     ['Status', post.status],
+    ['Caption', post.caption ?? '—'],
+    ['Media type', post.media_type ?? '—'],
     ['Scheduled for', post.scheduled_at ?? post.published_at ?? '—'],
     ['Created', post.created_at],
+    ['Job ID', post.job_id ?? '—'],
+    ['R2 key', post.r2_key ?? '—'],
     ['External ID', post.external_post_id ?? '—'],
     ['Internal ID', post.id],
   ];
@@ -376,12 +433,31 @@ function renderDrilldown() {
     return row;
   });
 
-  panel.replaceChildren(close, heading, ...rows);
+  panel.replaceChildren(close, heading, ...(preview ? [preview] : []), ...rows);
   panel.classList.add('open');
   panel.setAttribute('aria-hidden', 'false');
   // Move focus into the panel so screen readers announce it and Escape works
   // even if the user dragged-and-dropped just before clicking a card.
   close.focus();
+}
+
+function renderMediaPreview(post: ScheduledPost, mediaUrl: string): HTMLElement {
+  const mediaType = (post.media_type ?? '').toLowerCase();
+  const wrap = el('div', 'media-preview');
+  if (mediaType.includes('video')) {
+    const video = document.createElement('video');
+    video.src = mediaUrl;
+    video.controls = true;
+    video.preload = 'metadata';
+    wrap.append(video);
+    return wrap;
+  }
+  const img = document.createElement('img');
+  img.src = mediaUrl;
+  img.alt = post.title ?? post.caption ?? 'Post media preview';
+  img.loading = 'lazy';
+  wrap.append(img);
+  return wrap;
 }
 
 // ─── Suggest next slot ────────────────────────────────────────────────
@@ -489,10 +565,9 @@ async function onSlotDrop(ev: DragEvent) {
 
   try {
     const result = await app.callServerTool({
-      name: 'schedule_post',
+      name: 'reschedule_post',
       arguments: {
         post_id: postId,
-        update: true,
         schedule_at: newScheduledAt,
       },
     });
@@ -701,7 +776,7 @@ async function submitQuickCreate() {
   }
 
   // Build ISO timestamp from date + time. Validate it's not in the past.
-  const scheduleAt = `${state.modal.date}T${state.modal.time}:00`;
+    const scheduleAt = new Date(`${state.modal.date}T${state.modal.time}:00`).toISOString();
   if (new Date(scheduleAt).getTime() < Date.now()) {
     state.modal.error = 'Schedule time must be in the future.';
     renderModal();
@@ -752,13 +827,13 @@ async function refreshCalendar() {
   try {
     const result = await app.callServerTool({
       name: 'open_content_calendar',
-      arguments: {},
+      arguments: state.startDate ? { start_date: state.startDate } : {},
     });
-    const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
-    const payload = JSON.parse(text) as CalendarPayload;
-    state.posts = payload.posts ?? [];
+    const payload = readCalendarPayload(result as CalendarToolResult);
+    state.posts = normalizePosts(payload.posts ?? []);
     state.scopes = payload.scopes ?? state.scopes;
     state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
+    state.startDate = payload.start_date ?? state.startDate;
     renderAll();
   } catch (err) {
     showError(`Failed to refresh calendar: ${(err as Error).message}`);

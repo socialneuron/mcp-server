@@ -152,13 +152,21 @@ export async function getDefaultProjectId(): Promise<string | null> {
   if (!userId) return null;
   try {
     const supabase = getSupabaseClient();
+    // `projects` is org-scoped (no user_id column). Resolve the user's orgs via
+    // organization_members first, then their most recent project in those orgs.
+    const { data: memberships } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId);
+    const orgIds = (memberships ?? []).map(m => m.organization_id);
+    if (orgIds.length === 0) return null;
     const { data } = await supabase
       .from('projects')
       .select('id')
-      .eq('user_id', userId)
+      .in('organization_id', orgIds)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
     if (data?.id) {
       projectIdCache.set(userId, data.id);
       return data.id;

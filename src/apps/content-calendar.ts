@@ -16,11 +16,34 @@ interface RecentPost {
   platform: string;
   status: string;
   title: string | null;
+  caption?: string | null;
+  media_type?: string | null;
+  media_url?: string | null;
+  r2_key?: string | null;
+  thumbnail_url?: string | null;
+  job_id?: string | null;
   external_post_id: string | null;
   published_at: string | null;
   scheduled_at: string | null;
   created_at: string;
 }
+
+const RecentPostOutputSchema = z.object({
+  id: z.string(),
+  platform: z.string(),
+  status: z.string(),
+  title: z.string().nullable(),
+  caption: z.string().nullable().optional(),
+  media_type: z.string().nullable().optional(),
+  media_url: z.string().nullable().optional(),
+  r2_key: z.string().nullable().optional(),
+  thumbnail_url: z.string().nullable().optional(),
+  job_id: z.string().nullable().optional(),
+  external_post_id: z.string().nullable(),
+  published_at: z.string().nullable(),
+  scheduled_at: z.string().nullable(),
+  created_at: z.string(),
+});
 
 function startOfCurrentWeekMonday(): string {
   const now = new Date();
@@ -44,11 +67,17 @@ export function registerContentCalendarApp(server: McpServer): void {
           .optional()
           .describe('ISO date for the week start (YYYY-MM-DD); defaults to the current week\'s Monday.'),
       },
+      outputSchema: {
+        start_date: z.string(),
+        posts: z.array(RecentPostOutputSchema),
+        scopes: z.array(z.string()),
+      },
       _meta: {
         ui: {
           resourceUri: CALENDAR_URI,
           csp: {
             'img-src': ["'self'", 'https://*.r2.cloudflarestorage.com', 'data:'],
+            'media-src': ["'self'", 'https:', 'data:'],
             'connect-src': ["'self'"],
           },
         },
@@ -63,11 +92,13 @@ export function registerContentCalendarApp(server: McpServer): void {
         error?: string;
       }>(
         'mcp-data',
-        {
-          action: 'recent-posts',
-          days: 14,
-          limit: 50,
-        },
+          {
+            action: 'recent-posts',
+            start_date: fromDate,
+            days: 21,
+            limit: 50,
+            include_media: true,
+          },
         { timeoutMs: 15_000 }
       );
 
@@ -89,11 +120,18 @@ export function registerContentCalendarApp(server: McpServer): void {
         return ts.split('T')[0] >= fromDate;
       });
 
+      const structuredContent = {
+        start_date: fromDate,
+        posts,
+        scopes: userScopes,
+      };
+
       return {
+        structuredContent,
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ posts, scopes: userScopes }),
+            text: `Loaded ${posts.length} calendar post${posts.length === 1 ? '' : 's'} from ${fromDate}.`,
           },
         ],
       };

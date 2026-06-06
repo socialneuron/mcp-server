@@ -1,6 +1,6 @@
 # CLI Guide
 
-The Social Neuron CLI provides terminal access to all 76 tools.
+The Social Neuron CLI provides terminal access to the npm package's local MCP tool set plus selected workflow commands.
 
 ## Installation
 

@@ -8,10 +8,10 @@
  * package versions.
  *
  * Source of truth: the RUNTIME tool registry — registerAllTools(server,
- * { skipApps: true }) — i.e. exactly the 75 tools a stdio (npm) consumer's
+ * { skipApps: true }) — i.e. exactly the tools a stdio (npm) consumer's
  * client receives from tools/list, with the descriptions the model reads.
- * (The 76th catalog entry, open_content_calendar, is an HTTP-only MCP App not
- * shipped in the stdio package, so it is intentionally not in this lock.)
+ * (The extra catalog entries under the apps module are HTTP-only MCP Apps not
+ * shipped in the stdio package, so they are intentionally not in this lock.)
  *
  * Reference: https://nvd.nist.gov/vuln/detail/CVE-2025-6514
  *

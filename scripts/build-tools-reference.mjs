@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Generate docs/tools-reference.md from the RUNTIME tool registry — the exact
- * 75 tools (and their model-facing descriptions) a stdio client receives.
+ * tools (and their model-facing descriptions) a stdio client receives.
  * Reproducible: re-run `npm run build:docs` after any tool change.
  */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';

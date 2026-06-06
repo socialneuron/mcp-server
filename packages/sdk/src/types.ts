@@ -22,9 +22,8 @@ export type VideoModel =
   | "runway-aleph"
   | "sora2"
   | "sora2-pro"
-  | "kling"
-  | "luma"
-  | "midjourney-video";
+  | "kling-3"
+  | "kling-3-pro";
 
 export type ImageModel =
   | "midjourney"
@@ -48,6 +47,7 @@ export interface ApiResponse<T> {
   _meta: {
     version: string;
     timestamp: string;
+    tool?: string;
   };
   data: T;
 }
@@ -75,7 +75,9 @@ export interface GenerateVideoParams {
   model?: VideoModel;
   aspect_ratio?: AspectRatio;
   duration?: number;
-  reference_image_url?: string;
+  image_url?: string;
+  end_frame_url?: string;
+  enable_audio?: boolean;
 }
 
 export interface GenerateImageParams {
@@ -103,7 +105,7 @@ export interface GenerateVoiceoverParams {
 export interface AdaptContentParams {
   content: string;
   source_platform?: Platform;
-  target_platforms: Platform[];
+  target_platform: Platform;
   brand_voice?: string;
 }
 
@@ -119,12 +121,31 @@ export interface FetchTrendsParams {
 export interface SchedulePostParams {
   media_url?: string;
   media_urls?: string[];
-  media_type?: "video" | "image" | "carousel";
+  r2_key?: string;
+  r2_keys?: string[];
+  job_id?: string;
+  job_ids?: string[];
+  media_type?: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
   caption?: string;
   title?: string;
   platforms: Platform[];
-  scheduled_at?: string;
+  schedule_at?: string;
   attribution?: boolean;
+  auto_rehost?: boolean;
+}
+
+export interface ReschedulePostParams {
+  schedule_at: string;
+}
+
+export interface UpdatePostParams {
+  caption?: string;
+  title?: string;
+  hashtags?: string[];
+  media_url?: string;
+  media_type?: "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+  platforms?: Platform[];
+  schedule_at?: string;
 }
 
 export interface ListPostsParams {
@@ -156,6 +177,104 @@ export interface InsightsParams {
 export interface PostingTimesParams {
   platform?: Platform;
   project_id?: string;
+}
+
+// ── Response data types ───────────────────────────────────────────────
+
+export interface GenerateContentResult {
+  text?: string;
+  [key: string]: unknown;
+}
+
+export interface GenerateJobResult {
+  taskId?: string;
+  asyncJobId?: string | null;
+  jobId?: string;
+  status: string;
+  model?: string;
+  estimatedTime?: number;
+  creditsDeducted?: number;
+}
+
+export interface PostRecord {
+  id: string;
+  platform: string;
+  status: string;
+  title: string | null;
+  caption?: string | null;
+  media_type?: string | null;
+  media_url?: string | null;
+  r2_key?: string | null;
+  thumbnail_url?: string | null;
+  job_id?: string | null;
+  external_post_id: string | null;
+  published_at: string | null;
+  scheduled_at: string | null;
+  created_at: string;
+}
+
+export interface SchedulePostResult {
+  success: boolean;
+  results: Record<string, { success: boolean; jobId?: string; postId?: string; error?: string }>;
+  scheduledAt: string;
+}
+
+export interface PostMutationResult {
+  success: boolean;
+  post: PostRecord | null;
+  scheduled_at?: string;
+}
+
+export interface ConnectedAccount {
+  id: string;
+  platform: string;
+  status: string;
+  username: string | null;
+  created_at: string;
+}
+
+export interface ListPostsResult {
+  posts: PostRecord[];
+}
+
+export interface ListAccountsResult {
+  accounts: ConnectedAccount[];
+}
+
+export interface AnalyticsPost {
+  id: string;
+  platform: string;
+  title: string | null;
+  views: number;
+  engagement: number;
+  posted_at: string;
+  content_type?: string | null;
+  model_used?: string | null;
+}
+
+export interface AnalyticsSummary {
+  platform: string | null;
+  totalViews: number;
+  totalEngagement: number;
+  postCount: number;
+  posts: AnalyticsPost[];
+  days?: number;
+}
+
+export interface CreditBalance {
+  balance: number;
+  monthlyUsed: number;
+  monthlyLimit: number;
+  plan: string;
+}
+
+export interface BudgetStatus {
+  creditsUsedThisRun: number;
+  maxCreditsPerRun: number;
+  remaining: number | null;
+  assetsGeneratedThisRun: number;
+  maxAssetsPerRun: number;
+  remainingAssets: number | null;
 }
 
 // ── Brand types ─────────────────────────────────────────────────────

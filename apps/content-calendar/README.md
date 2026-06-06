@@ -1,8 +1,15 @@
-# Content Calendar — MCP App
+# Social Neuron MCP Apps
 
-Interactive drag-drop calendar that renders inside Claude Desktop / claude.ai when the user invokes the `open_content_calendar` tool on the Social Neuron MCP server.
+Interactive apps that render inside ChatGPT, Claude Desktop / claude.ai, and other MCP Apps hosts from the Social Neuron MCP server.
 
-Built per the [MCP Apps spec](https://modelcontextprotocol.io/extensions/apps/build) — single self-contained HTML bundled via `vite-plugin-singlefile`, served by the parent `mcp-server` as a `ui://content-calendar/mcp-app.html` resource.
+Built per the [MCP Apps spec](https://modelcontextprotocol.io/extensions/apps/build) — self-contained HTML bundles via `vite-plugin-singlefile`, served by the parent `mcp-server` as `ui://` resources.
+
+## Apps
+
+| Tool | Bundle | Purpose |
+|---|---|---|
+| `open_content_calendar` | `dist/mcp-app.html` | Drag-drop calendar for planned, scheduled, and published content. |
+| `open_generation_workspace` | `dist/generation-workspace.html` | Live image/video generation progress, result review, retry, and scheduling. |
 
 ## Build
 
@@ -16,9 +23,12 @@ npm install
 npm run build
 ```
 
-Produces `apps/content-calendar/dist/mcp-app.html` (~340KB, ~80KB gzip).
+Produces:
 
-The mcp-server's resource handler reads this file at request time. If the file is missing, the handler returns a readable error page instead of crashing — but the App won't render. Always run `build:app` before deploying.
+- `apps/content-calendar/dist/mcp-app.html`
+- `apps/content-calendar/dist/generation-workspace.html`
+
+The mcp-server resource handlers read these files at request time. If a file is missing, the handler returns a readable error page instead of crashing — but the App won't render. Always run `build:app` before deploying.
 
 ## Local dev loop (no Claude paid plan needed)
 
@@ -45,6 +55,16 @@ cd apps/content-calendar
 npm run dev   # starts vite dev server on a different port
 ```
 
+## Live testing in ChatGPT Developer Mode
+
+Use the hosted MCP connector URL:
+
+```text
+https://mcp.socialneuron.com/mcp
+```
+
+After OAuth linking, prompt: *"Open my content calendar"* or *"Open the generation workspace"*.
+
 ## Live testing in Claude Desktop / claude.ai
 
 Requires a Claude Pro / Max / Team plan (Custom Connectors are paid-plan-only).
@@ -65,21 +85,22 @@ Open a chat and prompt: *"Open my content calendar"* → the App renders inline.
 
 | Piece | Path | Purpose |
 |---|---|---|
-| Entry HTML | `mcp-app.html` | Body + styles; loads `src/mcp-app.ts` |
-| App logic | `src/mcp-app.ts` | `App` class connection, drag-drop, modal, drill-down |
-| Server registration | `../../src/apps/content-calendar.ts` | `registerAppTool` + `registerAppResource` (ext-apps) |
-| Build pipeline | `vite.config.ts` | `vite-plugin-singlefile` inlines all JS/CSS into the HTML |
+| Entry HTML | `mcp-app.html`, `generation-workspace.html` | Body + styles for each app |
+| App logic | `src/mcp-app.ts`, `src/generation-workspace.ts` | `App` class connection and UI logic |
+| Server registration | `../../src/apps/*.ts` | `registerAppTool` + `registerAppResource` (ext-apps) |
+| Build pipeline | `vite.config.ts` | `vite-plugin-singlefile` inlines all JS/CSS into each HTML bundle |
 
-Fields in the payload from `open_content_calendar`:
+Fields in `structuredContent` from `open_content_calendar`:
 
 ```ts
 {
+  start_date: string;       // ISO date for the requested week start
   posts: ScheduledPost[];   // current week + 14d window
-  scopes: string[];         // user's session scopes — drives canSchedule
+  scopes: string[];         // user's session scopes - drives canSchedule
 }
 ```
 
-The App calls back to the server via `app.callServerTool({ name: 'schedule_post' | 'find_next_slots' | 'open_content_calendar', arguments: ... })`. Scope-denied responses arrive as success-shaped tool calls with a `Permission denied:` content prefix; the App detects this via `isScopeDenied()` and shows the upgrade CTA instead of throwing.
+The app reads `structuredContent` first and falls back to legacy JSON text for older tool responses. It calls back to the server via `app.callServerTool({ name: 'schedule_post' | 'find_next_slots' | 'open_content_calendar', arguments: ... })`. Scope-denied responses include `_meta["mcp/www_authenticate"]`; the app also detects permission-denied text responses and shows the upgrade CTA instead of throwing.
 
 ## State scope
 
