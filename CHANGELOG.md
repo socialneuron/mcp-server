@@ -13,7 +13,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 - `applyAnnotations` now logs to **stderr** (`console.error`) instead of stdout. A stray stdout write corrupted the JSON-RPC stream for stdio clients (pydantic "Invalid JSON"; `tools/list` registering 0 tools).
 
 ### Documentation
-- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
+- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals runtime tool descriptions and the discovery catalog shown through `search_tools`.
 - Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
 
 ## [1.7.10] - 2026-05-01

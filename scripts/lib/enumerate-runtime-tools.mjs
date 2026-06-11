@@ -1,15 +1,13 @@
 /**
- * Enumerate the MCP tools as the published stdio package actually registers
- * them — registerAllTools(server, { skipApps: true }) — and return
- * { name: { description, scope } } using the RUNTIME description that
- * tools/list returns to the model, NOT the static src/lib/tool-catalog.ts
- * string.
+ * Enumerate the MCP model-visible tool surface that must be sealed in
+ * tools.lock.json:
  *
- * Why runtime, not catalog: the catalog is the CLI / search_tools data source
- * and its strings can (and do) drift from the descriptions the model actually
- * reads at runtime. Hashing the catalog left runtime-description changes
- * (the real prompt-injection surface, CVE-2025-6514) unsealed — a maintainer
- * could edit a src/tools/*.ts description and ship it without any lock diff.
+ * - runtime tool descriptions returned by tools/list after
+ *   registerAllTools(server, { skipApps: true })
+ * - static TOOL_CATALOG entries returned by the search_tools MCP tool
+ *
+ * Both surfaces are shown to agents. Hashing only one allows the other to drift
+ * without a lockfile diff, weakening the CVE-2025-6514 rug-pull defense.
  *
  * The bundle is written under node_modules/.cache (inside the repo, gitignored)
  * so Node resolves the external deps (SDK, posthog-node, supabase-js) against
@@ -24,7 +22,7 @@ import * as esbuild from 'esbuild';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..', '..');
 
-export async function enumerateRuntimeTools() {
+export async function enumerateLockedTools() {
   const cacheBase = join(ROOT, 'node_modules', '.cache');
   mkdirSync(cacheBase, { recursive: true });
   const tmp = mkdtempSync(join(cacheBase, 'sn-tools-lock-'));
@@ -35,14 +33,25 @@ export async function enumerateRuntimeTools() {
       `import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n` +
         `import { registerAllTools } from ${JSON.stringify(resolve(ROOT, 'src/lib/register-tools.ts'))};\n` +
         `import { TOOL_SCOPES } from ${JSON.stringify(resolve(ROOT, 'src/auth/scopes.ts'))};\n` +
+        `import { TOOL_CATALOG } from ${JSON.stringify(resolve(ROOT, 'src/lib/tool-catalog.ts'))};\n` +
         `const server = new McpServer({ name: 'tools-lock', version: '0' });\n` +
         `registerAllTools(server, { skipApps: true });\n` +
         `const reg = server._registeredTools ?? {};\n` +
+        `const catalog = new Map(TOOL_CATALOG.map((t) => [t.name, t]));\n` +
+        `const names = new Set([...Object.keys(reg), ...catalog.keys()]);\n` +
         `const out = {};\n` +
-        `for (const [name, t] of Object.entries(reg)) {\n` +
-        `  out[name] = { description: String(t?.description ?? ''), scope: TOOL_SCOPES[name] ?? null };\n` +
+        `for (const name of names) {\n` +
+        `  const runtimeTool = reg[name];\n` +
+        `  const catalogTool = catalog.get(name);\n` +
+        `  out[name] = {\n` +
+        `    runtime_description: runtimeTool ? String(runtimeTool?.description ?? '') : null,\n` +
+        `    catalog_description: catalogTool ? String(catalogTool.description ?? '') : null,\n` +
+        `    module: catalogTool?.module ?? null,\n` +
+        `    scope: TOOL_SCOPES[name] ?? null,\n` +
+        `    catalog_scope: catalogTool?.scope ?? null,\n` +
+        `  };\n` +
         `}\n` +
-        `export const RUNTIME_TOOLS = out;\n`
+        `export const LOCKED_TOOLS = out;\n`
     );
     const bundled = join(tmp, 'entry.bundle.mjs');
     await esbuild.build({
@@ -55,10 +64,10 @@ export async function enumerateRuntimeTools() {
       logLevel: 'error',
     });
     const mod = await import(pathToFileURL(bundled).href);
-    if (!mod.RUNTIME_TOOLS || typeof mod.RUNTIME_TOOLS !== 'object') {
-      throw new Error('runtime enumeration produced no tools');
+    if (!mod.LOCKED_TOOLS || typeof mod.LOCKED_TOOLS !== 'object') {
+      throw new Error('tool-lock enumeration produced no tools');
     }
-    return mod.RUNTIME_TOOLS;
+    return mod.LOCKED_TOOLS;
   } finally {
     rmSync(tmp, { recursive: true, force: true });
   }
@@ -67,8 +76,11 @@ export async function enumerateRuntimeTools() {
 export function hashTool(name, info) {
   const canonical = JSON.stringify({
     name,
-    description: info.description,
+    runtime_description: info.runtime_description,
+    catalog_description: info.catalog_description,
+    module: info.module,
     scope: info.scope,
+    catalog_scope: info.catalog_scope,
   });
   return createHash('sha256').update(canonical, 'utf8').digest('hex');
 }

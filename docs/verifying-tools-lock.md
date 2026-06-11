@@ -1,6 +1,6 @@
 # Verifying `tools.lock.json` (Downstream Consumers)
 
-`@socialneuron/mcp-server` ships a sealed manifest, [`tools.lock.json`](../tools.lock.json), containing a SHA-256 hash of every tool's identity-relevant fields (`name`, `description`, `scope`). Pin a hash in your agent's configuration and verify at runtime to detect rug-pull attacks.
+`@socialneuron/mcp-server` ships a sealed manifest, [`tools.lock.json`](../tools.lock.json), containing a SHA-256 hash of every model-visible tool surface entry and its identity-relevant fields (`name`, runtime description, catalog description, module, and scopes). Pin a hash in your agent's configuration and verify at runtime to detect rug-pull attacks.
 
 ## Why this matters
 
@@ -10,10 +10,11 @@ Per [CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514), a compromis
 
 At build time, `scripts/build-tools-lock.mjs`:
 
-1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered tools — exactly the 75 tools a stdio (npm) client receives from `tools/list`, using the **runtime descriptions the model actually reads** (not the static `src/lib/tool-catalog.ts` strings, which are the CLI/`search_tools` data and can drift from runtime). The HTTP-only `open_content_calendar` app is not shipped in the stdio package and is intentionally not sealed here.
-2. For each tool, canonicalizes `{ name, description, scope }` as `JSON.stringify(...)`.
-3. SHA-256 hashes the UTF-8 bytes.
-4. Writes `tools.lock.json` with one hex hash per tool.
+1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered runtime tools — exactly the 75 tools a stdio (npm) client receives from `tools/list`, using the **runtime descriptions the model reads**.
+2. Adds the static `src/lib/tool-catalog.ts` entries returned by the `search_tools` MCP tool, because agents can call that tool while selecting tools and see its descriptions. This also seals the catalog-only `open_content_calendar` entry even though that app tool is not registered for stdio `tools/list`.
+3. For each entry, canonicalizes `{ name, runtime_description, catalog_description, module, scope, catalog_scope }` as `JSON.stringify(...)`.
+4. SHA-256 hashes the UTF-8 bytes.
+5. Writes `tools.lock.json` with one hex hash per locked entry.
 
 The full lockfile is included in every published tarball (`package.json#files`).
 
@@ -89,14 +90,14 @@ Combined with the tools-lock hash pinning, this gives you:
 Re-audit (recompute your pinned hash) whenever:
 
 - You bump `@socialneuron/mcp-server` to a new version
-- You see a PR in the public repo that changes a tool's runtime description (`src/tools/*.ts`) or scope
+- You see a PR in the public repo that changes a tool's runtime description (`src/tools/*.ts`), catalog description (`src/lib/tool-catalog.ts`), module, or scope
 - Your CI flags a lockfile diff you didn't expect
 
 ## Upstream enforcement
 
 The publisher side (this repo) enforces the same invariant in CI via `scripts/verify-tools-lock.mjs` and `scripts/lint-tool-descriptions.mjs`:
 
-- Any PR that changes a tool's runtime description (`src/tools/*.ts`) or scope without also bumping `tools.lock.json` fails CI
+- Any PR that changes a tool's runtime description (`src/tools/*.ts`), catalog description (`src/lib/tool-catalog.ts`), module, or scope without also bumping `tools.lock.json` fails CI
 - Any PR whose descriptions contain prompt-injection patterns (3+ newlines, zero-width chars, role-play markers, off-allowlist URLs, email addresses) fails CI
 
 This means the lockfile is a full dual-signed gate: source → lock at publish time, lock → runtime at consume time.
