@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Build tools.lock.json — a sealed sha256 manifest of every tool's
- * name + RUNTIME description + scope.
+ * runtime name, title, description, schemas, annotations, _meta, and scope.
  *
  * Defends against CVE-2025-6514 (MCP Rug Pull) by letting downstream
  * consumers pin a hash and detect silent description changes between
@@ -9,7 +9,8 @@
  *
  * Source of truth: the RUNTIME tool registry — registerAllTools(server,
  * { skipApps: true }) — i.e. exactly the 75 tools a stdio (npm) consumer's
- * client receives from tools/list, with the descriptions the model reads.
+ * client receives from tools/list, with the descriptions, schema descriptions,
+ * annotations, and _meta strings the model can read.
  * (The 76th catalog entry, open_content_calendar, is an HTTP-only MCP App not
  * shipped in the stdio package, so it is intentionally not in this lock.)
  *
@@ -38,7 +39,16 @@ const manifest = {
   version: 1,
   source: 'runtime: registerAllTools(server, { skipApps: true })',
   hash_algorithm: 'sha256',
-  hashed_fields: ['name', 'description', 'scope'],
+  hashed_fields: [
+    'name',
+    'title',
+    'description',
+    'scope',
+    'inputSchema',
+    'outputSchema',
+    'annotations',
+    '_meta',
+  ],
   tool_count: names.length,
   tools,
 };
