@@ -91,13 +91,14 @@
   },
   "devDependencies": {
     "@types/node": "^25.3.5",
-    "esbuild": "^0.28.0",
+    "esbuild": "^0.28.1",
     "lockfile-lint": "5.0.0",
     "typescript": "^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "^3.2.6"
   },
   "overrides": {
     "vite": "7.3.2",
+    "esbuild": "$esbuild",
     "@hono/node-server": "1.19.13",
     "hono": "4.12.23",
     "path-to-regexp": "8.4.2"
