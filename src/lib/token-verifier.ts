@@ -28,11 +28,21 @@ function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
 // Keys are stored as sha256(token) so a heap/core dump never exposes the
 // plaintext secret (A7).
 const apiKeyCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
-// 30s. At 10s a continuously-polling client missed ~every 10s (~6/min ->
-// ~30/5min), tripping mcp-auth's 5/min soft + 10/5min brute-force limits and
-// defeating the cache. 30s yields <=10 misses/5min. Tradeoff: a revoked key
-// may stay cached up to 30s (was 10s).
-const API_KEY_CACHE_TTL_MS = 30_000;
+// 5 min. The connector re-validates a *valid* token on a background heartbeat
+// ~1-2x/min even when idle. At 30s that was ~10 validate-key-public hits/5min
+// per replica — right at mcp-auth's 10/5min brute-force cap — so the shared
+// Anthropic egress IP pinned the limit and tool calls 401'd ("connection
+// invalidated"). 5min cuts a steady valid key to ~1 miss/5min per replica.
+//
+// Tradeoff: a revoked key can stay cached (and keep authenticating) up to the
+// TTL on a replica that didn't process the eviction. revokeToken() calls
+// evictFromCache() (see oauth-provider.ts) so the revoking replica drops it
+// immediately; 5 min of residual validity on *other* replicas is acceptable
+// for a 90-day key. NOTE: this cache is per-process, so N replicas multiply
+// the miss count by N — the real fix is making mcp-auth not count successful
+// validations toward the brute-force lock (server-side, P0); this TTL bump is
+// mitigation, not the cure.
+const API_KEY_CACHE_TTL_MS = 300_000;
 
 function cacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
