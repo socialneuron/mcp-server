@@ -19,7 +19,7 @@ vi.mock('jose', () => ({
 // Import after mocks are in place
 // ---------------------------------------------------------------------------
 
-import { createTokenVerifier } from './token-verifier.js';
+import { createTokenVerifier, evictFromCache } from './token-verifier.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -441,6 +441,47 @@ describe('createTokenVerifier', () => {
       const [, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(options.signal).toBeDefined();
       expect(options.signal).toBeInstanceOf(AbortSignal);
+    });
+  });
+
+  // =========================================================================
+  // API key validation cache (TTL + revocation eviction)
+  // =========================================================================
+
+  describe('API key validation cache', () => {
+    it('serves a repeat validation from cache without re-calling mcp-auth', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-cache-hit',
+        scopes: ['mcp:read'],
+      });
+      // Unique token so the module-level cache does not collide with other tests.
+      const token = 'snk_live_cache_hit_001';
+
+      const first = await verifier.verifyAccessToken(token);
+      const second = await verifier.verifyAccessToken(token);
+
+      // Second call must NOT hit the Edge Function — this is what keeps the
+      // heartbeat from filling mcp-auth's brute-force window.
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+      expect(second).toEqual(first);
+    });
+
+    it('re-validates after evictFromCache (revocation eviction)', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-cache-evict',
+        scopes: ['mcp:read'],
+      });
+      const token = 'snk_live_cache_evict_002';
+
+      await verifier.verifyAccessToken(token);
+      evictFromCache(token);
+      await verifier.verifyAccessToken(token);
+
+      // Eviction forces a fresh validation so a revoked key stops working
+      // on the replica that processed the revocation.
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
     });
   });
 
