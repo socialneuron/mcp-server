@@ -17,6 +17,7 @@ import { getDefaultProjectId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { computeBrandConsistency } from '../lib/brandScoring.js';
 import { auditBrandColors, exportDesignTokens } from '../lib/colorAudit.js';
+import { resolveBrandProfile } from '../lib/brandProfileResolver.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -24,6 +25,32 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
     _meta: { version: MCP_VERSION, timestamp: new Date().toISOString() },
     data,
   };
+}
+
+function numberValue(value: unknown, fallback = 0): number {
+  const n = typeof value === 'number' ? value : Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+function stringValue(value: unknown, fallback = ''): string {
+  return typeof value === 'string' && value.trim() ? value.trim() : fallback;
+}
+
+function filled(value: unknown): boolean {
+  if (value == null || value === '' || value === 0) return false;
+  if (Array.isArray(value)) return value.length > 0;
+  if (typeof value === 'object') return Object.keys(value).length > 0;
+  return true;
+}
+
+function formatContentPillar(pillar: Record<string, unknown> | string): string {
+  if (typeof pillar === 'string') return pillar;
+
+  const name = stringValue(pillar.name, stringValue(pillar.id, 'Pillar'));
+  const weight = numberValue(pillar.weight, NaN);
+  return Number.isFinite(weight) && weight > 0
+    ? `${name} (${Math.round(weight * 100)}%)`
+    : name;
 }
 
 export function registerBrandRuntimeTools(server: McpServer): void {
@@ -59,9 +86,10 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         };
       }
 
-      const data = result.profile as Record<string, any> | null;
+      const data = result.profile as Record<string, unknown> | null;
+      const resolved = resolveBrandProfile(data);
 
-      if (!data?.profile_data) {
+      if (!resolved) {
         return {
           content: [
             {
@@ -72,8 +100,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         };
       }
 
-      const profile = data.profile_data;
-      const meta = data.extraction_metadata || {};
+      const { profile, metadata, defaultStyleRefUrl } = resolved;
 
       // Build a simplified runtime summary for the agent
       const runtime = {
@@ -83,10 +110,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         messaging: {
           valuePropositions: profile.valuePropositions || [],
           messagingPillars: profile.messagingPillars || [],
-          contentPillars: (profile.contentPillars || []).map(
-            (p: { name: string; weight: number }) => `${p.name} (${Math.round(p.weight * 100)}%)`
-          ),
+          contentPillars: (profile.contentPillars || []).map(formatContentPillar),
           socialProof: profile.socialProof || { testimonials: [], awards: [], pressMentions: [] },
+          claimBoundaries: profile.claimBoundaries || [],
         },
         voice: {
           tone: profile.voiceProfile?.tone || [],
@@ -98,13 +124,18 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         visual: {
           colorPalette: profile.colorPalette || {},
           logoUrl: profile.logoUrl || null,
-          referenceFrameUrl: data.default_style_ref_url || null,
+          referenceFrameUrl: defaultStyleRefUrl,
         },
         audience: profile.targetAudience || {},
+        operating: {
+          complianceRules: profile.complianceRules || [],
+          platformsLive: profile.platformsLive || [],
+          platformsPending: profile.platformsPending || [],
+        },
         confidence: {
-          overall: meta.overallConfidence || 0,
-          provider: meta.scrapingProvider || 'unknown',
-          pagesScraped: meta.pagesScraped || 0,
+          overall: numberValue(metadata.overallConfidence, 0),
+          provider: stringValue(metadata.scrapingProvider, 'unknown'),
+          pagesScraped: numberValue(metadata.pagesScraped, 0),
         },
       };
 
@@ -144,9 +175,10 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         };
       }
 
-      const row = result.profile as Record<string, any> | null;
+      const row = result.profile as Record<string, unknown> | null;
+      const resolved = resolveBrandProfile(row);
 
-      if (!row?.profile_data) {
+      if (!resolved) {
         return {
           content: [
             { type: 'text' as const, text: 'No brand profile found. Run extract_brand first.' },
@@ -154,8 +186,13 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         };
       }
 
-      const p = row.profile_data;
-      const meta = row.extraction_metadata || {};
+      const p = resolved.profile;
+      const meta = resolved.metadata;
+      const audiencePainPoints = p.targetAudience?.psychographics?.painPoints || [];
+      const audiencePersonas = p.audiencePersonas || [];
+      const colorPalette = p.colorPalette || {};
+      const typography = p.typography || {};
+      const logoVariants = p.logoVariants || {};
 
       // Build completeness report
       const sections = [
@@ -169,15 +206,16 @@ export function registerBrandRuntimeTools(server: McpServer): void {
           fields: [
             p.voiceProfile?.tone?.length,
             p.voiceProfile?.style?.length,
-            p.voiceProfile?.avoidPatterns?.length,
+            (p.voiceProfile?.languagePatterns?.length || 0) +
+              (p.voiceProfile?.avoidPatterns?.length || 0),
           ],
           total: 3,
         },
         {
           name: 'Audience',
           fields: [
-            p.targetAudience?.demographics?.ageRange,
-            p.targetAudience?.psychographics?.painPoints?.length,
+            p.targetAudience?.demographics?.ageRange || audiencePersonas.length,
+            audiencePainPoints.length,
           ],
           total: 2,
         },
@@ -193,9 +231,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         {
           name: 'Visual',
           fields: [
-            p.logoUrl,
-            p.colorPalette?.primary !== '#000000' ? p.colorPalette?.primary : null,
-            p.typography,
+            p.logoUrl || Object.keys(logoVariants).length,
+            colorPalette.primary !== '#000000' ? colorPalette.primary : null,
+            Object.keys(typography).length,
           ],
           total: 3,
         },
@@ -217,16 +255,21 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       const lines: string[] = [`Brand System Report: ${p.name || 'Unknown'}`, ''];
 
       for (const section of sections) {
-        const filled = section.fields.filter(f => f != null && f !== '' && f !== 0).length;
-        const pct = Math.round((filled / section.total) * 100);
+        const filledCount = section.fields.filter(filled).length;
+        const pct = Math.round((filledCount / section.total) * 100);
         const icon = pct >= 80 ? 'OK' : pct >= 50 ? 'PARTIAL' : 'MISSING';
-        lines.push(`[${icon}] ${section.name}: ${filled}/${section.total} (${pct}%)`);
+        lines.push(`[${icon}] ${section.name}: ${filledCount}/${section.total} (${pct}%)`);
       }
 
       lines.push('');
-      lines.push(`Extraction confidence: ${Math.round((meta.overallConfidence || 0) * 100)}%`);
       lines.push(
-        `Scraping: ${meta.pagesScraped || 0} pages via ${meta.scrapingProvider || 'unknown'}`
+        `Extraction confidence: ${Math.round(numberValue(meta.overallConfidence, 0) * 100)}%`
+      );
+      lines.push(
+        `Scraping: ${numberValue(meta.pagesScraped, 0)} pages via ${stringValue(
+          meta.scrapingProvider,
+          'unknown'
+        )}`
       );
 
       // Recommendations
@@ -237,7 +280,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       if (!p.videoBrandRules?.pacing)
         recs.push('Add video brand rules (pacing, color grading) for storyboard consistency');
       if (!p.logoUrl) recs.push('Upload a logo for deterministic brand overlay');
-      if ((meta.overallConfidence || 0) < 0.6)
+      if (numberValue(meta.overallConfidence, 0) < 0.6)
         recs.push('Re-extract with premium mode for higher confidence');
 
       if (recs.length > 0) {
@@ -275,9 +318,10 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }>('mcp-data', { action: 'brand-profile', projectId });
 
       const row =
-        !efError && result?.success ? (result.profile as Record<string, any> | null) : null;
+        !efError && result?.success ? (result.profile as Record<string, unknown> | null) : null;
+      const resolved = resolveBrandProfile(row);
 
-      if (!row?.profile_data) {
+      if (!resolved) {
         return {
           content: [
             {
@@ -290,8 +334,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }
 
       // Run multi-dimensional brand consistency scoring
-      const profile = row.profile_data;
-      const checkResult = computeBrandConsistency(content, profile);
+      const checkResult = computeBrandConsistency(content, resolved.profile);
 
       const envelope = asEnvelope(checkResult);
       return {
@@ -327,9 +370,13 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }>('mcp-data', { action: 'brand-profile', projectId });
 
       const row =
-        !efError && result?.success ? (result.profile as Record<string, any> | null) : null;
+        !efError && result?.success ? (result.profile as Record<string, unknown> | null) : null;
+      const resolved = resolveBrandProfile(row);
 
-      if (!row?.profile_data?.colorPalette) {
+      if (
+        !resolved?.profile.colorPalette ||
+        Object.keys(resolved.profile.colorPalette).length === 0
+      ) {
         return {
           content: [
             {
@@ -342,7 +389,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }
 
       const auditResult = auditBrandColors(
-        row.profile_data.colorPalette,
+        resolved.profile.colorPalette,
         content_colors,
         threshold ?? 10
       );
@@ -379,9 +426,13 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }>('mcp-data', { action: 'brand-profile', projectId });
 
       const row =
-        !efError && result?.success ? (result.profile as Record<string, any> | null) : null;
+        !efError && result?.success ? (result.profile as Record<string, unknown> | null) : null;
+      const resolved = resolveBrandProfile(row);
 
-      if (!row?.profile_data?.colorPalette) {
+      if (
+        !resolved?.profile.colorPalette ||
+        Object.keys(resolved.profile.colorPalette).length === 0
+      ) {
         return {
           content: [
             {
@@ -394,8 +445,8 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       }
 
       const output = exportDesignTokens(
-        row.profile_data.colorPalette,
-        row.profile_data.typography,
+        resolved.profile.colorPalette,
+        resolved.profile.typography,
         format
       );
 

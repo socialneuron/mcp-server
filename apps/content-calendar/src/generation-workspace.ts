@@ -1,4 +1,10 @@
-import { App } from '@modelcontextprotocol/ext-apps';
+import {
+  App,
+  applyDocumentTheme,
+  applyHostStyleVariables,
+  applyHostFonts,
+  type McpUiHostContext,
+} from '@modelcontextprotocol/ext-apps';
 
 type GenerationType = 'image' | 'video';
 
@@ -112,7 +118,22 @@ const state: {
 };
 
 const app = new App({ name: 'Generation Workspace', version: '0.1.0' });
-app.connect();
+
+// Adopt Claude's theme tokens so the workspace matches the host light/dark mode.
+function applyHostContext(ctx: Partial<McpUiHostContext> | undefined): void {
+  if (!ctx) return;
+  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+  if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+}
+app.addEventListener('hostcontextchanged', (changed) => applyHostContext(changed));
+
+// Keep Claude in the loop about what the user did inside the app.
+function pushWorkspaceContext(summary: string): void {
+  void app.updateModelContext({ content: [{ type: 'text', text: summary }] });
+}
+
+app.connect().then(() => applyHostContext(app.getHostContext()));
 
 let pollTimer: number | null = null;
 
@@ -365,6 +386,21 @@ function statusClassFor(status: string): 'ok' | 'warn' | 'error' | 'neutral' {
   return 'neutral';
 }
 
+const ACTIVE_STATUSES = ['queued', 'processing', 'pending', 'starting', 'running', 'in_progress'];
+
+function aspectToCss(ratio: string): string {
+  const parts = ratio.split(':');
+  return parts.length === 2 && parts[0] && parts[1] ? `${parts[0]} / ${parts[1]}` : '1 / 1';
+}
+
+function stageLabel(progress: number, type: GenerationType): string {
+  const p = Number(progress) || 0;
+  if (p < 5) return 'Queued';
+  if (p < 60) return type === 'video' ? 'Generating video…' : 'Generating image…';
+  if (p < 90) return type === 'video' ? 'Rendering frames…' : 'Refining details…';
+  return 'Finalizing…';
+}
+
 function renderPreview() {
   const root = byId<HTMLDivElement>('preview');
   const job = state.activeJob;
@@ -384,6 +420,34 @@ function renderPreview() {
     video.controls = true;
     video.playsInline = true;
     root.replaceChildren(video);
+    return;
+  }
+
+  // Generating state — shimmer skeleton shaped like the result, with a staged
+  // status line driven by poll progress (Canva/Codex-style loading).
+  if (job.jobId && ACTIVE_STATUSES.includes(job.status.toLowerCase()) && !url) {
+    const skeleton = document.createElement('div');
+    skeleton.className = 'gen-skeleton';
+    skeleton.style.aspectRatio = aspectToCss(state.aspectRatio);
+
+    const overlay = document.createElement('div');
+    overlay.className = 'gen-overlay';
+
+    const dot = document.createElement('div');
+    dot.className = 'gen-dot';
+
+    const stage = document.createElement('div');
+    stage.className = 'gen-stage';
+    stage.textContent = stageLabel(job.progress, state.type);
+
+    const sub = document.createElement('div');
+    sub.className = 'gen-sub';
+    const pct = Math.max(0, Math.min(100, Number(job.progress) || 0));
+    sub.textContent = pct > 0 ? `${pct}% · ${job.model || state.model}` : `Starting · ${job.model || state.model}`;
+
+    overlay.append(dot, stage, sub);
+    skeleton.append(overlay);
+    root.replaceChildren(skeleton);
     return;
   }
 
@@ -578,6 +642,17 @@ function applyJobStatus(data: Record<string, unknown>) {
   if (state.activeJob.error) {
     showToast(state.activeJob.error, 'error');
   }
+  const finalStatus = state.activeJob.status.toLowerCase();
+  if (
+    (finalStatus === 'completed' || finalStatus === 'succeeded') &&
+    (state.activeJob.resultUrl || state.activeJob.r2Key || state.activeJob.allUrls.length > 0)
+  ) {
+    pushWorkspaceContext(
+      `In the generation workspace, a ${state.activeJob.type} generation (job ${state.activeJob.jobId}, model ${
+        state.activeJob.model || state.model
+      }) completed and is ready to review or schedule.`
+    );
+  }
 }
 
 async function scheduleResult() {
@@ -624,6 +699,11 @@ async function scheduleResult() {
       return;
     }
     showToast(`Scheduled ${state.type} for ${state.platform}.`);
+    pushWorkspaceContext(
+      `In the generation workspace, the user scheduled the generated ${state.type} (job ${
+        state.activeJob.jobId
+      }) to ${state.platform}${scheduleAt ? ` for ${scheduleAt}` : ''}.`
+    );
   } catch (err) {
     showToast(`Schedule failed: ${(err as Error).message}`, 'error');
   } finally {

@@ -72,14 +72,11 @@ export function registerContentCalendarApp(server: McpServer): void {
         posts: z.array(RecentPostOutputSchema),
         scopes: z.array(z.string()),
       },
+      // CSP belongs on the UI *resource* (_meta.ui.csp below), not the tool.
+      // The tool only points at the resource.
       _meta: {
         ui: {
           resourceUri: CALENDAR_URI,
-          csp: {
-            'img-src': ["'self'", 'https://*.r2.cloudflarestorage.com', 'data:'],
-            'media-src': ["'self'", 'https:', 'data:'],
-            'connect-src': ["'self'"],
-          },
         },
       },
     },
@@ -154,7 +151,33 @@ export function registerContentCalendarApp(server: McpServer): void {
       try {
         const html = await fs.readFile(htmlPath, 'utf-8');
         return {
-          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+          contents: [
+            {
+              uri: CALENDAR_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+              _meta: {
+                ui: {
+                  // Borderless so the widget blends into the conversation surface.
+                  prefersBorder: false,
+                  // Claude's CSP contract: camelCase domain lists, NOT HTTP header keys.
+                  // resourceDomains covers img/media/font/script/style loads.
+                  // assets.claude.ai → host fonts (applyHostFonts).
+                  // R2 host → post thumbnails/media. NOTE: confirm this matches the
+                  // actual get-signed-url / media-gateway host in production.
+                  csp: {
+                    connectDomains: [],
+                    resourceDomains: [
+                      'https://assets.claude.ai',
+                      'https://socialneuron.com',
+                      'https://*.r2.cloudflarestorage.com',
+                    ],
+                    baseUriDomains: [],
+                  },
+                },
+              },
+            },
+          ],
         };
       } catch (err) {
         // Most likely cause: deploy was built with `npm run build` only and

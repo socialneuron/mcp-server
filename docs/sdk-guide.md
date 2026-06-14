@@ -191,16 +191,19 @@ const plans = await sn.plans.list({ status: 'draft' });
 const details = await sn.plans.get('plan_abc123');
 
 // Update a plan
-await sn.plans.update('plan_abc123', { topic: 'Updated topic' });
+await sn.plans.update('plan_abc123', {
+  post_updates: [{ post_id: 'day1-youtube-1', title: 'Updated title' }],
+});
 
-// Approve
-await sn.plans.approve('plan_abc123', { action: 'approve' });
+// Submit for approval
+await sn.plans.submitForApproval('plan_abc123');
+
+// List and respond to approval items
+const approvals = await sn.plans.approvals('plan_abc123');
+await sn.plans.respondApproval(approvals.data.items[0].id, { decision: 'approved' });
 
 // Schedule all posts
 await sn.plans.schedule('plan_abc123', { auto_slot: true });
-
-// List pending approvals
-const approvals = await sn.plans.approvals();
 ```
 
 ### Comments
@@ -290,8 +293,8 @@ const plan = await sn.plans.create({
 });
 
 // 3. Generate videos for each post in the plan
-const planDetails = await sn.plans.get(plan.data.planId);
-for (const post of planDetails.data.posts ?? []) {
+const planDetails = await sn.plans.get(plan.data.plan_id!);
+for (const post of planDetails.data.plan.posts ?? []) {
   const video = await sn.content.generateVideo({
     prompt: post.title,
     model: 'veo3-fast',
@@ -301,9 +304,13 @@ for (const post of planDetails.data.posts ?? []) {
   console.log(`${post.platform}: ${result.data.resultUrl}`);
 }
 
-// 4. Approve and schedule
-await sn.plans.approve(plan.data.planId, { action: 'approve' });
-await sn.plans.schedule(plan.data.planId, { auto_slot: true });
+// 4. Submit, approve, and schedule
+await sn.plans.submitForApproval(plan.data.plan_id!);
+const approvalItems = await sn.plans.approvals(plan.data.plan_id!);
+for (const item of approvalItems.data.items) {
+  await sn.plans.respondApproval(item.id, { decision: 'approved' });
+}
+await sn.plans.schedule(plan.data.plan_id!, { auto_slot: true });
 
 // 5. Check credits
 const credits = await sn.account.credits();

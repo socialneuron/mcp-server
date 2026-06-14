@@ -1,4 +1,10 @@
-import { App } from '@modelcontextprotocol/ext-apps';
+import {
+  App,
+  applyDocumentTheme,
+  applyHostStyleVariables,
+  applyHostFonts,
+  type McpUiHostContext,
+} from '@modelcontextprotocol/ext-apps';
 
 interface ScheduledPost {
   id: string;
@@ -135,7 +141,25 @@ const state: {
 };
 
 const app = new App({ name: 'Content Calendar', version: '0.5.0' });
-app.connect();
+
+// Adopt Claude's theme tokens (colors, fonts) so the app matches the host's
+// light/dark mode instead of rendering as a hardcoded light box. Register the
+// change listener BEFORE connect so an early host-context update isn't missed.
+function applyHostContext(ctx: Partial<McpUiHostContext> | undefined): void {
+  if (!ctx) return;
+  if (ctx.theme) applyDocumentTheme(ctx.theme);
+  if (ctx.styles?.variables) applyHostStyleVariables(ctx.styles.variables);
+  if (ctx.styles?.css?.fonts) applyHostFonts(ctx.styles.css.fonts);
+}
+app.addEventListener('hostcontextchanged', (changed) => applyHostContext(changed));
+
+// Push a short, model-readable summary of an action the user took inside the
+// app so Claude stays in the loop and can reference it on the next turn.
+function pushCalendarContext(summary: string): void {
+  void app.updateModelContext({ content: [{ type: 'text', text: summary }] });
+}
+
+app.connect().then(() => applyHostContext(app.getHostContext()));
 
 // Global Escape key — close whichever overlay is open (modal first, then drilldown).
 document.addEventListener('keydown', (ev) => {
@@ -250,7 +274,23 @@ function renderToolbar() {
     void suggestNextSlot(candidatePlatforms);
   });
 
-  bar.replaceChildren(pills, suggest);
+  const children: HTMLElement[] = [pills, suggest];
+
+  // A week grid is a fullscreen-class surface. Offer a fullscreen toggle only
+  // when the host advertises the mode; in fullscreen the host shows its own
+  // close button to return to the conversation.
+  const modes = app.getHostContext()?.availableDisplayModes;
+  if (modes?.includes('fullscreen')) {
+    const fs = document.createElement('button');
+    fs.className = 'suggest-btn';
+    fs.textContent = '⤢ Fullscreen';
+    fs.addEventListener('click', () => {
+      void app.requestDisplayMode({ mode: 'fullscreen' });
+    });
+    children.push(fs);
+  }
+
+  bar.replaceChildren(...children);
 }
 
 // ─── Calendar grid ────────────────────────────────────────────────────
@@ -259,11 +299,17 @@ function renderUpgradeBanner(): HTMLElement | null {
   if (state.canSchedule) return null;
   const wrap = el('div', 'upgrade-banner');
   wrap.append(document.createTextNode('Read-only — upgrade your plan to drag-drop reschedule. '));
-  const link = document.createElement('a');
-  link.href = 'https://socialneuron.com/pricing';
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
+  // A raw <a target="_blank"> won't open from inside Claude's sandboxed iframe.
+  // Route external navigation through the host via app.openLink (shows the host's
+  // link-confirmation modal).
+  const link = document.createElement('button');
+  link.type = 'button';
   link.textContent = 'View pricing →';
+  link.style.cssText =
+    'background:none;border:none;padding:0;font:inherit;color:var(--color-text-info,#92400e);font-weight:600;cursor:pointer;text-decoration:underline;';
+  link.addEventListener('click', () => {
+    void app.openLink({ url: 'https://socialneuron.com/pricing' });
+  });
   wrap.append(link);
   return wrap;
 }
@@ -583,6 +629,11 @@ async function onSlotDrop(ev: DragEvent) {
       return;
     }
     showToast(`Rescheduled to ${newDate}.`);
+    pushCalendarContext(
+      `In the content calendar app, the user rescheduled the ${post.platform} post "${
+        post.title ?? postId
+      }" to ${newScheduledAt}.`
+    );
   } catch (err) {
     revertPost(postId, oldScheduledAt);
     showError(`Reschedule failed: ${(err as Error).message}`);
@@ -813,8 +864,14 @@ async function submitQuickCreate() {
       return;
     }
 
+    const createdPlatform = state.modal.platform;
+    const createdCaption = state.modal.caption.slice(0, 140);
+    const createdWhen = `${state.modal.date} ${state.modal.time}`;
     closeQuickCreate();
     showToast(`Scheduled for ${state.modal.date} ${state.modal.time}.`);
+    pushCalendarContext(
+      `In the content calendar app, the user scheduled a new ${createdPlatform} post for ${createdWhen}. Caption: "${createdCaption}".`
+    );
     void refreshCalendar();
   } catch (err) {
     state.modal.submitting = false;

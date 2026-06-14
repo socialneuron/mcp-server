@@ -311,10 +311,67 @@ export interface ListPlansParams {
   offset?: number;
 }
 
+export interface ContentPlanPost {
+  id: string;
+  platform: Platform;
+  caption: string;
+  title?: string;
+  hashtags?: string[];
+  schedule_at?: string;
+  [key: string]: unknown;
+}
+
+export interface ContentPlan {
+  plan_id?: string;
+  topic: string;
+  platforms: Platform[];
+  posts: ContentPlanPost[];
+  start_date?: string;
+  end_date?: string;
+  estimated_credits?: number;
+  [key: string]: unknown;
+}
+
+export interface ContentPlanSummary {
+  id: string;
+  topic: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  plan_payload?: Record<string, unknown> | null;
+}
+
+export interface ListPlansResult {
+  plans: ContentPlanSummary[];
+  total: number;
+  limit?: number;
+  offset?: number;
+}
+
+export interface GetPlanResult {
+  plan_id: string;
+  topic: string;
+  status: string;
+  created_at: string;
+  updated_at: string;
+  insights_applied: Record<string, unknown> | null;
+  plan: ContentPlan;
+}
+
 export interface UpdatePlanParams {
-  posts?: unknown[];
-  topic?: string;
-  status?: string;
+  post_updates: Array<{
+    post_id: string;
+    caption?: string;
+    title?: string;
+    hashtags?: string[];
+    hook?: string;
+    angle?: string;
+    visual_direction?: string;
+    media_url?: string;
+    schedule_at?: string;
+    platform?: string;
+    status?: "approved" | "rejected" | "needs_edit";
+  }>;
 }
 
 export interface SchedulePlanParams {
@@ -323,10 +380,46 @@ export interface SchedulePlanParams {
   dry_run?: boolean;
 }
 
-export interface ApprovePlanParams {
-  action?: "approve" | "reject" | "needs_edit";
-  post_ids?: string[];
-  feedback?: string;
+export interface UpdatePlanResult {
+  plan_id: string;
+  status: string;
+  updated_posts: number;
+}
+
+export interface SubmitPlanApprovalResult {
+  plan_id: string;
+  approvals_created: number;
+  status: string;
+}
+
+export interface PlanApproval {
+  id: string;
+  plan_id: string;
+  post_id: string;
+  project_id: string;
+  status: "pending" | "approved" | "rejected" | "edited";
+  reason: string | null;
+  decided_at: string | null;
+  created_at: string;
+  updated_at: string;
+  original_post: Record<string, unknown>;
+  edited_post: Record<string, unknown> | null;
+}
+
+export interface PlanApprovalsResult {
+  plan_id: string;
+  total: number;
+  items: PlanApproval[];
+}
+
+export interface RespondPlanApprovalParams {
+  decision: "approved" | "rejected" | "edited";
+  edited_post?: Record<string, unknown>;
+  reason?: string;
+}
+
+export interface RespondPlanApprovalResult {
+  approval: PlanApproval;
 }
 
 // ── Comment types ───────────────────────────────────────────────────

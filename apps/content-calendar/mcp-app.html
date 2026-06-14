@@ -3,24 +3,54 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <title>Social Neuron — Content Calendar</title>
     <style>
       :root {
-        color-scheme: light;
+        color-scheme: light dark;
+        /* Local tokens mapped onto Claude's host style variables (set at runtime
+           by applyHostStyleVariables). Literal fallbacks keep the app readable
+           outside a host. Brand teal stays literal — accents are allowed. */
+        --sn-surface: var(--color-background-primary, #ffffff);
+        --sn-surface-2: var(--color-background-secondary, #f5f4ed);
+        --sn-text: var(--color-text-primary, #1a1a1a);
+        --sn-muted: var(--color-text-secondary, #666);
+        --sn-faint: var(--color-text-tertiary, #999);
+        --sn-line: var(--color-border-tertiary, #e5e5e5);
+        /* Social Neuron brand green — accent only, over host surfaces. */
+        --sn-accent: #00dc82;
+        --sn-accent-strong: #00b86b;
+        --sn-on-accent: #04311f;
+      }
+      html,
+      body {
+        background: transparent;
       }
       body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
         margin: 0;
         padding: 16px;
-        background: #fafafa;
-        color: #1a1a1a;
+        color: var(--sn-text);
       }
       h1 {
         font-size: 18px;
-        margin: 0 0 4px;
+        margin: 0;
+      }
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 4px;
+      }
+      .app-logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        display: block;
+        flex: none;
       }
       .subtitle {
-        color: #666;
+        color: var(--sn-muted);
         font-size: 13px;
         margin-bottom: 16px;
       }
@@ -54,26 +84,27 @@
       .header {
         font-size: 11px;
         text-transform: uppercase;
-        color: #666;
+        color: var(--sn-muted);
         padding: 6px;
         font-weight: 600;
       }
       .hour-label {
         font-size: 11px;
-        color: #999;
+        color: var(--sn-faint);
         padding: 4px 6px;
         text-align: right;
       }
       .slot {
-        background: #fff;
-        border: 1px solid #e5e5e5;
+        background: var(--sn-surface);
+        border: 1px solid var(--sn-line);
         min-height: 36px;
         border-radius: 4px;
         padding: 4px;
       }
       .post-card {
-        background: #f0f9ff;
-        border-left: 3px solid #3b82f6;
+        background: var(--sn-surface-2);
+        color: var(--sn-text);
+        border-left: 3px solid var(--sn-accent);
         padding: 4px 6px;
         margin: 2px 0;
         border-radius: 3px;
@@ -87,7 +118,7 @@
         object-fit: cover;
         border-radius: 3px;
         margin-bottom: 4px;
-        background: #e5e5e5;
+        background: var(--sn-line);
         display: block;
       }
       .post-card.disabled {
@@ -97,12 +128,12 @@
         font-size: 9px;
         text-transform: uppercase;
         font-weight: 700;
-        color: #3b82f6;
+        color: var(--sn-accent);
         margin-bottom: 1px;
       }
       .empty-state {
         text-align: center;
-        color: #999;
+        color: var(--sn-faint);
         padding: 48px 16px;
       }
       .post-card.dragging {
@@ -110,15 +141,15 @@
       }
       .slot.drop-target {
         background: #eff6ff;
-        border-color: #3b82f6;
+        border-color: var(--sn-accent);
         border-style: dashed;
       }
       #toast {
         position: fixed;
         bottom: 16px;
         right: 16px;
-        background: #1f2937;
-        color: #fff;
+        background: var(--color-background-inverse, #1f2937);
+        color: var(--color-text-inverse, #fff);
         padding: 10px 14px;
         border-radius: 6px;
         font-size: 13px;
@@ -149,30 +180,30 @@
         flex-wrap: wrap;
       }
       .pill {
-        background: #fff;
-        border: 1px solid #e5e5e5;
+        background: var(--sn-surface);
+        border: 1px solid var(--sn-line);
         border-radius: 999px;
         padding: 4px 12px;
         font-size: 11px;
         cursor: pointer;
         text-transform: uppercase;
         font-weight: 600;
-        color: #666;
+        color: var(--sn-muted);
         user-select: none;
       }
       .pill:hover {
         background: #f0f9ff;
-        border-color: #3b82f6;
+        border-color: var(--sn-accent);
       }
       .pill.active {
-        background: #3b82f6;
-        color: #fff;
-        border-color: #3b82f6;
+        background: var(--sn-accent);
+        color: var(--sn-on-accent);
+        border-color: var(--sn-accent);
       }
       .suggest-btn {
-        background: #fff;
-        border: 1px solid #3b82f6;
-        color: #3b82f6;
+        background: var(--sn-surface);
+        border: 1px solid var(--sn-accent);
+        color: var(--sn-accent);
         border-radius: 6px;
         padding: 6px 12px;
         font-size: 12px;
@@ -206,8 +237,8 @@
         width: 360px;
         max-width: 100vw;
         height: 100vh;
-        background: #fff;
-        border-left: 1px solid #e5e5e5;
+        background: var(--sn-surface);
+        border-left: 1px solid var(--sn-line);
         box-shadow: -4px 0 16px rgba(0, 0, 0, 0.06);
         padding: 20px 24px;
         box-sizing: border-box;
@@ -237,7 +268,7 @@
         border: none;
         font-size: 22px;
         cursor: pointer;
-        color: #666;
+        color: var(--sn-muted);
         line-height: 1;
       }
       .drilldown-close:hover {
@@ -248,7 +279,7 @@
         font-size: 13px;
       }
       .drilldown-row .label {
-        color: #666;
+        color: var(--sn-muted);
         font-size: 11px;
         text-transform: uppercase;
         font-weight: 600;
@@ -261,7 +292,7 @@
         width: 100%;
         margin: 0 0 16px;
         background: #f5f5f5;
-        border: 1px solid #e5e5e5;
+        border: 1px solid var(--sn-line);
         border-radius: 6px;
         overflow: hidden;
       }
@@ -282,13 +313,13 @@
       }
       .status-pill.scheduled { background: #fef3c7; color: #92400e; }
       .status-pill.published { background: #d1fae5; color: #065f46; }
-      .status-pill.draft     { background: #e5e5e5; color: #525252; }
+      .status-pill.draft     { background: var(--sn-line); color: #525252; }
       .status-pill.failed    { background: #fee2e2; color: #991b1b; }
       .add-btn {
         background: transparent;
-        border: 1px dashed #d4d4d4;
+        border: 1px dashed var(--sn-line);
         border-radius: 4px;
-        color: #999;
+        color: var(--sn-faint);
         padding: 4px;
         font-size: 11px;
         width: 100%;
@@ -296,8 +327,8 @@
         margin-top: 2px;
       }
       .add-btn:hover {
-        border-color: #3b82f6;
-        color: #3b82f6;
+        border-color: var(--sn-accent);
+        color: var(--sn-accent);
       }
       .modal-backdrop {
         position: fixed;
@@ -312,7 +343,7 @@
         display: flex;
       }
       .modal {
-        background: #fff;
+        background: var(--sn-surface);
         border-radius: 8px;
         padding: 20px 24px;
         width: 440px;
@@ -337,7 +368,7 @@
         font-size: 11px;
         text-transform: uppercase;
         font-weight: 600;
-        color: #666;
+        color: var(--sn-muted);
         margin-bottom: 4px;
       }
       .modal-row {
@@ -348,7 +379,7 @@
       .modal textarea {
         width: 100%;
         padding: 6px 10px;
-        border: 1px solid #d4d4d4;
+        border: 1px solid var(--sn-line);
         border-radius: 4px;
         font-size: 13px;
         font-family: inherit;
@@ -360,7 +391,7 @@
       }
       .modal .char-count {
         font-size: 11px;
-        color: #999;
+        color: var(--sn-faint);
         margin-top: 2px;
       }
       .modal .char-count.over {
@@ -379,13 +410,13 @@
         font-weight: 600;
         border-radius: 4px;
         cursor: pointer;
-        border: 1px solid #d4d4d4;
-        background: #fff;
+        border: 1px solid var(--sn-line);
+        background: var(--sn-surface);
       }
       .modal-actions .primary {
-        background: #3b82f6;
-        color: #fff;
-        border-color: #3b82f6;
+        background: var(--sn-accent);
+        color: var(--sn-on-accent);
+        border-color: var(--sn-accent);
       }
       .modal-actions .primary:disabled {
         opacity: 0.4;
@@ -399,7 +430,16 @@
     </style>
   </head>
   <body>
-    <h1>Content Calendar</h1>
+    <div class="app-header">
+      <img
+        class="app-logo"
+        src="https://socialneuron.com/logo-icon.svg"
+        alt="Social Neuron"
+        width="22"
+        height="22"
+      />
+      <h1>Content Calendar</h1>
+    </div>
     <p class="subtitle" id="subtitle">Loading scheduled posts…</p>
     <div id="upgrade-banner-slot"></div>
     <div class="toolbar" id="toolbar"></div>

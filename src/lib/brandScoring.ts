@@ -39,11 +39,20 @@ export interface BrandConsistencyResult {
 /** Minimal brand profile shape from Supabase brand_profiles.profile_data */
 export interface BrandProfileData {
   name?: string;
+  tagline?: string;
+  industryClassification?: string;
+  competitivePositioning?: string;
+  valuePropositions?: string[];
+  messagingPillars?: string[];
+  contentPillars?: Array<Record<string, unknown> | string>;
+  socialProof?: Record<string, unknown>;
   voiceProfile?: {
     tone?: string[];
     style?: string[];
     languagePatterns?: string[];
     avoidPatterns?: string[];
+    sampleContent?: string;
+    platformOverrides?: Record<string, Record<string, unknown>>;
   };
   vocabularyRules?: {
     preferredTerms?: string[];
@@ -62,6 +71,16 @@ export interface BrandProfileData {
     useContractions?: boolean;
     emojiPolicy?: string;
   };
+  audiencePersonas?: Record<string, unknown>[];
+  colorPalette?: Record<string, unknown>;
+  typography?: Record<string, unknown>;
+  logoUrl?: string;
+  logoVariants?: Record<string, unknown>;
+  videoBrandRules?: Record<string, unknown>;
+  complianceRules?: string[];
+  claimBoundaries?: string[];
+  platformsLive?: string[];
+  platformsPending?: string[];
 }
 
 // ---------------------------------------------------------------------------
@@ -87,12 +106,18 @@ function norm(content: string): string {
 
 function findMatches(content: string, terms: string[]): string[] {
   const n = norm(content);
-  return terms.filter(t => n.includes(t.toLowerCase()));
+  return terms.filter(t => {
+    const term = norm(t).trim();
+    return term.length > 0 && n.includes(term);
+  });
 }
 
 function findMissing(content: string, terms: string[]): string[] {
   const n = norm(content);
-  return terms.filter(t => !n.includes(t.toLowerCase()));
+  return terms.filter(t => {
+    const term = norm(t).trim();
+    return term.length > 0 && !n.includes(term);
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -112,7 +137,10 @@ const FABRICATION_PATTERNS = [
   },
 ] as const;
 
-function detectFabricationPatterns(content: string): Array<{ label: string; match: string }> {
+function detectFabricationPatterns(
+  content: string,
+  profile?: BrandProfileData
+): Array<{ label: string; match: string }> {
   const matches: Array<{ label: string; match: string }> = [];
   for (const { regex, label } of FABRICATION_PATTERNS) {
     const re = new RegExp(regex.source, regex.flags);
@@ -121,6 +149,23 @@ function detectFabricationPatterns(content: string): Array<{ label: string; matc
       matches.push({ label, match: m[0] });
     }
   }
+
+  const livePlatforms = new Set(
+    (profile?.platformsLive || []).map(p => p.toLowerCase().replace(/[^a-z0-9]/g, ''))
+  );
+  for (const platform of profile?.platformsPending || []) {
+    const platformKey = platform.toLowerCase().replace(/[^a-z0-9]/g, '');
+    if (!platformKey || livePlatforms.has(platformKey)) continue;
+
+    const platformPattern = new RegExp(
+      `\\b${platform.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`,
+      'i'
+    );
+    if (platformPattern.test(content)) {
+      matches.push({ label: 'pending platform claim', match: platform });
+    }
+  }
+
   return matches;
 }
 
@@ -371,7 +416,7 @@ export function computeBrandConsistency(
     ...(profile.voiceProfile?.avoidPatterns || []),
     ...(profile.vocabularyRules?.bannedTerms || []),
   ];
-  const fabrications = detectFabricationPatterns(content);
+  const fabrications = detectFabricationPatterns(content, profile);
 
   return {
     overall: Math.max(0, Math.min(100, overall)),

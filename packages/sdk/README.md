@@ -91,10 +91,10 @@ const credits = await sn.account.credits();
 | Resource | Methods |
 |----------|---------|
 | `sn.content` | `generate()`, `generateVideo()`, `generateImage()`, `generateCarousel()`, `generateVoiceover()`, `adapt()`, `trends()` |
-| `sn.posts` | `schedule()`, `list()`, `accounts()` |
+| `sn.posts` | `schedule()`, `list()`, `accounts()`, `reschedule()`, `update()`, `cancel()` |
 | `sn.analytics` | `fetch()`, `refresh()`, `youtube()`, `insights()`, `postingTimes()` |
 | `sn.brand` | `get()`, `save()`, `extract()` |
-| `sn.plans` | `create()`, `list()`, `get()`, `update()`, `schedule()`, `approve()`, `approvals()` |
+| `sn.plans` | `create()`, `list()`, `get()`, `update()`, `submitForApproval()`, `approve()`, `approvals()`, `respondApproval()`, `schedule()` |
 | `sn.comments` | `list()`, `post()`, `reply()`, `moderate()`, `delete()` |
 | `sn.jobs` | `check()`, `waitForCompletion()` |
 | `sn.tools` | `list()`, `execute()` |

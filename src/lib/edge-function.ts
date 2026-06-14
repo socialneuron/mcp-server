@@ -51,7 +51,7 @@ function maxResponseBytes(): number {
 }
 
 async function readResponseText(response: Response, maxBytes: number): Promise<string> {
-  const contentLength = Number(response.headers.get('content-length') ?? '0');
+  const contentLength = Number(response.headers?.get('content-length') ?? '0');
   if (Number.isFinite(contentLength) && contentLength > maxBytes) {
     throw new EdgeResponseTooLargeError(maxBytes);
   }

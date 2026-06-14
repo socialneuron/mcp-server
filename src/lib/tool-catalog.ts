@@ -346,6 +346,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
   {
+    name: 'list_content_plans',
+    description: 'List persisted content plans for the active project',
+    module: 'planning',
+    scope: 'mcp:read',
+  },
+  {
     name: 'get_content_plan',
     description: 'Get a specific content plan by ID',
     module: 'planning',

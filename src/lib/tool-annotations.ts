@@ -93,6 +93,7 @@ const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   get_autopilot_status: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   check_status: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   get_content_plan: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
+  list_content_plans: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
   list_plan_approvals: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 
   // Analytics tool that triggers side effects (data refresh)

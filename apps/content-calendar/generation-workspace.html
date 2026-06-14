@@ -3,33 +3,43 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
     <title>Social Neuron - Generation Workspace</title>
     <style>
       :root {
-        color-scheme: light;
-        --bg: #f7f8fb;
-        --surface: #ffffff;
-        --surface-2: #f2f5f9;
-        --text: #17181c;
-        --muted: #687084;
-        --line: #dfe4ec;
-        --accent: #2563eb;
-        --accent-2: #0f766e;
-        --danger: #b91c1c;
-        --warning: #a16207;
-        --ok: #047857;
+        color-scheme: light dark;
+        /* Map the app's local tokens onto Claude's host style variables, with
+           literal fallbacks so the app stays readable when rendered outside a
+           host. Brand accent stays literal (allowed for accents/identity). */
+        --bg: var(--color-background-tertiary, #f7f8fb);
+        --surface: var(--color-background-primary, #ffffff);
+        --surface-2: var(--color-background-secondary, #f2f5f9);
+        --text: var(--color-text-primary, #17181c);
+        --muted: var(--color-text-secondary, #687084);
+        --line: var(--color-border-tertiary, #dfe4ec);
+        /* Social Neuron brand green — accent/identity only. */
+        --accent: #00dc82;
+        --on-accent: #04311f;
+        --accent-2: #00b86b;
+        --danger: var(--color-text-danger, #b91c1c);
+        --warning: var(--color-text-warning, #a16207);
+        --ok: var(--color-text-success, #047857);
       }
 
       * {
         box-sizing: border-box;
       }
 
+      html,
+      body {
+        background: transparent;
+      }
+
       body {
         margin: 0;
         min-height: 100vh;
-        background: var(--bg);
         color: var(--text);
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif);
       }
 
       button,
@@ -73,6 +83,20 @@
         line-height: 1.2;
       }
 
+      .app-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .app-logo {
+        width: 22px;
+        height: 22px;
+        border-radius: 5px;
+        display: block;
+        flex: none;
+      }
+
       h2 {
         margin: 0 0 10px;
         font-size: 13px;
@@ -108,7 +132,7 @@
         width: 100%;
         border: 1px solid var(--line);
         border-radius: 6px;
-        background: #fff;
+        background: var(--surface);
         color: var(--text);
         padding: 8px 10px;
         font-size: 13px;
@@ -169,12 +193,12 @@
       .primary {
         border: 1px solid var(--accent);
         background: var(--accent);
-        color: #fff;
+        color: var(--on-accent);
       }
 
       .secondary {
         border: 1px solid var(--line);
-        background: #fff;
+        background: var(--surface);
         color: var(--text);
       }
 
@@ -270,6 +294,80 @@
         line-height: 1.45;
       }
 
+      /* Canva/Codex-style "generating" state: a shimmer skeleton in the shape of
+         the result, a pulsing brand dot, and a staged status line. */
+      .gen-skeleton {
+        position: relative;
+        width: min(100%, 460px);
+        margin: 0 auto;
+        border-radius: 12px;
+        background: var(--surface-2);
+        overflow: hidden;
+        box-shadow: inset 0 0 0 1px var(--line);
+      }
+      .gen-skeleton::after {
+        content: '';
+        position: absolute;
+        inset: 0;
+        transform: translateX(-100%);
+        background: linear-gradient(
+          90deg,
+          transparent 0%,
+          rgba(0, 220, 130, 0.18) 50%,
+          transparent 100%
+        );
+        animation: gen-shimmer 1.5s ease-in-out infinite;
+      }
+      @keyframes gen-shimmer {
+        100% {
+          transform: translateX(100%);
+        }
+      }
+      .gen-overlay {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 10px;
+        padding: 16px;
+        text-align: center;
+      }
+      .gen-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--accent);
+        animation: gen-pulse 1.4s ease-out infinite;
+      }
+      @keyframes gen-pulse {
+        0% {
+          box-shadow: 0 0 0 0 rgba(0, 220, 130, 0.45);
+        }
+        70% {
+          box-shadow: 0 0 0 14px rgba(0, 220, 130, 0);
+        }
+        100% {
+          box-shadow: 0 0 0 0 rgba(0, 220, 130, 0);
+        }
+      }
+      .gen-stage {
+        font-size: 14px;
+        font-weight: 650;
+        color: var(--text);
+      }
+      .gen-sub {
+        font-size: 12px;
+        color: var(--muted);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .gen-skeleton::after,
+        .gen-dot {
+          animation: none;
+        }
+      }
+
       .progress-wrap {
         border: 1px solid var(--line);
         border-radius: 8px;
@@ -311,7 +409,7 @@
         border: 1px solid var(--line);
         border-radius: 7px;
         padding: 9px 10px;
-        background: #fff;
+        background: var(--surface);
         min-width: 0;
       }
 
@@ -397,7 +495,16 @@
     <main class="shell">
       <aside class="panel">
         <header>
-          <h1>Generation Workspace</h1>
+          <div class="app-header">
+            <img
+              class="app-logo"
+              src="https://socialneuron.com/logo-icon.svg"
+              alt="Social Neuron"
+              width="22"
+              height="22"
+            />
+            <h1>Generation Workspace</h1>
+          </div>
           <p class="subhead" id="subtitle">Create, monitor, review, and schedule generated assets.</p>
         </header>
 

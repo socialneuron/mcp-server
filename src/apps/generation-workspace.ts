@@ -59,14 +59,10 @@ export function registerGenerationWorkspaceApp(server: McpServer): void {
         auto_start: z.boolean().optional(),
         scopes: z.array(z.string()),
       },
+      // CSP belongs on the UI *resource* (_meta.ui.csp below), not the tool.
       _meta: {
         ui: {
           resourceUri: WORKSPACE_URI,
-          csp: {
-            'img-src': ["'self'", 'https:', 'data:'],
-            'media-src': ["'self'", 'https:', 'data:'],
-            'connect-src': ["'self'"],
-          },
         },
       },
     },
@@ -103,7 +99,32 @@ export function registerGenerationWorkspaceApp(server: McpServer): void {
       try {
         const html = await fs.readFile(htmlPath, 'utf-8');
         return {
-          contents: [{ uri: WORKSPACE_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+          contents: [
+            {
+              uri: WORKSPACE_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+              _meta: {
+                ui: {
+                  prefersBorder: false,
+                  // Claude CSP contract (camelCase). resourceDomains covers the
+                  // generated image/video preview + host fonts.
+                  // NOTE: generated previews may be served from model-provider hosts
+                  // (kie.ai, fal.ai) or R2 signed URLs — add those origins here if a
+                  // preview fails to load behind the CSP.
+                  csp: {
+                    connectDomains: [],
+                    resourceDomains: [
+                      'https://assets.claude.ai',
+                      'https://socialneuron.com',
+                      'https://*.r2.cloudflarestorage.com',
+                    ],
+                    baseUriDomains: [],
+                  },
+                },
+              },
+            },
+          ],
         };
       } catch (err) {
         const errorHtml = `<!DOCTYPE html>

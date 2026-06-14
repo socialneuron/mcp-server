@@ -5,7 +5,12 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
-import type { GenerateContentResponse, FetchTrendsResponse, ResponseEnvelope } from '../types/index.js';
+import type {
+  GenerateContentResponse,
+  FetchTrendsResponse,
+  ResponseEnvelope,
+} from '../types/index.js';
+import { resolveBrandProfile } from '../lib/brandProfileResolver.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
@@ -119,19 +124,16 @@ export function registerIdeationTools(server: McpServer): void {
             ),
           ]);
 
-          const brandContext = brandData?.profile?.brand_context as
-            | Record<string, unknown>
-            | undefined;
+          const resolvedBrand = resolveBrandProfile(brandData?.profile);
+          const brandContext = resolvedBrand?.profile;
           const brandName =
             (brandData?.profile?.brand_name as string | undefined) ||
-            (brandContext?.name as string | undefined);
-          const brandIndustry = brandContext?.industryClassification as string | undefined;
-          const voiceProfile =
-            (brandContext?.voiceProfile as Record<string, unknown> | undefined) ?? {};
+            brandContext?.name;
+          const brandIndustry = brandContext?.industryClassification;
+          const voiceProfile = brandContext?.voiceProfile ?? {};
+          const vocabularyRules = brandContext?.vocabularyRules ?? {};
           const platformOverrides =
-            (voiceProfile.platformOverrides as
-              | Record<string, Record<string, unknown>>
-              | undefined) ?? {};
+            voiceProfile.platformOverrides ?? {};
           const platformOverride = platform ? platformOverrides[platform] : undefined;
 
           if (brandName || brandIndustry) {
@@ -157,6 +159,10 @@ export function registerIdeationTools(server: McpServer): void {
             Array.isArray(voiceProfile.avoidPatterns) && voiceProfile.avoidPatterns.length > 0
               ? voiceProfile.avoidPatterns.map(String).join(', ')
               : '';
+          const bannedTerms =
+            Array.isArray(vocabularyRules.bannedTerms) && vocabularyRules.bannedTerms.length > 0
+              ? vocabularyRules.bannedTerms.map(String).join(', ')
+              : '';
           const sampleContent =
             typeof voiceProfile.sampleContent === 'string' ? voiceProfile.sampleContent : '';
 
@@ -165,6 +171,7 @@ export function registerIdeationTools(server: McpServer): void {
             style ? `Style: ${style}` : '',
             languagePatterns ? `Use these language patterns: ${languagePatterns}` : '',
             avoidPatterns ? `Avoid these patterns: ${avoidPatterns}` : '',
+            bannedTerms ? `Never use these terms: ${bannedTerms}` : '',
             sampleContent ? `Voice samples:\n${sampleContent.slice(0, 1200)}` : '',
           ].filter(Boolean);
 
@@ -470,19 +477,22 @@ export function registerIdeationTools(server: McpServer): void {
             },
             { timeoutMs: 20_000 }
           );
-          const voiceProfile = (
-            brandData?.profile?.brand_context as Record<string, unknown> | undefined
-          )?.voiceProfile as Record<string, unknown> | undefined;
+          const resolvedBrand = resolveBrandProfile(brandData?.profile);
+          const voiceProfile = resolvedBrand?.profile.voiceProfile;
+          const vocabularyRules = resolvedBrand?.profile.vocabularyRules;
           const avoidPatterns =
             Array.isArray(voiceProfile?.avoidPatterns) && voiceProfile.avoidPatterns.length > 0
               ? voiceProfile.avoidPatterns.map(String).join(', ')
               : '';
-          const platformOverride = (
-            voiceProfile?.platformOverrides as Record<string, Record<string, unknown>> | undefined
-          )?.[target_platform];
+          const bannedTerms =
+            Array.isArray(vocabularyRules?.bannedTerms) && vocabularyRules.bannedTerms.length > 0
+              ? vocabularyRules.bannedTerms.map(String).join(', ')
+              : '';
+          const platformOverride = voiceProfile?.platformOverrides?.[target_platform];
 
           platformVoiceGuide = [
             avoidPatterns ? `Avoid these patterns: ${avoidPatterns}` : '',
+            bannedTerms ? `Never use these terms: ${bannedTerms}` : '',
             typeof platformOverride?.sampleContent === 'string'
               ? `Match this platform style:\n${platformOverride.sampleContent.slice(0, 900)}`
               : '',

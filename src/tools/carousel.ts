@@ -7,6 +7,7 @@ import { sanitizeError } from '../lib/sanitize-error.js';
 import { requestContext } from '../lib/request-context.js';
 import type { GenerateImageResponse } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { resolveBrandProfile } from '../lib/brandProfileResolver.js';
 
 // Budget accessors — mirror content.ts pattern for per-request context
 const MAX_CREDITS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN || 0));
@@ -102,14 +103,15 @@ interface BrandVisualContext {
 async function fetchBrandVisualContext(projectId: string): Promise<BrandVisualContext | null> {
   const { data, error } = await callEdgeFunction<{
     success: boolean;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    profile: Record<string, any> | null;
+    profile: Record<string, unknown> | null;
   }>('mcp-data', { action: 'brand-profile', projectId });
 
-  if (error || !data?.success || !data.profile?.profile_data) return null;
+  if (error || !data?.success) return null;
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const profile = data.profile.profile_data as Record<string, any>;
+  const resolved = resolveBrandProfile(data.profile);
+  if (!resolved) return null;
+
+  const { profile } = resolved;
   const parts: string[] = [];
 
   // Brand colors → image style direction
@@ -125,26 +127,25 @@ async function fetchBrandVisualContext(projectId: string): Promise<BrandVisualCo
   }
 
   // Logo description for prompt-based overlay
-  const logoUrl = profile.logoUrl as string | undefined;
+  const logoUrl = profile.logoUrl;
   let logoDesc: string | null = null;
   if (logoUrl) {
-    const brandName = (profile.name as string) || 'brand';
+    const brandName = profile.name || 'brand';
     logoDesc = `Include a small "${brandName}" logo watermark in the bottom-right corner`;
     parts.push(logoDesc);
   }
 
   // Visual style from brand voice
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const voice = profile.voiceProfile as Record<string, any> | undefined;
-  if (voice?.tone && Array.isArray(voice.tone) && voice.tone.length > 0) {
-    parts.push(`Visual mood: ${voice.tone.slice(0, 3).join(', ')}`);
+  const tone = profile.voiceProfile?.tone || [];
+  if (tone.length > 0) {
+    parts.push(`Visual mood: ${tone.slice(0, 3).join(', ')}`);
   }
 
   if (parts.length === 0) return null;
 
   return {
     stylePrefix: parts.join('. '),
-    brandName: (profile.name as string) || null,
+    brandName: profile.name || null,
     logoDescription: logoDesc,
   };
 }

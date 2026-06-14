@@ -17,7 +17,7 @@ PLAN=$(curl -s "$BASE/plans" \
     "days": 7
   }')
 
-PLAN_ID=$(echo "$PLAN" | jq -r '.data.id // .data.planId')
+PLAN_ID=$(echo "$PLAN" | jq -r '.data.plan_id')
 echo "Plan created: $PLAN_ID"
 echo "$PLAN" | jq '.data.posts | length'
 echo " posts generated"
@@ -26,15 +26,26 @@ echo " posts generated"
 echo ""
 echo "=== Plan details ==="
 curl -s "$BASE/plans/$PLAN_ID" \
-  -H "Authorization: Bearer $API_KEY" | jq '.data.posts[] | {day: .day, platform: .platform, title: .title}'
+  -H "Authorization: Bearer $API_KEY" | jq '.data.plan.posts[] | {day: .day, platform: .platform, title: .title}'
 
-# 3. Approve and schedule
+# 3. Submit approvals, approve each item, and schedule
 echo ""
-echo "=== Approving plan ==="
-curl -s "$BASE/plans/$PLAN_ID/approve" \
+echo "=== Submitting plan for approval ==="
+curl -s "$BASE/plans/$PLAN_ID/approval" \
   -H "Authorization: Bearer $API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"action": "approve"}' | jq .
+  -d '{}' | jq .
+
+echo ""
+echo "=== Approving plan items ==="
+APPROVALS=$(curl -s "$BASE/plans/$PLAN_ID/approvals" \
+  -H "Authorization: Bearer $API_KEY")
+echo "$APPROVALS" | jq -r '.data.items[].id' | while read -r APPROVAL_ID; do
+  curl -s "$BASE/plans/approvals/$APPROVAL_ID/respond" \
+    -H "Authorization: Bearer $API_KEY" \
+    -H "Content-Type: application/json" \
+    -d '{"decision": "approved"}' | jq .
+done
 
 echo ""
 echo "=== Scheduling all posts ==="

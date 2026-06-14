@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **77 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **85 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -40,6 +40,8 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `get_recipe_run_status` | Check the status of a running recipe execution. Shows progress, current step, credits used, and outputs when complete. |
 | `list_compositions` | List all available Remotion video compositions defined in Social Neuron. Returns composition IDs, dimensions, duration, and descriptions. Use this to discover what videos can be rendered with render_demo_video. |
 | `list_connected_accounts` | Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. If a platform is missing or expired, the user needs to reconnect at socialneuron.com/settings/connections. |
+| `list_content_drafts` | List unscheduled content drafts that can be edited or dragged onto the calendar. |
+| `list_content_plans` | List persisted content plans for the active project, optionally filtered by status. |
 | `list_plan_approvals` | List approval items for a content plan, optionally filtered by status (pending / approved / rejected / edited). Use to check what needs review before scheduling, or to audit decisions after the fact. plan_id comes from get_content_plan or s |
 | `list_recent_posts` | List recent published and scheduled posts with status, platform, title, and timestamps. Use to check what has been posted before planning new content, or to find post IDs for fetch_analytics. Filter by platform or status to narrow results. |
 | `list_recipes` | List available recipe templates. Recipes are pre-built multi-step workflows like "Weekly Instagram Calendar" or "Product Launch Sequence" that automate common content operations. Use this to discover what recipes are available before runnin |
@@ -71,6 +73,7 @@ _Scope: `mcp:write` — Requires **Team** or **Agency** (full MCP)._
 | `create_carousel` | End-to-end carousel creation: generates slide text + kicks off image generation for each slide in parallel. When brand_id is provided, auto-injects brand colors, logo watermark, and visual mood into every image prompt. Returns carousel data |
 | `create_plan_approvals` | Create pending approval rows for each post in a content plan — one row per post, status="pending". Use after submit_content_plan_for_approval to materialize the approval queue. Each entry in posts becomes a row that respond_plan_approval ca |
 | `create_storyboard` | Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profil |
+| `delete_draft` | Delete an unscheduled content draft. |
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_ch |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 2-10 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (ima |
@@ -81,8 +84,10 @@ _Scope: `mcp:write` — Requires **Team** or **Agency** (full MCP)._
 | `render_template_video` | Render a Remotion template video in the cloud. Creates an async render job that is processed by the production worker, uploaded to R2, and tracked via async_jobs. Returns a job ID that can be polled with check_status. Costs credits based on |
 | `respond_plan_approval` | Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an  |
 | `save_brand_profile` | Save (or replace) the active brand profile for a project — voice, target audience, content pillars, claims, etc. Use after extract_brand has produced a draft AND the user has reviewed it, or when the user explicitly edits the profile. brand |
+| `save_content_draft` | Save a new unscheduled content draft for later calendar scheduling. |
 | `save_content_plan` | Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan. |
 | `submit_content_plan_for_approval` | Create pending approval items for each post in a plan and mark plan status as in_review. |
+| `update_content_draft` | Edit an unscheduled content draft. |
 | `update_content_plan` | Edit individual posts in a persisted content plan — change caption, title, hashtags, hook, or angle. Use after get_content_plan when the user wants to revise drafts before scheduling. Each post_updates entry must include post_id from the lo |
 | `update_platform_voice` | Update platform-specific voice overrides (samples, tone/style, CTA/hashtag strategy). |
 | `upload_media` | Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL fetched by the server, (3) inline base64 via file_data (remote age |
@@ -93,9 +98,12 @@ _Scope: `mcp:distribute` — Requires **Team** or **Agency** (full MCP)._
 
 | Tool | Description |
 |------|-------------|
+| `cancel_scheduled_post` | Cancel a scheduled post before it publishes. This does not delete already-published platform posts. |
+| `reschedule_post` | Move an existing scheduled or draft post to a new time. Use this for calendar drag-drop rescheduling; do not call schedule_post with update flags. |
 | `schedule_content_plan` | Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. |
 | `schedule_post` | Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete |
 | `start_platform_connection` | Begin connecting a social platform (Instagram, TikTok, YouTube, etc.). Returns a single-use deep link the user opens in a browser to complete the one-time OAuth handshake on socialneuron.com. This is NOT another OAuth in Claude — platform c |
+| `update_post` | Edit an existing draft or scheduled post. Supports caption, title, hashtags, media, platform list, and schedule time changes before publish. |
 
 ## Engagement
 

@@ -111,6 +111,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:write (content lifecycle — generation tools)
   plan_content_week: 'mcp:write',
   save_content_plan: 'mcp:write',
+  list_content_plans: 'mcp:read',
   get_content_plan: 'mcp:read',
   update_content_plan: 'mcp:write',
   submit_content_plan_for_approval: 'mcp:write',

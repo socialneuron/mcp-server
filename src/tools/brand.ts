@@ -4,6 +4,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { resolveBrandProfile } from '../lib/brandProfileResolver.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -179,10 +180,13 @@ export function registerBrandTools(server: McpServer): void {
       }
 
       const brandContext = data.brand_context as { name?: string } | undefined;
+      const resolvedBrand = resolveBrandProfile(data);
+      const displayName =
+        data.brand_name || brandContext?.name || resolvedBrand?.profile.name || 'N/A';
       const lines = [
         `Active Brand Profile`,
         `Project: ${data.project_id || projectId || 'default'}`,
-        `Brand Name: ${data.brand_name || brandContext?.name || 'N/A'}`,
+        `Brand Name: ${displayName}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,
         `Extraction Method: ${data.extraction_method || 'manual'}`,

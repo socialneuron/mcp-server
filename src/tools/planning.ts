@@ -13,6 +13,7 @@ import type {
 } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { extractJsonArray } from '../lib/parse-utils.js';
+import { resolveBrandProfile } from '../lib/brandProfileResolver.js';
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
@@ -188,21 +189,17 @@ export function registerPlanningTools(server: McpServer): void {
 
             const profile = data?.profile;
             if (profile) {
-              const ctx = (profile.brand_context as Record<string, unknown> | undefined) ?? {};
-              brandName = String(profile.brand_name ?? ctx.name ?? '');
+              const resolvedBrand = resolveBrandProfile(profile);
+              const ctx = resolvedBrand?.profile;
+              brandName = String(profile.brand_name ?? ctx?.name ?? '');
 
-              const voiceProfile = (ctx.voiceProfile as Record<string, unknown> | undefined) ?? {};
+              const voiceProfile = ctx?.voiceProfile ?? {};
               const tone =
                 Array.isArray(voiceProfile.tone) && voiceProfile.tone.length > 0
                   ? voiceProfile.tone.map(String).join(', ')
                   : String(profile.voice_tone ?? '');
-              const targetAudience =
-                (ctx.targetAudience as Record<string, unknown> | undefined) ?? undefined;
-              const psycho =
-                (targetAudience?.psychographics as Record<string, unknown> | undefined) ??
-                undefined;
-              const painPoints = Array.isArray(psycho?.painPoints)
-                ? psycho.painPoints.map(String).join(', ')
+              const painPoints = Array.isArray(ctx?.targetAudience?.psychographics?.painPoints)
+                ? ctx.targetAudience.psychographics.painPoints.map(String).join(', ')
                 : '';
               const audience = painPoints || String(profile.audience ?? '');
 
@@ -571,6 +568,94 @@ export function registerPlanningTools(server: McpServer): void {
           isError: true,
         };
       }
+    }
+  );
+
+  server.tool(
+    'list_content_plans',
+    'List persisted content plans for the active project, optionally filtered by status.',
+    {
+      status: z.enum(['draft', 'in_review', 'approved', 'scheduled', 'completed']).optional(),
+      project_id: z.string().uuid().optional(),
+      limit: z.number().min(1).max(100).default(20),
+      offset: z.number().min(0).default(0),
+      response_format: z.enum(['text', 'json']).default('json'),
+    },
+    async ({ status, project_id, limit, offset, response_format }) => {
+      const resolvedProjectId = project_id || (await getDefaultProjectId());
+      if (!resolvedProjectId) {
+        return {
+          content: [
+            { type: 'text' as const, text: 'No project_id provided and no default project found.' },
+          ],
+          isError: true,
+        };
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plans?: Array<{
+          id: string;
+          topic: string;
+          status: string;
+          created_at: string;
+          updated_at: string;
+          plan_payload?: Record<string, unknown> | null;
+        }>;
+        total?: number;
+        error?: string;
+      }>(
+        'mcp-data',
+        {
+          action: 'list-content-plans',
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
+          status,
+          limit,
+          offset,
+        },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error || !result?.success) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Failed to list content plans: ${error || result?.error || 'Unknown error'}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const payload = {
+        plans: result.plans ?? [],
+        total: result.total ?? result.plans?.length ?? 0,
+        limit,
+        offset,
+      };
+
+      if (response_format === 'json') {
+        const structuredContent = asEnvelope(payload);
+        return {
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
+          isError: false,
+        };
+      }
+
+      const lines = payload.plans.map(plan => `- ${plan.id} | ${plan.status} | ${plan.topic}`);
+      return {
+        structuredContent: asEnvelope(payload),
+        content: [
+          {
+            type: 'text' as const,
+            text: lines.length > 0 ? lines.join('\n') : 'No content plans found.',
+          },
+        ],
+        isError: false,
+      };
     }
   );
 
