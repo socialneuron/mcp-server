@@ -14,13 +14,29 @@ export interface ValidateApiKeyResult {
   email?: string;
   expiresAt?: string;
   error?: string;
+  /**
+   * True when the failure was TRANSIENT (network blip, 429 rate-limit, 5xx) —
+   * the key is not necessarily invalid. Callers should NOT push the user to
+   * re-authenticate on a retryable failure.
+   */
+  retryable?: boolean;
 }
+
+const VALIDATE_MAX_RETRIES = 2; // 3 attempts total
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
 
 /**
  * Validate an API key against the mcp-auth Edge Function.
- * Calls the remote validate-key action which checks the hash.
+ *
+ * Distinguishes TRANSIENT failures (network/429/5xx — retried with backoff and
+ * reported `retryable: true`) from GENUINE auth failures (401/403 = invalid /
+ * expired / revoked → `retryable: false`). This stops a momentary connectivity
+ * hiccup from looking like "your key died, re-login".
  */
-export async function validateApiKey(apiKey: string): Promise<ValidateApiKeyResult> {
+export async function validateApiKey(
+  apiKey: string,
+  _attempt = 0
+): Promise<ValidateApiKeyResult> {
   const supabaseUrl = getSupabaseUrl();
   try {
     // Supabase Edge Functions require an Authorization header even for "public" endpoints.
@@ -46,14 +62,29 @@ export async function validateApiKey(apiKey: string): Promise<ValidateApiKeyResu
 
     if (!response.ok) {
       const text = await response.text();
-      return { valid: false, error: `Validation failed: ${text}` };
+      // 429 (rate-limited) and 5xx (server) are transient — the key is fine.
+      const retryable = response.status === 429 || response.status >= 500;
+      if (retryable && _attempt < VALIDATE_MAX_RETRIES) {
+        await sleep(300 * (_attempt + 1));
+        return validateApiKey(apiKey, _attempt + 1);
+      }
+      return {
+        valid: false,
+        retryable,
+        error: `Validation failed (HTTP ${response.status}): ${text}`,
+      };
     }
 
-    const result = (await response.json()) as ValidateApiKeyResult;
-    return result;
+    return (await response.json()) as ValidateApiKeyResult;
   } catch (err) {
+    // Network/transport error — transient; retry with backoff before giving up.
+    if (_attempt < VALIDATE_MAX_RETRIES) {
+      await sleep(300 * (_attempt + 1));
+      return validateApiKey(apiKey, _attempt + 1);
+    }
     return {
       valid: false,
+      retryable: true,
       error: err instanceof Error ? err.message : String(err),
     };
   }

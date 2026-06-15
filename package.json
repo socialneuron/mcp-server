@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
-    "socialneuron-mcp": "dist/index.js"
+    "socialneuron-mcp": "dist/index.js",
+    "sn": "dist/sn.js"
   },
   "files": [
     "dist/",
@@ -62,9 +63,11 @@
     "check:dep-age": "node scripts/check-dep-age.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
+    "prebuild:sn": "node scripts/write-version.mjs",
+    "build:sn": "esbuild src/sn.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/sn.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/sn.js",
     "build:lock": "node scripts/build-tools-lock.mjs",
     "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --no-audit --no-fund) && npm run build",
-    "build:all": "npm run build:stdio && npm run build && npm run build:lock && npm run build:app",
+    "build:all": "npm run build:stdio && npm run build && npm run build:sn && npm run build:lock && npm run build:app",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",

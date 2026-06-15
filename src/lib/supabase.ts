@@ -182,6 +182,17 @@ export async function initializeAuth(): Promise<void> {
     // Store for callEdgeFunction() cloud transport (env var may not be set)
     authenticatedApiKey = apiKey;
 
+    // Suppress the [MCP] auth chatter for CLI invocations so `--json` output
+    // pipes clean. Quiet when: the `sn` bin set SN_CLI_QUIET, OR this is a
+    // `socialneuron-mcp <cli-command>` call. `--verbose` restores the logs;
+    // MCP-server (stdio) mode is never quiet (logs help connector debugging).
+    const _quietAuth =
+      !process.argv.includes('--verbose') &&
+      (process.env.SN_CLI_QUIET === '1' ||
+        ['setup', 'login', 'logout', 'whoami', 'health', 'sn', 'repl'].includes(
+          process.argv[2] ?? ''
+        ));
+
     // Validate the API key
     const { validateApiKey } = await import('../auth/api-keys.js');
     const result = await validateApiKey(apiKey);
@@ -193,20 +204,22 @@ export async function initializeAuth(): Promise<void> {
         result.scopes && result.scopes.length > 0 ? result.scopes : ['mcp:read'];
       authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
-      console.error(
-        '[MCP] Authenticated via API key (prefix: ' +
-          apiKey.substring(0, 6) +
-          '...' +
-          apiKey.slice(-4) +
-          ')'
-      );
-      console.error('[MCP] Scopes: ' + authenticatedScopes.join(', '));
+      if (!_quietAuth) {
+        console.error(
+          '[MCP] Authenticated via API key (prefix: ' +
+            apiKey.substring(0, 6) +
+            '...' +
+            apiKey.slice(-4) +
+            ')'
+        );
+        console.error('[MCP] Scopes: ' + authenticatedScopes.join(', '));
+      }
 
       // Expiry warning
       if (authenticatedExpiresAt) {
         const expiresMs = new Date(authenticatedExpiresAt).getTime();
         const daysLeft = Math.ceil((expiresMs - Date.now()) / (1000 * 60 * 60 * 24));
-        console.error('[MCP] Key expires: ' + authenticatedExpiresAt);
+        if (!_quietAuth) console.error('[MCP] Key expires: ' + authenticatedExpiresAt);
         if (daysLeft <= 7) {
           console.error(
             `[MCP] Warning: API key expires in ${daysLeft} day(s). Run: npx @socialneuron/mcp-server login`
@@ -215,10 +228,19 @@ export async function initializeAuth(): Promise<void> {
       }
       return;
     } else {
-      authenticatedApiKey = null; // Don't use invalid key for cloud transport
-      // DO NOT fall back to service-role — invalid key means auth failure
+      authenticatedApiKey = null; // Don't use the key for cloud transport
+      // DO NOT fall back to service-role.
+      if (result.retryable) {
+        // Transient (network / 429 / 5xx, already retried with backoff) — the key
+        // is NOT necessarily invalid. Don't push the user to re-auth over a hiccup.
+        throw new Error(
+          'Temporary issue reaching the auth service — your session is likely still valid. ' +
+            'Wait a moment and retry. If it persists, run `sn login`.'
+        );
+      }
       throw new Error(
-        '[MCP] Fatal: API key invalid or expired. Run: npx @socialneuron/mcp-server setup'
+        'API key invalid, expired, or revoked. Run `sn login` to reconnect ' +
+          '(or `socialneuron-mcp login`).'
       );
     }
   }
