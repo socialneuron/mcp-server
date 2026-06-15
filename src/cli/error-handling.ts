@@ -66,7 +66,8 @@ export function classifyError(err: unknown): ClassifiedError {
     lower.includes('fetch failed') ||
     lower.includes('aborterror') ||
     lower.includes('network') ||
-    lower.includes('dns')
+    lower.includes('dns') ||
+    lower.includes('temporary issue')
   ) {
     return {
       message,
