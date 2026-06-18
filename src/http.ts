@@ -552,7 +552,13 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
       // Run in request context for per-user isolation
       await requestContext.run(
-        { userId: auth.userId, scopes: auth.scopes, creditsUsed: 0, assetsGenerated: 0 },
+        {
+          userId: auth.userId,
+          scopes: auth.scopes,
+          token: auth.token,
+          creditsUsed: 0,
+          assetsGenerated: 0,
+        },
         () => entry.transport.handleRequest(req, res, req.body)
       );
       return;
@@ -612,7 +618,13 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
     // Handle the request in user context
     await requestContext.run(
-      { userId: auth.userId, scopes: auth.scopes, creditsUsed: 0, assetsGenerated: 0 },
+      {
+        userId: auth.userId,
+        scopes: auth.scopes,
+        token: auth.token,
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
       () => transport.handleRequest(req, res, req.body)
     );
   } catch (err) {
@@ -654,7 +666,13 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
   await requestContext.run(
-    { userId: req.auth!.userId, scopes: req.auth!.scopes, creditsUsed: 0, assetsGenerated: 0 },
+    {
+      userId: req.auth!.userId,
+      scopes: req.auth!.scopes,
+      token: req.auth!.token,
+      creditsUsed: 0,
+      assetsGenerated: 0,
+    },
     () => entry.transport.handleRequest(req, res)
   );
 });

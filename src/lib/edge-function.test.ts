@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.unmock('./edge-function.js');
 
 import { callEdgeFunction } from './edge-function.js';
+import { requestContext } from './request-context.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -16,6 +17,9 @@ function mockResponse(status: number, body: string, ok?: boolean) {
   return {
     ok: ok ?? (status >= 200 && status < 300),
     status,
+    headers: {
+      get: vi.fn(() => null),
+    },
     text: async () => body,
   };
 }
@@ -32,6 +36,13 @@ function sentHeaders(): Record<string, string> {
   const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
   const [, init] = fetchMock.mock.calls[0];
   return init.headers;
+}
+
+/** Extract the URL that was sent to fetch. */
+function sentUrl(): string {
+  const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+  const [url] = fetchMock.mock.calls[0];
+  return String(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -226,5 +237,61 @@ describe('callEdgeFunction', () => {
     expect(headers.Authorization).toBe('Bearer test-service-key');
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['x-internal-worker-call']).toBe('true');
+  });
+
+  it('uses the per-request connector token for HTTP gateway calls', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read', 'mcp:analytics'],
+        token: 'sno_test_connector_token',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () => callEdgeFunction('mcp-data', { action: 'performance-digest' })
+    );
+
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+
+    const headers = sentHeaders();
+    expect(headers.Authorization).toBe('Bearer sno_test_connector_token');
+    expect(headers['x-internal-worker-call']).toBeUndefined();
+
+    const body = sentBody();
+    expect(body.functionName).toBe('mcp-data');
+    expect(body.method).toBe('POST');
+    expect(body.body).toMatchObject({
+      action: 'performance-digest',
+      userId: 'oauth-user-id',
+      user_id: 'oauth-user-id',
+      projectId: 'test-project-id',
+      project_id: 'test-project-id',
+    });
+  });
+
+  it('does not forward Supabase JWTs to mcp-gateway as API keys', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, '{}'))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'jwt-user-id',
+        scopes: ['mcp:read'],
+        token: 'eyJhbGciOiJIUzI1NiJ9.test.jwt',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () => callEdgeFunction('test-fn', {})
+    );
+
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/test-fn');
+    expect(sentHeaders().Authorization).toBe('Bearer test-service-key');
   });
 });

@@ -8,6 +8,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface RequestContext {
   userId: string;
   scopes: string[];
+  /** Authenticated bearer token for the current HTTP request, if gateway-compatible. */
+  token?: string;
   /** Per-request credit tracking for HTTP mode budget isolation. */
   creditsUsed: number;
   /** Per-request asset count for HTTP mode budget isolation. */
@@ -22,4 +24,8 @@ export function getRequestUserId(): string | null {
 
 export function getRequestScopes(): string[] | null {
   return requestContext.getStore()?.scopes ?? null;
+}
+
+export function getRequestBearerToken(): string | null {
+  return requestContext.getStore()?.token ?? null;
 }
