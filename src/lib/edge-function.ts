@@ -4,7 +4,7 @@ import {
   getDefaultUserId,
   getAuthenticatedApiKey,
 } from './supabase.js';
-import { getRequestUserId } from './request-context.js';
+import { getRequestBearerToken, getRequestUserId } from './request-context.js';
 
 function getServiceKeyOrNull(): string | null {
   try {
@@ -34,12 +34,21 @@ function getApiKeyOrNull(): string | null {
   return getAuthenticatedApiKey();
 }
 
+function getRequestGatewayTokenOrNull(): string | null {
+  const token = getRequestBearerToken();
+  if (!token) return null;
+  // mcp-gateway accepts Social Neuron API keys and connector OAuth tokens.
+  // Supabase JWTs are verified at the MCP boundary but are not gateway tokens.
+  return token.startsWith('snk_') || token.startsWith('sno_') ? token : null;
+}
+
 /**
  * Call a Supabase Edge Function by name.
  *
  * Modes:
  * - Self-host: uses service-role key and calls target function directly.
- * - Cloud: uses SOCIALNEURON_API_KEY and proxies via mcp-gateway.
+ * - Cloud: uses the per-request connector/API token, or configured API key,
+ *   and proxies via mcp-gateway.
  */
 export async function callEdgeFunction<T = unknown>(
   functionName: string,
@@ -52,7 +61,7 @@ export async function callEdgeFunction<T = unknown>(
 ): Promise<{ data: T | null; error: string | null }> {
   const supabaseUrl = getSupabaseUrl();
   const serviceKey = getServiceKeyOrNull();
-  const apiKey = getApiKeyOrNull();
+  const apiKey = getRequestGatewayTokenOrNull() ?? getApiKeyOrNull();
 
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 60_000;
