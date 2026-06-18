@@ -274,7 +274,7 @@ describe('callEdgeFunction', () => {
     });
   });
 
-  it('does not forward Supabase JWTs to mcp-gateway as API keys', async () => {
+  it('forwards verified Supabase JWTs to mcp-gateway in HTTP mode', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
@@ -291,7 +291,7 @@ describe('callEdgeFunction', () => {
       () => callEdgeFunction('test-fn', {})
     );
 
-    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/test-fn');
-    expect(sentHeaders().Authorization).toBe('Bearer test-service-key');
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+    expect(sentHeaders().Authorization).toBe('Bearer eyJhbGciOiJIUzI1NiJ9.test.jwt');
   });
 });
