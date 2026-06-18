@@ -36,10 +36,11 @@ function getApiKeyOrNull(): string | null {
 
 function getRequestGatewayTokenOrNull(): string | null {
   const token = getRequestBearerToken();
-  if (!token) return null;
-  // mcp-gateway accepts Social Neuron API keys and connector OAuth tokens.
-  // Supabase JWTs are verified at the MCP boundary but are not gateway tokens.
-  return token.startsWith('snk_') || token.startsWith('sno_') ? token : null;
+  if (!token?.trim()) return null;
+  // The HTTP auth middleware has already verified this bearer token.
+  // Forward it to the first-party gateway so downstream Edge Functions
+  // stay on the per-request auth path instead of falling back to service role.
+  return token.trim();
 }
 
 /**
