@@ -91,6 +91,10 @@ if (SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length < 100) {
       'Edge function calls may fail. Check your environment variables.'
   );
 }
+const OAUTH_CLIENT_REGISTRATION_SECRET =
+  process.env.OAUTH_CLIENT_REGISTRATION_SECRET ??
+  process.env.MCP_OAUTH_CLIENT_REGISTRATION_SECRET ??
+  SUPABASE_SERVICE_ROLE_KEY;
 
 // ── Crash handlers ───────────────────────────────────────────────────
 
@@ -287,6 +291,7 @@ const oauthProvider = createOAuthProvider({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
   appBaseUrl: APP_BASE_URL,
+  clientRegistrationSecret: OAUTH_CLIENT_REGISTRATION_SECRET,
 });
 
 const authRouter = mcpAuthRouter({
