@@ -79,6 +79,16 @@ function deriveOAuthIssuerUrl(): string {
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
+// Absolute URL of the protected-resource-metadata (PRM) document. The
+// mcpAuthRouter below is mounted with only `issuerUrl`, so the SDK falls back
+// to the issuer origin and serves PRM at `/.well-known/oauth-protected-resource`
+// (rsPath === '/' → no path suffix). Derive the same URL here so 401 responses
+// can advertise it via WWW-Authenticate, letting clients auto-start OAuth.
+const PROTECTED_RESOURCE_METADATA_URL = new URL(
+  '/.well-known/oauth-protected-resource',
+  OAUTH_ISSUER_URL
+).href;
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
   process.exit(1);
@@ -342,6 +352,12 @@ async function authenticateRequest(
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     setNoStore(res);
+    // Advertise the protected-resource-metadata URL per MCP auth spec
+    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+    );
     res.status(401).json({
       error: 'unauthorized',
       error_description: 'Bearer token required',
@@ -392,6 +408,12 @@ async function authenticateRequest(
     const message = err instanceof Error ? sanitizeError(err) : 'Token verification failed';
     console.error(`[MCP HTTP] Token verification failed: ${message}`);
     setNoStore(res);
+    // Advertise the protected-resource-metadata URL per MCP auth spec
+    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+    );
     res.status(401).json({
       error: 'invalid_token',
       error_description: 'Token verification failed',

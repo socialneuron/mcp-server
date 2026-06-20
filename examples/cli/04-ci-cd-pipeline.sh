@@ -16,7 +16,7 @@ OAUTH_STATUS=$(socialneuron-mcp sn oauth-health --json)
 echo "$OAUTH_STATUS"
 
 # Refresh expired tokens
-socialneuron-mcp sn oauth-refresh --platform instagram
+socialneuron-mcp sn oauth-refresh --platforms instagram
 
 # Check credits before proceeding
 CREDITS=$(socialneuron-mcp sn credits --json)

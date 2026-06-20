@@ -68,7 +68,7 @@ OAuth users **cannot self-grant scopes** the way API-key users can. Scopes are d
 
 | Plan | Granted scopes |
 |---|---|
-| Starter | `mcp:read`, `mcp:analytics` |
+| Starter | No MCP access — upgrade to Pro or higher |
 | Pro | `mcp:full` (all of the below) |
 | Team | `mcp:full` |
 
