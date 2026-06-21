@@ -79,6 +79,16 @@ function deriveOAuthIssuerUrl(): string {
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
+// Absolute URL of the protected-resource-metadata (PRM) document. The
+// mcpAuthRouter below is mounted with only `issuerUrl`, so the SDK falls back
+// to the issuer origin and serves PRM at `/.well-known/oauth-protected-resource`
+// (rsPath === '/' → no path suffix). Derive the same URL here so 401 responses
+// can advertise it via WWW-Authenticate, letting clients auto-start OAuth.
+const PROTECTED_RESOURCE_METADATA_URL = new URL(
+  '/.well-known/oauth-protected-resource',
+  OAUTH_ISSUER_URL
+).href;
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
   process.exit(1);
@@ -91,6 +101,10 @@ if (SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length < 100) {
       'Edge function calls may fail. Check your environment variables.'
   );
 }
+const OAUTH_CLIENT_REGISTRATION_SECRET =
+  process.env.OAUTH_CLIENT_REGISTRATION_SECRET ??
+  process.env.MCP_OAUTH_CLIENT_REGISTRATION_SECRET ??
+  SUPABASE_SERVICE_ROLE_KEY;
 
 // ── Crash handlers ───────────────────────────────────────────────────
 
@@ -273,7 +287,7 @@ app.use((_req, res, next) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
-  res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id');
+  res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, WWW-Authenticate');
   if (_req.method === 'OPTIONS') {
     res.status(204).end();
     return;
@@ -287,6 +301,7 @@ const oauthProvider = createOAuthProvider({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
   appBaseUrl: APP_BASE_URL,
+  clientRegistrationSecret: OAUTH_CLIENT_REGISTRATION_SECRET,
 });
 
 const authRouter = mcpAuthRouter({
@@ -337,6 +352,12 @@ async function authenticateRequest(
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
     setNoStore(res);
+    // Advertise the protected-resource-metadata URL per MCP auth spec
+    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+    );
     res.status(401).json({
       error: 'unauthorized',
       error_description: 'Bearer token required',
@@ -387,6 +408,12 @@ async function authenticateRequest(
     const message = err instanceof Error ? sanitizeError(err) : 'Token verification failed';
     console.error(`[MCP HTTP] Token verification failed: ${message}`);
     setNoStore(res);
+    // Advertise the protected-resource-metadata URL per MCP auth spec
+    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
+    res.setHeader(
+      'WWW-Authenticate',
+      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+    );
     res.status(401).json({
       error: 'invalid_token',
       error_description: 'Token verification failed',
@@ -552,7 +579,13 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
       // Run in request context for per-user isolation
       await requestContext.run(
-        { userId: auth.userId, scopes: auth.scopes, creditsUsed: 0, assetsGenerated: 0 },
+        {
+          userId: auth.userId,
+          scopes: auth.scopes,
+          token: auth.token,
+          creditsUsed: 0,
+          assetsGenerated: 0,
+        },
         () => entry.transport.handleRequest(req, res, req.body)
       );
       return;
@@ -612,7 +645,13 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
     // Handle the request in user context
     await requestContext.run(
-      { userId: auth.userId, scopes: auth.scopes, creditsUsed: 0, assetsGenerated: 0 },
+      {
+        userId: auth.userId,
+        scopes: auth.scopes,
+        token: auth.token,
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
       () => transport.handleRequest(req, res, req.body)
     );
   } catch (err) {
@@ -654,7 +693,13 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
   res.setHeader('Cache-Control', 'no-store');
 
   await requestContext.run(
-    { userId: req.auth!.userId, scopes: req.auth!.scopes, creditsUsed: 0, assetsGenerated: 0 },
+    {
+      userId: req.auth!.userId,
+      scopes: req.auth!.scopes,
+      token: req.auth!.token,
+      creditsUsed: 0,
+      assetsGenerated: 0,
+    },
     () => entry.transport.handleRequest(req, res)
   );
 });

@@ -18,4 +18,4 @@ socialneuron-mcp sn credits
 socialneuron-mcp sn usage --json
 
 # Run quality check on content
-socialneuron-mcp sn quality-check --content "Check out our new AI tool! #ai #tech"
+socialneuron-mcp sn quality-check --caption "Check out our new AI tool! #ai #tech"

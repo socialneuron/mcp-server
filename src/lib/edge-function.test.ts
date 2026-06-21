@@ -6,6 +6,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.unmock('./edge-function.js');
 
 import { callEdgeFunction } from './edge-function.js';
+import { requestContext } from './request-context.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -16,6 +17,9 @@ function mockResponse(status: number, body: string, ok?: boolean) {
   return {
     ok: ok ?? (status >= 200 && status < 300),
     status,
+    headers: {
+      get: vi.fn(() => null),
+    },
     text: async () => body,
   };
 }
@@ -32,6 +36,13 @@ function sentHeaders(): Record<string, string> {
   const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
   const [, init] = fetchMock.mock.calls[0];
   return init.headers;
+}
+
+/** Extract the URL that was sent to fetch. */
+function sentUrl(): string {
+  const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+  const [url] = fetchMock.mock.calls[0];
+  return String(url);
 }
 
 // ---------------------------------------------------------------------------
@@ -71,7 +82,10 @@ describe('callEdgeFunction', () => {
   });
 
   // 3. HTTP error with JSON body containing "error" field
-  it('extracts error field from JSON error response', async () => {
+  it('sanitizes the backend error field but preserves the HTTP status', async () => {
+    // Backend-supplied messages are not trusted: a non-allowlisted internal
+    // string is collapsed to the generic sanitized message, while the HTTP
+    // status is preserved as a structured prefix.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'bad request' })))
@@ -80,11 +94,12 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('bad request');
+    expect(result.error).toBe('HTTP 400: An unexpected error occurred. Please try again.');
+    expect(result.error).not.toContain('bad request');
   });
 
   // 4. HTTP error with plain text body
-  it('returns plain text as error on non-JSON error response', async () => {
+  it('sanitizes a non-JSON error body and preserves the HTTP status', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(500, 'Internal error'))
@@ -93,11 +108,12 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('Internal error');
+    expect(result.error).toBe('HTTP 500: An unexpected error occurred. Please try again.');
+    expect(result.error).not.toContain('Internal error');
   });
 
   // 5. HTTP error with empty body
-  it('returns HTTP status code when error body is empty', async () => {
+  it('returns sanitized HTTP status when error body is empty', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(502, ''))
@@ -106,7 +122,7 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 502');
+    expect(result.error).toBe('HTTP 502: An unexpected error occurred. Please try again.');
   });
 
   // 6. Timeout / AbortError
@@ -226,5 +242,61 @@ describe('callEdgeFunction', () => {
     expect(headers.Authorization).toBe('Bearer test-service-key');
     expect(headers['Content-Type']).toBe('application/json');
     expect(headers['x-internal-worker-call']).toBe('true');
+  });
+
+  it('uses the per-request connector token for HTTP gateway calls', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read', 'mcp:analytics'],
+        token: 'sno_test_connector_token',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () => callEdgeFunction('mcp-data', { action: 'performance-digest' })
+    );
+
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+
+    const headers = sentHeaders();
+    expect(headers.Authorization).toBe('Bearer sno_test_connector_token');
+    expect(headers['x-internal-worker-call']).toBeUndefined();
+
+    const body = sentBody();
+    expect(body.functionName).toBe('mcp-data');
+    expect(body.method).toBe('POST');
+    expect(body.body).toMatchObject({
+      action: 'performance-digest',
+      userId: 'oauth-user-id',
+      user_id: 'oauth-user-id',
+      projectId: 'test-project-id',
+      project_id: 'test-project-id',
+    });
+  });
+
+  it('forwards verified Supabase JWTs to mcp-gateway in HTTP mode', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, '{}'))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'jwt-user-id',
+        scopes: ['mcp:read'],
+        token: 'eyJhbGciOiJIUzI1NiJ9.test.jwt',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () => callEdgeFunction('test-fn', {})
+    );
+
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+    expect(sentHeaders().Authorization).toBe('Bearer eyJhbGciOiJIUzI1NiJ9.test.jwt');
   });
 });

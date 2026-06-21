@@ -11,10 +11,12 @@
  *   4. Claude calls /token with code_verifier → provider exchanges via mcp-auth EF
  *   5. Provider decrypts and returns snk_live_* as access_token
  *
- * Dynamic client registrations are in-memory in this public server package —
- * clients re-register on server restart.
+ * Dynamic client registrations are stateless when a registration secret is
+ * configured, so /register, /authorize, and /token can land on different
+ * server instances behind a load balancer.
  */
 import type { Response as ExpressResponse } from 'express';
+import { createHmac, timingSafeEqual } from 'node:crypto';
 import type {
   OAuthServerProvider,
   AuthorizationParams,
@@ -46,6 +48,12 @@ const ALLOWED_REDIRECT_URIS = new Set([
   'https://mcp.so/callback',
 ]);
 
+const STATELESS_CLIENT_ID_PREFIX = 'snc_';
+
+// One-time warning guard so a production misconfiguration is logged once, not
+// on every redirect-URI check.
+let warnedAnyHttpsRedirectInProd = false;
+
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
@@ -59,9 +67,39 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Staging/testing escape hatch for new MCP clients before explicit allowlisting.
-    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
+    // Codex native MCP OAuth loopback callbacks use ephemeral ports and
+    // callback paths such as /callback/<opaque-id>.
+    if (
+      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') &&
+      (parsed.pathname === '/callback' || /^\/callback\/[A-Za-z0-9_-]+$/.test(parsed.pathname)) &&
+      parsed.protocol === 'http:'
+    ) {
       return true;
+    }
+    // ChatGPT connector OAuth callbacks.
+    if (
+      parsed.hostname === 'chatgpt.com' &&
+      parsed.protocol === 'https:' &&
+      (parsed.pathname === '/connector_platform_oauth_redirect' ||
+        parsed.pathname.startsWith('/connector/oauth/'))
+    ) {
+      return true;
+    }
+    // Staging/testing escape hatch for new MCP clients before explicit
+    // allowlisting. Ignored in production: allowing any https redirect there is
+    // an open-redirect / authorization-code-interception risk.
+    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
+      if (process.env.NODE_ENV === 'production') {
+        if (!warnedAnyHttpsRedirectInProd) {
+          warnedAnyHttpsRedirectInProd = true;
+          console.warn(
+            '[oauth] MCP_ALLOW_ANY_HTTPS_REDIRECT is set but ignored in production — ' +
+              'any-https redirect URIs are an open-redirect risk. Add the client to the allowlist instead.'
+          );
+        }
+      } else {
+        return true;
+      }
     }
   } catch {
     // Invalid URL
@@ -75,27 +113,107 @@ export interface OAuthProviderOptions {
   supabaseUrl: string;
   supabaseAnonKey: string;
   appBaseUrl?: string; // Default: https://www.socialneuron.com
+  clientRegistrationSecret?: string;
 }
 
-// ── In-memory client store ──────────────────────────────────────────
+// ── Client registration store ───────────────────────────────────────
 
-function createClientsStore(): OAuthRegisteredClientsStore {
+interface StatelessClientPayload {
+  v: 1;
+  client: OAuthClientInformationFull;
+}
+
+function signStatelessClientPayload(payload: string, secret: string): string {
+  return createHmac('sha256', secret).update(payload).digest('base64url');
+}
+
+function encodeStatelessClientId(client: OAuthClientInformationFull, secret: string): string {
+  const payload: StatelessClientPayload = {
+    v: 1,
+    client: {
+      ...client,
+      client_id: '',
+    },
+  };
+  const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
+  const signature = signStatelessClientPayload(encodedPayload, secret);
+  return `${STATELESS_CLIENT_ID_PREFIX}${encodedPayload}.${signature}`;
+}
+
+function signaturesEqual(a: string, b: string): boolean {
+  const left = Buffer.from(a);
+  const right = Buffer.from(b);
+  return left.length === right.length && timingSafeEqual(left, right);
+}
+
+function decodeStatelessClientId(
+  clientId: string,
+  secret: string
+): OAuthClientInformationFull | undefined {
+  if (!clientId.startsWith(STATELESS_CLIENT_ID_PREFIX)) return undefined;
+
+  const token = clientId.slice(STATELESS_CLIENT_ID_PREFIX.length);
+  const separator = token.lastIndexOf('.');
+  if (separator <= 0 || separator === token.length - 1) return undefined;
+
+  const encodedPayload = token.slice(0, separator);
+  const signature = token.slice(separator + 1);
+  const expectedSignature = signStatelessClientPayload(encodedPayload, secret);
+  if (!signaturesEqual(signature, expectedSignature)) return undefined;
+
+  try {
+    const payload = JSON.parse(
+      Buffer.from(encodedPayload, 'base64url').toString('utf8')
+    ) as StatelessClientPayload;
+    if (payload.v !== 1 || !payload.client || typeof payload.client !== 'object') {
+      return undefined;
+    }
+    return {
+      ...payload.client,
+      client_id: clientId,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function validateRedirectUris(client: OAuthClientInformationFull): void {
+  if (!client.redirect_uris) return;
+  for (const uri of client.redirect_uris) {
+    if (!isAllowedRedirectUri(uri)) {
+      throw new Error(`Redirect URI not allowed: ${uri}`);
+    }
+  }
+}
+
+function createClientsStore(clientRegistrationSecret?: string): OAuthRegisteredClientsStore {
   const clients = new Map<string, OAuthClientInformationFull>();
 
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-      return clients.get(clientId);
+      const inMemoryClient = clients.get(clientId);
+      if (inMemoryClient) return inMemoryClient;
+
+      if (!clientRegistrationSecret) return undefined;
+      const statelessClient = decodeStatelessClientId(clientId, clientRegistrationSecret);
+      if (!statelessClient) return undefined;
+
+      validateRedirectUris(statelessClient);
+      return statelessClient;
     },
 
     async registerClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
-      // Validate redirect URIs
-      if (client.redirect_uris) {
-        for (const uri of client.redirect_uris) {
-          if (!isAllowedRedirectUri(uri)) {
-            throw new Error(`Redirect URI not allowed: ${uri}`);
-          }
-        }
+      validateRedirectUris(client);
+
+      if (clientRegistrationSecret) {
+        const registeredClient = {
+          ...client,
+          client_id: encodeStatelessClientId(client, clientRegistrationSecret),
+        };
+        clients.set(registeredClient.client_id, registeredClient);
+        return registeredClient;
       }
+
       clients.set(client.client_id, client);
       return client;
     },
@@ -107,7 +225,7 @@ function createClientsStore(): OAuthRegisteredClientsStore {
 export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerProvider {
   const { supabaseUrl, supabaseAnonKey } = options;
   const appBaseUrl = options.appBaseUrl ?? 'https://www.socialneuron.com';
-  const clientsStore = createClientsStore();
+  const clientsStore = createClientsStore(options.clientRegistrationSecret?.trim() || undefined);
 
   const tokenVerifier = createTokenVerifier({ supabaseUrl, supabaseAnonKey });
 

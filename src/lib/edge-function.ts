@@ -4,7 +4,8 @@ import {
   getDefaultUserId,
   getAuthenticatedApiKey,
 } from './supabase.js';
-import { getRequestUserId } from './request-context.js';
+import { getRequestBearerToken, getRequestUserId } from './request-context.js';
+import { sanitizeError } from './sanitize-error.js';
 
 function getServiceKeyOrNull(): string | null {
   try {
@@ -34,12 +35,22 @@ function getApiKeyOrNull(): string | null {
   return getAuthenticatedApiKey();
 }
 
+function getRequestGatewayTokenOrNull(): string | null {
+  const token = getRequestBearerToken();
+  if (!token?.trim()) return null;
+  // The HTTP auth middleware has already verified this bearer token.
+  // Forward it to the first-party gateway so downstream Edge Functions
+  // stay on the per-request auth path instead of falling back to service role.
+  return token.trim();
+}
+
 /**
  * Call a Supabase Edge Function by name.
  *
  * Modes:
  * - Self-host: uses service-role key and calls target function directly.
- * - Cloud: uses SOCIALNEURON_API_KEY and proxies via mcp-gateway.
+ * - Cloud: uses the per-request connector/API token, or configured API key,
+ *   and proxies via mcp-gateway.
  */
 export async function callEdgeFunction<T = unknown>(
   functionName: string,
@@ -52,7 +63,7 @@ export async function callEdgeFunction<T = unknown>(
 ): Promise<{ data: T | null; error: string | null }> {
   const supabaseUrl = getSupabaseUrl();
   const serviceKey = getServiceKeyOrNull();
-  const apiKey = getApiKeyOrNull();
+  const apiKey = getRequestGatewayTokenOrNull() ?? getApiKeyOrNull();
 
   const controller = new AbortController();
   const timeoutMs = options?.timeoutMs ?? 60_000;
@@ -195,7 +206,10 @@ export async function callEdgeFunction<T = unknown>(
           error: `Rate limit exceeded (HTTP 429). Wait ${retryAfter}s before retrying. Reduce request frequency or upgrade your plan.`,
         };
       }
-      return { data: null, error: errorMessage };
+      // Sanitize the backend-supplied message so internal details (table names,
+      // stack traces, secrets, endpoint URLs) never leak to clients. The HTTP
+      // status is preserved as a structured prefix for debuggability.
+      return { data: null, error: `HTTP ${response.status}: ${sanitizeError(errorMessage)}` };
     }
 
     try {

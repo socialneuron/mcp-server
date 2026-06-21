@@ -11,6 +11,10 @@ const TEST_OPTIONS = {
   supabaseAnonKey: 'test-anon-key',
   appBaseUrl: 'https://www.socialneuron.com',
 };
+const TEST_OPTIONS_WITH_CLIENT_SECRET = {
+  ...TEST_OPTIONS,
+  clientRegistrationSecret: 'test-client-registration-secret',
+};
 
 function makeClient(
   overrides: Partial<OAuthClientInformationFull> = {}
@@ -102,6 +106,36 @@ describe('createOAuthProvider', () => {
       expect(registered.client_id).toBe('test-client-123');
     });
 
+    it('allows Codex loopback callback paths on ephemeral ports', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
+      });
+
+      const registered = await provider.clientsStore.registerClient!(client);
+      expect(registered.client_id).toBe('test-client-123');
+    });
+
+    it('allows ChatGPT connector redirect URIs', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+
+      await expect(
+        provider.clientsStore.registerClient!(
+          makeClient({
+            redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
+          })
+        )
+      ).resolves.toMatchObject({ client_id: 'test-client-123' });
+
+      await expect(
+        provider.clientsStore.registerClient!(
+          makeClient({
+            redirect_uris: ['https://chatgpt.com/connector/oauth/social-neuron'],
+          })
+        )
+      ).resolves.toMatchObject({ client_id: 'test-client-123' });
+    });
+
     it('rejects HTTPS localhost unless explicitly allowlisted', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
@@ -111,6 +145,36 @@ describe('createOAuthProvider', () => {
       await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
         'Redirect URI not allowed'
       );
+    });
+
+    it('uses signed stateless client IDs that work across provider instances', async () => {
+      const providerA = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
+      const providerB = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
+
+      const registered = await providerA.clientsStore.registerClient!(
+        makeClient({
+          redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
+        })
+      );
+
+      expect(registered.client_id).toMatch(/^snc_/);
+      expect(registered.client_id).not.toBe('test-client-123');
+
+      const retrieved = await providerB.clientsStore.getClient!(registered.client_id);
+      expect(retrieved).toMatchObject({
+        client_id: registered.client_id,
+        client_name: 'Test Client',
+        redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
+      });
+    });
+
+    it('rejects tampered stateless client IDs', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
+      const registered = await provider.clientsStore.registerClient!(makeClient());
+
+      const tampered = `${registered.client_id.slice(0, -1)}x`;
+      const retrieved = await provider.clientsStore.getClient!(tampered);
+      expect(retrieved).toBeUndefined();
     });
   });
 

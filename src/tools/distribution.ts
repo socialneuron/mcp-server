@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { quickSSRFCheck } from '../lib/ssrf.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import type {
@@ -88,7 +88,7 @@ async function rehostExternalUrl(
     return { signedUrl: mediaUrl, r2Key: '' };
   }
 
-  const ssrf = quickSSRFCheck(mediaUrl);
+  const ssrf = await validateUrlForSSRF(mediaUrl);
   if (!ssrf.isValid) {
     return { error: ssrf.error ?? 'URL rejected by SSRF check' };
   }
