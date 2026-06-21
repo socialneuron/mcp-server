@@ -5,10 +5,10 @@
 socialneuron-mcp sn plan list
 
 # View a specific plan
-socialneuron-mcp sn plan view --id "plan_abc123"
+socialneuron-mcp sn plan view --plan-id "plan_abc123"
 
 # Approve a plan
-socialneuron-mcp sn plan approve --id "plan_abc123"
+socialneuron-mcp sn plan approve --plan-id "plan_abc123"
 
 # List and filter tools
 socialneuron-mcp sn tools --module content

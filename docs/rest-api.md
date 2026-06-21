@@ -1,6 +1,8 @@
 # Social Neuron REST API
 
-REST interface to 76 AI content tools. Same auth, scopes, and rate limits as MCP.
+> **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
+
+REST interface to the Social Neuron AI content tools (92 tools on the hosted product). Same auth, scopes, and rate limits as the hosted MCP endpoint.
 
 ## Base URL
 
@@ -63,7 +65,7 @@ curl -X POST \
 
 ## Endpoints
 
-### Tool Proxy (recommended for all 76 tools)
+### Tool Proxy (recommended — covers all hosted tools)
 
 | Method | Path | Description |
 |--------|------|-------------|

@@ -1,5 +1,7 @@
 # @socialneuron/sdk
 
+> **Preview — not yet published to npm.** This package is under active development and not available on the npm registry. APIs documented here may change before the first stable release. For production use today, use the [REST API](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) directly.
+
 [![npm version](https://img.shields.io/npm/v/@socialneuron/sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -8,8 +10,11 @@ TypeScript SDK for the [Social Neuron](https://socialneuron.com) REST API. 9 res
 
 ## Installation
 
+> **Not yet on npm.** Until the first stable release, install directly from the repository or wait for the published package announcement.
+
 ```bash
-npm install @socialneuron/sdk
+# Not yet available — watch for the release announcement
+# npm install @socialneuron/sdk
 ```
 
 ## Quick Start

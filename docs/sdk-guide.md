@@ -1,6 +1,8 @@
 # TypeScript SDK Guide
 
 > **Preview.** The SDK is in development and not yet published to npm. APIs documented here may change before the first stable release. For production use today, see the [REST API guide](./rest-api.md).
+>
+> **Hosted service only.** The SDK targets the REST API served by the hosted backend at `mcp.socialneuron.com`. It does **not** connect to a self-hosted instance of the `@socialneuron/mcp-server` npm package, which exposes MCP over stdio/HTTP only and does not serve `/v1` routes.
 
 The `@socialneuron/sdk` package provides a typed client for the Social Neuron REST API.
 

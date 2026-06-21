@@ -1,4 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+// distribution.ts validates media URLs with the DNS-resolving validateUrlForSSRF.
+// Mock node:dns so external media hostnames (replicate.delivery, tempfile.kie.ai)
+// resolve to a public IP in tests; localhost/private literals are still rejected
+// by hostname / IP-literal checks before any DNS lookup (mirrors ssrf.test.ts).
+vi.mock('node:dns', () => ({
+  promises: {
+    Resolver: vi.fn(() => ({
+      resolve4: vi.fn(async () => ['93.184.216.34']),
+      resolve6: vi.fn(async () => []),
+    })),
+  },
+}));
+
 import { createMockServer } from '../test-setup.js';
 import { registerDistributionTools } from './distribution.js';
 import { callEdgeFunction } from '../lib/edge-function.js';

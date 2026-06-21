@@ -76,7 +76,8 @@ async function main(): Promise<void> {
       await runHealthCheck({ json: wantsJson });
       process.exit(0);
     }
-    case 'repl': {
+    case 'repl':
+    case 'shell': {
       const { runRepl } = await import('./cli/repl.js');
       await runRepl(); // never returns
       return;
