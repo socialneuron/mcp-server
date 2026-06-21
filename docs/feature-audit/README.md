@@ -56,6 +56,37 @@ This tracker is maintained by a self-paced `/loop`. The phases run in order:
 - `Pass` / `Fail` / `Blocked` — test outcomes.
 - `Fixed` / `N/A` / `Won't Fix` — fix outcomes.
 
+## Phase 2 findings (testing)
+
+Ran on `2026-06-21` against the branch head.
+
+**Green:**
+- **Unit/integration suite (`npm test`)**: 992 passed, 23 skipped, **0 failed** (52 files).
+  stderr noise is deliberate error-path assertions (graceful failure tests).
+- **`lint:tools`**: 76 tool descriptions clean.
+- **`verify:lock`**: `tools.lock.json` matches the runtime registry (75 tools).
+
+**Bug found and fixed (Phase 3 applied for this item):**
+- **`create_carousel` (T16)** — the tool description advertises a `brand_id`
+  parameter and the handler destructures/uses it (`carousel.ts`), but `brand_id`
+  was **missing from the Zod input schema**. The MCP SDK validates and strips
+  unknown keys, so any caller-supplied `brand_id` was dropped before reaching the
+  handler — the documented "auto-inject brand colors/logo/mood when `brand_id` is
+  provided" path was unreachable. Also surfaced as a TS2339 type error. **Fixed**
+  by adding `brand_id` to the schema. Verified: carousel tests 12/12, `verify:lock`
+  OK, type error resolved.
+
+**Known issue documented (not CI-enforced):**
+- **`npm run typecheck` reports 295 errors** but is **not part of CI** (`ci.yml`
+  gates on lockfile/tools/lock/test/audit/build, not `tsc`). Breakdown: 245×
+  TS2591 (node globals like `process`/`Buffer` unresolved — `tsconfig.json` has no
+  `types`/`lib` for node and `@types/node` globals are not being picked up), 4×
+  TS2307 (`@remotion/bundler` / `@remotion/renderer` are dynamically imported but
+  undeclared deps), plus ~46 real type issues (implicit `any`, property-access).
+  The production build uses `esbuild` (type-agnostic), so this does not affect
+  shipped artifacts — but the typecheck script is effectively unusable as a guard.
+  Candidate Phase 3 follow-up (larger change; deferred pending direction).
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,
