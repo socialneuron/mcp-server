@@ -198,6 +198,32 @@ Verified by the app's own `tsc --noEmit`.
 | 6 | `sn` CLI (`parse.ts`) | `--key=value` silently misparsed as a boolean | Parser accepts `=` form; +21 unit tests |
 | 7 | Content-calendar app | Quick-create sent timezone-naive `schedule_at` → wrong time for non-UTC users | Convert local pick to UTC via `toISOString()` |
 
+## Loop iteration 5 (lib internals)
+
+Reviewed and added coverage for the untested computation modules behind several
+tools.
+
+**`lib/quality.ts` — regex-injection crash (real bug):** the scoring engine
+(`evaluateQuality`, shared by `quality_check`, `quality_check_plan`,
+`schedule_content_plan`, and the `sn quality-check`/`e2e` CLI commands)
+interpolated `brandKeyword` directly into a `RegExp`. A keyword containing regex
+metacharacters — e.g. `brand_keyword="C++"` → `/\bC++\b/` — throws
+`SyntaxError: Nothing to repeat` and crashes the whole quality check. **Fixed:**
+`escapeRegExp()` the keyword before building the pattern. Added `lib/quality.test.ts`
+(7 cases incl. the metachar regression).
+
+**`lib/colorAudit.ts` — reviewed clean, now tested:** the CIEDE2000 / hex→Lab math
+and design-token export were correct but untested. Added `lib/colorAudit.test.ts`
+(8 cases: exact-match ΔE≈0, shorthand-hex equivalence, far-color failure, score
+math, CSS/Tailwind/Figma export).
+
+**Re-test:** typecheck **0**, **1055 tests pass** (+15), `verify:lock` ✅,
+`lint:tools` ✅.
+
+| # | Surface | Bug | Fix |
+|---|---------|-----|-----|
+| 8 | `quality_check` etc. (`lib/quality.ts`) | Unescaped `brandKeyword` in `RegExp` → crash on metachar keywords | `escapeRegExp()` + 7 tests |
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,
