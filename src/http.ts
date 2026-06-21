@@ -30,6 +30,7 @@ import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
 import { TOOL_CATALOG } from './lib/tool-catalog.js';
 import { requestIdMiddleware, httpLog } from './lib/http-logger.js';
+import { initSentry, captureSentryError, flushSentry } from './lib/sentry.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -113,6 +114,10 @@ const tokenVerifier = createTokenVerifier({
 });
 
 initPostHog();
+// Optional crash reporting. No-op unless SENTRY_DSN is set. Init must
+// run before the first request is served so the global error handler
+// below can capture exceptions from the very first request onward.
+initSentry();
 
 // ── Session management ───────────────────────────────────────────────
 
@@ -185,6 +190,36 @@ app.use(express.json({ limit: '1mb' }));
 // Must run before any handler that may log so request-scoped log lines
 // can be joined at the sink.
 app.use(requestIdMiddleware);
+
+// ── In-flight request counter (for graceful shutdown) ───────────────
+// Tracks the number of currently-being-served requests. shutdown()
+// stops accepting new connections and then awaits this counter
+// reaching zero before exiting, so a Railway deploy stops mid-flight
+// 429/500 spikes for in-progress requests.
+let inFlightRequests = 0;
+let drainResolver: (() => void) | null = null;
+
+function decrementInFlight(): void {
+  inFlightRequests--;
+  if (drainResolver && inFlightRequests <= 0) {
+    const resolve = drainResolver;
+    drainResolver = null;
+    resolve();
+  }
+}
+
+app.use((_req, res, next) => {
+  inFlightRequests++;
+  let decremented = false;
+  const settle = () => {
+    if (decremented) return;
+    decremented = true;
+    decrementInFlight();
+  };
+  res.on('finish', settle);
+  res.on('close', settle);
+  next();
+});
 
 // Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
 // (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
@@ -748,6 +783,14 @@ app.use((err: Error, req: express.Request, res: express.Response, _next: express
   // Never log raw .stack — absolute container paths and framework
   // internals can leak to centralised log sinks.
   httpLog(req, 'error', 'unhandled_express_error', { error: sanitizeError(err) });
+  const sessionHeader = req.headers['mcp-session-id'];
+  const sessionId = Array.isArray(sessionHeader) ? sessionHeader[0] : sessionHeader;
+  captureSentryError(err, {
+    requestId: (req as express.Request & { requestId?: string }).requestId,
+    userId: (req as AuthenticatedRequest).auth?.userId,
+    sessionId,
+    path: req.path,
+  });
   if (!res.headersSent) {
     res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
   }
@@ -768,9 +811,17 @@ async function shutdown(signal: string) {
   console.log(`[MCP HTTP] ${signal} received, shutting down...`);
   clearInterval(cleanupInterval);
 
-  await shutdownPostHog();
+  // Stop accepting new connections. Existing keep-alive sockets keep
+  // running until their current response finishes; new TCP connections
+  // are refused immediately.
+  httpServer.close(() => {
+    console.log('[MCP HTTP] Server stopped accepting new connections');
+  });
 
-  // Close all sessions
+  // Force-close active MCP sessions. SSE transports register listeners
+  // on the underlying response; closing them triggers `res.on('close')`,
+  // which decrements the in-flight counter so the drain wait below
+  // doesn't block on long-lived stream connections.
   for (const [sessionId, entry] of sessions) {
     try {
       await entry.transport.close();
@@ -781,14 +832,48 @@ async function shutdown(signal: string) {
     sessions.delete(sessionId);
   }
 
-  httpServer.close(() => {
-    console.log('[MCP HTTP] Server closed');
-    process.exit(0);
-  });
+  // Wait for short-lived requests to finish, capped at 10s so a stuck
+  // request can't block the deploy indefinitely.
+  const DRAIN_DEADLINE_MS = 10_000;
+  if (inFlightRequests > 0) {
+    console.log(
+      `[MCP HTTP] Waiting up to ${DRAIN_DEADLINE_MS}ms for ${inFlightRequests} in-flight request(s) to drain...`
+    );
+    let deadlineTimer: NodeJS.Timeout | null = null;
+    await Promise.race([
+      new Promise<void>(resolve => {
+        drainResolver = resolve;
+      }),
+      new Promise<void>(resolve => {
+        deadlineTimer = setTimeout(resolve, DRAIN_DEADLINE_MS);
+        deadlineTimer.unref();
+      }),
+    ]);
+    if (deadlineTimer) clearTimeout(deadlineTimer);
+    if (inFlightRequests > 0) {
+      console.warn(
+        `[MCP HTTP] Drain deadline exceeded; ${inFlightRequests} request(s) still in-flight`
+      );
+    } else {
+      console.log('[MCP HTTP] All requests drained');
+    }
+  }
 
-  // Force exit after 10s
-  setTimeout(() => process.exit(1), 10_000);
+  // Flush telemetry queues so we don't drop the last few crash reports
+  // or analytics events sitting in memory.
+  await shutdownPostHog();
+  await flushSentry();
+
+  console.log('[MCP HTTP] Shutdown complete');
+  process.exit(0);
 }
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+// Absolute deadline: if shutdown() itself wedges, fail the pod.
+process.on('SIGTERM', () => {
+  setTimeout(() => process.exit(1), 15_000).unref();
+  void shutdown('SIGTERM');
+});
+process.on('SIGINT', () => {
+  setTimeout(() => process.exit(1), 15_000).unref();
+  void shutdown('SIGINT');
+});

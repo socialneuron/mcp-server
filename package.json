@@ -73,6 +73,7 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.0",
     "@modelcontextprotocol/sdk": "^1.27.1",
+    "@sentry/node": "10.55.0",
     "@supabase/supabase-js": "2.104.0",
     "cors": "^2.8.6",
     "express": "^5.1.0",
@@ -88,7 +89,7 @@
     "esbuild": "^0.28.0",
     "lockfile-lint": "5.0.0",
     "typescript": "^6.0.2",
-    "vitest": "^3.0.0"
+    "vitest": "3.2.6"
   },
   "overrides": {
     "vite": "7.3.2",
