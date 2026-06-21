@@ -111,16 +111,32 @@ const OAUTH_CLIENT_REGISTRATION_SECRET =
   SUPABASE_SERVICE_ROLE_KEY;
 
 // ── Crash handlers ───────────────────────────────────────────────────
+// Sentry's `defaultIntegrations: false` (see src/lib/sentry.ts) opts out
+// of its built-in process-level handlers so this code is the SOLE crash
+// reporting path when SENTRY_DSN is set. Without these explicit hooks an
+// uncaughtException / unhandledRejection would log + exit silently
+// without ever reaching the Sentry sink.
+
+async function reportCrashAndExit(label: string, err: Error): Promise<never> {
+  console.error(`[MCP HTTP] ${label}: ${err.message}`);
+  try {
+    captureSentryError(err, { path: label });
+    // 2s deadline inside flushSentry; if the process is already wedged
+    // the await is a no-op rather than blocking shutdown forever.
+    await flushSentry();
+  } catch {
+    // Crash reporting must never throw from a crash handler.
+  }
+  process.exit(1);
+}
 
 process.on('uncaughtException', err => {
-  console.error(`[MCP HTTP] Uncaught exception: ${err.message}`);
-  process.exit(1);
+  void reportCrashAndExit('uncaughtException', err);
 });
 
 process.on('unhandledRejection', reason => {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  console.error(`[MCP HTTP] Unhandled rejection: ${message}`);
-  process.exit(1);
+  const err = reason instanceof Error ? reason : new Error(String(reason));
+  void reportCrashAndExit('unhandledRejection', err);
 });
 
 // ── Token verifier ───────────────────────────────────────────────────
@@ -225,7 +241,17 @@ function decrementInFlight(): void {
   }
 }
 
-app.use((_req, res, next) => {
+app.use((req, res, next) => {
+  // SSE GET /mcp streams are long-lived by design (they stay open while
+  // the client subscribes to server→client events). If they're counted
+  // here, the drain wait in shutdown() can never reach zero and would
+  // always burn the full deadline. They're force-closed alongside the
+  // transports after drain completes, so excluding them here is safe.
+  const isLongLivedStream = req.method === 'GET' && req.path === '/mcp';
+  if (isLongLivedStream) {
+    next();
+    return;
+  }
   inFlightRequests++;
   let decremented = false;
   const settle = () => {
@@ -875,22 +901,13 @@ async function shutdown(signal: string) {
     console.log('[MCP HTTP] Server stopped accepting new connections');
   });
 
-  // Force-close active MCP sessions. SSE transports register listeners
-  // on the underlying response; closing them triggers `res.on('close')`,
-  // which decrements the in-flight counter so the drain wait below
-  // doesn't block on long-lived stream connections.
-  for (const [sessionId, entry] of sessions) {
-    try {
-      await entry.transport.close();
-      await entry.server.close();
-    } catch {
-      // Best effort
-    }
-    sessions.delete(sessionId);
-  }
-
-  // Wait for short-lived requests to finish, capped at 10s so a stuck
-  // request can't block the deploy indefinitely.
+  // Wait for short-lived in-flight requests to finish FIRST. Closing
+  // session transports up-front would tear down the SDK's response
+  // streams for any active POST /mcp tool call — `res.on('close')` then
+  // fires before the handler has produced its JSON-RPC response, so the
+  // counter drops to zero, drain resolves, and the in-progress reply is
+  // dropped. The middleware excludes long-lived SSE GET /mcp streams
+  // from this counter so it can actually reach zero.
   const DRAIN_DEADLINE_MS = 10_000;
   if (inFlightRequests > 0) {
     console.log(
@@ -914,6 +931,20 @@ async function shutdown(signal: string) {
     } else {
       console.log('[MCP HTTP] All requests drained');
     }
+  }
+
+  // Now force-close session transports and servers. Any active POST tool
+  // call either finished naturally above or exceeded the drain deadline
+  // (in which case it's acceptable to interrupt — we honoured the
+  // budget). Long-lived SSE streams are also torn down here.
+  for (const [sessionId, entry] of sessions) {
+    try {
+      await entry.transport.close();
+      await entry.server.close();
+    } catch {
+      // Best effort
+    }
+    sessions.delete(sessionId);
   }
 
   // Flush telemetry queues so we don't drop the last few crash reports
