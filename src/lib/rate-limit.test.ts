@@ -135,17 +135,21 @@ describe('RateLimiter', () => {
       expect(replacement).not.toBe(original);
     });
 
-    it('keeps buckets that were touched within the stale window', () => {
+    it('keeps a bucket whose last access is recent even past its creation window', () => {
       const key = 'posting:keep-recent-user';
       const limiter = getRateLimiter(key);
 
-      // Advance only slightly, touch the bucket, then advance again but keep
-      // the last access recent.
+      // Idle 4 min (within the window), then touch — this must reset the
+      // eviction clock to "now".
       vi.advanceTimersByTime(4 * 60 * 1000);
       limiter.consume(); // updates lastAccess
+
+      // Advance another 4 min: now 8 min since creation (PAST the 5-min window)
+      // but only 4 min since the last touch. Without the clock reset the bucket
+      // would be swept, so surviving proves the touch moved lastAccess forward.
+      vi.advanceTimersByTime(4 * 60 * 1000);
       sweepStaleLimiters();
 
-      // Still the same instance — not evicted.
       expect(getRateLimiter(key)).toBe(limiter);
     });
   });
