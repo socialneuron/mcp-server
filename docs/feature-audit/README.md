@@ -76,16 +76,47 @@ Ran on `2026-06-21` against the branch head.
   by adding `brand_id` to the schema. Verified: carousel tests 12/12, `verify:lock`
   OK, type error resolved.
 
-**Known issue documented (not CI-enforced):**
-- **`npm run typecheck` reports 295 errors** but is **not part of CI** (`ci.yml`
-  gates on lockfile/tools/lock/test/audit/build, not `tsc`). Breakdown: 245×
-  TS2591 (node globals like `process`/`Buffer` unresolved — `tsconfig.json` has no
-  `types`/`lib` for node and `@types/node` globals are not being picked up), 4×
-  TS2307 (`@remotion/bundler` / `@remotion/renderer` are dynamically imported but
-  undeclared deps), plus ~46 real type issues (implicit `any`, property-access).
-  The production build uses `esbuild` (type-agnostic), so this does not affect
-  shipped artifacts — but the typecheck script is effectively unusable as a guard.
-  Candidate Phase 3 follow-up (larger change; deferred pending direction).
+## Phase 3 findings (fix logistical/UX errors)
+
+**`npm run typecheck`: 295 errors → 0.** The script was effectively unusable and
+was **not** wired into CI, so it had silently rotted. Root cause and fixes:
+
+- **245× TS2591** (node globals `process`/`Buffer`/`setTimeout().unref()`
+  unresolved): `tsconfig.json` had no `lib`/`types`, and `@types/node`'s globals
+  were not being auto-applied under `Node16` resolution. **Fix:** added
+  `"lib": ["ES2022"]` and `"types": ["node"]` to `tsconfig.json` — cleared 254
+  errors.
+- **`express` untyped (TS7016 + cascading TS7006/TS2339 on `AuthenticatedRequest`):**
+  `express@^5` is a real dependency but `@types/express` was missing. **Fix:**
+  added `@types/express@^5` as a devDependency.
+- **`playwright`, `@remotion/bundler`, `@remotion/renderer` (TS2307):** optional,
+  dynamically `import()`-ed modules not in `package.json`. **Fix:** added ambient
+  module shims in `src/types/optional-modules.d.ts` (resolve to `any`, matching
+  the runtime guard-and-degrade contract).
+- **3 genuine code bugs** surfaced once node types were applied:
+  - `src/tools/brand.ts:188` — untyped `brand_context?.name` access (text output). Typed cast.
+  - `src/index.ts:211` — `stdout.write('', resolve)` callback-signature mismatch (could mis-handle the flush callback). Wrapped as `() => resolve()`.
+  - `src/cli/repl.ts:108` — redundant `@ts-expect-error` (the `as` cast already covers it). Removed.
+
+- **CI hardening:** added a `Typecheck` step to `.github/workflows/ci.yml` so the
+  check can't silently rot again.
+
+The production build uses `esbuild` (type-agnostic) and was never broken; these
+changes make `tsc` a usable guard and fix latent type bugs.
+
+## Phase 4 findings (re-test post-fix)
+
+Re-ran the full gate set after all Phase 3 fixes:
+
+- `npm run typecheck` — **0 errors**.
+- `npm test` — **992 passed, 0 failed** (unchanged; no behavioral regression).
+- `lint:tools` ✅, `verify:lock` ✅, `lint:lockfile` ✅.
+- `build:stdio`, `build` (http), `build:sn`, `build:lock` — all succeed.
+
+All four phases complete for the automated-test surface. Live end-to-end behavior
+(real OAuth, real platform posting, browser screenshots, cloud renders) requires
+credentials/network and is out of scope for this static + unit-test audit; those
+rows are marked accordingly in the tracker.
 
 ## Method notes
 

@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "version": "1.7.13",
-  "description": "Official MCP server, REST API & CLI for Social Neuron \u2014 create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
+  "description": "Official MCP server, REST API & CLI for Social Neuron — create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
@@ -93,6 +93,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.1",
     "lockfile-lint": "5.0.0",
