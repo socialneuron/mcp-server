@@ -93,6 +93,43 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+/**
+ * Turn a failed async-job error into actionable recovery guidance.
+ *
+ * A raw provider error (e.g. a Kie circuit-breaker string) is not actionable to
+ * an end user — and a failed generation is the highest-value moment to lose
+ * someone. This classifies the error and tells the caller exactly what to do
+ * next (retry, switch model, fix input, or check credits), and notes that
+ * transient provider failures are auto-refunded.
+ */
+export function failureRecovery(jobType: string | null, errorMessage: string | null): string {
+  const altModel = /video/i.test(jobType ?? '')
+    ? 'veo3-fast'
+    : /image/i.test(jobType ?? '')
+      ? 'nano-banana'
+      : null;
+  const altHint = altModel ? ` or try a different model (e.g. ${altModel})` : '';
+  const msg = (errorMessage ?? '').toLowerCase();
+
+  if (
+    /circuit|temporar|timeout|timed out|\b50[234]\b|upstream|overload|unavailable|capacity|busy|try again/.test(
+      msg
+    )
+  ) {
+    return `Suggestion: This looks like a temporary provider issue. Credits for failed generations are auto-refunded — verify with get_credit_balance. Wait ~30-60s and retry${altHint}.`;
+  }
+  if (/moderat|safety|policy|nsfw|blocked|content filter|prohibited|flagged/.test(msg)) {
+    return 'Suggestion: The provider flagged the prompt. Rephrase to avoid restricted content, then retry.';
+  }
+  if (/credit|insufficient|budget|quota|balance/.test(msg)) {
+    return 'Suggestion: This may be a credit/budget issue. Check get_credit_balance and get_budget_status, then retry.';
+  }
+  if (/invalid|unsupported|bad request|malformed|prompt|aspect|duration/.test(msg)) {
+    return `Suggestion: Check the inputs (prompt, model, aspect_ratio, duration) and retry — some models reject certain combinations${altHint}.`;
+  }
+  return `Suggestion: Retry once. If it fails again, check get_credit_balance${altHint}.`;
+}
+
 // PRC-003/PRC-009 fix: Synced with constants/pricing.ts (40% margin on premium video models)
 const VIDEO_CREDIT_ESTIMATES: Record<string, number> = {
   'veo3-fast': 200,
@@ -704,6 +741,9 @@ export function registerContentTools(server: McpServer): void {
           if (liveStatus.error) {
             lines.push(`Error: ${liveStatus.error}`);
           }
+          if (liveStatus.status === 'failed') {
+            lines.push(failureRecovery(job.job_type, liveStatus.error ?? job.error_message));
+          }
           lines.push(`Credits: ${job.credits_cost}`);
           lines.push(`Created: ${job.created_at}`);
 
@@ -772,6 +812,9 @@ export function registerContentTools(server: McpServer): void {
       if (job.error_message) {
         lines.push(`Error: ${job.error_message}`);
       }
+      if (job.status === 'failed') {
+        lines.push(failureRecovery(job.job_type, job.error_message));
+      }
       lines.push(`Credits: ${job.credits_cost}`);
       lines.push(`Created: ${job.created_at}`);
       if (job.completed_at) {
@@ -790,6 +833,7 @@ export function registerContentTools(server: McpServer): void {
           ...job,
           r2_key: job.result_url && !job.result_url.startsWith('http') ? job.result_url : null,
           all_urls: allUrls ?? null,
+          recovery: job.status === 'failed' ? failureRecovery(job.job_type, job.error_message) : null,
         };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(enriched), null, 2) }],

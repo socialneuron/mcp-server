@@ -224,6 +224,33 @@ math, CSS/Tailwind/Figma export).
 |---|---------|-----|-----|
 | 8 | `quality_check` etc. (`lib/quality.ts`) | Unescaped `brandKeyword` in `RegExp` → crash on metachar keywords | `escapeRegExp()` + 7 tests |
 
+## Loop iteration 6 (product-signal: video-gen failure UX)
+
+Driven by a prod user-activity audit (2026-06-21): the highest-intent external
+user churned the same hour a storyboard video job failed on a provider
+circuit-breaker. In-repo, `check_status` only echoed the raw `error_message` on a
+failed job — no recovery guidance — even though the tool description promises
+*"the error field explains why — check credits or try a different model."*
+
+**Fix:** added `failureRecovery(jobType, errorMessage)` to `content.ts`, which
+classifies the failure (transient/provider vs moderation vs credit/budget vs
+invalid-input) and appends an actionable `Suggestion:` line to both the text and
+JSON output of `check_status` — e.g. for a transient provider error it notes that
+credits are auto-refunded and suggests retrying or switching to a more reliable
+model (`veo3-fast` for video, `nano-banana` for image). Added 7 tests (a failed-job
+integration test + a `failureRecovery` unit suite).
+
+The other audit findings (activation cliff, trial-credit grants, ~8% post-publish
+failure rate, internal/external dashboard tagging) live in the app/edge functions,
+not this repo, and are out of scope here.
+
+**Re-test:** typecheck **0**, **1062 tests pass** (+7), `verify:lock` ✅,
+`lint:tools` ✅.
+
+| # | Surface | Bug | Fix |
+|---|---------|-----|-----|
+| 9 | `check_status` (`content.ts`) | Failed jobs echoed the raw provider error with no recovery guidance (churned the top real lead) | `failureRecovery()` classifies the error + returns actionable next steps |
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,

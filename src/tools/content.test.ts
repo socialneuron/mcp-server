@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
-import { registerContentTools } from './content.js';
+import { registerContentTools, failureRecovery } from './content.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
 
@@ -368,6 +368,34 @@ describe('content tools', () => {
       );
     });
 
+    it('surfaces actionable recovery guidance for a failed job (transient provider error)', async () => {
+      const failedJob = {
+        id: 'job-fail',
+        external_id: 'kie-task-fail',
+        status: 'failed',
+        job_type: 'video',
+        model: 'kling-3',
+        result_url: null,
+        error_message: 'Upstream circuit breaker open: provider temporarily unavailable',
+        credits_cost: 0,
+        created_at: '2026-02-10T12:00:00Z',
+        completed_at: '2026-02-10T12:00:30Z',
+      };
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job: failedJob },
+        error: null,
+      });
+
+      const handler = server.getHandler('check_status')!;
+      const result = await handler({ job_id: 'job-fail' });
+
+      const text = result.content[0].text;
+      expect(text).toContain('Status: failed');
+      expect(text).toContain('Suggestion:');
+      expect(text).toContain('auto-refunded');
+      expect(text).toContain('veo3-fast'); // alternate video model hint
+    });
+
     it('polls live status via kie-task-status when job is pending with external_id', async () => {
       const pendingJob = {
         id: 'job-xyz',
@@ -681,5 +709,46 @@ describe('content tools', () => {
         { timeoutMs: 60_000 }
       );
     });
+  });
+});
+
+describe('failureRecovery', () => {
+  it('treats circuit-breaker / 5xx / timeout errors as transient and notes auto-refund', () => {
+    for (const e of [
+      'Upstream circuit breaker open',
+      'provider temporarily unavailable',
+      'Gateway 503',
+      'request timed out',
+      'model overloaded, try again later',
+    ]) {
+      const s = failureRecovery('video', e);
+      expect(s).toMatch(/temporary provider issue/i);
+      expect(s).toMatch(/auto-refunded/i);
+    }
+  });
+
+  it('suggests an alternate model per job type', () => {
+    expect(failureRecovery('video', 'circuit breaker')).toContain('veo3-fast');
+    expect(failureRecovery('image', 'circuit breaker')).toContain('nano-banana');
+    // unknown job type -> no model hint
+    expect(failureRecovery('storyboard', 'circuit breaker')).not.toMatch(/veo3-fast|nano-banana/);
+  });
+
+  it('routes moderation/policy errors to a rephrase suggestion', () => {
+    expect(failureRecovery('image', 'content filter: prohibited content')).toMatch(/rephrase/i);
+  });
+
+  it('routes credit/budget errors to the balance tools', () => {
+    expect(failureRecovery('video', 'insufficient credits')).toMatch(/get_credit_balance/);
+  });
+
+  it('routes invalid-input errors to an input check', () => {
+    expect(failureRecovery('video', 'invalid aspect_ratio')).toMatch(/Check the inputs/i);
+  });
+
+  it('falls back to a generic retry suggestion for unknown/empty errors', () => {
+    const s = failureRecovery('video', null);
+    expect(s).toMatch(/Retry once/i);
+    expect(s).toContain('get_credit_balance');
   });
 });
