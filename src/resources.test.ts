@@ -58,4 +58,26 @@ describe('resource/prompt guides reference only real tools', () => {
     expect(autopilotSection).toContain('create_autopilot_config');
     expect(autopilotSection).not.toContain('update_autopilot_config');
   });
+
+  it('capabilities ai_models are all real tool enum values (no drift)', () => {
+    const resourcesSrc = readFileSync(resolve(here, 'resources.ts'), 'utf8');
+    // model IDs are declared as quoted enum values in these tool modules
+    const enumSrc =
+      readFileSync(resolve(here, 'tools/content.ts'), 'utf8') +
+      readFileSync(resolve(here, 'tools/ideation.ts'), 'utf8');
+
+    // Pull the ai_models block out of the capabilities resource.
+    const block = resourcesSrc.slice(
+      resourcesSrc.indexOf('ai_models: {'),
+      resourcesSrc.indexOf('credit_costs:')
+    );
+    const advertised = [...block.matchAll(/'([a-z0-9][a-z0-9.\-]+)'/g)].map(m => m[1]);
+    expect(advertised.length).toBeGreaterThan(0);
+
+    const missing = advertised.filter(model => !enumSrc.includes(`'${model}'`));
+    expect(
+      missing,
+      `capabilities resource advertises models not in any tool enum: ${missing.join(', ')}`
+    ).toEqual([]);
+  });
 });

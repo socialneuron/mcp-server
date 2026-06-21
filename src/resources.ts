@@ -212,17 +212,33 @@ export function registerResources(
           ],
           audio: ['Background music', 'Voiceover'],
         },
+        // NOTE: these MUST stay in sync with the model enums in
+        // src/tools/content.ts (generate_content / generate_image / generate_video).
+        // src/resources.test.ts guards against drift. List the exact model IDs
+        // agents pass to the tools — not marketing display names.
         ai_models: {
-          text: ['Gemini 2.5 Flash', 'Gemini 2.5 Pro'],
+          text: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
           image: [
-            'Flux 1.1 Pro',
-            'DALL-E 3',
-            'Stable Diffusion XL',
-            'Ideogram',
-            'Recraft V3',
-            'Mystic V2',
+            'midjourney',
+            'nano-banana',
+            'nano-banana-pro',
+            'flux-pro',
+            'flux-max',
+            'gpt4o-image',
+            'imagen4',
+            'imagen4-fast',
+            'seedream',
           ],
-          video: ['Veo 3', 'Sora 2', 'Runway Gen-4', 'Kling 2.0', 'Minimax', 'Wan 2.1'],
+          video: [
+            'veo3-fast',
+            'veo3-quality',
+            'runway-aleph',
+            'sora2',
+            'sora2-pro',
+            'kling',
+            'kling-3',
+            'kling-3-pro',
+          ],
         },
         credit_costs: {
           text_generation: '1-3 credits',

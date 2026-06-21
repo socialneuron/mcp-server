@@ -146,6 +146,32 @@ typecheck + build.)
 **Re-test:** typecheck **0**, **1018 tests pass** (was 992 + 3 new resource tests +
 existing), `verify:lock` ✅, `build:stdio` ✅.
 
+## Loop iteration 3 (model-list drift)
+
+**Bug found and fixed in the `platform-capabilities` resource (`resources.ts`):**
+the advertised `ai_models` were stale and wrong — image listed `DALL-E 3`,
+`Stable Diffusion XL`, `Ideogram`, `Recraft V3`, `Mystic V2` and video listed
+`Minimax`, `Wan 2.1`, `Runway Gen-4`, `Kling 2.0`, **none of which exist** in the
+`generate_image` / `generate_video` schema enums. An agent reading this resource to
+choose a model would pass an invalid ID and fail validation. **Fixed:** replaced
+both lists with the exact model IDs the tools accept (`midjourney`, `nano-banana`,
+`flux-pro`, `veo3-fast`, `sora2-pro`, `kling-3`, …) and the real text models
+(`gemini-2.0-flash`/`2.5-flash`/`2.5-pro`). Added a drift guard in
+`resources.test.ts` that fails if `capabilities` advertises any model absent from
+the tool enums.
+
+**Re-test:** typecheck **0**, **1019 tests pass**, `build:stdio` ✅.
+
+## Bugs fixed across the audit (summary)
+
+| # | Surface | Bug | Fix |
+|---|---------|-----|-----|
+| 1 | `create_carousel` (T16) | `brand_id` advertised + read by handler but absent from schema → stripped at runtime; brand auto-injection dead | Added `brand_id` to schema |
+| 2 | Build tooling | `npm run typecheck` broken (295 errors) and not in CI | tsconfig node types/lib, `@types/express`, optional-module shims, 3 code fixes, CI step |
+| 3 | `getting-started` (RS04) | "Set Up Autopilot" used `update_autopilot_config` (needs existing id) instead of `create_autopilot_config` | Corrected flow + guard test |
+| 4 | `getting-started` (RS04) | "Repurpose" claimed `save_content_plan` schedules | save then `schedule_content_plan` |
+| 5 | `platform-capabilities` (RS03) | `ai_models` advertised non-existent models | Aligned to real enum IDs + drift guard |
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,
