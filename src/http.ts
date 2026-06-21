@@ -17,7 +17,10 @@ import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
-import { mcpAuthRouter } from '@modelcontextprotocol/sdk/server/auth/router.js';
+import {
+  mcpAuthRouter,
+  getOAuthProtectedResourceMetadataUrl,
+} from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
@@ -79,15 +82,14 @@ function deriveOAuthIssuerUrl(): string {
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
-// Absolute URL of the protected-resource-metadata (PRM) document. The
-// mcpAuthRouter below is mounted with only `issuerUrl`, so the SDK falls back
-// to the issuer origin and serves PRM at `/.well-known/oauth-protected-resource`
-// (rsPath === '/' → no path suffix). Derive the same URL here so 401 responses
-// can advertise it via WWW-Authenticate, letting clients auto-start OAuth.
-const PROTECTED_RESOURCE_METADATA_URL = new URL(
-  '/.well-known/oauth-protected-resource',
-  OAUTH_ISSUER_URL
-).href;
+// Absolute URL of the protected-resource-metadata (PRM) document, advertised on
+// 401s via WWW-Authenticate so clients can auto-start OAuth. mcpAuthRouter is
+// mounted with only `issuerUrl`, so the SDK serves PRM for that issuer URL;
+// using the SDK's own helper to derive the advertised URL guarantees it matches
+// the served path byte-for-byte, even if OAUTH_ISSUER_URL ever carries a path.
+const PROTECTED_RESOURCE_METADATA_URL = getOAuthProtectedResourceMetadataUrl(
+  new URL(OAUTH_ISSUER_URL)
+);
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
