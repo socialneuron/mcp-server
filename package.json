@@ -93,6 +93,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.1",
     "lockfile-lint": "5.0.0",

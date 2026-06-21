@@ -10,7 +10,8 @@
     "skipLibCheck": true,
     "declaration": true,
     "resolveJsonModule": true,
-    "sourceMap": true
+    "sourceMap": true,
+    "types": ["node"]
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist", "src/**/*.test.ts", "src/test-setup.ts", "vitest.config.ts"]

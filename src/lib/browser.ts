@@ -1,3 +1,6 @@
+// @ts-ignore — `playwright` is an optional peer dependency; the browser
+// tools only run when the consumer has installed it explicitly. The
+// catch block below handles the missing-package case at runtime.
 import type { Browser, Page } from 'playwright';
 
 export type Viewport = 'desktop' | 'mobile' | 'tablet';
@@ -31,6 +34,7 @@ export async function launchBrowser(): Promise<Browser> {
   }
   let chromium;
   try {
+    // @ts-ignore — optional peer dep, see top-of-file note.
     const pw = await import('playwright');
     chromium = pw.chromium;
   } catch {
