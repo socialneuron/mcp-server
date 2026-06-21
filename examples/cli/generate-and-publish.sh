@@ -9,8 +9,8 @@ $CLI sn system credits --json
 
 echo -e "\n=== Step 2: Quality check ==="
 $CLI sn content quality-check \
-  --content "5 ways AI is changing fashion #sustainable #AI" \
-  --platform instagram
+  --caption "5 ways AI is changing fashion #sustainable #AI" \
+  --platforms instagram
 
 echo -e "\n=== Step 3: Publish (dry run) ==="
 $CLI sn content e2e \

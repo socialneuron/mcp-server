@@ -82,7 +82,10 @@ describe('callEdgeFunction', () => {
   });
 
   // 3. HTTP error with JSON body containing "error" field
-  it('extracts error field from JSON error response', async () => {
+  it('sanitizes the backend error field but preserves the HTTP status', async () => {
+    // Backend-supplied messages are not trusted: a non-allowlisted internal
+    // string is collapsed to the generic sanitized message, while the HTTP
+    // status is preserved as a structured prefix.
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'bad request' })))
@@ -91,11 +94,12 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('bad request');
+    expect(result.error).toBe('HTTP 400: An unexpected error occurred. Please try again.');
+    expect(result.error).not.toContain('bad request');
   });
 
   // 4. HTTP error with plain text body
-  it('returns plain text as error on non-JSON error response', async () => {
+  it('sanitizes a non-JSON error body and preserves the HTTP status', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(500, 'Internal error'))
@@ -104,11 +108,12 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('Internal error');
+    expect(result.error).toBe('HTTP 500: An unexpected error occurred. Please try again.');
+    expect(result.error).not.toContain('Internal error');
   });
 
   // 5. HTTP error with empty body
-  it('returns HTTP status code when error body is empty', async () => {
+  it('returns sanitized HTTP status when error body is empty', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(502, ''))
@@ -117,7 +122,7 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 502');
+    expect(result.error).toBe('HTTP 502: An unexpected error occurred. Please try again.');
   });
 
   // 6. Timeout / AbortError

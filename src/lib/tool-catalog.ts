@@ -303,7 +303,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'find_next_slots',
     description: 'Find next available scheduling slots',
-    module: 'planning',
+    module: 'distribution',
     scope: 'mcp:read',
   },
 

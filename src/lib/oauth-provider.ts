@@ -50,6 +50,10 @@ const ALLOWED_REDIRECT_URIS = new Set([
 
 const STATELESS_CLIENT_ID_PREFIX = 'snc_';
 
+// One-time warning guard so a production misconfiguration is logged once, not
+// on every redirect-URI check.
+let warnedAnyHttpsRedirectInProd = false;
+
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
@@ -81,9 +85,21 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Staging/testing escape hatch for new MCP clients before explicit allowlisting.
+    // Staging/testing escape hatch for new MCP clients before explicit
+    // allowlisting. Ignored in production: allowing any https redirect there is
+    // an open-redirect / authorization-code-interception risk.
     if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
-      return true;
+      if (process.env.NODE_ENV === 'production') {
+        if (!warnedAnyHttpsRedirectInProd) {
+          warnedAnyHttpsRedirectInProd = true;
+          console.warn(
+            '[oauth] MCP_ALLOW_ANY_HTTPS_REDIRECT is set but ignored in production — ' +
+              'any-https redirect URIs are an open-redirect risk. Add the client to the allowlist instead.'
+          );
+        }
+      } else {
+        return true;
+      }
     }
   } catch {
     // Invalid URL

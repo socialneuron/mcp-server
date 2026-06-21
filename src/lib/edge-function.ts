@@ -5,6 +5,7 @@ import {
   getAuthenticatedApiKey,
 } from './supabase.js';
 import { getRequestBearerToken, getRequestUserId } from './request-context.js';
+import { sanitizeError } from './sanitize-error.js';
 
 function getServiceKeyOrNull(): string | null {
   try {
@@ -205,7 +206,10 @@ export async function callEdgeFunction<T = unknown>(
           error: `Rate limit exceeded (HTTP 429). Wait ${retryAfter}s before retrying. Reduce request frequency or upgrade your plan.`,
         };
       }
-      return { data: null, error: errorMessage };
+      // Sanitize the backend-supplied message so internal details (table names,
+      // stack traces, secrets, endpoint URLs) never leak to clients. The HTTP
+      // status is preserved as a structured prefix for debuggability.
+      return { data: null, error: `HTTP ${response.status}: ${sanitizeError(errorMessage)}` };
     }
 
     try {
