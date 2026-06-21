@@ -118,6 +118,34 @@ All four phases complete for the automated-test surface. Live end-to-end behavio
 credentials/network and is out of scope for this static + unit-test audit; those
 rows are marked accordingly in the tracker.
 
+## Loop iteration 2 (deeper pass)
+
+Re-ran the loop to hunt for bugs the unit suite missed, focusing on
+**test-coverage gaps**.
+
+**Coverage gaps found:** `recipes.ts` (4 tools), `resources.ts` (4 resources),
+`prompts.ts` (5 prompts) had no direct tests; most `src/cli/**` modules rely on a
+single `cli-e2e` test. `recipes.ts` and `prompts.ts` reviewed clean.
+
+**Bugs found and fixed in the `getting-started` resource (`resources.ts`):**
+- **"Set Up Autopilot" pointed at the wrong tool** — it told new users to call
+  `update_autopilot_config` (twice) to create and start autopilot, but that tool
+  requires a `config_id` of an *existing* config. A first-time user has none, so
+  the flow fails. **Fixed:** step 2 → `create_autopilot_config`, step 3 →
+  `get_autopilot_status`.
+- **"Repurpose Content" mislabeled scheduling** — "Schedule across platforms using
+  `save_content_plan`", but `save_content_plan` only persists. **Fixed:** save with
+  `save_content_plan`, then publish with `schedule_content_plan`.
+
+**Regression guard added:** `src/resources.test.ts` asserts every backticked tool
+reference in the resource/prompt guides resolves to a real registered tool (catches
+future renames/removals) and pins the autopilot fix. (While editing I introduced —
+and then caught and fixed — a stray-backtick template-literal break, verified via
+typecheck + build.)
+
+**Re-test:** typecheck **0**, **1018 tests pass** (was 992 + 3 new resource tests +
+existing), `verify:lock` ✅, `build:stdio` ✅.
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,

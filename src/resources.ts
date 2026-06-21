@@ -321,12 +321,12 @@ export function registerResources(
 ### Repurpose Content
 1. Use the \`repurpose_content\` prompt with your source material
 2. Review each generated variation
-3. Schedule across platforms using \`save_content_plan\`
+3. Save the batch with \`save_content_plan\`, then publish with \`schedule_content_plan\`
 
 ### Set Up Autopilot
 1. \`get_brand_profile\` → verify brand settings
-2. \`update_autopilot_config\` → set schedule and preferences
-3. \`update_autopilot_config\` → start automated posting
+2. \`create_autopilot_config\` → set schedule, budget, and approval mode
+3. \`get_autopilot_status\` → confirm it's active and see the next scheduled run
 
 ## Credit Tips
 - Text generation: 1-3 credits
