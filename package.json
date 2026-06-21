@@ -81,7 +81,7 @@
     "build:docs": "node scripts/build-tools-reference.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.2",
+    "@modelcontextprotocol/ext-apps": "1.7.4",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@supabase/supabase-js": "2.106.2",
     "cors": "^2.8.6",
