@@ -1,0 +1,41 @@
+name: Dependabot auto-merge
+
+# Automatically enable auto-merge on Dependabot PRs that bump a dependency
+# by a patch-level semver. Majors and minors still require human review,
+# as do any non-Dependabot PRs.
+#
+# Effect: once a Dependabot PR opens, this workflow flips it into
+# auto-merge mode. GitHub then waits for required status checks (the
+# `test` matrix in ci.yml) to pass, and squash-merges on green.
+#
+# Safety guards:
+#   - Actor must be `dependabot[bot]`
+#   - Update type must be `version-update:semver-patch` (e.g. 1.2.3 → 1.2.4)
+#   - All branch-protection / required checks still apply — GitHub will
+#     refuse the merge if CI fails or required reviews aren't satisfied.
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  auto-merge:
+    runs-on: ubuntu-latest
+    if: github.actor == 'dependabot[bot]'
+    steps:
+      - name: Fetch Dependabot PR metadata
+        id: meta
+        uses: dependabot/fetch-metadata@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enable auto-merge for patch-level bumps
+        if: steps.meta.outputs.update-type == 'version-update:semver-patch'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"
