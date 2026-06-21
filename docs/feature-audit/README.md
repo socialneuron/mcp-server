@@ -172,6 +172,32 @@ the tool enums.
 | 4 | `getting-started` (RS04) | "Repurpose" claimed `save_content_plan` schedules | save then `schedule_content_plan` |
 | 5 | `platform-capabilities` (RS03) | `ai_models` advertised non-existent models | Aligned to real enum IDs + drift guard |
 
+## Loop iteration 4 (CLI + app surfaces)
+
+Targeted the thin/no-coverage CLI and app surfaces.
+
+**`src/cli/sn/parse.ts` (was untested):** added a 21-case unit suite and fixed a
+UX footgun — `parseSnArgs` only handled `--key value`, so `--platforms=youtube`
+was silently parsed as a boolean flag named `platforms=youtube` and the real
+value was never set (no error). Now accepts `--key=value` too.
+
+**Content-calendar app (`apps/content-calendar`) — timezone bug:** the
+quick-create modal built `schedule_at` as a timezone-naive string
+(`"YYYY-MM-DDTHH:mm:00"`, no `Z`). The picker shows the user's *local* time, but a
+naive ISO string is read as **UTC** by the backend, so any non-UTC user scheduled
+posts at the wrong absolute time (off by their offset). The drag-drop reschedule
+path was already correct (it reuses the server's TZ-qualified time). **Fixed:**
+convert the local pick to a UTC instant via `toISOString()` (plus a NaN guard).
+Verified by the app's own `tsc --noEmit`.
+
+**Re-test:** main typecheck **0**, app typecheck **0**, **1040 tests pass** (+21),
+`verify:lock` ✅.
+
+| # | Surface | Bug | Fix |
+|---|---------|-----|-----|
+| 6 | `sn` CLI (`parse.ts`) | `--key=value` silently misparsed as a boolean | Parser accepts `=` form; +21 unit tests |
+| 7 | Content-calendar app | Quick-create sent timezone-naive `schedule_at` → wrong time for non-UTC users | Convert local pick to UTC via `toISOString()` |
+
 ## Method notes
 
 - Expected behavior is extracted directly from `src/tools/*.ts`, `src/cli/**`,
