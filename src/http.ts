@@ -226,9 +226,15 @@ setInterval(() => {
 }, IP_RATE_CLEANUP_INTERVAL).unref();
 
 app.use((req, res, next) => {
-  // Exempt health checks
+  // Exempt health probes and discovery/config endpoints. /health/live and
+  // /health/ready exist alongside /health for Railway/Kubernetes-style
+  // liveness/readiness checks; common probe cadences (e.g. 5s × 2 probes)
+  // burn 24 req/min from one source and would otherwise eat into the
+  // 60/min IP bucket, making healthy instances flap to 429.
   if (
     req.path === '/health' ||
+    req.path === '/health/live' ||
+    req.path === '/health/ready' ||
     req.path === '/.well-known/mcp/server-card.json' ||
     req.path === '/.well-known/oauth-protected-resource' ||
     req.path === '/config'
