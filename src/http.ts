@@ -35,6 +35,7 @@ import { sanitizeError } from './lib/sanitize-error.js';
 import { TOOL_CATALOG } from './lib/tool-catalog.js';
 import { requestIdMiddleware, httpLog } from './lib/http-logger.js';
 import { initSentry, captureSentryError, flushSentry } from './lib/sentry.js';
+import { createInFlightCounter, gracefulShutdown } from './lib/server-lifecycle.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -225,44 +226,13 @@ app.use(express.json({ limit: '1mb' }));
 app.use(requestIdMiddleware);
 
 // ── In-flight request counter (for graceful shutdown) ───────────────
-// Tracks the number of currently-being-served requests. shutdown()
-// stops accepting new connections and then awaits this counter
-// reaching zero before exiting, so a Railway deploy stops mid-flight
-// 429/500 spikes for in-progress requests.
-let inFlightRequests = 0;
-let drainResolver: (() => void) | null = null;
-
-function decrementInFlight(): void {
-  inFlightRequests--;
-  if (drainResolver && inFlightRequests <= 0) {
-    const resolve = drainResolver;
-    drainResolver = null;
-    resolve();
-  }
-}
-
-app.use((req, res, next) => {
-  // SSE GET /mcp streams are long-lived by design (they stay open while
-  // the client subscribes to server→client events). If they're counted
-  // here, the drain wait in shutdown() can never reach zero and would
-  // always burn the full deadline. They're force-closed alongside the
-  // transports after drain completes, so excluding them here is safe.
-  const isLongLivedStream = req.method === 'GET' && req.path === '/mcp';
-  if (isLongLivedStream) {
-    next();
-    return;
-  }
-  inFlightRequests++;
-  let decremented = false;
-  const settle = () => {
-    if (decremented) return;
-    decremented = true;
-    decrementInFlight();
-  };
-  res.on('finish', settle);
-  res.on('close', settle);
-  next();
+// The counter excludes long-lived SSE GET /mcp streams so the drain
+// wait in shutdown() can actually reach zero. See
+// src/lib/server-lifecycle.ts for the full rationale + tests.
+const inFlight = createInFlightCounter({
+  isLongLived: req => req.method === 'GET' && req.path === '/mcp',
 });
+app.use(inFlight.middleware);
 
 // Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
 // (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
@@ -894,63 +864,51 @@ async function shutdown(signal: string) {
   console.log(`[MCP HTTP] ${signal} received, shutting down...`);
   clearInterval(cleanupInterval);
 
-  // Stop accepting new connections. Existing keep-alive sockets keep
-  // running until their current response finishes; new TCP connections
-  // are refused immediately.
-  httpServer.close(() => {
-    console.log('[MCP HTTP] Server stopped accepting new connections');
+  // Sequence enforced by src/lib/server-lifecycle.ts:gracefulShutdown:
+  //   stopAcceptingConnections → drain → closeSessions → flushTelemetry.
+  // The drain step MUST run before closeSessions or the SDK's response
+  // streams for active POST /mcp tool calls get torn down before the
+  // handler produces its reply (Codex P1 on PR #168). The unit test in
+  // server-lifecycle.test.ts asserts this ordering as a regression
+  // guard — don't inline-reorder these steps.
+  const DRAIN_DEADLINE_MS = 10_000;
+  const { drainResult } = await gracefulShutdown({
+    stopAcceptingConnections: () => {
+      httpServer.close(() => {
+        console.log('[MCP HTTP] Server stopped accepting new connections');
+      });
+    },
+    drain: async () => {
+      if (inFlight.count() === 0) return 'drained';
+      console.log(
+        `[MCP HTTP] Waiting up to ${DRAIN_DEADLINE_MS}ms for ${inFlight.count()} in-flight request(s) to drain...`
+      );
+      return inFlight.waitForDrain(DRAIN_DEADLINE_MS);
+    },
+    closeSessions: async () => {
+      for (const [sessionId, entry] of sessions) {
+        try {
+          await entry.transport.close();
+          await entry.server.close();
+        } catch {
+          // Best effort
+        }
+        sessions.delete(sessionId);
+      }
+    },
+    flushTelemetry: async () => {
+      await shutdownPostHog();
+      await flushSentry();
+    },
   });
 
-  // Wait for short-lived in-flight requests to finish FIRST. Closing
-  // session transports up-front would tear down the SDK's response
-  // streams for any active POST /mcp tool call — `res.on('close')` then
-  // fires before the handler has produced its JSON-RPC response, so the
-  // counter drops to zero, drain resolves, and the in-progress reply is
-  // dropped. The middleware excludes long-lived SSE GET /mcp streams
-  // from this counter so it can actually reach zero.
-  const DRAIN_DEADLINE_MS = 10_000;
-  if (inFlightRequests > 0) {
-    console.log(
-      `[MCP HTTP] Waiting up to ${DRAIN_DEADLINE_MS}ms for ${inFlightRequests} in-flight request(s) to drain...`
+  if (drainResult === 'timeout') {
+    console.warn(
+      `[MCP HTTP] Drain deadline exceeded; ${inFlight.count()} request(s) still in-flight at session close`
     );
-    let deadlineTimer: NodeJS.Timeout | null = null;
-    await Promise.race([
-      new Promise<void>(resolve => {
-        drainResolver = resolve;
-      }),
-      new Promise<void>(resolve => {
-        deadlineTimer = setTimeout(resolve, DRAIN_DEADLINE_MS);
-        deadlineTimer.unref();
-      }),
-    ]);
-    if (deadlineTimer) clearTimeout(deadlineTimer);
-    if (inFlightRequests > 0) {
-      console.warn(
-        `[MCP HTTP] Drain deadline exceeded; ${inFlightRequests} request(s) still in-flight`
-      );
-    } else {
-      console.log('[MCP HTTP] All requests drained');
-    }
+  } else {
+    console.log('[MCP HTTP] All requests drained');
   }
-
-  // Now force-close session transports and servers. Any active POST tool
-  // call either finished naturally above or exceeded the drain deadline
-  // (in which case it's acceptable to interrupt — we honoured the
-  // budget). Long-lived SSE streams are also torn down here.
-  for (const [sessionId, entry] of sessions) {
-    try {
-      await entry.transport.close();
-      await entry.server.close();
-    } catch {
-      // Best effort
-    }
-    sessions.delete(sessionId);
-  }
-
-  // Flush telemetry queues so we don't drop the last few crash reports
-  // or analytics events sitting in memory.
-  await shutdownPostHog();
-  await flushSentry();
 
   console.log('[MCP HTTP] Shutdown complete');
   process.exit(0);
