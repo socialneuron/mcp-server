@@ -116,7 +116,7 @@ describe('createOAuthProvider', () => {
       expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('allows ChatGPT connector redirect URIs', async () => {
+    it('allows exact ChatGPT connector redirect URIs', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
 
       await expect(
@@ -134,6 +134,38 @@ describe('createOAuthProvider', () => {
           })
         )
       ).resolves.toMatchObject({ client_id: 'test-client-123' });
+    });
+
+    it('rejects arbitrary ChatGPT connector redirect URI paths', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+
+      await expect(
+        provider.clientsStore.registerClient!(
+          makeClient({
+            redirect_uris: ['https://chatgpt.com/connector/oauth/attacker-owned-callback'],
+          })
+        )
+      ).rejects.toThrow('Redirect URI not allowed');
+    });
+
+    it('rejects ChatGPT connector redirect URIs with query strings or fragments', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+
+      await expect(
+        provider.clientsStore.registerClient!(
+          makeClient({
+            redirect_uris: ['https://chatgpt.com/connector/oauth/social-neuron?exfil=1'],
+          })
+        )
+      ).rejects.toThrow('Redirect URI not allowed');
+
+      await expect(
+        provider.clientsStore.registerClient!(
+          makeClient({
+            redirect_uris: ['https://chatgpt.com/connector/oauth/social-neuron#frag'],
+          })
+        )
+      ).rejects.toThrow('Redirect URI not allowed');
     });
 
     it('rejects HTTPS localhost unless explicitly allowlisted', async () => {

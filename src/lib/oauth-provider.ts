@@ -72,12 +72,15 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // ChatGPT connector OAuth callbacks.
+    // ChatGPT connector OAuth callbacks. Keep this allowlist exact because
+    // chatgpt.com hosts connector callback paths for multiple third parties.
     if (
       parsed.hostname === 'chatgpt.com' &&
       parsed.protocol === 'https:' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
       (parsed.pathname === '/connector_platform_oauth_redirect' ||
-        parsed.pathname.startsWith('/connector/oauth/'))
+        parsed.pathname === '/connector/oauth/social-neuron')
     ) {
       return true;
     }
