@@ -258,8 +258,13 @@ export function registerRemotionTools(server: McpServer): void {
       }
 
       try {
-        // Dynamic imports for Remotion (these come from root node_modules)
+        // Dynamic imports for Remotion (optional peer dependencies — these
+        // come from the consumer's root node_modules when remote rendering
+        // is enabled; the surrounding try/catch handles the missing-package
+        // case at runtime).
+        // @ts-ignore — optional peer dep
         const { bundle } = await import('@remotion/bundler');
+        // @ts-ignore — optional peer dep
         const { renderMedia, selectComposition } = await import('@remotion/renderer');
 
         // Bundle the Remotion project

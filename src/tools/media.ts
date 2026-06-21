@@ -411,7 +411,10 @@ export function registerMediaTools(server: McpServer): void {
             const putResp = await fetch(putData.signedUrl, {
               method: 'PUT',
               headers: { 'Content-Type': ct },
-              body: fileBuffer,
+              // fetch's BodyInit doesn't accept Node Buffer directly; wrap in
+              // Uint8Array (Buffer is a subclass but the structural types
+              // don't line up under strict mode).
+              body: new Uint8Array(fileBuffer),
             });
 
             if (!putResp.ok) {

@@ -29,6 +29,7 @@ import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
 import { TOOL_CATALOG } from './lib/tool-catalog.js';
+import { requestIdMiddleware, httpLog } from './lib/http-logger.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -179,6 +180,11 @@ const cleanupInterval = setInterval(
 const app = express();
 app.disable('x-powered-by');
 app.use(express.json({ limit: '1mb' }));
+
+// Stamp a correlation ID on every request and expose it via X-Request-Id.
+// Must run before any handler that may log so request-scoped log lines
+// can be joined at the sink.
+app.use(requestIdMiddleware);
 
 // Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
 // (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
@@ -477,10 +483,71 @@ app.get('/config', (_req, res) => {
   });
 });
 
-// ── Health check ─────────────────────────────────────────────────────
+// ── Health checks ────────────────────────────────────────────────────
+// Two endpoints split by intent so a load balancer can drain traffic
+// from an instance that has lost a dependency, while still keeping the
+// pod alive long enough for shutdown / debugging:
+//
+//   /health/live  — process is up. Always 200. Use for Railway/Kubernetes
+//                   *liveness* probe; failure here triggers a restart.
+//   /health/ready — process AND upstream dependencies (Supabase JWKS) are
+//                   reachable. May 503. Use for *readiness*; failure here
+//                   removes the instance from the routing pool but does
+//                   NOT restart it.
+//
+// `/health` is preserved as an alias of `/health/live` so existing
+// Railway / monitoring configs keep working.
 
-app.get('/health', (_req, res) => {
+const READINESS_CACHE_MS = 10_000;
+let readinessCache: { at: number; ok: boolean; error?: string } | null = null;
+
+async function checkReadiness(): Promise<{ ok: boolean; error?: string }> {
+  const now = Date.now();
+  if (readinessCache && now - readinessCache.at < READINESS_CACHE_MS) {
+    return { ok: readinessCache.ok, error: readinessCache.error };
+  }
+  try {
+    // Cheapest check that actually exercises the auth dependency: HEAD
+    // the Supabase JWKS endpoint with a short timeout. If JWKS is
+    // unreachable, this instance can't verify any token and should be
+    // pulled from the routing pool.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 2_000);
+    const resp = await fetch(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+    const ok = resp.ok;
+    readinessCache = {
+      at: now,
+      ok,
+      error: ok ? undefined : `JWKS HEAD returned HTTP ${resp.status}`,
+    };
+  } catch (err) {
+    readinessCache = {
+      at: now,
+      ok: false,
+      error: err instanceof Error ? err.message : 'JWKS check failed',
+    };
+  }
+  return { ok: readinessCache.ok, error: readinessCache.error };
+}
+
+function liveResponse(res: express.Response): void {
   res.json({ status: 'ok', version: MCP_VERSION });
+}
+
+app.get('/health', (_req, res) => liveResponse(res));
+app.get('/health/live', (_req, res) => liveResponse(res));
+
+app.get('/health/ready', async (_req, res) => {
+  const { ok, error } = await checkReadiness();
+  if (ok) {
+    res.json({ status: 'ready', version: MCP_VERSION });
+    return;
+  }
+  res.status(503).json({ status: 'not_ready', version: MCP_VERSION, error });
 });
 
 // Authenticated health details — memory, sessions, uptime
@@ -677,10 +744,10 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
 });
 
 // ── Global error handler (catches errors SDK swallows) ──────────────
-app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+app.use((err: Error, req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Never log raw .stack — absolute container paths and framework
   // internals can leak to centralised log sinks.
-  console.error(`[MCP HTTP] Unhandled Express error: ${sanitizeError(err)}`);
+  httpLog(req, 'error', 'unhandled_express_error', { error: sanitizeError(err) });
   if (!res.headersSent) {
     res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
   }
