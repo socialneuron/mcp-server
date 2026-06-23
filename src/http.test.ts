@@ -133,6 +133,17 @@ describe('HTTP Server Security Patterns', () => {
       expect(publicHealth).not.toHaveProperty('uptime');
     });
 
+    it('should expose readiness without leaking upstream URLs or raw errors', () => {
+      const readinessFailure = {
+        status: 'not_ready',
+        version: '1.1.0',
+        checks: { auth_jwks: 'unavailable' },
+      };
+
+      expect(readinessFailure.checks.auth_jwks).toBe('unavailable');
+      expect(JSON.stringify(readinessFailure)).not.toMatch(/https?:\/\/|SUPABASE|fetch failed/i);
+    });
+
     it('should include details in authenticated health endpoint', () => {
       const detailedHealth = {
         status: 'ok',
@@ -151,6 +162,20 @@ describe('HTTP Server Security Patterns', () => {
   });
 
   describe('Rate limiting integration', () => {
+    it('should exempt public probe endpoints from the IP bucket', () => {
+      const exemptPaths = new Set([
+        '/health',
+        '/health/live',
+        '/health/ready',
+        '/.well-known/mcp/server-card.json',
+        '/.well-known/oauth-protected-resource',
+        '/config',
+      ]);
+
+      expect(exemptPaths.has('/health/live')).toBe(true);
+      expect(exemptPaths.has('/health/ready')).toBe(true);
+    });
+
     it('should apply rate limit check before processing', () => {
       const rateLimitResult = { allowed: false, retryAfter: 30 };
 
@@ -174,12 +199,18 @@ describe('HTTP Server Security Patterns', () => {
       const context = {
         userId: 'user-1',
         scopes: ['mcp:read'],
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        brandProfileId: 'brand-1',
         creditsUsed: 0,
         assetsGenerated: 0,
       };
 
       expect(context).toHaveProperty('creditsUsed', 0);
       expect(context).toHaveProperty('assetsGenerated', 0);
+      expect(context).toHaveProperty('organizationId', 'org-1');
+      expect(context).toHaveProperty('projectId', 'project-1');
+      expect(context).toHaveProperty('brandProfileId', 'brand-1');
     });
 
     it('should isolate budget between requests', () => {

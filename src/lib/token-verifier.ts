@@ -14,6 +14,15 @@ interface TokenVerifierOptions {
   supabaseAnonKey: string;
 }
 
+interface AccountContextFields {
+  organizationId?: string;
+  organization_id?: string;
+  projectId?: string;
+  project_id?: string;
+  brandProfileId?: string;
+  brand_profile_id?: string;
+}
+
 let jwks: jose.JWTVerifyGetKey | null = null;
 
 function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
@@ -46,6 +55,31 @@ const API_KEY_CACHE_TTL_MS = 300_000;
 
 function cacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
+}
+
+function extractAccountContext(source: AccountContextFields): {
+  organizationId?: string;
+  projectId?: string;
+  brandProfileId?: string;
+} {
+  const context: {
+    organizationId?: string;
+    projectId?: string;
+    brandProfileId?: string;
+  } = {};
+  const organizationId =
+    optionalString(source.organizationId) ?? optionalString(source.organization_id);
+  const projectId = optionalString(source.projectId) ?? optionalString(source.project_id);
+  const brandProfileId =
+    optionalString(source.brandProfileId) ?? optionalString(source.brand_profile_id);
+  if (organizationId) context.organizationId = organizationId;
+  if (projectId) context.projectId = projectId;
+  if (brandProfileId) context.brandProfileId = brandProfileId;
+  return context;
 }
 
 /** Evict a token from the validation cache (used by revocation). */
@@ -111,12 +145,14 @@ async function verifySupabaseJwt(token: string, supabaseUrl: string): Promise<Au
     ? appMetadata.mcp_scopes.map(String)
     : ['mcp:read'];
 
+  const appContext = extractAccountContext(appMetadata as AccountContextFields);
+
   return {
     token,
     clientId: (payload.client_id as string) ?? 'supabase-oauth',
     scopes,
     expiresAt: payload.exp,
-    extra: { userId },
+    extra: { userId, ...appContext },
   };
 }
 
@@ -155,7 +191,7 @@ async function verifyApiKey(
       email?: string;
       expiresAt?: string;
       error?: string;
-    };
+    } & AccountContextFields;
 
     if (!data.valid || !data.userId) {
       throw new Error(data.error ?? 'Invalid API key');
@@ -170,12 +206,14 @@ async function verifyApiKey(
       throw new Error('API key expired');
     }
 
+    const context = extractAccountContext(data);
+
     return {
       token: apiKey,
       clientId: 'api-key',
       scopes: data.scopes ?? ['mcp:read'],
       expiresAt,
-      extra: { userId: data.userId, email: data.email },
+      extra: { userId: data.userId, email: data.email, ...context },
     };
   } catch (err) {
     clearTimeout(timer);

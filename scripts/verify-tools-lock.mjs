@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 /**
- * Verify tools.lock.json is in sync with the RUNTIME tool registry.
+ * Verify tools.lock.json is in sync with model-visible tool metadata.
  *
  * Run in CI after `npm ci` to fail the build if a PR changes a tool's
- * runtime description (or scope) without committing the regenerated lockfile.
+ * runtime tools/list metadata or search_tools catalog metadata without
+ * committing the regenerated lockfile.
  * This turns every model-visible description change into a reviewable diff —
  * the enforcement behind the CVE-2025-6514 defense.
  *
@@ -13,7 +14,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { enumerateRuntimeTools, hashTool } from './lib/enumerate-runtime-tools.mjs';
+import { enumerateLockedTools, hashTool } from './lib/enumerate-runtime-tools.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
@@ -28,9 +29,9 @@ try {
   process.exit(1);
 }
 
-const runtime = await enumerateRuntimeTools();
+const locked = await enumerateLockedTools();
 const fresh = {};
-for (const [name, info] of Object.entries(runtime)) fresh[name] = hashTool(name, info);
+for (const [name, info] of Object.entries(locked)) fresh[name] = hashTool(name, info);
 
 const committedNames = new Set(Object.keys(committed.tools || {}));
 const freshNames = new Set(Object.keys(fresh));
@@ -41,7 +42,7 @@ const changed = [...freshNames]
   .sort();
 
 if (added.length === 0 && removed.length === 0 && changed.length === 0) {
-  console.log(`✅ tools.lock.json matches the runtime tool registry (${freshNames.size} tools).`);
+  console.log(`✅ tools.lock.json matches model-visible tool metadata (${freshNames.size} tools).`);
   process.exit(0);
 }
 
@@ -65,5 +66,5 @@ if (changed.length) {
 console.error(`\nIf this drift is intentional, run:`);
 console.error(`   npm run build:lock`);
 console.error(`   git add tools.lock.json`);
-console.error(`and commit the updated lockfile in the same PR that changes the tool.`);
+console.error(`and commit the updated lockfile in the same PR that changes tool metadata.`);
 process.exit(1);

@@ -1,7 +1,12 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
 import { captureToolEvent } from './posthog.js';
-import { getRequestUserId } from './request-context.js';
+import {
+  getRequestBrandProfileId,
+  getRequestOrganizationId,
+  getRequestProjectId,
+  getRequestUserId,
+} from './request-context.js';
 
 const SUPABASE_URL = process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || '';
 
@@ -19,6 +24,9 @@ let authenticatedScopes: string[] = [];
 let authenticatedEmail: string | null = null;
 let authenticatedExpiresAt: string | null = null;
 let authenticatedApiKey: string | null = null;
+let authenticatedOrganizationId: string | null = null;
+let authenticatedProjectId: string | null = null;
+let authenticatedBrandProfileId: string | null = null;
 const MCP_RUN_ID = randomUUID();
 
 /**
@@ -127,40 +135,118 @@ export async function getDefaultUserId(): Promise<string> {
  * Returns a default project ID for scoping queries.
  *
  * Resolution order:
- *   1. Per-user cache (safe for multi-user HTTP mode)
+ *   1. Active request/auth context (OAuth/API-key metadata)
  *   2. SOCIALNEURON_PROJECT_ID env var
- *   3. Most recently created project owned by the current user
+ *   3. Per-user + organization cache (safe for multi-user HTTP mode)
+ *   4. Most recently created project inside a verified organization membership
  */
-const projectIdCache = new Map<string, string>(); // userId -> projectId
+const projectIdCache = new Map<string, string>(); // userId[:organizationId] -> projectId
+
+function projectCacheKey(userId: string, organizationId: string | null): string {
+  return organizationId ? `${userId}:${organizationId}` : userId;
+}
+
+export function getDefaultOrganizationId(): string | null {
+  return (
+    getRequestOrganizationId() ||
+    authenticatedOrganizationId ||
+    process.env.SOCIALNEURON_ORGANIZATION_ID ||
+    process.env.SOCIALNEURON_ORG_ID ||
+    null
+  );
+}
+
+export function getDefaultBrandProfileId(): string | null {
+  return (
+    getRequestBrandProfileId() ||
+    authenticatedBrandProfileId ||
+    process.env.SOCIALNEURON_BRAND_PROFILE_ID ||
+    null
+  );
+}
 
 export async function getDefaultProjectId(): Promise<string | null> {
   const userId = await getDefaultUserId().catch(() => null);
+  const contextProjectId =
+    getRequestProjectId() || authenticatedProjectId || process.env.SOCIALNEURON_PROJECT_ID || null;
+  const organizationId = getDefaultOrganizationId();
+
+  if (contextProjectId) {
+    if (userId) projectIdCache.set(projectCacheKey(userId, organizationId), contextProjectId);
+    return contextProjectId;
+  }
 
   // Check per-user cache
   if (userId) {
-    const cached = projectIdCache.get(userId);
+    const cached = projectIdCache.get(projectCacheKey(userId, organizationId));
     if (cached) return cached;
-  }
-
-  const envProjectId = process.env.SOCIALNEURON_PROJECT_ID;
-  if (envProjectId) {
-    if (userId) projectIdCache.set(userId, envProjectId);
-    return envProjectId;
   }
 
   // Resolve from user's most recent project
   if (!userId) return null;
   try {
     const supabase = getSupabaseClient();
+    let organizationIds: string[] = [];
+
+    if (organizationId) {
+      const { data: membership, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+
+      if (membershipError) return null;
+
+      if (membership?.organization_id) {
+        organizationIds = [membership.organization_id];
+      } else {
+        const { data: ownedOrg, error: ownedOrgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('id', organizationId)
+          .eq('owner_id', userId)
+          .maybeSingle();
+
+        if (ownedOrgError || !ownedOrg?.id) return null;
+        organizationIds = [ownedOrg.id];
+      }
+    } else {
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', userId);
+
+      if (membershipError) return null;
+      organizationIds = (memberships ?? [])
+        .map(row => row.organization_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+      const { data: ownedOrgs, error: ownedOrgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', userId);
+
+      if (!ownedOrgError) {
+        for (const row of ownedOrgs ?? []) {
+          if (typeof row.id === 'string' && row.id.length > 0) {
+            organizationIds.push(row.id);
+          }
+        }
+      }
+      organizationIds = Array.from(new Set(organizationIds));
+      if (organizationIds.length === 0) return null;
+    }
+
     const { data } = await supabase
       .from('projects')
       .select('id')
-      .eq('user_id', userId)
+      .in('organization_id', organizationIds)
       .order('created_at', { ascending: false })
       .limit(1)
-      .single();
+      .maybeSingle();
+
     if (data?.id) {
-      projectIdCache.set(userId, data.id);
+      projectIdCache.set(projectCacheKey(userId, organizationId), data.id);
       return data.id;
     }
   } catch {
@@ -204,6 +290,9 @@ export async function initializeAuth(): Promise<void> {
         result.scopes && result.scopes.length > 0 ? result.scopes : ['mcp:read'];
       authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
+      authenticatedOrganizationId = result.organizationId || result.organization_id || null;
+      authenticatedProjectId = result.projectId || result.project_id || null;
+      authenticatedBrandProfileId = result.brandProfileId || result.brand_profile_id || null;
       if (!_quietAuth) {
         console.error(
           '[MCP] Authenticated via API key (prefix: ' +

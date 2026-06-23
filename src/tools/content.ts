@@ -22,6 +22,11 @@ interface AsyncJob {
   result_url: string | null;
   error_message: string | null;
   credits_cost: number | null;
+  credits_reserved?: number | null;
+  credits_charged?: number | null;
+  credits_refunded?: number | null;
+  billing_status?: string | null;
+  failure_reason?: string | null;
   created_at: string;
   completed_at: string | null;
   result_metadata?: {
@@ -91,6 +96,89 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
     },
     data,
   };
+}
+
+function optionalNumber(value: unknown): number | null {
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function optionalString(value: unknown): string | null {
+  return typeof value === 'string' && value.length > 0 ? value : null;
+}
+
+function firstNumber(...values: unknown[]): number | null {
+  for (const value of values) {
+    const parsed = optionalNumber(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    const parsed = optionalString(value);
+    if (parsed !== null) return parsed;
+  }
+  return null;
+}
+
+function getJobBillingSummary(job: AsyncJob): {
+  billing_status: string | null;
+  credits_reserved: number | null;
+  credits_charged: number | null;
+  credits_refunded: number | null;
+  failure_reason: string | null;
+  reported: boolean;
+} {
+  const meta = job.result_metadata ?? {};
+  const billing_status = firstString(
+    job.billing_status,
+    meta.billing_status,
+    meta.billingStatus
+  );
+  const credits_reserved = firstNumber(
+    job.credits_reserved,
+    meta.credits_reserved,
+    meta.creditsReserved
+  );
+  const credits_charged = firstNumber(job.credits_charged, meta.credits_charged, meta.creditsCharged);
+  const credits_refunded = firstNumber(
+    job.credits_refunded,
+    meta.credits_refunded,
+    meta.creditsRefunded
+  );
+  const failure_reason = firstString(job.failure_reason, meta.failure_reason, meta.failureReason);
+
+  return {
+    billing_status,
+    credits_reserved,
+    credits_charged,
+    credits_refunded,
+    failure_reason,
+    reported:
+      billing_status !== null ||
+      credits_reserved !== null ||
+      credits_charged !== null ||
+      credits_refunded !== null ||
+      failure_reason !== null,
+  };
+}
+
+function formatBillingSummary(job: AsyncJob): string | null {
+  const billing = getJobBillingSummary(job);
+  if (!billing.reported) {
+    return job.status === 'failed' ? 'Billing status: not reported by backend' : null;
+  }
+
+  const parts = [
+    billing.billing_status ? `status=${billing.billing_status}` : null,
+    billing.credits_reserved !== null ? `reserved=${billing.credits_reserved}` : null,
+    billing.credits_charged !== null ? `charged=${billing.credits_charged}` : null,
+    billing.credits_refunded !== null ? `refunded=${billing.credits_refunded}` : null,
+    billing.failure_reason ? `failure_reason=${billing.failure_reason}` : null,
+  ].filter(Boolean);
+
+  return `Billing: ${parts.join(', ')}`;
 }
 
 // PRC-003/PRC-009 fix: Synced with constants/pricing.ts (40% margin on premium video models)
@@ -773,6 +861,8 @@ export function registerContentTools(server: McpServer): void {
         lines.push(`Error: ${job.error_message}`);
       }
       lines.push(`Credits: ${job.credits_cost}`);
+      const billingLine = formatBillingSummary(job);
+      if (billingLine) lines.push(billingLine);
       lines.push(`Created: ${job.created_at}`);
       if (job.completed_at) {
         lines.push(`Completed: ${job.completed_at}`);
@@ -790,6 +880,7 @@ export function registerContentTools(server: McpServer): void {
           ...job,
           r2_key: job.result_url && !job.result_url.startsWith('http') ? job.result_url : null,
           all_urls: allUrls ?? null,
+          billing: getJobBillingSummary(job),
         };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(enriched), null, 2) }],

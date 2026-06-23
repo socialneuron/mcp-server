@@ -700,13 +700,13 @@ async function submitQuickCreate() {
     return;
   }
 
-  // Build ISO timestamp from date + time. Validate it's not in the past.
-  const scheduleAt = `${state.modal.date}T${state.modal.time}:00`;
-  if (new Date(scheduleAt).getTime() < Date.now()) {
+  const picked = new Date(`${state.modal.date}T${state.modal.time}`);
+  if (Number.isNaN(picked.getTime()) || picked.getTime() < Date.now()) {
     state.modal.error = 'Schedule time must be in the future.';
     renderModal();
     return;
   }
+  const scheduleAt = picked.toISOString();
 
   state.modal.submitting = true;
   state.modal.error = null;

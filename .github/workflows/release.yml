@@ -60,10 +60,8 @@ jobs:
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
-      # NOTE: Typecheck intentionally removed 2026-04-08 to unblock releases.
-      # There are ~40 pre-existing type errors. A dedicated tech-debt PR
-      # should fix them and restore this step. Tests + build + pack verify
-      # gates remain.
+      - name: Typecheck
+        run: npm run typecheck
 
       - name: Test
         run: npm test

@@ -26,6 +26,10 @@ describe('distribution tools', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCallEdge.mockReset();
+    mockCallEdge.mockResolvedValue({ data: null, error: null });
+    mockGetUserId.mockReset();
+    mockGetUserId.mockResolvedValue('test-user-id');
     server = createMockServer();
     registerDistributionTools(server as any);
   });
@@ -339,9 +343,9 @@ describe('distribution tools', () => {
         const handler = server.getHandler('schedule_post')!;
         const result = await handler({
           media_urls: [
-            'https://replicate.delivery/a.png',
-            'https://replicate.delivery/b.png',
-            'https://replicate.delivery/c.png',
+            'https://93.184.216.34/a.png',
+            'https://93.184.216.34/b.png',
+            'https://93.184.216.34/c.png',
           ],
           caption: 'carousel',
           platforms: ['instagram'],
@@ -856,6 +860,7 @@ describe('distribution tools', () => {
         plan_id: planId,
         auto_slot: false,
         dry_run: false,
+        schedule_confirmed: true,
       });
 
       expect(result.isError).toBe(true);
@@ -863,6 +868,30 @@ describe('distribution tools', () => {
       // Verify schedule-post was NOT called
       const schedulePostCalls = mockCallEdge.mock.calls.filter(c => c[0] === 'schedule-post');
       expect(schedulePostCalls).toHaveLength(0);
+    });
+
+    it('requires explicit confirmation before live scheduling a content plan', async () => {
+      const handler = server.getHandler('schedule_content_plan')!;
+      const result = await handler({
+        plan: {
+          posts: [
+            {
+              id: 'day1-twitter-1',
+              caption: 'High quality caption with enough detail for a safe scheduling test.',
+              platform: 'twitter',
+              schedule_at: '2026-03-20T10:00:00Z',
+            },
+          ],
+        },
+        auto_slot: false,
+        dry_run: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        'Scheduling a content plan requires explicit confirmation'
+      );
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('schedules with plan_id input without crashing', async () => {
@@ -894,6 +923,7 @@ describe('distribution tools', () => {
         plan_id: planId,
         auto_slot: false,
         dry_run: false,
+        schedule_confirmed: true,
         enforce_quality: false,
         response_format: 'json',
       });
