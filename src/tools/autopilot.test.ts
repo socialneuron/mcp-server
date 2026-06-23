@@ -221,10 +221,57 @@ describe('autopilot tools', () => {
       const result = await handler({
         config_id: TEST_CONFIG_ID,
         is_active: true,
+        activation_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Error updating config');
       expect(result.content[0].text).toContain('Database operation failed');
+    });
+
+    it('requires explicit confirmation before enabling an existing config', async () => {
+      const handler = server.getHandler('update_autopilot_config')!;
+      const result = await handler({
+        config_id: TEST_CONFIG_ID,
+        is_active: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Enabling autopilot requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('allows enabling an existing config when activation is confirmed', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          updated: {
+            id: TEST_CONFIG_ID,
+            is_active: true,
+            schedule_config: { days: ['mon'], time: '09:00' },
+            max_credits_per_run: 200,
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('update_autopilot_config')!;
+      const result = await handler({
+        config_id: TEST_CONFIG_ID,
+        is_active: true,
+        activation_confirmed: true,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('Active: true');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'update-autopilot-config',
+          config_id: TEST_CONFIG_ID,
+          is_active: true,
+          activation_confirmed: true,
+        })
+      );
     });
 
     it('sends config_id to edge function', async () => {

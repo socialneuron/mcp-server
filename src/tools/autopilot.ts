@@ -117,10 +117,16 @@ export function registerAutopilotTools(server: McpServer): void {
   server.tool(
     'update_autopilot_config',
     'Update an existing autopilot configuration. Can enable/disable, change schedule, ' +
-      'or modify credit budgets.',
+      'or modify credit budgets. To enable recurring automation, set is_active=true and activation_confirmed=true after explicit user approval.',
     {
       config_id: z.string().uuid().describe('The autopilot config ID to update.'),
       is_active: z.boolean().optional().describe('Enable or disable this autopilot config.'),
+      activation_confirmed: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Required when is_active=true. Set true only after the user explicitly approves recurring automation.'
+        ),
       schedule_days: z
         .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
         .optional()
@@ -135,12 +141,27 @@ export function registerAutopilotTools(server: McpServer): void {
     async ({
       config_id,
       is_active,
+      activation_confirmed,
       schedule_days,
       schedule_time,
       max_credits_per_run,
       max_credits_per_week,
     }) => {
       const startedAt = Date.now();
+      if (is_active === true && !activation_confirmed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                'Enabling autopilot requires explicit confirmation. Re-run with ' +
+                'activation_confirmed=true after the user approves recurring automation.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
       // Autopilot configs drive recurring automated posting. Rate-limit
       // mutations on the `posting` bucket so an agent cannot rapidly
       // re-tune the automation to flood platforms with content.
@@ -194,6 +215,7 @@ export function registerAutopilotTools(server: McpServer): void {
         action: 'update-autopilot-config',
         config_id,
         is_active,
+        activation_confirmed,
         schedule_days,
         schedule_time,
         max_credits_per_run,
