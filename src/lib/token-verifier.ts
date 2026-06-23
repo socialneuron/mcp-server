@@ -145,21 +145,14 @@ async function verifySupabaseJwt(token: string, supabaseUrl: string): Promise<Au
     ? appMetadata.mcp_scopes.map(String)
     : ['mcp:read'];
 
-  const userMetadata = (payload.user_metadata as Record<string, unknown>) ?? {};
   const appContext = extractAccountContext(appMetadata as AccountContextFields);
-  const userContext = extractAccountContext(userMetadata as AccountContextFields);
-  const context = extractAccountContext({
-    organizationId: userContext.organizationId ?? appContext.organizationId,
-    projectId: userContext.projectId ?? appContext.projectId,
-    brandProfileId: userContext.brandProfileId ?? appContext.brandProfileId,
-  });
 
   return {
     token,
     clientId: (payload.client_id as string) ?? 'supabase-oauth',
     scopes,
     expiresAt: payload.exp,
-    extra: { userId, ...context },
+    extra: { userId, ...appContext },
   };
 }
 

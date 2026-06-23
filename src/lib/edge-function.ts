@@ -8,6 +8,7 @@ import {
 } from './supabase.js';
 import {
   getRequestBearerToken,
+  getRequestBrandProfileId,
   getRequestOrganizationId,
   getRequestProjectId,
   getRequestUserId,
@@ -148,14 +149,30 @@ export async function callEdgeFunction<T = unknown>(
     }
   }
 
-  const defaultBrandProfileId = getDefaultBrandProfileId();
-  if (
-    defaultBrandProfileId &&
-    !enrichedBody.brandProfileId &&
-    !enrichedBody.brand_profile_id
-  ) {
-    enrichedBody.brandProfileId = defaultBrandProfileId;
-    enrichedBody.brand_profile_id = defaultBrandProfileId;
+  const authoritativeBrandProfileId = getRequestBrandProfileId();
+  if (authoritativeBrandProfileId) {
+    if (
+      (enrichedBody.brandProfileId &&
+        enrichedBody.brandProfileId !== authoritativeBrandProfileId) ||
+      (enrichedBody.brand_profile_id &&
+        enrichedBody.brand_profile_id !== authoritativeBrandProfileId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied brandProfileId for ${functionName} ignored in favour of authenticated brand profile.`
+      );
+    }
+    enrichedBody.brandProfileId = authoritativeBrandProfileId;
+    enrichedBody.brand_profile_id = authoritativeBrandProfileId;
+  } else {
+    const defaultBrandProfileId = getDefaultBrandProfileId();
+    if (
+      defaultBrandProfileId &&
+      !enrichedBody.brandProfileId &&
+      !enrichedBody.brand_profile_id
+    ) {
+      enrichedBody.brandProfileId = defaultBrandProfileId;
+      enrichedBody.brand_profile_id = defaultBrandProfileId;
+    }
   }
 
   // Decide transport.

@@ -347,6 +347,37 @@ describe('callEdgeFunction', () => {
     });
   });
 
+  it('overrides caller brand IDs with verified request brand context', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read'],
+        token: 'snk_live_request_context',
+        brandProfileId: 'verified-brand-id',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () =>
+        callEdgeFunction('mcp-data', {
+          action: 'brand-profile',
+          brandProfileId: 'caller-brand-id',
+          brand_profile_id: 'caller-brand-id',
+        })
+    );
+
+    expect(sentBody()).toMatchObject({
+      body: {
+        brandProfileId: 'verified-brand-id',
+        brand_profile_id: 'verified-brand-id',
+      },
+    });
+  });
+
   it('forwards verified Supabase JWTs to mcp-gateway in HTTP mode', async () => {
     vi.stubGlobal(
       'fetch',
