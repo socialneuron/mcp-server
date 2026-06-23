@@ -97,7 +97,7 @@
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.1",
     "typescript": "^6.0.2",
-    "vitest": "^3.2.6"
+    "vitest": "^4.1.9"
   },
   "overrides": {
     "vite": "7.3.5",
