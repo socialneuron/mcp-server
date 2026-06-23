@@ -13,6 +13,12 @@ export interface ValidateApiKeyResult {
   scopes?: string[];
   email?: string;
   expiresAt?: string;
+  organizationId?: string;
+  organization_id?: string;
+  projectId?: string;
+  project_id?: string;
+  brandProfileId?: string;
+  brand_profile_id?: string;
   error?: string;
   /**
    * True when the failure was TRANSIENT (network blip, 429 rate-limit, 5xx) —

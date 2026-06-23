@@ -69,6 +69,26 @@ describe('supabase module', () => {
   });
 
   describe('getDefaultProjectId', () => {
+    it('prefers project ID from request context', async () => {
+      const { requestContext } = await import('./request-context.js');
+      const { getDefaultProjectId } = await import('./supabase.js');
+
+      const projectId = await requestContext.run(
+        {
+          userId: 'request-user-id',
+          scopes: ['mcp:read'],
+          token: 'request-token',
+          organizationId: 'request-org-id',
+          projectId: 'request-project-id',
+          creditsUsed: 0,
+          assetsGenerated: 0,
+        },
+        () => getDefaultProjectId()
+      );
+
+      expect(projectId).toBe('request-project-id');
+    });
+
     it('returns a project ID', async () => {
       const { getDefaultProjectId } = await import('./supabase.js');
       const projectId = await getDefaultProjectId();
