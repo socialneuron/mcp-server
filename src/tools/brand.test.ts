@@ -125,6 +125,27 @@ describe('brand tools', () => {
       expect(result.content[0].text).toContain('Failed to fetch URL: connection refused');
     });
 
+    it('returns structured policy_block when SSRF validation blocks the URL', async () => {
+      mockValidateSSRF.mockResolvedValueOnce({
+        isValid: false,
+        error: 'Access to private/internal IP addresses is not allowed.',
+      });
+
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'http://127.0.0.1:8080/admin' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(false);
+      expect(parsed).toMatchObject({
+        ok: false,
+        error_type: 'policy_block',
+        policy: 'ssrf',
+        tool: 'extract_brand',
+        input_kind: 'url',
+      });
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
     it('returns JSON envelope when response_format=json', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {

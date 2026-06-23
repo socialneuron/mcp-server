@@ -14,6 +14,7 @@ import { mkdir } from 'node:fs/promises';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
+import { policyBlockedResult } from '../lib/policy-block.js';
 import { assertPathWithin } from '../lib/safe-path.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
@@ -253,19 +254,16 @@ export function registerScreenshotTools(server: McpServer): void {
       if (!ssrfResult.isValid) {
         await logMcpToolInvocation({
           toolName: 'capture_screenshot',
-          status: 'error',
+          status: 'success',
           durationMs: Date.now() - startedAt,
-          details: { error: ssrfResult.error, url },
+          details: { error_type: 'policy_block', policy: 'ssrf', reason: ssrfResult.error },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `URL blocked by SSRF protection: ${ssrfResult.error}`,
-            },
-          ],
-          isError: true,
-        };
+        return policyBlockedResult({
+          toolName: 'capture_screenshot',
+          policy: 'ssrf',
+          inputKind: 'url',
+          reason: ssrfResult.error,
+        });
       }
 
       // DNS pinning: replace hostname with resolved IP to prevent DNS rebinding

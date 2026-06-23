@@ -4,6 +4,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { policyBlockedResult } from '../lib/policy-block.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -41,10 +42,12 @@ export function registerBrandTools(server: McpServer): void {
     async ({ url, response_format }) => {
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
-        return {
-          content: [{ type: 'text' as const, text: `URL blocked: ${ssrfCheck.error}` }],
-          isError: true,
-        };
+        return policyBlockedResult({
+          toolName: 'extract_brand',
+          policy: 'ssrf',
+          inputKind: 'url',
+          reason: ssrfCheck.error,
+        });
       }
 
       const { data, error } = await callEdgeFunction<BrandProfile>(
