@@ -11,7 +11,13 @@ export function parseSnArgs(argv: string[]): SnArgs {
       parsed._.push(token);
       continue;
     }
-    const key = token.slice(2);
+    const body = token.slice(2);
+    const eq = body.indexOf('=');
+    if (eq !== -1) {
+      parsed[body.slice(0, eq)] = body.slice(eq + 1);
+      continue;
+    }
+    const key = body;
     const next = argv[i + 1];
     if (!next || next.startsWith('--')) {
       parsed[key] = true;

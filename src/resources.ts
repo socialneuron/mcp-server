@@ -212,17 +212,30 @@ export function registerResources(
           ],
           audio: ['Background music', 'Voiceover'],
         },
+        // Keep these in sync with tool input enums. Agents pass these IDs to tools.
         ai_models: {
-          text: ['Gemini 2.5 Flash', 'Gemini 2.5 Pro'],
+          text: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
           image: [
-            'Flux 1.1 Pro',
-            'DALL-E 3',
-            'Stable Diffusion XL',
-            'Ideogram',
-            'Recraft V3',
-            'Mystic V2',
+            'midjourney',
+            'nano-banana',
+            'nano-banana-pro',
+            'flux-pro',
+            'flux-max',
+            'gpt4o-image',
+            'imagen4',
+            'imagen4-fast',
+            'seedream',
           ],
-          video: ['Veo 3', 'Sora 2', 'Runway Gen-4', 'Kling 2.0', 'Minimax', 'Wan 2.1'],
+          video: [
+            'veo3-fast',
+            'veo3-quality',
+            'runway-aleph',
+            'sora2',
+            'sora2-pro',
+            'kling',
+            'kling-3',
+            'kling-3-pro',
+          ],
         },
         credit_costs: {
           text_generation: '1-3 credits',
@@ -321,12 +334,12 @@ export function registerResources(
 ### Repurpose Content
 1. Use the \`repurpose_content\` prompt with your source material
 2. Review each generated variation
-3. Schedule across platforms using \`save_content_plan\`
+3. Save the batch with \`save_content_plan\`, then publish with \`schedule_content_plan\`
 
 ### Set Up Autopilot
 1. \`get_brand_profile\` → verify brand settings
-2. \`update_autopilot_config\` → set schedule and preferences
-3. \`update_autopilot_config\` → start automated posting
+2. \`create_autopilot_config\` → set schedule, budget, and approval mode
+3. \`get_autopilot_status\` → confirm the config and next scheduled run
 
 ## Credit Tips
 - Text generation: 1-3 credits
