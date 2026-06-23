@@ -231,7 +231,7 @@ export function registerRecipeTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'execute_recipe',
-    'Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status.',
+    'Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially and may spend credits or publish/schedule content. Requires execution_confirmed=true after explicit user approval. Long-running recipes will return a run_id you can check with get_recipe_run_status.',
     {
       slug: z.string().describe('Recipe slug (e.g., "weekly-instagram-calendar")'),
       inputs: z
@@ -239,13 +239,38 @@ export function registerRecipeTools(server: McpServer): void {
         .describe(
           'Input values matching the recipe input schema. Use get_recipe_details to see required inputs.'
         ),
+      execution_confirmed: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Required to execute. Set true only after the user explicitly approves this recipe run.'
+        ),
+      max_credits: z
+        .number()
+        .min(0)
+        .optional()
+        .describe('Optional maximum credits this recipe run may spend.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ slug, inputs, response_format }) => {
+    async ({ slug, inputs, execution_confirmed, max_credits, response_format }) => {
       const format = response_format ?? 'text';
+
+      if (!execution_confirmed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                'Recipe execution requires explicit confirmation. Re-run with ' +
+                'execution_confirmed=true after the user approves the run and credit usage.',
+            },
+          ],
+          isError: true,
+        };
+      }
 
       const { data: result, error: efError } = await callEdgeFunction<{
         run_id: string;
@@ -255,6 +280,7 @@ export function registerRecipeTools(server: McpServer): void {
         action: 'execute-recipe',
         slug,
         inputs,
+        ...(max_credits !== undefined ? { max_credits } : {}),
       });
 
       if (efError) {
