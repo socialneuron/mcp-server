@@ -1000,7 +1000,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ── schedule_content_plan ───────────────────────────────────────────
   server.tool(
     'schedule_content_plan',
-    'Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode.',
+    'Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. To schedule posts, set schedule_confirmed=true after explicit user approval.',
     {
       plan: z
         .object({
@@ -1028,6 +1028,12 @@ export function registerDistributionTools(server: McpServer): void {
         .default(true)
         .describe('Auto-assign time slots for posts without schedule_at'),
       dry_run: z.boolean().default(false).describe('Preview without actually scheduling'),
+      schedule_confirmed: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Required when dry_run=false. Set true only after explicit user confirmation to publish/schedule the content plan.'
+        ),
       response_format: z.enum(['text', 'json']).default('text'),
       enforce_quality: z
         .boolean()
@@ -1058,6 +1064,7 @@ export function registerDistributionTools(server: McpServer): void {
       plan_id,
       auto_slot,
       dry_run,
+      schedule_confirmed,
       response_format,
       enforce_quality,
       quality_threshold,
@@ -1066,6 +1073,20 @@ export function registerDistributionTools(server: McpServer): void {
     }) => {
       const startedAt = Date.now();
       try {
+        if (!dry_run && !schedule_confirmed) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  'Scheduling a content plan requires explicit confirmation. Re-run with ' +
+                  'schedule_confirmed=true after the user approves publishing, or set dry_run=true.',
+              },
+            ],
+            isError: true,
+          };
+        }
+
         // schedule_content_plan fans out to one schedule_post per plan post,
         // which itself touches a third-party social platform. Without a rate
         // limit here a single agent call can bulk-schedule across every
