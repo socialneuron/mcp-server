@@ -167,7 +167,7 @@ describe('createTokenVerifier', () => {
       expect(result.token).toBe('jwt-token');
     });
 
-    it('prefers user metadata over app metadata for JWT account context', async () => {
+    it('ignores user metadata for JWT account context', async () => {
       mockJwtVerify.mockResolvedValue(
         jwtPayload({
           sub: 'user-context-jwt',
@@ -187,8 +187,8 @@ describe('createTokenVerifier', () => {
 
       expect(result.extra).toEqual({
         userId: 'user-context-jwt',
-        organizationId: 'org-from-user',
-        projectId: 'project-from-user',
+        organizationId: 'org-from-app',
+        projectId: 'project-from-app',
         brandProfileId: 'brand-from-app',
       });
     });
@@ -231,12 +231,13 @@ describe('createTokenVerifier', () => {
       expect(result.scopes).toEqual(['mcp:read', 'mcp:write', 'mcp:admin']);
     });
 
-    it('extracts active account context from mixed JWT metadata keys', async () => {
+    it('extracts active account context from JWT app metadata keys', async () => {
       mockJwtVerify.mockResolvedValue(
         jwtPayload({
           app_metadata: {
             organization_id: 'org-from-app',
             project_id: 'project-from-app',
+            brand_profile_id: 'brand-profile-from-app',
           },
           user_metadata: {
             brand_profile_id: 'brand-profile-from-user',
@@ -250,7 +251,7 @@ describe('createTokenVerifier', () => {
         userId: 'user-jwt-123',
         organizationId: 'org-from-app',
         projectId: 'project-from-app',
-        brandProfileId: 'brand-profile-from-user',
+        brandProfileId: 'brand-profile-from-app',
       });
     });
 
