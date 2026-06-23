@@ -362,6 +362,7 @@ describe('autopilot tools', () => {
         schedule_days: ['mon', 'wed', 'fri'],
         schedule_time: '09:00',
         approval_mode: 'review_low_confidence',
+        activation_confirmed: true,
       });
       const text = result.content[0].text;
       expect(text).toContain('Autopilot config created');
@@ -392,6 +393,7 @@ describe('autopilot tools', () => {
         schedule_days: ['tue'],
         schedule_time: '14:00',
         approval_mode: 'auto',
+        activation_confirmed: true,
         response_format: 'json',
       });
       const parsed = JSON.parse(result.content[0].text);
@@ -412,9 +414,59 @@ describe('autopilot tools', () => {
         schedule_days: ['mon'],
         schedule_time: '09:00',
         approval_mode: 'auto',
+        activation_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Error creating autopilot config');
+    });
+
+    it('requires explicit confirmation before creating an active config', async () => {
+      const handler = server.getHandler('create_autopilot_config')!;
+      const result = await handler({
+        name: 'Weekly Pipeline',
+        project_id: TEST_PROJECT_ID,
+        schedule_days: ['mon'],
+        schedule_time: '09:00',
+        is_active: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Activating autopilot requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('allows creating a paused config without activation confirmation', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          created: {
+            id: 'new-cfg-paused',
+            name: 'Paused Pipeline',
+            is_active: false,
+            mode: 'pipeline',
+            schedule_config: { days: ['fri'], time: '15:00' },
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('create_autopilot_config')!;
+      const result = await handler({
+        name: 'Paused Pipeline',
+        project_id: TEST_PROJECT_ID,
+        schedule_days: ['fri'],
+        schedule_time: '15:00',
+        is_active: false,
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'create-autopilot-config',
+          is_active: false,
+        })
+      );
     });
   });
 });

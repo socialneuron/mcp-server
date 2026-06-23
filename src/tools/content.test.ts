@@ -476,6 +476,77 @@ describe('content tools', () => {
       expect(parsed.data.status).toBe('completed');
     });
 
+    it('surfaces billing fields reported by the backend', async () => {
+      const billedJob = {
+        ...completedJob,
+        status: 'failed',
+        error_message: 'Provider rejected prompt',
+        credits_cost: 10,
+        billing_status: 'refunded',
+        credits_reserved: 10,
+        credits_charged: 0,
+        credits_refunded: 10,
+        failure_reason: 'provider_rejected',
+      };
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job: billedJob },
+        error: null,
+      });
+
+      const handler = server.getHandler('check_status')!;
+      const result = await handler({ job_id: 'job-billed' });
+      const text = result.content[0].text;
+      expect(text).toContain('Billing: status=refunded');
+      expect(text).toContain('reserved=10');
+      expect(text).toContain('charged=0');
+      expect(text).toContain('refunded=10');
+      expect(text).toContain('failure_reason=provider_rejected');
+    });
+
+    it('marks failed job billing as unreported when backend omits billing fields', async () => {
+      const failedJob = {
+        ...completedJob,
+        status: 'failed',
+        error_message: 'Provider timeout',
+        completed_at: '2026-02-10T12:01:30Z',
+      };
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job: failedJob },
+        error: null,
+      });
+
+      const handler = server.getHandler('check_status')!;
+      const result = await handler({ job_id: 'job-failed-no-billing' });
+      expect(result.content[0].text).toContain('Billing status: not reported by backend');
+    });
+
+    it('includes billing summary in JSON envelope', async () => {
+      const billedJob = {
+        ...completedJob,
+        result_metadata: {
+          billing_status: 'charged',
+          credits_reserved: 10,
+          credits_charged: 10,
+          credits_refunded: 0,
+        },
+      };
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job: billedJob },
+        error: null,
+      });
+
+      const handler = server.getHandler('check_status')!;
+      const result = await handler({ job_id: 'job-billing-json', response_format: 'json' });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.billing).toMatchObject({
+        billing_status: 'charged',
+        credits_reserved: 10,
+        credits_charged: 10,
+        credits_refunded: 0,
+        reported: true,
+      });
+    });
+
     it('shows R2 Key label when result_url is an R2 key (not http)', async () => {
       const r2Job = {
         ...completedJob,
