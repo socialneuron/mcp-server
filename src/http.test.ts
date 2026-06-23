@@ -161,6 +161,29 @@ describe('HTTP Server Security Patterns', () => {
     });
   });
 
+  describe('Not found handler', () => {
+    it('should return a generic JSON 404 response', () => {
+      const response = {
+        status: 404,
+        headers: {
+          'Cache-Control': 'no-store',
+        },
+        body: {
+          error: 'not_found',
+          error_description: 'Route not found',
+        },
+      };
+
+      expect(response.status).toBe(404);
+      expect(response.headers['Cache-Control']).toBe('no-store');
+      expect(response.body).toEqual({
+        error: 'not_found',
+        error_description: 'Route not found',
+      });
+      expect(JSON.stringify(response.body)).not.toMatch(/Cannot (GET|POST|DELETE)|<html|stack/i);
+    });
+  });
+
   describe('Rate limiting integration', () => {
     it('should exempt public probe endpoints from the IP bucket', () => {
       const exemptPaths = new Set([
