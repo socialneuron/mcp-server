@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
@@ -159,7 +160,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to load brand profile: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to load brand profile: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,
@@ -275,7 +276,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to save brand profile: ${saveError || saveResult?.error || 'Unknown error'}`,
+              text: `Failed to save brand profile: ${safeErrorMessage(saveError ?? saveResult?.error)}`,
             },
           ],
           isError: true,
@@ -393,7 +394,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to update platform voice: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to update platform voice: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,

@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -66,7 +67,7 @@ export function registerLoopSummaryTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Loop summary failed: ${error ?? data?.error ?? 'Unknown error'}`,
+              text: `Loop summary failed: ${safeErrorMessage(error ?? data?.error)}`,
             },
           ],
           isError: true,
