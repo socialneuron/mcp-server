@@ -43,6 +43,31 @@ describe('loop summary tools', () => {
     expect(result.content[0].text).toContain('Brand Profile: ready');
   });
 
+  it('delegates to mcp-data when local default project lookup is unavailable', async () => {
+    mockGetProjectId.mockResolvedValueOnce(null);
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: true,
+        brandStatus: { hasProfile: true, brandName: 'Gateway Brand' },
+        recentContent: [],
+        currentInsights: [],
+        recommendedNextAction: 'Continue',
+      },
+      error: null,
+    });
+
+    const handler = server.getHandler('get_loop_summary')!;
+    const result = await handler({ response_format: 'json' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(result.isError).not.toBe(true);
+    expect(parsed.data.brandStatus.brandName).toBe('Gateway Brand');
+    expect(mockCallEdge).toHaveBeenCalledWith(
+      'mcp-data',
+      expect.not.objectContaining({ projectId: expect.anything() })
+    );
+  });
+
   it('handles EF error', async () => {
     mockCallEdge.mockResolvedValueOnce({
       data: null,
