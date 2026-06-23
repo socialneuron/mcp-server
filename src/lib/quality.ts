@@ -41,6 +41,10 @@ function countHashtags(text: string): number {
   return matches ? matches.length : 0;
 }
 
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 export function evaluateQuality(input: QualityInput): QualityResult {
   const caption = input.caption.trim();
   const title = (input.title ?? '').trim();
@@ -96,7 +100,10 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   // 4. Brand Alignment
   let brandScore = 3;
   const brandKeyword = input.brandKeyword ?? process.env.SOCIALNEURON_BRAND_KEYWORD?.trim();
-  if (brandKeyword && new RegExp('\\b' + brandKeyword + '\\b', 'i').test(title + ' ' + caption))
+  if (
+    brandKeyword &&
+    new RegExp('\\b' + escapeRegExp(brandKeyword) + '\\b', 'i').test(title + ' ' + caption)
+  )
     brandScore += 1;
   if (!/\b(you|your|customer|audience)\b/i.test(caption)) brandScore -= 1;
   if (blockedTerms.length > 0) {
