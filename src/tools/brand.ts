@@ -135,24 +135,12 @@ export function registerBrandTools(server: McpServer): void {
     async ({ project_id, response_format }) => {
       const projectId = project_id || (await getDefaultProjectId());
 
-      if (!projectId) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
         profile: Record<string, unknown> | null;
         error?: string;
-      }>('mcp-data', { action: 'brand-profile', projectId });
+      }>('mcp-data', { action: 'brand-profile', ...(projectId ? { projectId } : {}) });
 
       if (efError || (result && !result.success)) {
         return {
@@ -184,7 +172,7 @@ export function registerBrandTools(server: McpServer): void {
 
       const lines = [
         `Active Brand Profile`,
-        `Project: ${projectId}`,
+        `Project: ${projectId ?? 'default'}`,
         `Brand Name: ${data.brand_name || (data.brand_context as { name?: string } | null)?.name || 'N/A'}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,

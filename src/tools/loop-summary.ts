@@ -34,18 +34,6 @@ export function registerLoopSummaryTools(server: McpServer): void {
       const userId = await getDefaultUserId();
       const projectId = project_id || (await getDefaultProjectId());
 
-      if (!projectId) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Route through mcp-data EF (works in cloud mode with API key)
       const { data, error } = await callEdgeFunction<{
         success: boolean;
@@ -59,7 +47,11 @@ export function registerLoopSummaryTools(server: McpServer): void {
         currentInsights: Array<Record<string, unknown>>;
         recommendedNextAction: string;
         error?: string;
-      }>('mcp-data', { action: 'loop-summary', userId, projectId });
+      }>('mcp-data', {
+        action: 'loop-summary',
+        userId,
+        ...(projectId ? { projectId } : {}),
+      });
 
       if (error || !data?.success) {
         return {
@@ -92,7 +84,7 @@ export function registerLoopSummaryTools(server: McpServer): void {
             type: 'text' as const,
             text:
               `Loop Summary\n` +
-              `Project: ${projectId}\n` +
+              `Project: ${projectId ?? 'default'}\n` +
               `Brand Profile: ${payload.brandStatus.hasProfile ? 'ready' : 'missing'}\n` +
               `Recent Content Items: ${payload.recentContent.length}\n` +
               `Current Insights: ${payload.currentInsights.length}\n` +
