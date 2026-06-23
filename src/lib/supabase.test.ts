@@ -7,14 +7,32 @@ vi.unmock('../lib/supabase.js');
 // Mock createClient for the real supabase module
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({
-    from: vi.fn(() => ({
-      select: vi.fn().mockReturnThis(),
-      eq: vi.fn().mockReturnThis(),
-      order: vi.fn().mockReturnThis(),
-      limit: vi.fn().mockReturnThis(),
-      single: vi.fn().mockResolvedValue({ data: { id: 'project-db' }, error: null }),
-      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-    })),
+    from: vi.fn((table: string) => {
+      const resolvedValue =
+        table === 'organization_members'
+          ? { data: [{ organization_id: 'request-fallback-org' }], error: null }
+          : table === 'organizations'
+            ? { data: [{ id: 'request-fallback-org' }], error: null }
+          : { data: { id: 'project-db' }, error: null };
+      const query = {
+        select: vi.fn(() => query),
+        eq: vi.fn(() => query),
+        in: vi.fn(() => query),
+        order: vi.fn(() => query),
+        limit: vi.fn(() => query),
+        single: vi.fn().mockResolvedValue({ data: { id: 'project-db' }, error: null }),
+        maybeSingle: vi.fn().mockResolvedValue(
+          table === 'organization_members'
+            ? { data: { organization_id: 'request-fallback-org' }, error: null }
+            : { data: { id: 'project-db' }, error: null }
+        ),
+        insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+        then: vi.fn(resolve => resolve(resolvedValue)),
+        catch: vi.fn(() => query),
+        finally: vi.fn(() => query),
+      };
+      return query;
+    }),
   })),
 }));
 
@@ -93,6 +111,28 @@ describe('supabase module', () => {
       const { getDefaultProjectId } = await import('./supabase.js');
       const projectId = await getDefaultProjectId();
       expect(typeof projectId).toBe('string');
+    });
+
+    it('falls back through organization membership when no project is in context', async () => {
+      const { requestContext } = await import('./request-context.js');
+      const { getDefaultProjectId } = await import('./supabase.js');
+
+      delete process.env.SOCIALNEURON_PROJECT_ID;
+
+      const projectId = await requestContext.run(
+        {
+          userId: 'request-fallback-user-id',
+          scopes: ['mcp:read'],
+          token: 'request-token',
+          organizationId: 'request-fallback-org',
+          projectId: null,
+          creditsUsed: 0,
+          assetsGenerated: 0,
+        },
+        () => getDefaultProjectId()
+      );
+
+      expect(projectId).toBe('project-db');
     });
 
     it('returns consistent value on repeated calls (caching)', async () => {

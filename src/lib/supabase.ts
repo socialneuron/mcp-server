@@ -138,7 +138,7 @@ export async function getDefaultUserId(): Promise<string> {
  *   1. Active request/auth context (OAuth/API-key metadata)
  *   2. SOCIALNEURON_PROJECT_ID env var
  *   3. Per-user + organization cache (safe for multi-user HTTP mode)
- *   4. Most recently created project owned by the current user/org
+ *   4. Most recently created project inside a verified organization membership
  */
 const projectIdCache = new Map<string, string>(); // userId[:organizationId] -> projectId
 
@@ -186,16 +186,65 @@ export async function getDefaultProjectId(): Promise<string | null> {
   if (!userId) return null;
   try {
     const supabase = getSupabaseClient();
-    let query = supabase
-      .from('projects')
-      .select('id')
-      .eq('user_id', userId);
+    let organizationIds: string[] = [];
 
     if (organizationId) {
-      query = query.eq('organization_id', organizationId);
+      const { data: membership, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', userId)
+        .eq('organization_id', organizationId)
+        .maybeSingle();
+
+      if (membershipError) return null;
+
+      if (membership?.organization_id) {
+        organizationIds = [membership.organization_id];
+      } else {
+        const { data: ownedOrg, error: ownedOrgError } = await supabase
+          .from('organizations')
+          .select('id')
+          .eq('id', organizationId)
+          .eq('owner_id', userId)
+          .maybeSingle();
+
+        if (ownedOrgError || !ownedOrg?.id) return null;
+        organizationIds = [ownedOrg.id];
+      }
+    } else {
+      const { data: memberships, error: membershipError } = await supabase
+        .from('organization_members')
+        .select('organization_id')
+        .eq('user_id', userId);
+
+      if (membershipError) return null;
+      organizationIds = (memberships ?? [])
+        .map(row => row.organization_id)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+      const { data: ownedOrgs, error: ownedOrgError } = await supabase
+        .from('organizations')
+        .select('id')
+        .eq('owner_id', userId);
+
+      if (!ownedOrgError) {
+        for (const row of ownedOrgs ?? []) {
+          if (typeof row.id === 'string' && row.id.length > 0) {
+            organizationIds.push(row.id);
+          }
+        }
+      }
+      organizationIds = Array.from(new Set(organizationIds));
+      if (organizationIds.length === 0) return null;
     }
 
-    const { data } = await query.order('created_at', { ascending: false }).limit(1).single();
+    const { data } = await supabase
+      .from('projects')
+      .select('id')
+      .in('organization_id', organizationIds)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
     if (data?.id) {
       projectIdCache.set(projectCacheKey(userId, organizationId), data.id);
       return data.id;
