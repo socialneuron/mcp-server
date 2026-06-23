@@ -7,6 +7,15 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 
+const READ_ONLY_NOTICE = `Safety requirements:
+- Use read-only tools only.
+- Do not call tools that spend credits, create or update saved data, schedule/publish content, connect accounts, or change automation.`;
+
+const CONFIRMATION_NOTICE = `Safety requirements:
+- Start with read-only tools where possible and present a draft before side effects.
+- Before calling any tool that spends credits, saves or updates data, schedules/publishes content, connects accounts, or changes automation, state the intended tool, expected side effect, and estimated credits if known.
+- Only proceed with those side-effecting tool calls after explicit user confirmation in the conversation.`;
+
 export function registerPrompts(server: McpServer): void {
   // ── 1. Weekly Content Plan ──────────────────────────────────────────
   server.prompt(
@@ -39,6 +48,9 @@ export function registerPrompts(server: McpServer): void {
               type: 'text' as const,
               text: `Create a 7-day social media content plan for a ${niche} brand.
 
+Risk level: spends credits and mutates saved content-plan state if tool calls are confirmed.
+${CONFIRMATION_NOTICE}
+
 Target platforms: ${targetPlatforms}
 Brand tone: ${brandTone}
 
@@ -57,7 +69,7 @@ Use Social Neuron tools:
 - Call \`get_performance_insights\` to learn what's worked before
 - Call \`get_best_posting_times\` for optimal scheduling
 
-After building the plan, use \`save_content_plan\` to save it.`,
+After building the plan, ask for confirmation before using \`save_content_plan\` to save it.`,
             },
           },
         ],
@@ -90,6 +102,9 @@ After building the plan, use \`save_content_plan\` to save it.`,
             content: {
               type: 'text' as const,
               text: `Analyze my top-performing content from the last ${period}.${platformFilter}
+
+Risk level: read-only analytics.
+${READ_ONLY_NOTICE}
 
 Steps:
 1. Call \`fetch_analytics\` for overall performance metrics
@@ -138,6 +153,9 @@ Format as a clear, actionable performance report.`,
             content: {
               type: 'text' as const,
               text: `Repurpose this content into 8-10 pieces across multiple platforms.
+
+Risk level: may spend credits if generation tools are confirmed.
+${CONFIRMATION_NOTICE}
 
 Source content:
 ${source}
@@ -188,6 +206,9 @@ For each piece, include the platform, format, character count, and suggested pos
               type: 'text' as const,
               text: `Help me set up a comprehensive brand voice profile for ${brand_name}${industryContext}.${websiteContext}
 
+Risk level: mutates brand profile and may spend credits if tool calls are confirmed.
+${CONFIRMATION_NOTICE}
+
 I need to define:
 1. **Brand personality** — 3-5 adjectives that describe our voice
 2. **Target audience** — who we're speaking to (demographics, psychographics)
@@ -197,8 +218,8 @@ I need to define:
 6. **Words we avoid** — vocabulary that's off-brand
 7. **Content pillars** — 3-5 recurring content themes
 
-After we define these, use \`save_brand_profile\` to save the profile.
-Then use \`generate_content\` to create a sample post to verify the voice sounds right.`,
+After we define these, ask for confirmation before using \`save_brand_profile\` to save the profile.
+Ask for confirmation before using \`generate_content\` to create a sample post to verify the voice sounds right.`,
             },
           },
         ],
@@ -218,6 +239,9 @@ Then use \`generate_content\` to create a sample post to verify the voice sounds
           content: {
             type: 'text' as const,
             text: `Run a comprehensive content audit on my Social Neuron account.
+
+Risk level: read-only analytics and account review.
+${READ_ONLY_NOTICE}
 
 Steps:
 1. Call \`get_credit_balance\` to check account status
