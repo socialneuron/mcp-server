@@ -1,17 +1,15 @@
 #!/usr/bin/env node
 /**
- * Build tools.lock.json — a sealed sha256 manifest of every tool's
- * name + RUNTIME description + scope.
+ * Build tools.lock.json — a sealed sha256 manifest of model-visible tool
+ * metadata.
  *
  * Defends against CVE-2025-6514 (MCP Rug Pull) by letting downstream
  * consumers pin a hash and detect silent description changes between
  * package versions.
  *
- * Source of truth: the RUNTIME tool registry — registerAllTools(server,
- * { skipApps: true }) — i.e. exactly the 75 tools a stdio (npm) consumer's
- * client receives from tools/list, with the descriptions the model reads.
- * (The 76th catalog entry, open_content_calendar, is an HTTP-only MCP App not
- * shipped in the stdio package, so it is intentionally not in this lock.)
+ * Source of truth: runtime tools/list metadata plus static TOOL_CATALOG entries
+ * served by search_tools. The HTTP-only open_content_calendar app is included
+ * through the catalog side because search_tools can expose it to agents.
  *
  * Reference: https://nvd.nist.gov/vuln/detail/CVE-2025-6514
  *
@@ -21,28 +19,42 @@
 import { writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { enumerateRuntimeTools, hashTool } from './lib/enumerate-runtime-tools.mjs';
+import { enumerateLockedTools, hashTool } from './lib/enumerate-runtime-tools.mjs';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, '..');
 
-const runtime = await enumerateRuntimeTools();
-const names = Object.keys(runtime).sort();
+const locked = await enumerateLockedTools();
+const names = Object.keys(locked).sort();
 
 const tools = {};
-for (const name of names) tools[name] = hashTool(name, runtime[name]);
+for (const name of names) tools[name] = hashTool(name, locked[name]);
 
 // `generated_at` is intentionally omitted — same source → same output
 // (reproducible). The per-tool sha256 is the integrity seal.
 const manifest = {
-  version: 1,
-  source: 'runtime: registerAllTools(server, { skipApps: true })',
+  version: 2,
+  source: 'runtime tools/list + search_tools catalog',
   hash_algorithm: 'sha256',
-  hashed_fields: ['name', 'description', 'scope'],
+  hashed_fields: [
+    'name',
+    'runtime.title',
+    'runtime.description',
+    'runtime.scope',
+    'runtime.input_schema',
+    'runtime.output_schema',
+    'runtime.annotations',
+    'runtime._meta',
+    'catalog.description',
+    'catalog.module',
+    'catalog.scope',
+  ],
   tool_count: names.length,
+  runtime_tool_count: names.filter(name => locked[name].runtime).length,
+  catalog_tool_count: names.filter(name => locked[name].catalog).length,
   tools,
 };
 
 const lockPath = resolve(ROOT, 'tools.lock.json');
 writeFileSync(lockPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-console.log(`✅ Wrote ${manifest.tool_count} runtime tools to ${lockPath}`);
+console.log(`✅ Wrote ${manifest.tool_count} locked tool surfaces to ${lockPath}`);
