@@ -40,6 +40,9 @@ jobs:
       - name: Verify tools.lock.json drift
         run: npm run verify:lock
 
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
         run: npm test
 
