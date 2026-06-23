@@ -68,6 +68,48 @@ describe('loop summary tools', () => {
     );
   });
 
+  it('repairs false missing-brand status when an active profile exists', async () => {
+    mockCallEdge
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          brandStatus: { hasProfile: false },
+          recentContent: [],
+          currentInsights: [],
+          recommendedNextAction: 'Set up your brand profile first',
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          profile: {
+            brand_name: 'Acme',
+            version: 4,
+            updated_at: '2026-06-22T10:14:16.88077+00:00',
+            profile_data: { name: 'Acme runtime' },
+          },
+        },
+        error: null,
+      });
+
+    const handler = server.getHandler('get_loop_summary')!;
+    const result = await handler({ response_format: 'json' });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.data.brandStatus).toEqual({
+      hasProfile: true,
+      brandName: 'Acme',
+      version: 4,
+      updatedAt: '2026-06-22T10:14:16.88077+00:00',
+    });
+    expect(mockCallEdge).toHaveBeenNthCalledWith(
+      2,
+      'mcp-data',
+      expect.objectContaining({ action: 'brand-profile', projectId: 'proj-1' })
+    );
+  });
+
   it('handles EF error', async () => {
     mockCallEdge.mockResolvedValueOnce({
       data: null,
