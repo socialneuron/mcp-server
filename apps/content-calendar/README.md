@@ -4,6 +4,11 @@ Interactive drag-drop calendar that renders inside Claude Desktop / claude.ai wh
 
 Built per the [MCP Apps spec](https://modelcontextprotocol.io/extensions/apps/build) — single self-contained HTML bundled via `vite-plugin-singlefile`, served by the parent `mcp-server` as a `ui://content-calendar/mcp-app.html` resource.
 
+The parent server also exposes `socialneuron://apps/content-calendar/metadata`,
+a compact JSON resource for model-readable inspection. Use that metadata resource
+for audits and discovery; fetch the `ui://` HTML bundle only when a host is
+rendering the app in an isolated UI frame.
+
 ## Build
 
 ```bash
