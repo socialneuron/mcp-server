@@ -211,7 +211,7 @@ if (trustProxyEnv !== '0' && trustProxyEnv.toLowerCase() !== 'false') {
 
 // ── Per-IP rate limiting ────────────────────────────────────────────
 // Prevents burst abuse before auth is even checked. 60 req/min per IP.
-// Health endpoint is exempt so Railway health checks aren't throttled.
+// Health endpoints are exempt so Railway/Kubernetes probes aren't throttled.
 
 const ipBuckets = new Map<string, { tokens: number; lastRefill: number }>();
 const IP_RATE_MAX = 60;
@@ -229,6 +229,8 @@ app.use((req, res, next) => {
   // Exempt health checks
   if (
     req.path === '/health' ||
+    req.path === '/health/live' ||
+    req.path === '/health/ready' ||
     req.path === '/.well-known/mcp/server-card.json' ||
     req.path === '/.well-known/oauth-protected-resource' ||
     req.path === '/config'
@@ -516,10 +518,57 @@ app.get('/config', (_req, res) => {
   });
 });
 
-// ── Health check ─────────────────────────────────────────────────────
+// ── Health checks ────────────────────────────────────────────────────
 
-app.get('/health', (_req, res) => {
+const READINESS_CACHE_MS = 10_000;
+let readinessCache: { checkedAt: number; ok: boolean } | null = null;
+
+async function checkReadiness(): Promise<{ ok: boolean }> {
+  const now = Date.now();
+  if (readinessCache && now - readinessCache.checkedAt < READINESS_CACHE_MS) {
+    return { ok: readinessCache.ok };
+  }
+
+  let ok = false;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 2_000);
+  timer.unref();
+
+  try {
+    const response = await fetch(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`, {
+      method: 'HEAD',
+      signal: controller.signal,
+    });
+    ok = response.ok;
+  } catch {
+    ok = false;
+  } finally {
+    clearTimeout(timer);
+  }
+
+  readinessCache = { checkedAt: now, ok };
+  return { ok };
+}
+
+function sendLiveness(res: express.Response): void {
   res.json({ status: 'ok', version: MCP_VERSION });
+}
+
+app.get('/health', (_req, res) => sendLiveness(res));
+app.get('/health/live', (_req, res) => sendLiveness(res));
+
+app.get('/health/ready', async (_req, res) => {
+  const { ok } = await checkReadiness();
+  if (ok) {
+    res.json({ status: 'ready', version: MCP_VERSION });
+    return;
+  }
+
+  res.status(503).json({
+    status: 'not_ready',
+    version: MCP_VERSION,
+    checks: { auth_jwks: 'unavailable' },
+  });
 });
 
 // Authenticated health details — memory, sessions, uptime
