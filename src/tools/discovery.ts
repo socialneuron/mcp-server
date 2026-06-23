@@ -56,8 +56,10 @@ export function registerDiscoveryTools(server: McpServer): void {
         results = results.filter(t => scopeTools.some(st => st.name === t.name));
       }
 
-      const currentScopes = getRequestScopes() ?? getAuthenticatedScopes();
-      const hasScopeContext = currentScopes.length > 0;
+      const requestScopes = getRequestScopes();
+      const authenticatedScopes = getAuthenticatedScopes();
+      const currentScopes = requestScopes ?? authenticatedScopes;
+      const hasScopeContext = requestScopes !== null || authenticatedScopes.length > 0;
       const withAvailability: ToolWithAvailability[] = results.map(tool => ({
         ...tool,
         required_scope: tool.scope,
