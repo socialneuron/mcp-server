@@ -22,6 +22,7 @@ export interface QualityResult {
   total: number;
   maxTotal: number;
   categories: QualityCategory[];
+  warnings: string[];
   blockers: string[];
   passed: boolean;
 }
@@ -45,9 +46,44 @@ function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function findUnsupportedClaimPatterns(text: string): string[] {
+  const patterns: Array<{ name: string; pattern: RegExp }> = [
+    {
+      name: 'fabricated metric score',
+      pattern:
+        /\b(?:visibility|authority|trust|virality|engagement|conversion|growth|retention|churn|roi)\s+score\s*(?:of|:)?\s*\d{1,3}\b/i,
+    },
+    {
+      name: 'statistical performance claim',
+      pattern:
+        /\b\d+(?:\.\d+)?\s?%\s+(?:increase|lift|drop|reduction|growth|conversion|engagement|retention|churn|roi|accuracy|faster|better)\b/i,
+    },
+    {
+      name: 'statistical performance claim',
+      pattern:
+        /\b(?:increase|lift|drop|reduction|growth|conversion|engagement|retention|churn|roi|accuracy)\s+(?:by\s+)?\d+(?:\.\d+)?\s?%\b/i,
+    },
+    {
+      name: 'multiplier performance claim',
+      pattern: /\b\d+(?:\.\d+)?x\s+(?:more|higher|faster|better|growth|roi|engagement|conversion)\b/i,
+    },
+    {
+      name: 'uncited authority claim',
+      pattern: /\b(?:research|studies|data)\s+(?:shows?|proves?|suggests?|confirms?)\b/i,
+    },
+    {
+      name: 'fabricated numbered risk claim',
+      pattern: /\b\d+\s+critical\s+(?:gaps|mistakes|failures|risks)\b/i,
+    },
+  ];
+
+  return [...new Set(patterns.filter(({ pattern }) => pattern.test(text)).map(({ name }) => name))];
+}
+
 export function evaluateQuality(input: QualityInput): QualityResult {
   const caption = input.caption.trim();
   const title = (input.title ?? '').trim();
+  const combinedText = `${title} ${caption}`.trim();
   const platforms = input.platforms.map(p => p.toLowerCase());
   const firstLine = caption.split('\n')[0]?.trim() ?? '';
   const hashtags = countHashtags(caption);
@@ -57,6 +93,7 @@ export function evaluateQuality(input: QualityInput): QualityResult {
     ...(input.customBannedTerms ?? []).map(t => t.trim()).filter(Boolean),
   ];
   const categories: QualityCategory[] = [];
+  const warnings: string[] = [];
 
   // 1. Hook Strength
   let hookScore = 2;
@@ -154,11 +191,20 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   if (/\b(guarantee|guaranteed|no risk|risk-free|always works|100%)\b/i.test(caption))
     safetyScore -= 2;
   if (/\b(cure|diagnose|treat)\b/i.test(caption)) safetyScore -= 2;
+  const unsupportedClaims = findUnsupportedClaimPatterns(combinedText);
+  if (unsupportedClaims.length > 0) {
+    safetyScore -= Math.min(3, unsupportedClaims.length * 2);
+    for (const claim of unsupportedClaims) {
+      warnings.push(
+        `Potential unsupported claim: ${claim}. Add evidence/citation or remove before publishing.`
+      );
+    }
+  }
   categories.push({
     name: 'Safety/Claims',
     score: Math.max(0, Math.min(5, safetyScore)),
     maxScore: 5,
-    detail: 'Avoid unverifiable or risky claims.',
+    detail: 'Avoid unverifiable, risky, or uncited metric/statistical claims.',
   });
 
   const total = categories.reduce((sum, c) => sum + c.score, 0);
@@ -167,17 +213,21 @@ export function evaluateQuality(input: QualityInput): QualityResult {
     .map(c => c.name + ' below threshold (' + c.score + '/5)');
 
   if (blockedTerms.length > 0) {
-    const lowerCombined = `${title} ${caption}`.toLowerCase();
+    const lowerCombined = combinedText.toLowerCase();
     const matched = blockedTerms.filter(term => lowerCombined.includes(term.toLowerCase()));
     for (const term of matched) {
       blockers.push(`Contains blocked term: "${term}"`);
     }
+  }
+  for (const claim of unsupportedClaims) {
+    blockers.push(`Contains unsupported metric/statistical claim: ${claim}`);
   }
   return {
     threshold,
     total,
     maxTotal: 35,
     categories,
+    warnings,
     blockers,
     passed: total >= threshold && blockers.length === 0,
   };

@@ -316,7 +316,8 @@ export function registerResources(
 1. Check your account: Read the \`socialneuron://account/overview\` resource
 2. Set up your brand: Use the \`setup_brand_voice\` prompt
 3. Generate content: Call \`generate_content\` with a topic
-4. Review & publish: Call \`schedule_post\` to distribute
+4. Review first: Call \`quality_check\` and preview the final text/media
+5. Publish only after explicit user confirmation: call \`list_connected_accounts\` first, then \`schedule_post\`
 
 ## Common Workflows
 
@@ -324,7 +325,9 @@ export function registerResources(
 1. \`generate_content\` → get topic suggestions
 2. \`generate_content\` → create the post
 3. \`quality_check\` → check quality (aim for 70+)
-4. \`schedule_post\` → distribute to platforms
+4. \`list_connected_accounts\` → verify the target platform is connected
+5. Ask the user to approve the exact post, target platform, and schedule time
+6. \`schedule_post\` → distribute only after approval
 
 ### Analyze Performance
 1. \`fetch_analytics\` → see overall metrics
@@ -334,12 +337,16 @@ export function registerResources(
 ### Repurpose Content
 1. Use the \`repurpose_content\` prompt with your source material
 2. Review each generated variation
-3. Save the batch with \`save_content_plan\`, then publish with \`schedule_content_plan\`
+3. Save the batch with \`save_content_plan\` only after the user approves saving it
+4. Preview scheduling with \`schedule_content_plan\` using \`dry_run=true\`
+5. Publish with \`schedule_content_plan\` only after explicit approval by setting \`schedule_confirmed=true\`
 
 ### Set Up Autopilot
 1. \`get_brand_profile\` → verify brand settings
-2. \`create_autopilot_config\` → set schedule, budget, and approval mode
-3. \`get_autopilot_status\` → confirm the config and next scheduled run
+2. \`check_pipeline_readiness\` → verify credits, OAuth connections, and brand context
+3. Draft an inactive config with \`create_autopilot_config\` using \`is_active=false\`
+4. Activate or enable recurring automation only after explicit approval by setting \`activation_confirmed=true\`
+5. \`get_autopilot_status\` → confirm the config and next scheduled run
 
 ## Credit Tips
 - Text generation: 1-3 credits
