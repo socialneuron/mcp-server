@@ -167,6 +167,32 @@ describe('createTokenVerifier', () => {
       expect(result.token).toBe('jwt-token');
     });
 
+    it('ignores user metadata for JWT account context', async () => {
+      mockJwtVerify.mockResolvedValue(
+        jwtPayload({
+          sub: 'user-context-jwt',
+          app_metadata: {
+            organization_id: 'org-from-app',
+            project_id: 'project-from-app',
+            brand_profile_id: 'brand-from-app',
+          },
+          user_metadata: {
+            organizationId: 'org-from-user',
+            projectId: 'project-from-user',
+          },
+        })
+      );
+
+      const result = await verifier.verifyAccessToken('jwt-account-context');
+
+      expect(result.extra).toEqual({
+        userId: 'user-context-jwt',
+        organizationId: 'org-from-app',
+        projectId: 'project-from-app',
+        brandProfileId: 'brand-from-app',
+      });
+    });
+
     it('defaults scopes to ["mcp:read"] when mcp_scopes missing', async () => {
       mockJwtVerify.mockResolvedValue(jwtPayload({ app_metadata: {} }));
 
@@ -203,6 +229,30 @@ describe('createTokenVerifier', () => {
       const result = await verifier.verifyAccessToken('jwt-with-scopes');
 
       expect(result.scopes).toEqual(['mcp:read', 'mcp:write', 'mcp:admin']);
+    });
+
+    it('extracts active account context from JWT app metadata keys', async () => {
+      mockJwtVerify.mockResolvedValue(
+        jwtPayload({
+          app_metadata: {
+            organization_id: 'org-from-app',
+            project_id: 'project-from-app',
+            brand_profile_id: 'brand-profile-from-app',
+          },
+          user_metadata: {
+            brand_profile_id: 'brand-profile-from-user',
+          },
+        })
+      );
+
+      const result = await verifier.verifyAccessToken('jwt-with-account-context');
+
+      expect(result.extra).toEqual({
+        userId: 'user-jwt-123',
+        organizationId: 'org-from-app',
+        projectId: 'project-from-app',
+        brandProfileId: 'brand-profile-from-app',
+      });
     });
 
     it('converts non-string scope values to strings', async () => {
@@ -309,6 +359,28 @@ describe('createTokenVerifier', () => {
       // expiresAt should be epoch seconds
       const expectedExp = Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000);
       expect(result.expiresAt).toBe(expectedExp);
+    });
+
+    it('returns active account context from API key validation metadata', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-context',
+        scopes: ['mcp:read'],
+        email: 'owner@example.com',
+        organization_id: 'fd321f1e-6f02-4c7e-8699-02ba34a6a120',
+        project_id: 'cosmo-project-id',
+        brand_profile_id: 'cosmo-brand-profile-id',
+      });
+
+      const result = await verifier.verifyAccessToken('snk_live_context');
+
+      expect(result.extra).toEqual({
+        userId: 'user-context',
+        email: 'owner@example.com',
+        organizationId: 'fd321f1e-6f02-4c7e-8699-02ba34a6a120',
+        projectId: 'cosmo-project-id',
+        brandProfileId: 'cosmo-brand-profile-id',
+      });
     });
 
     it('defaults scopes to ["mcp:read"] when scopes missing from response', async () => {

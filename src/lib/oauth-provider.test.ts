@@ -136,6 +136,20 @@ describe('createOAuthProvider', () => {
       ).resolves.toMatchObject({ client_id: 'test-client-123' });
     });
 
+    it('rejects ChatGPT connector redirect URI variants', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+
+      for (const redirect_uri of [
+        'https://chatgpt.com/connector/oauth/other-connector',
+        'https://chatgpt.com/connector/oauth/social-neuron?next=https://evil.test',
+        'https://chatgpt.com/connector/oauth/social-neuron#frag',
+      ]) {
+        await expect(
+          provider.clientsStore.registerClient!(makeClient({ redirect_uris: [redirect_uri] }))
+        ).rejects.toThrow('Redirect URI not allowed');
+      }
+    });
+
     it('rejects HTTPS localhost unless explicitly allowlisted', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({

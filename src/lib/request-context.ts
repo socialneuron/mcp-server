@@ -10,6 +10,12 @@ interface RequestContext {
   scopes: string[];
   /** Authenticated bearer token for the current HTTP request, if gateway-compatible. */
   token?: string;
+  /** Active organization selected by auth/account context, when supplied by the gateway. */
+  organizationId?: string | null;
+  /** Active project selected by auth/account context, when supplied by the gateway. */
+  projectId?: string | null;
+  /** Active brand profile selected by auth/account context, when supplied by the gateway. */
+  brandProfileId?: string | null;
   /** Per-request credit tracking for HTTP mode budget isolation. */
   creditsUsed: number;
   /** Per-request asset count for HTTP mode budget isolation. */
@@ -28,4 +34,16 @@ export function getRequestScopes(): string[] | null {
 
 export function getRequestBearerToken(): string | null {
   return requestContext.getStore()?.token ?? null;
+}
+
+export function getRequestOrganizationId(): string | null {
+  return requestContext.getStore()?.organizationId ?? null;
+}
+
+export function getRequestProjectId(): string | null {
+  return requestContext.getStore()?.projectId ?? null;
+}
+
+export function getRequestBrandProfileId(): string | null {
+  return requestContext.getStore()?.brandProfileId ?? null;
 }

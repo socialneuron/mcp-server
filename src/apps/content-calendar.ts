@@ -10,6 +10,15 @@ import path from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
 
 const CALENDAR_URI = 'ui://content-calendar/mcp-app.html';
+const CALENDAR_APP_RESOURCE_META = {
+  safety: {
+    content_kind: 'mcp_app_html_bundle',
+    model_readable: false,
+    large_resource: true,
+    handling:
+      'Render this MCP App HTML as an isolated UI resource. Do not inject the raw bundle into model context by default.',
+  },
+};
 
 interface RecentPost {
   id: string;
@@ -104,7 +113,12 @@ export function registerContentCalendarApp(server: McpServer): void {
     server,
     CALENDAR_URI,
     CALENDAR_URI,
-    { mimeType: RESOURCE_MIME_TYPE },
+    {
+      mimeType: RESOURCE_MIME_TYPE,
+      description:
+        'Interactive Content Calendar MCP App HTML bundle. Hosts should render it as isolated UI and avoid feeding the raw HTML into model context.',
+      _meta: CALENDAR_APP_RESOURCE_META,
+    },
     async () => {
       // process.cwd() resolves consistently across source mode (vitest, tsx)
       // and bundled mode (`node dist/http.js` from the package root), because
@@ -116,7 +130,14 @@ export function registerContentCalendarApp(server: McpServer): void {
       try {
         const html = await fs.readFile(htmlPath, 'utf-8');
         return {
-          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+          contents: [
+            {
+              uri: CALENDAR_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+              _meta: CALENDAR_APP_RESOURCE_META,
+            },
+          ],
         };
       } catch (err) {
         // Most likely cause: deploy was built with `npm run build` only and
@@ -132,7 +153,14 @@ export function registerContentCalendarApp(server: McpServer): void {
   <p style="color:#999;font-size:12px;">${(err as Error).message}</p>
 </body></html>`;
         return {
-          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: errorHtml }],
+          contents: [
+            {
+              uri: CALENDAR_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: errorHtml,
+              _meta: CALENDAR_APP_RESOURCE_META,
+            },
+          ],
         };
       }
     }

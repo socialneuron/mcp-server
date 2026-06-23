@@ -279,6 +279,105 @@ describe('callEdgeFunction', () => {
     });
   });
 
+  it('injects active organization, project, and brand context from the request', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read'],
+        token: 'snk_live_request_context',
+        organizationId: 'org-cosmo',
+        projectId: 'project-cosmo',
+        brandProfileId: 'brand-cosmo',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () => callEdgeFunction('mcp-data', { action: 'brand-profile' })
+    );
+
+    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+    expect(sentBody()).toMatchObject({
+      functionName: 'mcp-data',
+      body: {
+        action: 'brand-profile',
+        userId: 'oauth-user-id',
+        user_id: 'oauth-user-id',
+        organizationId: 'org-cosmo',
+        organization_id: 'org-cosmo',
+        projectId: 'project-cosmo',
+        project_id: 'project-cosmo',
+        brandProfileId: 'brand-cosmo',
+        brand_profile_id: 'brand-cosmo',
+      },
+    });
+  });
+
+  it('overrides caller project IDs with verified request project context', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read'],
+        token: 'snk_live_request_context',
+        projectId: 'verified-project-id',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () =>
+        callEdgeFunction('mcp-data', {
+          action: 'brand-profile',
+          projectId: 'caller-project-id',
+          project_id: 'caller-project-id',
+        })
+    );
+
+    expect(sentBody()).toMatchObject({
+      body: {
+        projectId: 'verified-project-id',
+        project_id: 'verified-project-id',
+      },
+    });
+  });
+
+  it('overrides caller brand IDs with verified request brand context', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+
+    await requestContext.run(
+      {
+        userId: 'oauth-user-id',
+        scopes: ['mcp:read'],
+        token: 'snk_live_request_context',
+        brandProfileId: 'verified-brand-id',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
+      () =>
+        callEdgeFunction('mcp-data', {
+          action: 'brand-profile',
+          brandProfileId: 'caller-brand-id',
+          brand_profile_id: 'caller-brand-id',
+        })
+    );
+
+    expect(sentBody()).toMatchObject({
+      body: {
+        brandProfileId: 'verified-brand-id',
+        brand_profile_id: 'verified-brand-id',
+      },
+    });
+  });
+
   it('forwards verified Supabase JWTs to mcp-gateway in HTTP mode', async () => {
     vi.stubGlobal(
       'fetch',

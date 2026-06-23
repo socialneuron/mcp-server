@@ -1,10 +1,18 @@
 import {
+  getDefaultBrandProfileId,
+  getDefaultOrganizationId,
   getSupabaseUrl,
   getServiceKey,
   getDefaultUserId,
   getAuthenticatedApiKey,
 } from './supabase.js';
-import { getRequestBearerToken, getRequestUserId } from './request-context.js';
+import {
+  getRequestBearerToken,
+  getRequestBrandProfileId,
+  getRequestOrganizationId,
+  getRequestProjectId,
+  getRequestUserId,
+} from './request-context.js';
 import { sanitizeError } from './sanitize-error.js';
 
 function getServiceKeyOrNull(): string | null {
@@ -75,9 +83,10 @@ export async function callEdgeFunction<T = unknown>(
   // userId/user_id is ignored. This stops a tool argument from
   // re-targeting an Edge Function call at another tenant even if the
   // tool code accidentally forwards user-controlled IDs into the body.
-  // projectId is intentionally left caller-controlled because a single
-  // user may own multiple projects; the gateway/Edge Function is the
-  // source of truth for project ownership.
+  // In HTTP mode, project/org/brand context supplied by verified token
+  // metadata is authoritative. In stdio mode, callers may still pass a
+  // projectId to work across projects owned by the same authenticated user;
+  // gateway/Edge Functions remain the ownership source of truth.
   const enrichedBody = { ...body } as Record<string, unknown>;
   let authoritativeUserId: string | null = getRequestUserId();
   if (!authoritativeUserId) {
@@ -100,7 +109,34 @@ export async function callEdgeFunction<T = unknown>(
     enrichedBody.user_id = authoritativeUserId;
   }
 
-  if (!enrichedBody.projectId && !enrichedBody.project_id) {
+  const authoritativeOrganizationId = getRequestOrganizationId() || getDefaultOrganizationId();
+  if (authoritativeOrganizationId) {
+    if (
+      (enrichedBody.organizationId &&
+        enrichedBody.organizationId !== authoritativeOrganizationId) ||
+      (enrichedBody.organization_id && enrichedBody.organization_id !== authoritativeOrganizationId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied organizationId for ${functionName} ignored in favour of authenticated organization.`
+      );
+    }
+    enrichedBody.organizationId = authoritativeOrganizationId;
+    enrichedBody.organization_id = authoritativeOrganizationId;
+  }
+
+  const authoritativeProjectId = getRequestProjectId();
+  if (authoritativeProjectId) {
+    if (
+      (enrichedBody.projectId && enrichedBody.projectId !== authoritativeProjectId) ||
+      (enrichedBody.project_id && enrichedBody.project_id !== authoritativeProjectId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied projectId for ${functionName} ignored in favour of authenticated project.`
+      );
+    }
+    enrichedBody.projectId = authoritativeProjectId;
+    enrichedBody.project_id = authoritativeProjectId;
+  } else if (!enrichedBody.projectId && !enrichedBody.project_id) {
     try {
       const { getDefaultProjectId } = await import('./supabase.js');
       const defaultProjectId = await getDefaultProjectId();
@@ -110,6 +146,32 @@ export async function callEdgeFunction<T = unknown>(
       }
     } catch {
       // Non-fatal
+    }
+  }
+
+  const authoritativeBrandProfileId = getRequestBrandProfileId();
+  if (authoritativeBrandProfileId) {
+    if (
+      (enrichedBody.brandProfileId &&
+        enrichedBody.brandProfileId !== authoritativeBrandProfileId) ||
+      (enrichedBody.brand_profile_id &&
+        enrichedBody.brand_profile_id !== authoritativeBrandProfileId)
+    ) {
+      console.warn(
+        `[edge-function] Caller-supplied brandProfileId for ${functionName} ignored in favour of authenticated brand profile.`
+      );
+    }
+    enrichedBody.brandProfileId = authoritativeBrandProfileId;
+    enrichedBody.brand_profile_id = authoritativeBrandProfileId;
+  } else {
+    const defaultBrandProfileId = getDefaultBrandProfileId();
+    if (
+      defaultBrandProfileId &&
+      !enrichedBody.brandProfileId &&
+      !enrichedBody.brand_profile_id
+    ) {
+      enrichedBody.brandProfileId = defaultBrandProfileId;
+      enrichedBody.brand_profile_id = defaultBrandProfileId;
     }
   }
 
