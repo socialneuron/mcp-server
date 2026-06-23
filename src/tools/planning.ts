@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { sanitizeError } from '../lib/sanitize-error.js';
+import { safeErrorMessage, sanitizeError } from '../lib/sanitize-error.js';
 import { logMcpToolInvocation, getDefaultProjectId } from '../lib/supabase.js';
 import type {
   ContentPlan,
@@ -762,7 +762,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: result?.error ?? `Plan ${plan_id} not found or has no posts.`,
+              text: safeErrorMessage(result?.error, `Plan ${plan_id} not found or has no posts.`),
             },
           ],
           isError: true,
