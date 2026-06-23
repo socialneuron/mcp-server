@@ -82,6 +82,28 @@ describe('search_tools', () => {
     );
   });
 
+  it('treats an authenticated request with no scopes as known unavailable', async () => {
+    const result = await requestContext.run(
+      { userId: 'user-1', scopes: [], creditsUsed: 0, assetsGenerated: 0 },
+      () =>
+        server.getHandler('search_tools')!({
+          query: 'schedule',
+          available_only: true,
+          detail: 'summary',
+        })
+    );
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(parsed.scopes).toMatchObject({
+      availability_known: true,
+      available_scopes: [],
+      available_only_applied: true,
+    });
+    expect(parsed.toolCount).toBe(0);
+    expect(parsed.totalMatches).toBeGreaterThan(0);
+    expect(parsed.scopes.unavailable_matches).toBe(parsed.totalMatches);
+  });
+
   it('returns names only at name detail level', async () => {
     const result = await server.getHandler('search_tools')!({ detail: 'name' });
     const parsed = JSON.parse(result.content[0].text);
