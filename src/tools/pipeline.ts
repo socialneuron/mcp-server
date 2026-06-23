@@ -197,7 +197,7 @@ export function registerPipelineTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'run_content_pipeline',
-    'Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. Check check_pipeline_readiness first to verify credits, OAuth, and brand profile are ready.',
+    'Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts, set schedule_confirmed=true after the user explicitly approves publishing. Check check_pipeline_readiness first to verify credits, OAuth, and brand profile are ready.',
     {
       project_id: z.string().uuid().optional().describe('Project ID (auto-detected if omitted)'),
       topic: z.string().optional().describe('Content topic (required if no source_url)'),
@@ -221,6 +221,12 @@ export function registerPipelineTools(server: McpServer): void {
         ),
       max_credits: z.number().optional().describe('Credit budget cap'),
       dry_run: z.boolean().default(false).describe('If true, skip scheduling and return plan only'),
+      schedule_confirmed: z
+        .boolean()
+        .default(false)
+        .describe(
+          'Required to schedule posts. Set true only after explicit user confirmation to publish/schedule.'
+        ),
       skip_stages: z
         .array(z.enum(['research', 'quality', 'schedule']))
         .optional()
@@ -238,6 +244,7 @@ export function registerPipelineTools(server: McpServer): void {
       auto_approve_threshold,
       max_credits,
       dry_run,
+      schedule_confirmed,
       skip_stages,
       response_format,
     }) => {
@@ -256,6 +263,33 @@ export function registerPipelineTools(server: McpServer): void {
       }
 
       const skipSet = new Set(skip_stages ?? []);
+      const schedulingRequested = !dry_run && !skipSet.has('schedule');
+
+      if (schedulingRequested && !schedule_confirmed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                'Scheduling requires explicit confirmation. Re-run with schedule_confirmed=true ' +
+                'after the user approves publishing, or set dry_run=true / skip_stages=["schedule"].',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (schedulingRequested && skipSet.has('quality')) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Scheduling cannot run when the quality stage is skipped.',
+            },
+          ],
+          isError: true,
+        };
+      }
 
       try {
         const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
@@ -309,6 +343,7 @@ export function registerPipelineTools(server: McpServer): void {
               approval_mode,
               auto_approve_threshold,
               dry_run,
+              schedule_confirmed,
               skip_stages: skip_stages ?? [],
             },
             current_stage: 'planning',

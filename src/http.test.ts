@@ -174,12 +174,18 @@ describe('HTTP Server Security Patterns', () => {
       const context = {
         userId: 'user-1',
         scopes: ['mcp:read'],
+        organizationId: 'org-1',
+        projectId: 'project-1',
+        brandProfileId: 'brand-1',
         creditsUsed: 0,
         assetsGenerated: 0,
       };
 
       expect(context).toHaveProperty('creditsUsed', 0);
       expect(context).toHaveProperty('assetsGenerated', 0);
+      expect(context).toHaveProperty('organizationId', 'org-1');
+      expect(context).toHaveProperty('projectId', 'project-1');
+      expect(context).toHaveProperty('brandProfileId', 'brand-1');
     });
 
     it('should isolate budget between requests', () => {

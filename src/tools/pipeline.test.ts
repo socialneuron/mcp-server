@@ -154,9 +154,38 @@ describe('pipeline tools', () => {
         approval_mode: 'auto',
         auto_approve_threshold: 28,
         dry_run: false,
+        schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Insufficient credits');
+    });
+
+    it('requires explicit confirmation before scheduling', async () => {
+      const handler = server.getHandler('run_content_pipeline')!;
+      const result = await handler({
+        topic: 'AI tips',
+        platforms: ['tiktok'],
+        dry_run: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Scheduling requires explicit confirmation');
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    });
+
+    it('rejects scheduling when quality is skipped', async () => {
+      const handler = server.getHandler('run_content_pipeline')!;
+      const result = await handler({
+        topic: 'AI tips',
+        platforms: ['tiktok'],
+        dry_run: false,
+        schedule_confirmed: true,
+        skip_stages: ['quality'],
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Scheduling cannot run when the quality stage is skipped');
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
     });
 
     it('runs full pipeline in dry_run mode', async () => {
@@ -257,6 +286,7 @@ describe('pipeline tools', () => {
         approval_mode: 'auto',
         auto_approve_threshold: 28,
         dry_run: false,
+        schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Planning failed');

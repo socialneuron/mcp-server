@@ -185,7 +185,7 @@ export function registerBrandTools(server: McpServer): void {
       const lines = [
         `Active Brand Profile`,
         `Project: ${projectId}`,
-        `Brand Name: ${data.brand_name || data.brand_context?.name || 'N/A'}`,
+        `Brand Name: ${data.brand_name || (data.brand_context as { name?: string } | null)?.name || 'N/A'}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,
         `Extraction Method: ${data.extraction_method || 'manual'}`,

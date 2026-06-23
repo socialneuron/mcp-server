@@ -59,7 +59,7 @@
     "provenance": true
   },
   "scripts": {
-    "lint:lockfile": "lockfile-lint --path package-lock.json --type npm --validate-https --allowed-hosts npm --validate-package-names --validate-integrity",
+    "lint:lockfile": "node scripts/lint-lockfile.mjs package-lock.json",
     "check:dep-age": "node scripts/check-dep-age.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
@@ -81,29 +81,29 @@
     "build:docs": "node scripts/build-tools-reference.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.2",
+    "@modelcontextprotocol/ext-apps": "1.7.4",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.106.2",
+    "@supabase/supabase-js": "2.108.2",
     "cors": "^2.8.6",
     "express": "^5.1.0",
     "express-rate-limit": "^8.3.2",
     "jose": "^6.2.1",
     "open": "10.0.0",
-    "posthog-node": "5.35.4",
+    "posthog-node": "5.38.0",
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@types/express": "5.0.6",
     "@types/node": "^25.3.5",
     "esbuild": "^0.28.1",
-    "lockfile-lint": "5.0.0",
     "typescript": "^6.0.2",
     "vitest": "^3.2.6"
   },
   "overrides": {
-    "vite": "7.3.2",
+    "vite": "7.3.5",
     "esbuild": "$esbuild",
     "@hono/node-server": "1.19.13",
-    "hono": "4.12.23",
+    "hono": "4.12.27",
     "path-to-regexp": "8.4.2"
   },
   "engines": {

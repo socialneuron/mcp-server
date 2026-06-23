@@ -76,12 +76,16 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // ChatGPT connector OAuth callbacks.
+    // ChatGPT connector OAuth callbacks. Keep these exact: allowing arbitrary
+    // /connector/oauth/* paths lets another ChatGPT connector intercept an
+    // authorization code intended for Social Neuron.
     if (
       parsed.hostname === 'chatgpt.com' &&
       parsed.protocol === 'https:' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
       (parsed.pathname === '/connector_platform_oauth_redirect' ||
-        parsed.pathname.startsWith('/connector/oauth/'))
+        parsed.pathname === '/connector/oauth/social-neuron')
     ) {
       return true;
     }

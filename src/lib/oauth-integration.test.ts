@@ -347,6 +347,8 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'http://127.0.0.1:6274/oauth/callback/debug',
       'https://claude.ai/api/mcp/auth_callback',
       'https://claude.com/api/mcp/auth_callback',
+      'https://chatgpt.com/connector_platform_oauth_redirect',
+      'https://chatgpt.com/connector/oauth/social-neuron',
       'https://smithery.ai/callback', // MCP registries
     ];
 
@@ -358,6 +360,9 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'http://attacker.com:6274/oauth/callback', // Wrong host (non-localhost HTTP)
       'https://evil.com/oauth/callback', // Unknown HTTPS is rejected by default
       'https://localhost:6274/oauth/callback', // Local dev callbacks must use HTTP
+      'https://chatgpt.com/connector/oauth/other-connector', // Wrong ChatGPT connector
+      'https://chatgpt.com/connector/oauth/social-neuron?next=https://evil.test', // Query not allowed
+      'https://chatgpt.com/connector/oauth/social-neuron#frag', // Fragment not allowed
       'ftp://localhost:6274/oauth/callback', // Wrong protocol
     ];
 

@@ -339,6 +339,9 @@ interface AuthenticatedRequest extends express.Request {
     scopes: string[];
     clientId: string;
     token: string;
+    organizationId?: string | null;
+    projectId?: string | null;
+    brandProfileId?: string | null;
   };
 }
 
@@ -404,6 +407,9 @@ async function authenticateRequest(
       scopes,
       clientId: authInfo.clientId,
       token: authInfo.token,
+      organizationId: (authInfo.extra?.organizationId as string | undefined) ?? null,
+      projectId: (authInfo.extra?.projectId as string | undefined) ?? null,
+      brandProfileId: (authInfo.extra?.brandProfileId as string | undefined) ?? null,
     };
     next();
   } catch (err) {
@@ -585,6 +591,9 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
           userId: auth.userId,
           scopes: auth.scopes,
           token: auth.token,
+          organizationId: auth.organizationId,
+          projectId: auth.projectId,
+          brandProfileId: auth.brandProfileId,
           creditsUsed: 0,
           assetsGenerated: 0,
         },
@@ -651,6 +660,9 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
         userId: auth.userId,
         scopes: auth.scopes,
         token: auth.token,
+        organizationId: auth.organizationId,
+        projectId: auth.projectId,
+        brandProfileId: auth.brandProfileId,
         creditsUsed: 0,
         assetsGenerated: 0,
       },
@@ -699,6 +711,9 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
       userId: req.auth!.userId,
       scopes: req.auth!.scopes,
       token: req.auth!.token,
+      organizationId: req.auth!.organizationId,
+      projectId: req.auth!.projectId,
+      brandProfileId: req.auth!.brandProfileId,
       creditsUsed: 0,
       assetsGenerated: 0,
     },
