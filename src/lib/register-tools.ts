@@ -117,7 +117,7 @@ function scopeDeniedResult(options: ScopeDeniedOptions) {
           required_scope: requiredScope,
           available_scopes: userScopes,
           recover_with: [
-            'Use search_tools with a scope filter to find tools allowed by the current token.',
+            'Call search_tools with available_only=true to find tools allowed by the current token.',
             'Regenerate the API key with the required scope or upgrade the plan tier.',
             'OAuth connector users may need a plan tier that includes this scope.',
           ],
