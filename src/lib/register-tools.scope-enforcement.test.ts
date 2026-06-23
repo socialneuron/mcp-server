@@ -62,7 +62,9 @@ describe('applyScopeEnforcement', () => {
       available_scopes: ['mcp:read'],
       developer_url: 'https://socialneuron.com/settings/developer',
     });
-    expect(payload.recover_with).toEqual(expect.arrayContaining([expect.stringContaining('search_tools')]));
+    expect(payload.recover_with).toEqual(
+      expect.arrayContaining([expect.stringContaining('available_only=true')])
+    );
   });
 
   it('returns structured configuration_error for tools without scope mappings', async () => {
