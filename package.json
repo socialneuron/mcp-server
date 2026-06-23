@@ -66,7 +66,7 @@
     "prebuild:sn": "node scripts/write-version.mjs",
     "build:sn": "esbuild src/sn.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/sn.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/sn.js",
     "build:lock": "node scripts/build-tools-lock.mjs",
-    "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --no-audit --no-fund) && npm run build",
+    "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --ignore-scripts --no-audit --no-fund) && npm run build",
     "build:all": "npm run build:stdio && npm run build && npm run build:sn && npm run build:lock && npm run build:app",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",

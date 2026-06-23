@@ -25,7 +25,7 @@ jobs:
           cache: npm
           registry-url: "https://registry.npmjs.org"
 
-      - run: npm ci
+      - run: npm ci --ignore-scripts
 
       - name: Verify version matches tag
         env:
