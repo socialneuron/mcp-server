@@ -557,3 +557,39 @@ export function getModules(): string[] {
 export function getToolSummaries(): { name: string; description: string }[] {
   return TOOL_CATALOG.map(({ name, description }) => ({ name, description }));
 }
+
+/**
+ * Tools registered only in stdio/local mode. The HTTP transport calls
+ * registerAllTools with `skipScreenshots: true` (Playwright is unavailable on
+ * Railway), so these never register over HTTP and must not be advertised on the
+ * HTTP server card — otherwise a client discovers a tool it cannot call.
+ * Mirrors the `registerScreenshotTools` gate in src/lib/register-tools.ts.
+ */
+export const STDIO_ONLY_TOOLS = ['capture_app_page', 'capture_screenshot'] as const;
+
+/**
+ * MCP App tools registered only over HTTP. stdio passes `skipApps: true` and the
+ * npm package doesn't ship the app HTML bundle, so these are intentionally absent
+ * from tools.lock.json (built with skipApps) — but they ARE callable over HTTP,
+ * so the HTTP server card should list them. Mirrors registerContentCalendarApp.
+ */
+export const HTTP_ONLY_APP_TOOLS: ToolEntry[] = [
+  {
+    name: 'open_content_calendar',
+    description:
+      "Open an interactive drag-drop calendar of the current week's scheduled posts (reschedule, filter by platform, drill in, quick-create).",
+    module: 'apps',
+    scope: 'mcp:read',
+  },
+];
+
+/**
+ * Tools actually callable over the HTTP transport: the catalog minus stdio-only
+ * tools, plus HTTP-only MCP App tools. Use this — not the raw TOOL_CATALOG — for
+ * the HTTP server card so discovery matches the runtime registry a client gets
+ * from `tools/list`.
+ */
+export function getHttpRuntimeTools(): ToolEntry[] {
+  const stdioOnly = new Set<string>(STDIO_ONLY_TOOLS);
+  return [...TOOL_CATALOG.filter(t => !stdioOnly.has(t.name)), ...HTTP_ONLY_APP_TOOLS];
+}

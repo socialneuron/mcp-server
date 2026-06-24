@@ -32,7 +32,7 @@ import { checkRateLimit } from './lib/rate-limit.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
-import { TOOL_CATALOG } from './lib/tool-catalog.js';
+import { getHttpRuntimeTools } from './lib/tool-catalog.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -435,12 +435,15 @@ async function authenticateRequest(
 // Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
 // See: https://smithery.ai/docs/build/publish#server-scanning
 //
-// Tools are auto-derived from TOOL_CATALOG (single source of truth, sealed via
-// tools.lock.json). Input schemas are intentionally omitted — clients that need
-// full schemas call the standard MCP `tools/list` RPC. The server-card is
-// discovery metadata, not a runtime validation contract.
+// Tools are derived from getHttpRuntimeTools() — the catalog minus stdio-only
+// screenshot tools (skipped over HTTP) plus HTTP-only MCP App tools — so the card
+// matches what a client can actually call over this transport. Input schemas are
+// intentionally omitted — clients that need full schemas call the standard MCP
+// `tools/list` RPC. The server-card is discovery metadata, not a runtime
+// validation contract.
 
 app.get('/.well-known/mcp/server-card.json', (_req, res) => {
+  const httpTools = getHttpRuntimeTools();
   res.json({
     serverInfo: {
       name: 'socialneuron',
@@ -450,8 +453,8 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       required: true,
       schemes: ['oauth2'],
     },
-    toolCount: TOOL_CATALOG.length,
-    tools: TOOL_CATALOG.map(t => ({
+    toolCount: httpTools.length,
+    tools: httpTools.map(t => ({
       name: t.name,
       description: t.description,
       module: t.module,

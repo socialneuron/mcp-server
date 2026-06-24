@@ -6,6 +6,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { assertSafeLocalPath } from '../lib/safe-path.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
@@ -322,6 +323,23 @@ export function registerMediaTools(
       let uploadBody: Record<string, unknown>;
 
       if (isUrl) {
+        // External URL — SSRF-validate before the upload-to-r2 EF fetches it,
+        // so an internal/localhost/cloud-metadata URL can't be smuggled through
+        // this tool. (The EF should defend itself too; this is defense-in-depth
+        // at the MCP boundary, matching extract_url_content and schedule_post.)
+        const ssrfCheck = await validateUrlForSSRF(src);
+        if (!ssrfCheck.isValid) {
+          await logMcpToolInvocation({
+            toolName: 'upload_media',
+            status: 'error',
+            durationMs: Date.now() - startedAt,
+            details: { error: 'ssrf_blocked', reason: ssrfCheck.error },
+          });
+          return {
+            content: [{ type: 'text' as const, text: `URL rejected: ${ssrfCheck.error}` }],
+            isError: true,
+          };
+        }
         // External URL — pass to upload-to-r2 EF which fetches it
         const ct = content_type || inferContentType(src);
         uploadBody = {
