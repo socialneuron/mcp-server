@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
+import { toolError } from './tool-error.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -62,27 +63,17 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       args[handlerIndex] = async function scopeEnforcedHandler(...handlerArgs: any[]) {
         // Default-deny: if a tool is not in TOOL_SCOPES, reject the call
         if (!requiredScope) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' has no scope defined. Contact support.`,
-              },
-            ],
-            isError: true,
-          };
+          return toolError(
+            'permission_denied',
+            `Permission denied: '${name}' has no scope defined. Contact support.`
+          );
         }
         const userScopes = scopeResolver();
         if (!hasScope(userScopes, requiredScope)) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`,
-              },
-            ],
-            isError: true,
-          };
+          return toolError(
+            'permission_denied',
+            `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`
+          );
         }
         const result = await originalHandler(...handlerArgs);
         return truncateResponse(result);
