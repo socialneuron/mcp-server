@@ -19,6 +19,7 @@ export type ToolErrorType =
   | 'permission_denied'
   | 'rate_limited'
   | 'billing_error'
+  | 'configuration_error'
   | 'not_found'
   | 'server_error';
 

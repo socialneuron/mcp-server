@@ -63,17 +63,20 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       args[handlerIndex] = async function scopeEnforcedHandler(...handlerArgs: any[]) {
         // Default-deny: if a tool is not in TOOL_SCOPES, reject the call
         if (!requiredScope) {
-          return toolError(
-            'permission_denied',
-            `Permission denied: '${name}' has no scope defined. Contact support.`
-          );
+          return scopeDeniedResult({
+            errorType: 'configuration_error',
+            toolName: name,
+            userScopes: scopeResolver(),
+          });
         }
         const userScopes = scopeResolver();
         if (!hasScope(userScopes, requiredScope)) {
-          return toolError(
-            'permission_denied',
-            `Permission denied: '${name}' requires scope '${requiredScope}'. Your scopes: [${userScopes.join(', ')}]. API-key users: regenerate your key with this scope at https://socialneuron.com/settings/developer. OAuth users (Claude Custom Connector): this scope is not enabled for your plan tier.`
-          );
+          return scopeDeniedResult({
+            errorType: 'permission_denied',
+            toolName: name,
+            requiredScope,
+            userScopes,
+          });
         }
         const result = await originalHandler(...handlerArgs);
         return truncateResponse(result);
@@ -94,6 +97,43 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
       return originalRegisterTool(...wrapRegistration(...args));
     };
   }
+}
+
+type ScopeDeniedOptions = {
+  errorType: 'permission_denied' | 'configuration_error';
+  toolName: string;
+  requiredScope?: string;
+  userScopes: string[];
+};
+
+function scopeDeniedResult(options: ScopeDeniedOptions) {
+  const { errorType, toolName, requiredScope, userScopes } = options;
+  const payload =
+    errorType === 'permission_denied'
+      ? {
+          ok: false,
+          error_type: 'permission_denied',
+          error: 'Tool requires a scope that is not available for this token or plan.',
+          tool: toolName,
+          required_scope: requiredScope,
+          available_scopes: userScopes,
+          recover_with: [
+            'Call search_tools with available_only=true to find tools allowed by the current token.',
+            'Regenerate the API key with the required scope or upgrade the plan tier.',
+            'OAuth connector users may need a plan tier that includes this scope.',
+          ],
+          developer_url: 'https://socialneuron.com/settings/developer',
+        }
+      : {
+          ok: false,
+          error_type: 'configuration_error',
+          error: 'Tool is not mapped to a required MCP scope.',
+          tool: toolName,
+          available_scopes: userScopes,
+          recover_with: ['Contact Social Neuron support; this is a server configuration issue.'],
+        };
+
+  return toolError(errorType, JSON.stringify(payload, null, 2));
 }
 
 // ── Response truncation ───────────────────────────────────────────
