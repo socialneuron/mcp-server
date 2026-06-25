@@ -794,6 +794,15 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
   res.status(200).json({ status: 'session_closed' });
 });
 
+// ── Not found handler ───────────────────────────────────────────────
+app.use((_req, res) => {
+  setNoStore(res);
+  res.status(404).json({
+    error: 'not_found',
+    error_description: 'Route not found',
+  });
+});
+
 // ── Global error handler (catches errors SDK swallows) ──────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
   // Never log raw .stack — absolute container paths and framework
