@@ -192,6 +192,35 @@ describe('brand tools', () => {
         expect.objectContaining({ action: 'brand-profile' })
       );
     });
+
+    it('delegates to mcp-data when local default project lookup is unavailable', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          profile: {
+            brand_name: 'Gateway Brand',
+            project_id: 'gateway-project-id',
+            version: 1,
+            updated_at: '2026-02-15T00:00:00Z',
+            extraction_method: 'manual',
+            brand_context: {},
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_brand_profile')!;
+      const result = await handler({ response_format: 'json' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(result.isError).not.toBe(true);
+      expect(parsed.data.brand_name).toBe('Gateway Brand');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.not.objectContaining({ projectId: expect.anything() })
+      );
+    });
   });
 
   describe('save_brand_profile', () => {
