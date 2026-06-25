@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { IdeationContext, ResponseEnvelope } from '../types/index.js';
 
@@ -151,7 +151,7 @@ export function registerIdeationContextTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to fetch ideation context: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to fetch ideation context: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,
