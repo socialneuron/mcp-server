@@ -2,9 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerExtractionTools } from './extraction.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
 
 vi.mock('../lib/edge-function.js');
 vi.mock('../lib/supabase.js');
+vi.mock('../lib/ssrf.js', () => ({
+  validateUrlForSSRF: vi.fn(async () => ({
+    isValid: true,
+    sanitizedUrl: 'https://example.com/',
+  })),
+}));
 
 describe('extract_url_content', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -105,6 +112,33 @@ describe('extract_url_content', () => {
       expect.any(Object),
       expect.any(Object)
     );
+  });
+
+  it('returns structured policy_block when SSRF validation blocks the URL', async () => {
+    vi.mocked(validateUrlForSSRF).mockResolvedValueOnce({
+      isValid: false,
+      error: 'Access to private/internal IP addresses is not allowed.',
+    });
+
+    const handler = server.getHandler('extract_url_content');
+    const result = await handler({
+      url: 'http://127.0.0.1:8080/admin',
+      extract_type: 'auto',
+      include_comments: false,
+      max_results: 10,
+      response_format: 'text',
+    });
+    const parsed = JSON.parse(result.content[0].text);
+
+    expect(result.isError).toBe(false);
+    expect(parsed).toMatchObject({
+      ok: false,
+      error_type: 'policy_block',
+      policy: 'ssrf',
+      tool: 'extract_url_content',
+      input_kind: 'url',
+    });
+    expect(vi.mocked(callEdgeFunction)).not.toHaveBeenCalled();
   });
 
   it('passes extract_type for product extraction', async () => {
