@@ -125,6 +125,27 @@ describe('brand tools', () => {
       expect(result.content[0].text).toContain('Failed to fetch URL: connection refused');
     });
 
+    it('returns structured policy_block when SSRF validation blocks the URL', async () => {
+      mockValidateSSRF.mockResolvedValueOnce({
+        isValid: false,
+        error: 'Access to private/internal IP addresses is not allowed.',
+      });
+
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'http://127.0.0.1:8080/admin' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(result.isError).toBe(false);
+      expect(parsed).toMatchObject({
+        ok: false,
+        error_type: 'policy_block',
+        policy: 'ssrf',
+        tool: 'extract_brand',
+        input_kind: 'url',
+      });
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
     it('returns JSON envelope when response_format=json', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {
@@ -169,6 +190,35 @@ describe('brand tools', () => {
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({ action: 'brand-profile' })
+      );
+    });
+
+    it('delegates to mcp-data when local default project lookup is unavailable', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          profile: {
+            brand_name: 'Gateway Brand',
+            project_id: 'gateway-project-id',
+            version: 1,
+            updated_at: '2026-02-15T00:00:00Z',
+            extraction_method: 'manual',
+            brand_context: {},
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_brand_profile')!;
+      const result = await handler({ response_format: 'json' });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(result.isError).not.toBe(true);
+      expect(parsed.data.brand_name).toBe('Gateway Brand');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.not.objectContaining({ projectId: expect.anything() })
       );
     });
   });

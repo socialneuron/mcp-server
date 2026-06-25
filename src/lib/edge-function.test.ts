@@ -143,18 +143,19 @@ describe('callEdgeFunction', () => {
   });
 
   // 7. Network error
-  it('returns error message on generic network failure', async () => {
+  it('sanitizes generic network failures', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        throw new Error('ECONNREFUSED');
+        throw new Error('connect ECONNREFUSED 127.0.0.1:5432');
       })
     );
 
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('ECONNREFUSED');
+    expect(result.error).toBe('External service unavailable. Please try again.');
+    expect(result.error).not.toContain('127.0.0.1');
   });
 
   // 8. Auto-injects userId and user_id when body has neither

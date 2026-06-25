@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { getCurrentBudgetStatus } from './content.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
@@ -42,7 +42,7 @@ export function registerCreditsTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to fetch credit balance: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to fetch credit balance: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,

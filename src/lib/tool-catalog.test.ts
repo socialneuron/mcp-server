@@ -6,6 +6,7 @@ import {
   searchTools,
   getModules,
   getToolSummaries,
+  getHttpRuntimeTools,
 } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 
@@ -73,6 +74,20 @@ describe('tool-catalog', () => {
     expect(summaries.length).toBe(TOOL_CATALOG.length);
     for (const s of summaries) {
       expect(Object.keys(s).sort()).toEqual(['description', 'name']);
+    }
+  });
+
+  it('getHttpRuntimeTools excludes stdio-only tools and includes HTTP-only apps', () => {
+    const names = new Set(getHttpRuntimeTools().map(t => t.name));
+    // screenshots are skipped over HTTP (skipScreenshots) — must not be advertised
+    expect(names.has('capture_screenshot')).toBe(false);
+    expect(names.has('capture_app_page')).toBe(false);
+    // the content-calendar MCP App is HTTP-only and must be advertised
+    expect(names.has('open_content_calendar')).toBe(true);
+    // every other catalog tool is still present
+    for (const t of TOOL_CATALOG) {
+      if (t.name === 'capture_screenshot' || t.name === 'capture_app_page') continue;
+      expect(names.has(t.name), `missing ${t.name}`).toBe(true);
     }
   });
 });

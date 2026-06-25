@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { sanitizeError } from '../lib/sanitize-error.js';
+import { safeErrorMessage, sanitizeError } from '../lib/sanitize-error.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
@@ -585,7 +585,7 @@ export function registerDistributionTools(server: McpServer): void {
         if (result.success) {
           lines.push(`  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`);
         } else {
-          lines.push(`  ${platform}: FAILED - ${result.error}`);
+          lines.push(`  ${platform}: FAILED - ${safeErrorMessage(result.error)}`);
         }
       }
 
@@ -639,7 +639,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to list connected accounts: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to list connected accounts: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,
@@ -765,7 +765,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to list posts: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to list posts: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,

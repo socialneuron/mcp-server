@@ -2,8 +2,14 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerMediaTools } from './media.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
+
+vi.mock('../lib/ssrf.js', () => ({
+  validateUrlForSSRF: vi.fn(async () => ({ isValid: true, sanitizedUrl: undefined })),
+}));
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockSSRF = vi.mocked(validateUrlForSSRF);
 
 describe('media tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -43,6 +49,20 @@ describe('media tools', () => {
         }),
         expect.objectContaining({ timeoutMs: 60_000 })
       );
+    });
+
+    it('rejects an SSRF-blocked URL before calling the EF', async () => {
+      mockSSRF.mockResolvedValueOnce({
+        isValid: false,
+        error: 'Access to internal/localhost addresses is not allowed.',
+      });
+
+      const handler = server.getHandler('upload_media')!;
+      const result = await handler({ source: 'http://169.254.169.254/latest/meta-data/' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('URL rejected');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('returns JSON format when requested', async () => {

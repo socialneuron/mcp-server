@@ -5,6 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
+import { toolError } from './tool-error.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -132,10 +133,7 @@ function scopeDeniedResult(options: ScopeDeniedOptions) {
           recover_with: ['Contact Social Neuron support; this is a server configuration issue.'],
         };
 
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(payload, null, 2) }],
-    isError: true,
-  };
+  return toolError(errorType, JSON.stringify(payload, null, 2));
 }
 
 // ── Response truncation ───────────────────────────────────────────

@@ -31,8 +31,8 @@ describe('applyScopeEnforcement', () => {
     const toolResult = await handlers.get('fetch_trends')?.();
     const appResult = await handlers.get('open_content_calendar')?.();
 
-    expect(toolResult).toMatchObject({ isError: true });
-    expect(appResult).toMatchObject({ isError: true });
+    expect(toolResult).toMatchObject({ isError: true, _meta: { error_type: 'permission_denied' } });
+    expect(appResult).toMatchObject({ isError: true, _meta: { error_type: 'permission_denied' } });
   });
 
   it('returns structured permission_denied errors for scope mismatches', async () => {

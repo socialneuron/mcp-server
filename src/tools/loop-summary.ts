@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -13,6 +14,10 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
     },
     data,
   };
+}
+
+function optionalString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.length > 0 ? value : undefined;
 }
 
 export function registerLoopSummaryTools(server: McpServer): void {
@@ -34,18 +39,6 @@ export function registerLoopSummaryTools(server: McpServer): void {
       const userId = await getDefaultUserId();
       const projectId = project_id || (await getDefaultProjectId());
 
-      if (!projectId) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Route through mcp-data EF (works in cloud mode with API key)
       const { data, error } = await callEdgeFunction<{
         success: boolean;
@@ -59,22 +52,62 @@ export function registerLoopSummaryTools(server: McpServer): void {
         currentInsights: Array<Record<string, unknown>>;
         recommendedNextAction: string;
         error?: string;
-      }>('mcp-data', { action: 'loop-summary', userId, projectId });
+      }>('mcp-data', {
+        action: 'loop-summary',
+        userId,
+        ...(projectId ? { projectId } : {}),
+      });
 
       if (error || !data?.success) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Loop summary failed: ${error ?? data?.error ?? 'Unknown error'}`,
+              text: `Loop summary failed: ${safeErrorMessage(error ?? data?.error)}`,
             },
           ],
           isError: true,
         };
       }
 
+      let brandStatus = data.brandStatus ?? { hasProfile: false };
+      if (!brandStatus.hasProfile) {
+        const { data: profileResult } = await callEdgeFunction<{
+          success: boolean;
+          profile: Record<string, unknown> | null;
+        }>('mcp-data', {
+          action: 'brand-profile',
+          ...(projectId ? { projectId } : {}),
+        });
+        const profile = profileResult?.success ? profileResult.profile : null;
+        if (profile) {
+          const profileData =
+            typeof profile.profile_data === 'object' && profile.profile_data
+              ? (profile.profile_data as Record<string, unknown>)
+              : {};
+          const brandContext =
+            typeof profile.brand_context === 'object' && profile.brand_context
+              ? (profile.brand_context as Record<string, unknown>)
+              : {};
+          brandStatus = {
+            hasProfile: true,
+            brandName:
+              optionalString(profile.brand_name) ||
+              optionalString(profileData.name) ||
+              optionalString(brandContext.name),
+            version:
+              typeof profile.version === 'number'
+                ? profile.version
+                : Number.isFinite(Number(profile.version))
+                  ? Number(profile.version)
+                  : undefined,
+            updatedAt: optionalString(profile.updated_at),
+          };
+        }
+      }
+
       const payload = {
-        brandStatus: data.brandStatus ?? { hasProfile: false },
+        brandStatus,
         recentContent: data.recentContent ?? [],
         currentInsights: data.currentInsights ?? [],
         recommendedNextAction: data.recommendedNextAction ?? 'Unknown',
@@ -92,7 +125,7 @@ export function registerLoopSummaryTools(server: McpServer): void {
             type: 'text' as const,
             text:
               `Loop Summary\n` +
-              `Project: ${projectId}\n` +
+              `Project: ${projectId ?? 'default'}\n` +
               `Brand Profile: ${payload.brandStatus.hasProfile ? 'ready' : 'missing'}\n` +
               `Recent Content Items: ${payload.recentContent.length}\n` +
               `Current Insights: ${payload.currentInsights.length}\n` +
