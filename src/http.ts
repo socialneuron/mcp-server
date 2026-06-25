@@ -22,7 +22,7 @@ import {
   getOAuthProtectedResourceMetadataUrl,
 } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
-import { registerPrompts } from './prompts.js';
+import { PROMPT_SERVER_CARD_ENTRIES, registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { requestContext, getRequestScopes } from './lib/request-context.js';
 import { hasScope } from './auth/scopes.js';
@@ -460,28 +460,7 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       module: t.module,
       scope: t.scope,
     })),
-    prompts: [
-      {
-        name: 'create_weekly_content_plan',
-        description: 'Generate a full week of social media content with structured plan.',
-      },
-      {
-        name: 'analyze_top_content',
-        description: 'Analyze best-performing posts to identify patterns and replicate success.',
-      },
-      {
-        name: 'repurpose_content',
-        description: 'Transform one piece of content into 8-10 pieces across platforms.',
-      },
-      {
-        name: 'setup_brand_voice',
-        description: 'Define or refine brand voice profile for consistent content.',
-      },
-      {
-        name: 'run_content_audit',
-        description: 'Audit recent content performance with prioritized action plan.',
-      },
-    ],
+    prompts: PROMPT_SERVER_CARD_ENTRIES,
     resources: [
       {
         uri: 'socialneuron://brand/profile',
