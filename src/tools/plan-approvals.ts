@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultProjectId, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -94,7 +95,10 @@ export function registerPlanApprovalTools(server: McpServer): void {
       if (!result?.success) {
         return {
           content: [
-            { type: 'text' as const, text: result?.error ?? 'Failed to create plan approvals.' },
+            {
+              type: 'text' as const,
+              text: safeErrorMessage(result?.error, 'Failed to create plan approvals.'),
+            },
           ],
           isError: true,
         };

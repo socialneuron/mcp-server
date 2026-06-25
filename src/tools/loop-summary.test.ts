@@ -54,4 +54,21 @@ describe('loop summary tools', () => {
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain('Loop summary failed');
   });
+
+  it('formats object-shaped backend errors without leaking object coercion', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        success: false,
+        error: { message: 'permission denied for table loop_state' },
+      } as any,
+      error: null,
+    });
+
+    const handler = server.getHandler('get_loop_summary')!;
+    const result = await handler({});
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Access denied. Check your account permissions.');
+    expect(result.content[0].text).not.toContain('[object Object]');
+    expect(result.content[0].text).not.toContain('loop_state');
+  });
 });

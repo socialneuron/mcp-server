@@ -14,6 +14,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { computeBrandConsistency } from '../lib/brandScoring.js';
 import { auditBrandColors, exportDesignTokens } from '../lib/colorAudit.js';
@@ -52,7 +53,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Error: ${efError || result?.error || 'Failed to fetch brand profile'}`,
+              text: `Error: ${safeErrorMessage(efError ?? result?.error, 'Failed to fetch brand profile')}`,
             },
           ],
           isError: true,

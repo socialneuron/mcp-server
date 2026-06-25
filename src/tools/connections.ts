@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { logMcpToolInvocation } from '../lib/supabase.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 
 const PLATFORM_ENUM = [
   'youtube',
@@ -94,7 +95,7 @@ export function registerConnectionTools(server: McpServer): void {
       }>('mcp-data', { action: 'mint-connection-nonce', platform }, { timeoutMs: 10_000 });
 
       if (error || !data?.success || !data.deep_link) {
-        const errMsg = error ?? data?.error ?? 'Unknown error';
+        const errMsg = safeErrorMessage(error ?? data?.error);
         await logMcpToolInvocation({
           toolName: 'start_platform_connection',
           status: 'error',

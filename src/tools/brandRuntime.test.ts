@@ -75,7 +75,7 @@ describe('brandRuntime tools', () => {
       const result = await handler({});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Network error');
+      expect(result.content[0].text).toContain('Network request failed. Please try again.');
     });
 
     it('returns message when no brand profile exists', async () => {
