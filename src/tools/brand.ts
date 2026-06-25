@@ -3,7 +3,9 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { policyBlockedResult } from '../lib/policy-block.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -41,10 +43,12 @@ export function registerBrandTools(server: McpServer): void {
     async ({ url, response_format }) => {
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
-        return {
-          content: [{ type: 'text' as const, text: `URL blocked: ${ssrfCheck.error}` }],
-          isError: true,
-        };
+        return policyBlockedResult({
+          toolName: 'extract_brand',
+          policy: 'ssrf',
+          inputKind: 'url',
+          reason: ssrfCheck.error,
+        });
       }
 
       const { data, error } = await callEdgeFunction<BrandProfile>(
@@ -135,31 +139,19 @@ export function registerBrandTools(server: McpServer): void {
     async ({ project_id, response_format }) => {
       const projectId = project_id || (await getDefaultProjectId());
 
-      if (!projectId) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'No project_id provided and no default project is configured.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
         profile: Record<string, unknown> | null;
         error?: string;
-      }>('mcp-data', { action: 'brand-profile', projectId });
+      }>('mcp-data', { action: 'brand-profile', ...(projectId ? { projectId } : {}) });
 
       if (efError || (result && !result.success)) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to load brand profile: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to load brand profile: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,
@@ -184,7 +176,7 @@ export function registerBrandTools(server: McpServer): void {
 
       const lines = [
         `Active Brand Profile`,
-        `Project: ${projectId}`,
+        `Project: ${projectId ?? 'default'}`,
         `Brand Name: ${data.brand_name || (data.brand_context as { name?: string } | null)?.name || 'N/A'}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,
@@ -275,7 +267,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to save brand profile: ${saveError || saveResult?.error || 'Unknown error'}`,
+              text: `Failed to save brand profile: ${safeErrorMessage(saveError ?? saveResult?.error)}`,
             },
           ],
           isError: true,
@@ -393,7 +385,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to update platform voice: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to update platform voice: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,

@@ -89,9 +89,16 @@ describe('screenshot tools', () => {
       const handler = server.getHandler('capture_screenshot')!;
       const result = await handler({ url: 'http://localhost:3000' });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('URL blocked by SSRF protection');
-      expect(result.content[0].text).toContain('internal/localhost');
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toMatchObject({
+        ok: false,
+        error_type: 'policy_block',
+        policy: 'ssrf',
+        tool: 'capture_screenshot',
+        input_kind: 'url',
+        reason: 'Access to internal/localhost addresses is not allowed.',
+      });
     });
 
     it('blocks private IP addresses via SSRF', async () => {
@@ -103,8 +110,10 @@ describe('screenshot tools', () => {
       const handler = server.getHandler('capture_screenshot')!;
       const result = await handler({ url: 'http://192.168.1.1' });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('URL blocked by SSRF protection');
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.error_type).toBe('policy_block');
+      expect(parsed.policy).toBe('ssrf');
     });
 
     it('returns rate limit error when rate limited', async () => {

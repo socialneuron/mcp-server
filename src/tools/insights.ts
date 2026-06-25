@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { PerformanceInsight, BestPostingTime, ResponseEnvelope } from '../types/index.js';
 
@@ -89,7 +90,7 @@ export function registerInsightsTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to fetch performance insights: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to fetch performance insights: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,
@@ -231,7 +232,7 @@ export function registerInsightsTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to analyze posting times: ${efError || result?.error || 'Unknown error'}`,
+              text: `Failed to analyze posting times: ${safeErrorMessage(efError ?? result?.error)}`,
             },
           ],
           isError: true,

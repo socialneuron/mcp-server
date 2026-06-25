@@ -113,7 +113,7 @@ describe('distribution tools', () => {
       const text = result.content[0].text;
       expect(text).toContain('Post scheduled successfully.');
       expect(text).toContain('YouTube: OK (jobId=j1, postId=p1)');
-      expect(text).toContain('TikTok: FAILED - Token expired');
+      expect(text).toContain('TikTok: FAILED - Authentication expired. Please re-authenticate.');
       expect(result.isError).toBe(false);
     });
 

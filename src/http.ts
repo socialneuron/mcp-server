@@ -22,7 +22,7 @@ import {
   getOAuthProtectedResourceMetadataUrl,
 } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
-import { registerPrompts } from './prompts.js';
+import { PROMPT_SERVER_CARD_ENTRIES, registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { requestContext, getRequestScopes } from './lib/request-context.js';
 import { hasScope } from './auth/scopes.js';
@@ -32,7 +32,7 @@ import { checkRateLimit } from './lib/rate-limit.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
-import { TOOL_CATALOG } from './lib/tool-catalog.js';
+import { getHttpRuntimeTools } from './lib/tool-catalog.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -435,12 +435,15 @@ async function authenticateRequest(
 // Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
 // See: https://smithery.ai/docs/build/publish#server-scanning
 //
-// Tools are auto-derived from TOOL_CATALOG (single source of truth, sealed via
-// tools.lock.json). Input schemas are intentionally omitted — clients that need
-// full schemas call the standard MCP `tools/list` RPC. The server-card is
-// discovery metadata, not a runtime validation contract.
+// Tools are derived from getHttpRuntimeTools() — the catalog minus stdio-only
+// screenshot tools (skipped over HTTP) plus HTTP-only MCP App tools — so the card
+// matches what a client can actually call over this transport. Input schemas are
+// intentionally omitted — clients that need full schemas call the standard MCP
+// `tools/list` RPC. The server-card is discovery metadata, not a runtime
+// validation contract.
 
 app.get('/.well-known/mcp/server-card.json', (_req, res) => {
+  const httpTools = getHttpRuntimeTools();
   res.json({
     serverInfo: {
       name: 'socialneuron',
@@ -450,35 +453,14 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       required: true,
       schemes: ['oauth2'],
     },
-    toolCount: TOOL_CATALOG.length,
-    tools: TOOL_CATALOG.map(t => ({
+    toolCount: httpTools.length,
+    tools: httpTools.map(t => ({
       name: t.name,
       description: t.description,
       module: t.module,
       scope: t.scope,
     })),
-    prompts: [
-      {
-        name: 'create_weekly_content_plan',
-        description: 'Generate a full week of social media content with structured plan.',
-      },
-      {
-        name: 'analyze_top_content',
-        description: 'Analyze best-performing posts to identify patterns and replicate success.',
-      },
-      {
-        name: 'repurpose_content',
-        description: 'Transform one piece of content into 8-10 pieces across platforms.',
-      },
-      {
-        name: 'setup_brand_voice',
-        description: 'Define or refine brand voice profile for consistent content.',
-      },
-      {
-        name: 'run_content_audit',
-        description: 'Audit recent content performance with prioritized action plan.',
-      },
-    ],
+    prompts: PROMPT_SERVER_CARD_ENTRIES,
     resources: [
       {
         uri: 'socialneuron://brand/profile',
@@ -789,6 +771,15 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
   sessions.delete(sessionId);
 
   res.status(200).json({ status: 'session_closed' });
+});
+
+// ── Not found handler ───────────────────────────────────────────────
+app.use((_req, res) => {
+  setNoStore(res);
+  res.status(404).json({
+    error: 'not_found',
+    error_description: 'Route not found',
+  });
 });
 
 // ── Global error handler (catches errors SDK swallows) ──────────────
