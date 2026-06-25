@@ -198,8 +198,15 @@ describe('ideation tools', () => {
       const handler = server.getHandler('fetch_trends')!;
       const result = await handler({ source: 'url', url: 'http://127.0.0.1:8080/admin' });
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('URL blocked');
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed).toMatchObject({
+        ok: false,
+        error_type: 'policy_block',
+        policy: 'ssrf',
+        tool: 'fetch_trends',
+        input_kind: 'url',
+      });
       expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
