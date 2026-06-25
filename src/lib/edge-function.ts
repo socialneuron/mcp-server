@@ -288,7 +288,6 @@ export async function callEdgeFunction<T = unknown>(
         error: `Edge Function '${functionName}' timed out after ${timeoutMs}ms`,
       };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return { data: null, error: message };
+    return { data: null, error: sanitizeError(err) };
   }
 }
