@@ -174,6 +174,44 @@ describe('planning tools', () => {
     expect(envelope.data.updated_posts).toBe(1);
   });
 
+  it('delete_content_plan requires explicit confirmation', async () => {
+    const handler = server.getHandler('delete_content_plan')!;
+    const result = await handler({
+      plan_id: '33333333-3333-3333-3333-333333333333',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result._meta.error_type).toBe('validation_error');
+    expect(result.content[0].text).toContain('requires explicit confirmation');
+    expect(mockCallEdge).not.toHaveBeenCalled();
+  });
+
+  it('delete_content_plan deletes a persisted plan', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: { success: true, plan_id: '33333333-3333-3333-3333-333333333333', deleted: true },
+      error: null,
+    });
+
+    const handler = server.getHandler('delete_content_plan')!;
+    const result = await handler({
+      plan_id: '33333333-3333-3333-3333-333333333333',
+      delete_confirmed: true,
+      response_format: 'json',
+    });
+
+    expect(result.isError).toBe(false);
+    expect(mockCallEdge).toHaveBeenCalledWith(
+      'mcp-data',
+      { action: 'delete-content-plan', plan_id: '33333333-3333-3333-3333-333333333333' },
+      { timeoutMs: 10_000 }
+    );
+    const envelope = JSON.parse(result.content[0].text);
+    expect(envelope.data).toMatchObject({
+      plan_id: '33333333-3333-3333-3333-333333333333',
+      deleted: true,
+    });
+  });
+
   it('submit_content_plan_for_approval creates approval rows', async () => {
     mockCallEdge.mockResolvedValueOnce({
       data: {

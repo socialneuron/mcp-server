@@ -1,6 +1,6 @@
 # CLI Guide
 
-The Social Neuron CLI provides terminal access to all 75 tools available in the npm package.
+The Social Neuron CLI provides terminal access to all 80 tools available in the npm package.
 
 ## Installation
 

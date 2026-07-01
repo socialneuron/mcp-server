@@ -7,15 +7,15 @@ Common issues and fixes for `@socialneuron/mcp-server`. If none of these help, o
 ### The server doesn't appear in my MCP client
 1. Confirm the config points at the right command. The canonical stdio command is `npx -y @socialneuron/mcp-server` with your key in `SOCIALNEURON_API_KEY`.
 2. Fully **restart** the client after editing its MCP config (Claude Desktop/Cursor cache the server list at launch).
-3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 75/75 tools` **to stderr** and then waits on stdio.
+3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 80/80 tools` **to stderr** and then waits on stdio.
 
 ### `tools/list` returns 0 tools, or the client reports "Invalid JSON" / pydantic parse errors
-This was a stdout-corruption bug fixed in **1.7.13** — any log written to stdout corrupts the JSON-RPC channel. Upgrade:
+This was a stdout-corruption bug fixed in the **1.7.13** code line — any log written to stdout corrupts the JSON-RPC channel. Check npm before relying on `@latest`:
 ```bash
-npm view @socialneuron/mcp-server version   # should be >= 1.7.13
+npm view @socialneuron/mcp-server version   # 1.7.13 or newer includes the fix
 npx -y @socialneuron/mcp-server@latest --version
 ```
-If you pin a version, pin `>=1.7.13`. Never add `console.log` to a custom fork's hot path — stdio uses stdout for JSON-RPC; logs go to stderr.
+Pin `>=1.7.13` when you need the stdout fix. Never add `console.log` to a custom fork's hot path — stdio uses stdout for JSON-RPC; logs go to stderr.
 
 ### `npx` keeps running an old version
 npx caches packages. Force the latest:

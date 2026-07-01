@@ -302,6 +302,46 @@ describe('autopilot tools', () => {
   });
 
   // =========================================================================
+  // delete_autopilot_config
+  // =========================================================================
+  describe('delete_autopilot_config', () => {
+    const TEST_CONFIG_ID = '550e8400-e29b-41d4-a716-446655440000';
+
+    it('requires explicit confirmation before deletion', async () => {
+      const handler = server.getHandler('delete_autopilot_config')!;
+      const result = await handler({ config_id: TEST_CONFIG_ID });
+
+      expect(result.isError).toBe(true);
+      expect(result._meta.error_type).toBe('validation_error');
+      expect(result.content[0].text).toContain('requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('deletes an autopilot config through mcp-data', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, config_id: TEST_CONFIG_ID, deleted: true },
+        error: null,
+      });
+
+      const handler = server.getHandler('delete_autopilot_config')!;
+      const result = await handler({
+        config_id: TEST_CONFIG_ID,
+        delete_confirmed: true,
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        { action: 'delete-autopilot-config', config_id: TEST_CONFIG_ID },
+        { timeoutMs: 10_000 }
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toMatchObject({ config_id: TEST_CONFIG_ID, deleted: true });
+    });
+  });
+
+  // =========================================================================
   // get_autopilot_status
   // =========================================================================
   describe('get_autopilot_status', () => {

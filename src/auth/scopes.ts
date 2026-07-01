@@ -65,6 +65,8 @@ export const TOOL_SCOPES: Record<string, string> = {
   generate_voiceover: 'mcp:write',
   generate_carousel: 'mcp:write',
   create_carousel: 'mcp:write',
+  delete_carousel: 'mcp:write',
+  cancel_async_job: 'mcp:write',
   upload_media: 'mcp:write',
 
   // mcp:read (media)
@@ -72,6 +74,7 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:distribute
   schedule_post: 'mcp:distribute',
+  cancel_scheduled_post: 'mcp:distribute',
 
   // mcp:analytics
   refresh_platform_analytics: 'mcp:analytics',
@@ -87,6 +90,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:autopilot (Pro+ only)
   list_autopilot_configs: 'mcp:autopilot',
   update_autopilot_config: 'mcp:autopilot',
+  delete_autopilot_config: 'mcp:autopilot',
   get_autopilot_status: 'mcp:autopilot',
 
   // Recipes
@@ -106,6 +110,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   save_content_plan: 'mcp:write',
   get_content_plan: 'mcp:read',
   update_content_plan: 'mcp:write',
+  delete_content_plan: 'mcp:write',
   submit_content_plan_for_approval: 'mcp:write',
   create_plan_approvals: 'mcp:write',
   respond_plan_approval: 'mcp:write',

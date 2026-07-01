@@ -59,6 +59,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:read',
   },
   {
+    name: 'cancel_async_job',
+    description: 'Cancel a queued or processing async generation job',
+    module: 'content',
+    scope: 'mcp:write',
+  },
+  {
     name: 'create_storyboard',
     description: 'Create a video storyboard with scenes and shots',
     module: 'content',
@@ -82,6 +88,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'carousel',
     scope: 'mcp:write',
   },
+  {
+    name: 'delete_carousel',
+    description: 'Delete a generated carousel draft',
+    module: 'carousel',
+    scope: 'mcp:write',
+  },
 
   // media
   {
@@ -101,6 +113,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'schedule_post',
     description: 'Schedule content for publishing to social platforms',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+  },
+  {
+    name: 'cancel_scheduled_post',
+    description: 'Cancel a scheduled post before publication',
     module: 'distribution',
     scope: 'mcp:distribute',
   },
@@ -289,6 +307,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
   {
+    name: 'delete_content_plan',
+    description: 'Delete a persisted content plan',
+    module: 'planning',
+    scope: 'mcp:write',
+  },
+  {
     name: 'submit_content_plan_for_approval',
     description: 'Submit a content plan for team approval',
     module: 'planning',
@@ -365,6 +389,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'update_autopilot_config',
     description: 'Update autopilot configuration',
+    module: 'autopilot',
+    scope: 'mcp:autopilot',
+  },
+  {
+    name: 'delete_autopilot_config',
+    description: 'Delete autopilot configuration',
     module: 'autopilot',
     scope: 'mcp:autopilot',
   },

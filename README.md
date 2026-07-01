@@ -1,8 +1,8 @@
 # @socialneuron/mcp-server
 
-> 75 MCP tools for AI-powered social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
+> 80 MCP tools backed by 35+ AI models for social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
 >
-> This npm package registers **75 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **92-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+> This npm package registers **80 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **94-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
@@ -52,7 +52,7 @@ Every release is published from GitHub Actions with [npm provenance attestation]
 | **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
 | **SDK** | TypeScript/Node.js apps | [Preview](docs/sdk-guide.md) |
 
-All methods share the same tool catalog, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
+All methods share the same auth, scopes, credit system, and backend handlers. Tool availability varies by surface: the npm package exposes the local stdio catalog, while the hosted endpoint exposes the expanded product catalog. [Compare methods](docs/integration-methods.md).
 
 ## Platform Status
 
@@ -284,7 +284,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-> Full machine-readable listing in [`tools.lock.json`](tools.lock.json) (sealed manifest, verified in CI).
+> Full machine-readable npm listing in [`tools.lock.json`](tools.lock.json). Hosted discovery is tracked separately in [`hosted-server-card.contract.json`](hosted-server-card.contract.json); CI verifies both contracts.
 
 All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
@@ -293,7 +293,7 @@ All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 | Category | Tools | What It Does |
 |----------|-------|-------------|
 | Ideation | generate_content, fetch_trends, adapt_content, get_ideation_context | AI-powered content ideas and trend research |
-| Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 20+ AI models |
+| Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 35+ AI models |
 | Distribution | schedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Multi-platform publishing, scheduling, and slot optimization |
 | Analytics | fetch_analytics, refresh_platform_analytics | Performance tracking across all platforms |
 | Insights | get_performance_insights, get_best_posting_times | Data-driven content optimization |
@@ -507,6 +507,7 @@ See the [`examples/`](examples/) directory:
 - [Integration Methods](docs/integration-methods.md) — MCP vs REST vs CLI vs SDK
 - [Troubleshooting](docs/troubleshooting.md) — common issues & fixes
 - [Verifying tools.lock.json](docs/verifying-tools-lock.md) — supply-chain integrity
+- [Lifecycle Backend Smoke Checklist](docs/lifecycle-backend-smoke.md) — deployed-backend proof required before closing lifecycle audit issues
 
 ## Links
 
@@ -517,4 +518,3 @@ See the [`examples/`](examples/) directory:
 ## License
 
 [MIT](LICENSE) © Social Neuron
-

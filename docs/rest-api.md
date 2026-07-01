@@ -2,7 +2,7 @@
 
 > **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
 
-REST interface to the Social Neuron AI content tools (92 tools on the hosted product). Same auth, scopes, and rate limits as the hosted MCP endpoint.
+REST interface to the Social Neuron AI content tools (currently 94 tools on the hosted product; query the server card for the live count). Same auth, scopes, and rate limits as the hosted MCP endpoint.
 
 ## Base URL
 
@@ -42,7 +42,7 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"topic": "sustainable fashion trends", "platforms": ["instagram", "tiktok"]}' \
+  -d '{"topic": "sustainable fashion trends", "platforms": ["tiktok", "youtube"]}' \
   https://mcp.socialneuron.com/v1/content/generate
 ```
 
@@ -59,7 +59,7 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["instagram"], "schedule_at": "<ISO-8601 timestamp>"}' \
+  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["tiktok"], "schedule_at": "<ISO-8601 timestamp>"}' \
   https://mcp.socialneuron.com/v1/distribution/schedule
 ```
 
@@ -151,14 +151,14 @@ These are thin wrappers over the tool proxy for common operations.
 ```json
 {
   "data": {
-    "balance": 1850,
+    "balance": 1350,
     "monthlyUsed": 150,
-    "monthlyLimit": 2000,
+    "monthlyLimit": 1500,
     "plan": "pro"
   },
   "_meta": {
     "tool": "get_credit_balance",
-    "version": "1.5.2",
+    "version": "1.7.13",
     "timestamp": "<ISO-8601 timestamp>"
   }
 }
@@ -190,13 +190,15 @@ These are thin wrappers over the tool proxy for common operations.
 
 ## Rate Limits
 
-| Tier | Requests/min | Credits/mo |
-|------|-------------|------------|
-| Starter | 60 | 800 |
-| Pro | 60 | 2,000 |
-| Team | 60 | 6,500 |
+| Tier | API/MCP requests/min | Credits/mo | API/MCP access |
+|------|----------------------|------------|----------------|
+| Free | — | 100 | — |
+| Starter | — | 500 | — |
+| Pro | 30 | 1,500 | MCP read + analytics |
+| Team | 60 | 3,500 | Full MCP |
+| Agency | 120 | 10,000 | Full MCP + REST API |
 
-Per-IP rate limit: 60 requests/minute (before auth).
+The hosted gateway also applies a pre-auth per-IP shield of 60 requests/minute before token and scope checks. Individual high-cost tool families can be tighter; for example, posting tools use a 30/minute bucket and screenshot tools use a 10/minute bucket.
 
 ## Scopes
 

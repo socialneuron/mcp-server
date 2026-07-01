@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "92 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
+**Subheadline:** "94 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
@@ -45,7 +45,7 @@ curl -X POST https://mcp.socialneuron.com/v1/distribution/schedule \
 ```
 
 **Label:** "REST API — Any Language"
-**Description:** "35 endpoints. OpenAPI spec included. Works from any language."
+**Description:** "Tool proxy + convenience endpoints. OpenAPI spec included. Works from any language."
 
 ### Tab 3: TypeScript SDK
 
@@ -89,13 +89,13 @@ socialneuron-mcp sn publish \
 ### Card 1: Content Generation
 **Icon:** Sparkle / Wand
 **Title:** "AI-Powered Content"
-**Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 20+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
+**Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 35+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
 **Endpoints:** `POST /v1/content/video`, `POST /v1/content/image`, `POST /v1/content/generate`, `POST /v1/tools/generate_carousel`
 
 ### Card 2: Multi-Platform Scheduling
 **Icon:** Calendar
 **Title:** "Schedule Everywhere"
-**Copy:** "Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky. AI-optimized posting times."
+**Copy:** "Publish to live channels starting with YouTube and TikTok. Instagram is pending platform approval; additional platform schemas remain visible so developers can prepare integrations without treating them as live publish paths."
 **Endpoints:** `POST /v1/distribution/schedule`, `GET /v1/analytics/best-times`
 
 ### Card 3: Analytics & Insights
@@ -155,9 +155,10 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 92 |
-| REST endpoints | 35 |
-| Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
+| MCP tools | 94 |
+| REST access | Tool proxy (`POST /v1/tools/{name}`) plus convenience endpoints |
+| Live publish platforms | YouTube, TikTok |
+| Pending/modeled platforms | Instagram pending platform approval; X/Twitter, LinkedIn, Facebook, Threads, and Bluesky are modeled but not live publish paths |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |
 | Image models | 10 (Midjourney, Nano Banana/Pro, Ideogram, Flux Pro/Max, GPT-4o, Imagen 4/Fast, Seedream) |
 | SDK resources | 9 (content, posts, analytics, brand, plans, comments, jobs, tools, account) |

@@ -35,12 +35,13 @@ This policy covers:
 
 ## Supported Versions
 
+The latest `1.7.x` release line receives fixes. Older minor lines should be upgraded before relying on the hosted API/MCP surfaces, because tool metadata, auth scopes, and pricing assumptions can drift across minors.
+
 | Version | Supported |
 | ------- | --------- |
-| 1.6.x   | Yes       |
-| 1.5.x   | Yes       |
-| 1.4.x   | Yes       |
-| < 1.4   | No        |
+| 1.7.x   | Yes       |
+| 1.6.x   | Critical fixes only |
+| < 1.6   | No        |
 
 ## Credential Safety
 
@@ -49,7 +50,7 @@ This npm package contains **no service role keys or admin credentials**.
 - The `SUPABASE_SERVICE_ROLE_KEY` is **never hardcoded** — it is only read from environment variables at runtime, and only in legacy self-hosted mode.
 - The embedded `CLOUD_SUPABASE_URL` and `CLOUD_SUPABASE_ANON_KEY` are **intentionally public** — they are the same values shipped in the frontend bundle. The anon key JWT decodes to `"role": "anon"`, and all data access is gated by Row Level Security (RLS).
 - API keys are stored in the OS keychain (macOS Keychain / Linux `secret-tool`) or a `chmod 0600` credentials file. They are never committed to source control.
-- The `npm pack` output is restricted to `dist/`, `README.md`, `CHANGELOG.md`, and `LICENSE` via both `.npmignore` and `package.json files` field.
+- The `npm pack` output is restricted to `dist/`, `tools.lock.json`, `hosted-server-card.contract.json`, `README.md`, `CHANGELOG.md`, and `LICENSE` via the `package.json` `files` field.
 
 ## Security Best Practices
 
@@ -73,6 +74,7 @@ The `.gitleaks.toml` configuration allowlists this file to suppress false positi
 
 ## Rate Limiting
 
-- Edge Function endpoints enforce per-IP rate limits (60 requests/minute)
+- Edge Function endpoints enforce per-IP rate limits before authentication (60 requests/minute)
+- Plan-level API/MCP limits start at Pro: Pro 30 requests/minute, Team 60 requests/minute, Agency 120 requests/minute
 - API keys are hashed (SHA-256) before storage and comparison
-- Key cache entries expire after 10 seconds to limit revocation exposure window
+- Key cache entries expire after 5 minutes to avoid connector heartbeat lockouts; revocation evicts the local cache immediately on the replica that handles it

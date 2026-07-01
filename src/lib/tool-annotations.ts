@@ -85,7 +85,12 @@ const SCOPE_DEFAULTS: Record<string, AnnotationHints> = {
 const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   // Destructive tools
   delete_comment: { destructiveHint: true },
+  delete_carousel: { destructiveHint: true },
+  delete_content_plan: { destructiveHint: true },
+  delete_autopilot_config: { destructiveHint: true },
   moderate_comment: { destructiveHint: true },
+  cancel_async_job: { destructiveHint: true },
+  cancel_scheduled_post: { destructiveHint: true, openWorldHint: true },
 
   // Read-only tools in non-read scopes (must also clear destructiveHint from scope default)
   list_comments: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },

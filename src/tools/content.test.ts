@@ -503,7 +503,7 @@ describe('content tools', () => {
       expect(text).toContain('failure_reason=provider_rejected');
     });
 
-    it('marks failed job billing as unreported when backend omits billing fields', async () => {
+    it('marks failed job billing as failed_no_charge when backend omits billing fields', async () => {
       const failedJob = {
         ...completedJob,
         status: 'failed',
@@ -517,7 +517,11 @@ describe('content tools', () => {
 
       const handler = server.getHandler('check_status')!;
       const result = await handler({ job_id: 'job-failed-no-billing' });
-      expect(result.content[0].text).toContain('Billing status: not reported by backend');
+      expect(result.content[0].text).toContain('Billing: status=failed_no_charge');
+      expect(result.content[0].text).toContain('reserved=0');
+      expect(result.content[0].text).toContain('charged=0');
+      expect(result.content[0].text).toContain('refunded=0');
+      expect(result.content[0].text).toContain('failure_reason=Provider timeout');
     });
 
     it('includes billing summary in JSON envelope', async () => {
@@ -623,6 +627,48 @@ describe('content tools', () => {
       const result = await handler({ job_id: 'job-multi-json', response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.all_urls).toEqual(['url1', 'url2']);
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // cancel_async_job
+  // -------------------------------------------------------------------------
+  describe('cancel_async_job', () => {
+    it('requires explicit confirmation before canceling', async () => {
+      const handler = server.getHandler('cancel_async_job')!;
+      const result = await handler({ job_id: 'job-123' });
+
+      expect(result.isError).toBe(true);
+      expect(result._meta.error_type).toBe('validation_error');
+      expect(result.content[0].text).toContain('requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('cancels an async job through mcp-data', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job_id: 'job-123', status: 'canceled', canceled: true },
+        error: null,
+      });
+
+      const handler = server.getHandler('cancel_async_job')!;
+      const result = await handler({
+        job_id: 'job-123',
+        cancel_confirmed: true,
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        { action: 'cancel-async-job', jobId: 'job-123', job_id: 'job-123' },
+        { timeoutMs: 10_000 }
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toMatchObject({
+        job_id: 'job-123',
+        canceled: true,
+        status: 'canceled',
+      });
     });
   });
 

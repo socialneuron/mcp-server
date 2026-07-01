@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **75 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **80 tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes additional tools — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -66,9 +66,12 @@ _Scope: `mcp:write` — Requires **Team** or **Agency** (full MCP)._
 | Tool | Description |
 |------|-------------|
 | `adapt_content` | Rewrite existing content for a different platform — adjusts character limits, hashtag style, tone, and CTA format automatically. Use after generate_content when you need the same message across multiple platforms. Pass project_id to apply p |
+| `cancel_async_job` | Cancel a queued or processing async generation job created by generate_image, generate_video, render_template_video, or similar async media tools. Requires cancel_confirmed=true because it stops paid/background work. |
 | `create_carousel` | End-to-end carousel creation: generates slide text + kicks off image generation for each slide in parallel. When brand_id is provided, auto-injects brand colors, logo watermark, and visual mood into every image prompt. Returns carousel data |
 | `create_plan_approvals` | Create pending approval rows for each post in a content plan — one row per post, status="pending". Use after submit_content_plan_for_approval to materialize the approval queue. Each entry in posts becomes a row that respond_plan_approval ca |
 | `create_storyboard` | Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profil |
+| `delete_carousel` | Delete a generated carousel draft and associated persisted carousel metadata. Requires delete_confirmed=true because this removes MCP-created content. |
+| `delete_content_plan` | Delete a persisted content plan and its draft approval workflow records. Requires delete_confirmed=true because this removes MCP-created planning state. |
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_ch |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 2-10 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (ima |
@@ -91,7 +94,8 @@ _Scope: `mcp:distribute` — Requires **Team** or **Agency** (full MCP)._
 
 | Tool | Description |
 |------|-------------|
-| `schedule_content_plan` | Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. |
+| `cancel_scheduled_post` | Cancel a scheduled post before publication. Use list_recent_posts with status=scheduled to find post_id first. Requires cancel_confirmed=true because this removes a pending external platform action. |
+| `schedule_content_plan` | Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. To schedule posts, set schedule_confirmed=true after explicit user approval. |
 | `schedule_post` | Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete |
 | `start_platform_connection` | Begin connecting a social platform (Instagram, TikTok, YouTube, etc.). Returns a single-use deep link the user opens in a browser to complete the one-time OAuth handshake on socialneuron.com. This is NOT another OAuth in Claude — platform c |
 
@@ -114,9 +118,10 @@ _Scope: `mcp:autopilot` — Requires **Team** or **Agency** (full MCP)._
 | Tool | Description |
 |------|-------------|
 | `auto_approve_plan` | Batch auto-approve posts in a content plan that meet quality thresholds. Posts below the threshold are flagged for manual review. |
-| `create_autopilot_config` | Create a new autopilot configuration for automated content pipeline execution. Defines schedule, credit budgets, and approval mode. |
-| `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. |
+| `create_autopilot_config` | Create a new autopilot configuration for automated content pipeline execution. Defines schedule, credit budgets, and approval mode. To activate immediately, set is_active=true and activation_confirmed=true after explicit user approval. |
+| `delete_autopilot_config` | Delete an autopilot configuration and stop future automated runs for it. Use list_autopilot_configs to find config_id first. Requires delete_confirmed=true because it removes automation state. |
+| `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially and may spend credits or publish/schedule content. Requires execution_confirmed=true after explicit user approval. Long-runn |
 | `get_autopilot_status` | Get autopilot system overview: active config count, recent execution results, credits consumed, and next scheduled run time. Use as a dashboard check before modifying autopilot settings. |
 | `list_autopilot_configs` | List autopilot configurations showing schedules, credit budgets, last run times, and active/inactive status. Use to check what is automated before creating new configs, or to find config_id for update_autopilot_config. |
-| `run_content_pipeline` | Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. Check check_pipel |
-| `update_autopilot_config` | Update an existing autopilot configuration. Can enable/disable, change schedule, or modify credit budgets. |
+| `run_content_pipeline` | Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts |
+| `update_autopilot_config` | Update an existing autopilot configuration. Can enable/disable, change schedule, or modify credit budgets. To enable recurring automation, set is_active=true and activation_confirmed=true after explicit user approval. |

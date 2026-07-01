@@ -69,8 +69,9 @@ OAuth users **cannot self-grant scopes** the way API-key users can. Scopes are d
 | Plan | Granted scopes |
 |---|---|
 | Starter | No MCP access — upgrade to Pro or higher |
-| Pro | `mcp:full` (all of the below) |
+| Pro | `mcp:read`, `mcp:analytics` |
 | Team | `mcp:full` |
+| Agency | `mcp:full` |
 
 If a tool returns `Permission denied: '<tool>' requires scope '<scope>'` and you are connected via OAuth, upgrade your plan — there is no key-regeneration step.
 
@@ -165,7 +166,7 @@ mcp:full (includes all below)
 ├── mcp:distribute  — schedule posts, publish content
 ├── mcp:analytics   — refresh analytics, YouTube analytics
 ├── mcp:comments    — list/reply/post/moderate/delete comments
-└── mcp:autopilot   — configure and run autopilot (Pro+ only)
+└── mcp:autopilot   — configure and run autopilot (Team/Agency only)
 ```
 
 Default scopes for new API keys: `['mcp:read']`.

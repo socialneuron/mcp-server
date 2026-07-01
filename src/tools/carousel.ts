@@ -7,6 +7,7 @@ import { sanitizeError } from '../lib/sanitize-error.js';
 import { requestContext } from '../lib/request-context.js';
 import type { GenerateImageResponse } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { toolError } from '../lib/tool-error.js';
 
 // Budget accessors — mirror content.ts pattern for per-request context
 const MAX_CREDITS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN || 0));
@@ -38,6 +39,16 @@ function addAssetsGenerated(count: number): void {
   } else {
     _globalAssetsGenerated += count;
   }
+}
+
+function asEnvelope<T>(data: T) {
+  return {
+    _meta: {
+      version: MCP_VERSION,
+      timestamp: new Date().toISOString(),
+    },
+    data,
+  };
 }
 
 function checkCreditBudget(estimatedCost: number): { ok: true } | { ok: false; message: string } {
@@ -90,12 +101,47 @@ interface ImageJobResult {
   jobId: string | null;
   model: string;
   error: string | null;
+  billing: CarouselImageBilling;
 }
 
 interface BrandVisualContext {
   stylePrefix: string;
   brandName: string | null;
   logoDescription: string | null;
+}
+
+interface CarouselImageBilling {
+  billing_status: 'reserved' | 'failed_no_charge';
+  credits_reserved: number;
+  credits_charged: number;
+  credits_refunded: number;
+  failure_reason: string | null;
+  reported: boolean;
+  inferred: boolean;
+}
+
+function reservedImageBilling(creditsReserved: number): CarouselImageBilling {
+  return {
+    billing_status: 'reserved',
+    credits_reserved: creditsReserved,
+    credits_charged: 0,
+    credits_refunded: 0,
+    failure_reason: null,
+    reported: true,
+    inferred: false,
+  };
+}
+
+function failedImageBilling(reason: string): CarouselImageBilling {
+  return {
+    billing_status: 'failed_no_charge',
+    credits_reserved: 0,
+    credits_charged: 0,
+    credits_refunded: 0,
+    failure_reason: reason,
+    reported: false,
+    inferred: true,
+  };
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -262,10 +308,7 @@ export function registerCarouselTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: budgetCheck.message, totalEstimatedCost },
         });
-        return {
-          content: [{ type: 'text' as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return toolError('billing_error', budgetCheck.message);
       }
 
       const assetBudget = checkAssetBudget();
@@ -276,10 +319,7 @@ export function registerCarouselTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: assetBudget.message },
         });
-        return {
-          content: [{ type: 'text' as const, text: assetBudget.message }],
-          isError: true,
-        };
+        return toolError('billing_error', assetBudget.message);
       }
 
       const userId = await getDefaultUserId();
@@ -291,15 +331,7 @@ export function registerCarouselTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: rateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('rate_limited', `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`);
       }
 
       // ── Phase 1: Generate carousel text ──
@@ -330,10 +362,10 @@ export function registerCarouselTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { phase: 'text_generation', error: errMsg },
         });
-        return {
-          content: [{ type: 'text' as const, text: `Carousel text generation failed: ${errMsg}` }],
-          isError: true,
-        };
+        return toolError(
+          'server_error',
+          `Carousel text generation failed: ${errMsg}`
+        );
       }
 
       const carousel = carouselData.carousel;
@@ -365,11 +397,13 @@ export function registerCarouselTools(server: McpServer): void {
             );
 
             if (error || (!data?.taskId && !data?.asyncJobId)) {
+              const errorMessage = error ?? 'No job ID returned';
               return {
                 slideNumber: slide.slideNumber,
                 jobId: null,
                 model: image_model,
-                error: error ?? 'No job ID returned',
+                error: errorMessage,
+                billing: failedImageBilling(errorMessage),
               };
             }
 
@@ -384,13 +418,16 @@ export function registerCarouselTools(server: McpServer): void {
               jobId,
               model: image_model,
               error: null,
+              billing: reservedImageBilling(perImageCost),
             };
           } catch (err: unknown) {
+            const errorMessage = sanitizeError(err);
             return {
               slideNumber: slide.slideNumber,
               jobId: null,
               model: image_model,
-              error: sanitizeError(err),
+              error: errorMessage,
+              billing: failedImageBilling(errorMessage),
             };
           }
         })
@@ -434,6 +471,7 @@ export function registerCarouselTools(server: McpServer): void {
                         ...s,
                         imageJobId: job?.jobId ?? null,
                         imageError: job?.error ?? null,
+                        imageBilling: job?.billing ?? null,
                       };
                     }),
                     imageModel: image_model,
@@ -448,9 +486,15 @@ export function registerCarouselTools(server: McpServer): void {
                     failedSlides: failedJobs.map(j => ({
                       slideNumber: j.slideNumber,
                       error: j.error,
+                      billing: j.billing,
                     })),
                     credits: {
                       textGeneration: textCredits,
+                      imagesReserved: successfulJobs.length * perImageCost,
+                      imagesCharged: 0,
+                      imagesRefunded: 0,
+                      failedImagesNoCharge: failedJobs.length,
+                      totalReserved: textCredits + successfulJobs.length * perImageCost,
                       imagesEstimated: successfulJobs.length * perImageCost,
                       totalEstimated: textCredits + successfulJobs.length * perImageCost,
                     },
@@ -488,7 +532,7 @@ export function registerCarouselTools(server: McpServer): void {
       if (failedJobs.length > 0) {
         lines.push('');
         lines.push(
-          `WARNING: ${failedJobs.length}/${imageJobs.length} image generations failed. Use generate_image manually for failed slides.`
+          `WARNING: ${failedJobs.length}/${imageJobs.length} image generations failed with no image credits charged for those slides. Use generate_image manually for failed slides.`
         );
       }
 
@@ -502,6 +546,91 @@ export function registerCarouselTools(server: McpServer): void {
 
       return {
         content: [{ type: 'text' as const, text: lines.join('\n') }],
+      };
+    }
+  );
+
+  server.tool(
+    'delete_carousel',
+    'Delete a generated carousel draft and associated persisted carousel metadata. Requires delete_confirmed=true because this removes MCP-created content.',
+    {
+      carousel_id: z.string().min(1).max(200).describe('Carousel ID returned by create_carousel.'),
+      delete_confirmed: z
+        .boolean()
+        .default(false)
+        .describe('Required. Set true only after the user confirms deletion.'),
+      response_format: z.enum(['text', 'json']).optional().describe('Default: text.'),
+    },
+    async ({ carousel_id, delete_confirmed, response_format }) => {
+      const format = response_format ?? 'text';
+      const startedAt = Date.now();
+
+      if (!delete_confirmed) {
+        return toolError(
+          'validation_error',
+          'Deleting a carousel requires explicit confirmation. Re-run with delete_confirmed=true after the user approves deletion.'
+        );
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        carousel_id?: string;
+        deleted?: boolean;
+        message?: string;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'delete-carousel', carousel_id, carouselId: carousel_id },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error) {
+        await logMcpToolInvocation({
+          toolName: 'delete_carousel',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { carousel_id, error },
+        });
+        return toolError('server_error', `Failed to delete carousel: ${error}`);
+      }
+
+      if (!result?.success) {
+        const message = result?.error ?? 'Carousel not found or already deleted.';
+        await logMcpToolInvocation({
+          toolName: 'delete_carousel',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { carousel_id, error: message },
+        });
+        return toolError(
+          /not found/i.test(message) ? 'not_found' : 'server_error',
+          `Failed to delete carousel: ${message}`
+        );
+      }
+
+      const payload = {
+        carousel_id: result.carousel_id ?? carousel_id,
+        deleted: result.deleted ?? true,
+        message: result.message ?? null,
+      };
+
+      await logMcpToolInvocation({
+        toolName: 'delete_carousel',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        details: { carousel_id: payload.carousel_id },
+      });
+
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          isError: false,
+        };
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: `Deleted carousel ${payload.carousel_id}.` }],
+        isError: false,
       };
     }
   );

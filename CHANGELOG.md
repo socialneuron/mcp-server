@@ -2,7 +2,11 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## [1.7.13] - 2026-05-29
+## [1.7.13] - 2026-07-01
+
+### Added
+- Added lifecycle cleanup tools for MCP-created state: `cancel_async_job`, `delete_carousel`, `cancel_scheduled_post`, `delete_content_plan`, and `delete_autopilot_config`. Each destructive/cancel action requires an explicit confirmation flag and carries destructive tool annotations.
+- Added runtime normalization for machine-readable tool errors. Runtime `isError` tool results now carry `_meta.error_type` and `_meta.code`, with explicit codes on the new lifecycle tools and key async/scheduling/autopilot paths.
 
 ### Changed
 - Corrected the MCP pricing surfaces (README tier table + the `socialneuron://docs/capabilities` resource that ships to every client) to the canonical tiers from socialneuron.com: Free $0/100/—, Starter $19/500/—, Pro $49/1,500/Read+Analytics, Team $99/3,500/Full, Agency $249/10,000/Full. Earlier tables advertised wrong prices/credits and stated MCP access starts at Starter — it starts at **Pro**.
@@ -11,9 +15,12 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Fixed
 - `applyAnnotations` now logs to **stderr** (`console.error`) instead of stdout. A stray stdout write corrupted the JSON-RPC stream for stdio clients (pydantic "Invalid JSON"; `tools/list` registering 0 tools).
+- `check_status` now returns explicit billing fields for failed async jobs when the backend does not report billing metadata: `billing_status=failed_no_charge`, zero reserved/charged/refunded credits, and a failure reason. `create_carousel` now returns slide-level billing for image-job start failures.
 
 ### Documentation
-- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
+- Production-grade README + docs pass: clarified tool surfaces (**80 over stdio**, **94** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
+- Added `hosted-server-card.contract.json` plus `npm run verify:metadata` so CI verifies the intentional split between the npm sealed manifest (**80 stdio / 81 locked surfaces**) and the live hosted server card (**94 tools**).
+- Added a [Lifecycle Backend Smoke Checklist](docs/lifecycle-backend-smoke.md) that blocks closing the lifecycle cleanup audit until the deployed `mcp-data` backend supports and verifies the new cleanup actions.
 - Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
 
 ## [1.7.10] - 2026-05-01

@@ -13,6 +13,7 @@ import type {
 } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { extractJsonArray } from '../lib/parse-utils.js';
+import { toolError } from '../lib/tool-error.js';
 
 function toRecord(value: unknown): Record<string, unknown> | undefined {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : undefined;
@@ -724,6 +725,91 @@ export function registerPlanningTools(server: McpServer): void {
             text: `Updated ${post_updates.length} post(s) in plan ${plan_id}.`,
           },
         ],
+        isError: false,
+      };
+    }
+  );
+
+  server.tool(
+    'delete_content_plan',
+    'Delete a persisted content plan and its draft approval workflow records. Requires delete_confirmed=true because this removes MCP-created planning state.',
+    {
+      plan_id: z.string().uuid().describe('Persisted content plan ID to delete.'),
+      delete_confirmed: z
+        .boolean()
+        .default(false)
+        .describe('Required. Set true only after the user confirms deletion.'),
+      response_format: z.enum(['text', 'json']).default('json'),
+    },
+    async ({ plan_id, delete_confirmed, response_format }) => {
+      const startedAt = Date.now();
+
+      if (!delete_confirmed) {
+        return toolError(
+          'validation_error',
+          'Deleting a content plan requires explicit confirmation. Re-run with delete_confirmed=true after the user approves deletion.'
+        );
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        plan_id?: string;
+        deleted?: boolean;
+        message?: string;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'delete-content-plan', plan_id },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error) {
+        const message = safeErrorMessage(error);
+        logMcpToolInvocation({
+          toolName: 'delete_content_plan',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { plan_id, error: message },
+        });
+        return toolError('server_error', `Failed to delete content plan: ${message}`);
+      }
+
+      if (!result?.success) {
+        const message = safeErrorMessage(result?.error, `No content plan found for plan_id=${plan_id}`);
+        logMcpToolInvocation({
+          toolName: 'delete_content_plan',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { plan_id, error: message },
+        });
+        return toolError(
+          /not found|no content plan/i.test(message) ? 'not_found' : 'server_error',
+          `Failed to delete content plan: ${message}`
+        );
+      }
+
+      const payload = {
+        plan_id: result.plan_id ?? plan_id,
+        deleted: result.deleted ?? true,
+        message: result.message ?? null,
+      };
+
+      logMcpToolInvocation({
+        toolName: 'delete_content_plan',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        details: { plan_id: payload.plan_id },
+      });
+
+      if (response_format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          isError: false,
+        };
+      }
+
+      return {
+        content: [{ type: 'text' as const, text: `Deleted content plan ${payload.plan_id}.` }],
         isError: false,
       };
     }

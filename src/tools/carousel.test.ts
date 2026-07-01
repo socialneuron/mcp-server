@@ -248,6 +248,14 @@ describe('carousel tools', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.jobIds).toHaveLength(0);
       expect(parsed.data.failedSlides).toHaveLength(2);
+      expect(parsed.data.failedSlides[0].billing).toMatchObject({
+        billing_status: 'failed_no_charge',
+        credits_reserved: 0,
+        credits_charged: 0,
+        credits_refunded: 0,
+        inferred: true,
+      });
+      expect(parsed.data.credits.failedImagesNoCharge).toBe(2);
     });
 
     it('includes credit breakdown in json response', async () => {
@@ -381,6 +389,41 @@ describe('carousel tools', () => {
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.brandApplied).toBeNull();
+    });
+  });
+
+  describe('delete_carousel', () => {
+    it('requires explicit confirmation before deletion', async () => {
+      const handler = server.getHandler('delete_carousel')!;
+      const result = await handler({ carousel_id: 'carousel_123' });
+
+      expect(result.isError).toBe(true);
+      expect(result._meta.error_type).toBe('validation_error');
+      expect(result.content[0].text).toContain('requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('deletes a carousel through mcp-data', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, carousel_id: 'carousel_123', deleted: true },
+        error: null,
+      });
+
+      const handler = server.getHandler('delete_carousel')!;
+      const result = await handler({
+        carousel_id: 'carousel_123',
+        delete_confirmed: true,
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        { action: 'delete-carousel', carousel_id: 'carousel_123', carouselId: 'carousel_123' },
+        { timeoutMs: 10_000 }
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toMatchObject({ carousel_id: 'carousel_123', deleted: true });
     });
   });
 });
