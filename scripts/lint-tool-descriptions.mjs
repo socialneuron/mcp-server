@@ -76,6 +76,13 @@ const PUBLIC_CONTRACT_EXPECTATIONS = [
   ['docs/auth.md', '| Pro | `mcp:read`, `mcp:analytics` |'],
   ['docs/auth.md', '| Agency | `mcp:full` |'],
   ['docs/troubleshooting.md', '1.7.13 or newer includes the fix'],
+  ['docs/lifecycle-backend-smoke.md', 'Do not close #186'],
+  ['docs/lifecycle-backend-smoke.md', 'deployed `mcp-data` backend'],
+  ['docs/lifecycle-backend-smoke.md', '`cancel-async-job`'],
+  ['docs/lifecycle-backend-smoke.md', '`delete-carousel`'],
+  ['docs/lifecycle-backend-smoke.md', '`cancel-scheduled-post`'],
+  ['docs/lifecycle-backend-smoke.md', '`delete-content-plan`'],
+  ['docs/lifecycle-backend-smoke.md', '`delete-autopilot-config`'],
 
   // Security/package hygiene docs.
   ['SECURITY.md', '| 1.7.x   | Yes       |'],

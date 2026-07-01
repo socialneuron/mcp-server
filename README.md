@@ -507,6 +507,7 @@ See the [`examples/`](examples/) directory:
 - [Integration Methods](docs/integration-methods.md) — MCP vs REST vs CLI vs SDK
 - [Troubleshooting](docs/troubleshooting.md) — common issues & fixes
 - [Verifying tools.lock.json](docs/verifying-tools-lock.md) — supply-chain integrity
+- [Lifecycle Backend Smoke Checklist](docs/lifecycle-backend-smoke.md) — deployed-backend proof required before closing lifecycle audit issues
 
 ## Links
 
