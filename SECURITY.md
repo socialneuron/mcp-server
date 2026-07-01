@@ -35,13 +35,13 @@ This policy covers:
 
 ## Supported Versions
 
+The latest `1.7.x` release line receives fixes. Older minor lines should be upgraded before relying on the hosted API/MCP surfaces, because tool metadata, auth scopes, and pricing assumptions can drift across minors.
+
 | Version | Supported |
 | ------- | --------- |
 | 1.7.x   | Yes       |
-| 1.6.x   | Yes       |
-| 1.5.x   | Yes       |
-| 1.4.x   | Yes       |
-| < 1.4   | No        |
+| 1.6.x   | Critical fixes only |
+| < 1.6   | No        |
 
 ## Credential Safety
 
@@ -74,6 +74,7 @@ The `.gitleaks.toml` configuration allowlists this file to suppress false positi
 
 ## Rate Limiting
 
-- Edge Function endpoints enforce per-IP rate limits (60 requests/minute)
+- Edge Function endpoints enforce per-IP rate limits before authentication (60 requests/minute)
+- Plan-level API/MCP limits start at Pro: Pro 30 requests/minute, Team 60 requests/minute, Agency 120 requests/minute
 - API keys are hashed (SHA-256) before storage and comparison
 - Key cache entries expire after 5 minutes to avoid connector heartbeat lockouts; revocation evicts the local cache immediately on the replica that handles it

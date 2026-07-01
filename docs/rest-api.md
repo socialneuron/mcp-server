@@ -42,7 +42,7 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"topic": "sustainable fashion trends", "platforms": ["instagram", "tiktok"]}' \
+  -d '{"topic": "sustainable fashion trends", "platforms": ["tiktok", "youtube"]}' \
   https://mcp.socialneuron.com/v1/content/generate
 ```
 
@@ -59,7 +59,7 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
-  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["instagram"], "schedule_at": "<ISO-8601 timestamp>"}' \
+  -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["tiktok"], "schedule_at": "<ISO-8601 timestamp>"}' \
   https://mcp.socialneuron.com/v1/distribution/schedule
 ```
 
@@ -158,7 +158,7 @@ These are thin wrappers over the tool proxy for common operations.
   },
   "_meta": {
     "tool": "get_credit_balance",
-    "version": "1.5.2",
+    "version": "1.7.13",
     "timestamp": "<ISO-8601 timestamp>"
   }
 }
@@ -190,15 +190,15 @@ These are thin wrappers over the tool proxy for common operations.
 
 ## Rate Limits
 
-| Tier | Requests/min | Credits/mo | API/MCP access |
-|------|-------------|------------|----------------|
-| Free | 60 | 100 | — |
-| Starter | 60 | 500 | — |
-| Pro | 60 | 1,500 | MCP read + analytics |
+| Tier | API/MCP requests/min | Credits/mo | API/MCP access |
+|------|----------------------|------------|----------------|
+| Free | — | 100 | — |
+| Starter | — | 500 | — |
+| Pro | 30 | 1,500 | MCP read + analytics |
 | Team | 60 | 3,500 | Full MCP |
-| Agency | 60 | 10,000 | Full MCP + REST API |
+| Agency | 120 | 10,000 | Full MCP + REST API |
 
-Per-IP rate limit: 60 requests/minute (before auth).
+The hosted gateway also applies a pre-auth per-IP shield of 60 requests/minute before token and scope checks. Individual high-cost tool families can be tighter; for example, posting tools use a 30/minute bucket and screenshot tools use a 10/minute bucket.
 
 ## Scopes
 

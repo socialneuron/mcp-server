@@ -67,10 +67,11 @@ const PUBLIC_CONTRACT_EXPECTATIONS = [
   ['README.md', '| Pro | $49/mo | 1,500 | Read + Analytics |'],
   ['README.md', '| Team | $99/mo | 3,500 | Full + 5 keys |'],
   ['README.md', '| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |'],
-  ['docs/rest-api.md', '| Starter | 60 | 500 | — |'],
-  ['docs/rest-api.md', '| Pro | 60 | 1,500 | MCP read + analytics |'],
+  ['docs/rest-api.md', '"version": "1.7.13"'],
+  ['docs/rest-api.md', '| Starter | — | 500 | — |'],
+  ['docs/rest-api.md', '| Pro | 30 | 1,500 | MCP read + analytics |'],
   ['docs/rest-api.md', '| Team | 60 | 3,500 | Full MCP |'],
-  ['docs/rest-api.md', '| Agency | 60 | 10,000 | Full MCP + REST API |'],
+  ['docs/rest-api.md', '| Agency | 120 | 10,000 | Full MCP + REST API |'],
   ['docs/auth.md', '| Pro | `mcp:read`, `mcp:analytics` |'],
   ['docs/auth.md', '| Agency | `mcp:full` |'],
   ['docs/troubleshooting.md', '1.7.13 or newer includes the fix'],
@@ -78,6 +79,7 @@ const PUBLIC_CONTRACT_EXPECTATIONS = [
 
   // Security/package hygiene docs.
   ['SECURITY.md', '| 1.7.x   | Yes       |'],
+  ['SECURITY.md', '| 1.6.x   | Critical fixes only |'],
   ['SECURITY.md', '`tools.lock.json`'],
   ['SECURITY.md', 'Key cache entries expire after 5 minutes'],
 ];
@@ -90,13 +92,19 @@ const PUBLIC_CONTRACT_FORBIDDEN = [
   ['docs/rest-api.md', 'Pro | 60 | 2,000'],
   ['docs/rest-api.md', 'Team | 60 | 6,500'],
   ['docs/rest-api.md', '"monthlyLimit": 2000'],
+  ['docs/rest-api.md', '"version": "1.5.2"'],
   ['docs/integration-methods.md', '92 tools'],
   ['docs/landing-page-brief.md', '92 AI tools'],
   ['docs/landing-page-brief.md', '20+ AI models'],
   ['docs/landing-page-brief.md', '| MCP tools | 92 |'],
+  ['docs/landing-page-brief.md', '35 endpoints'],
+  ['docs/landing-page-brief.md', 'Supported platforms | 8'],
+  ['docs/landing-page-brief.md', 'Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky'],
   ['docs/auth.md', '| Pro | `mcp:full`'],
   ['docs/troubleshooting.md', 'should be >= 1.7.13'],
   ['SECURITY.md', 'Key cache entries expire after 10 seconds'],
+  ['SECURITY.md', '| 1.5.x   | Yes'],
+  ['SECURITY.md', '| 1.4.x   | Yes'],
 ];
 
 function readRepoFile(path) {
