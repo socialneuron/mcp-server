@@ -19,6 +19,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Documentation
 - Production-grade README + docs pass: clarified tool surfaces (**80 over stdio**, **94** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
+- Added `hosted-server-card.contract.json` plus `npm run verify:metadata` so CI verifies the intentional split between the npm sealed manifest (**80 stdio / 81 locked surfaces**) and the live hosted server card (**94 tools**).
 - Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
 
 ## [1.7.10] - 2026-05-01

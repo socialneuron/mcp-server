@@ -10,13 +10,25 @@ Per [CVE-2025-6514](https://nvd.nist.gov/vuln/detail/CVE-2025-6514), a compromis
 
 At build time, `scripts/build-tools-lock.mjs`:
 
-1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered tools — exactly the 80 tools a stdio (npm) client receives from `tools/list`.
+1. Instantiates the server and runs `registerAllTools(server, { skipApps: true })`, then enumerates the registered tools — exactly the 80 tools over stdio that an npm client receives from `tools/list`.
 2. Serializes runtime `tools/list` metadata that can influence the model: title, description, scope, JSON-schema-compatible input/output schemas, annotations, and `_meta`.
 3. Enumerates `src/lib/tool-catalog.ts`, the static catalog served by `search_tools`. This adds the HTTP-only `open_content_calendar` catalog entry, so the lock currently covers 81 model-visible tool surfaces.
 4. For each tool name, canonicalizes the combined runtime/catalog metadata with stable key ordering.
 5. SHA-256 hashes the UTF-8 bytes and writes `tools.lock.json` with one hex hash per tool.
 
 The full lockfile is included in every published tarball (`package.json#files`).
+
+## Hosted Server-Card Contract
+
+`tools.lock.json` is intentionally not regenerated to match hosted-only product tools. It seals the npm package's stdio/runtime metadata plus the public `search_tools` catalog.
+
+The hosted discovery surface is tracked separately in [`hosted-server-card.contract.json`](../hosted-server-card.contract.json). CI runs `npm run verify:metadata` with `SN_VERIFY_LIVE_SERVER_CARD=1`, which checks:
+
+- `tools.lock.json` still matches the npm stdio/runtime and catalog counts
+- README/docs count references match the local npm surface and hosted contract
+- the live hosted server card still matches the hosted contract's version, tool count, and tool-name set
+
+If the hosted endpoint adds or removes tools, update `hosted-server-card.contract.json` in the same PR as the docs. If the npm stdio package changes tools, regenerate `tools.lock.json` instead.
 
 ## Pin a known-good hash
 
@@ -95,7 +107,7 @@ Re-audit (recompute your pinned hash) whenever:
 
 ## Upstream enforcement
 
-The publisher side (this repo) enforces the same invariant in CI via `scripts/verify-tools-lock.mjs` and `scripts/lint-tool-descriptions.mjs`:
+The publisher side (this repo) enforces the same invariant in CI via `scripts/verify-tools-lock.mjs`, `scripts/verify-public-metadata-contract.mjs`, and `scripts/lint-tool-descriptions.mjs`:
 
 - Any PR that changes runtime or catalog tool metadata without also bumping `tools.lock.json` fails CI
 - Any PR whose model-visible tool metadata contains prompt-injection patterns (3+ newlines, zero-width chars, role-play markers, off-allowlist URLs, email addresses) fails CI

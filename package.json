@@ -11,6 +11,7 @@
   "files": [
     "dist/",
     "tools.lock.json",
+    "hosted-server-card.contract.json",
     "README.md",
     "CHANGELOG.md",
     "LICENSE"
@@ -69,6 +70,7 @@
     "build:app": "cd apps/content-calendar && (test -d node_modules || npm install --ignore-scripts --no-audit --no-fund) && npm run build",
     "build:all": "npm run build:stdio && npm run build && npm run build:sn && npm run build:lock && npm run build:app",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
+    "verify:metadata": "node scripts/verify-public-metadata-contract.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",
     "start:stdio": "node dist/index.js",

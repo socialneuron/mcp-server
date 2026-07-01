@@ -284,7 +284,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-> Full machine-readable listing in [`tools.lock.json`](tools.lock.json) (sealed manifest, verified in CI).
+> Full machine-readable npm listing in [`tools.lock.json`](tools.lock.json). Hosted discovery is tracked separately in [`hosted-server-card.contract.json`](hosted-server-card.contract.json); CI verifies both contracts.
 
 All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 
@@ -293,7 +293,7 @@ All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
 | Category | Tools | What It Does |
 |----------|-------|-------------|
 | Ideation | generate_content, fetch_trends, adapt_content, get_ideation_context | AI-powered content ideas and trend research |
-| Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 20+ AI models |
+| Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 35+ AI models |
 | Distribution | schedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Multi-platform publishing, scheduling, and slot optimization |
 | Analytics | fetch_analytics, refresh_platform_analytics | Performance tracking across all platforms |
 | Insights | get_performance_insights, get_best_posting_times | Data-driven content optimization |

@@ -57,6 +57,11 @@ jobs:
       - name: Verify tools.lock.json drift
         run: npm run verify:lock
 
+      - name: Verify public metadata contract
+        run: npm run verify:metadata
+        env:
+          SN_VERIFY_LIVE_SERVER_CARD: "1"
+
       - name: Audit (critical)
         run: npm audit --audit-level=critical
 
