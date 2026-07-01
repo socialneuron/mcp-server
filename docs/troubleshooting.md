@@ -15,7 +15,7 @@ This was a stdout-corruption bug fixed in the **1.7.13** code line — any log w
 npm view @socialneuron/mcp-server version   # 1.7.13 or newer includes the fix
 npx -y @socialneuron/mcp-server@latest --version
 ```
-If npm still reports `1.7.12`, the fixed package has not been published yet; use a checked-out build or wait for the next npm publish. After `1.7.13` is published, pin `>=1.7.13`. Never add `console.log` to a custom fork's hot path — stdio uses stdout for JSON-RPC; logs go to stderr.
+Pin `>=1.7.13` when you need the stdout fix. Never add `console.log` to a custom fork's hot path — stdio uses stdout for JSON-RPC; logs go to stderr.
 
 ### `npx` keeps running an old version
 npx caches packages. Force the latest:

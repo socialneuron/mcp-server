@@ -76,7 +76,6 @@ const PUBLIC_CONTRACT_EXPECTATIONS = [
   ['docs/auth.md', '| Pro | `mcp:read`, `mcp:analytics` |'],
   ['docs/auth.md', '| Agency | `mcp:full` |'],
   ['docs/troubleshooting.md', '1.7.13 or newer includes the fix'],
-  ['docs/troubleshooting.md', 'If npm still reports `1.7.12`, the fixed package has not been published yet'],
 
   // Security/package hygiene docs.
   ['SECURITY.md', '| 1.7.x   | Yes       |'],
@@ -104,6 +103,8 @@ const PUBLIC_CONTRACT_FORBIDDEN = [
   ['docs/landing-page-brief.md', 'Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky'],
   ['docs/auth.md', '| Pro | `mcp:full`'],
   ['docs/troubleshooting.md', 'should be >= 1.7.13'],
+  ['docs/troubleshooting.md', '1.7.12'],
+  ['docs/troubleshooting.md', 'fixed package has not been published yet'],
   ['SECURITY.md', 'Key cache entries expire after 10 seconds'],
   ['SECURITY.md', '| 1.5.x   | Yes'],
   ['SECURITY.md', '| 1.4.x   | Yes'],
