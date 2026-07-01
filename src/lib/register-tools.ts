@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
-import { toolError } from './tool-error.js';
+import { ensureToolErrorMeta, toolError } from './tool-error.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -79,7 +79,7 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
           });
         }
         const result = await originalHandler(...handlerArgs);
-        return truncateResponse(result);
+        return truncateResponse(ensureToolErrorMeta(result));
       };
     }
 

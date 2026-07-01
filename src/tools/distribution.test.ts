@@ -493,6 +493,56 @@ describe('distribution tools', () => {
   });
 
   // =========================================================================
+  // cancel_scheduled_post
+  // =========================================================================
+  describe('cancel_scheduled_post', () => {
+    it('requires explicit confirmation before canceling a scheduled post', async () => {
+      const handler = server.getHandler('cancel_scheduled_post')!;
+      const result = await handler({ post_id: 'post-123' });
+
+      expect(result.isError).toBe(true);
+      expect(result._meta.error_type).toBe('validation_error');
+      expect(result.content[0].text).toContain('requires explicit confirmation');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('cancels a scheduled post through mcp-data', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, post_id: 'post-123', canceled: true, status: 'canceled' },
+        error: null,
+      });
+
+      const handler = server.getHandler('cancel_scheduled_post')!;
+      const result = await handler({
+        post_id: 'post-123',
+        platform: 'youtube',
+        cancel_confirmed: true,
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBe(false);
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        {
+          action: 'cancel-scheduled-post',
+          post_id: 'post-123',
+          postId: 'post-123',
+          platform: 'youtube',
+          platform_name: 'YouTube',
+        },
+        { timeoutMs: 15_000 }
+      );
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data).toMatchObject({
+        post_id: 'post-123',
+        canceled: true,
+        status: 'canceled',
+        platform: 'youtube',
+      });
+    });
+  });
+
+  // =========================================================================
   // list_connected_accounts
   // =========================================================================
   describe('list_connected_accounts', () => {

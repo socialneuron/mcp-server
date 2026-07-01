@@ -1,8 +1,8 @@
 # @socialneuron/mcp-server
 
-> 75 MCP tools backed by 35+ AI models for social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
+> 80 MCP tools backed by 35+ AI models for social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
 >
-> This npm package registers **75 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **94-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+> This npm package registers **80 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **94-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)

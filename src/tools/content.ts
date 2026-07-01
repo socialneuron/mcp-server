@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { requestContext } from '../lib/request-context.js';
 import type {
   GenerateVideoResponse,
@@ -12,6 +12,7 @@ import type {
   ResponseEnvelope,
 } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { toolError } from '../lib/tool-error.js';
 
 interface AsyncJob {
   id: string;
@@ -33,6 +34,16 @@ interface AsyncJob {
     all_urls?: string[];
     [key: string]: unknown;
   } | null;
+}
+
+interface JobBillingSummary {
+  billing_status: string | null;
+  credits_reserved: number | null;
+  credits_charged: number | null;
+  credits_refunded: number | null;
+  failure_reason: string | null;
+  reported: boolean;
+  inferred: boolean;
 }
 
 const MAX_CREDITS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN || 0));
@@ -122,14 +133,7 @@ function firstString(...values: unknown[]): string | null {
   return null;
 }
 
-function getJobBillingSummary(job: AsyncJob): {
-  billing_status: string | null;
-  credits_reserved: number | null;
-  credits_charged: number | null;
-  credits_refunded: number | null;
-  failure_reason: string | null;
-  reported: boolean;
-} {
+function getJobBillingSummary(job: AsyncJob): JobBillingSummary {
   const meta = job.result_metadata ?? {};
   const billing_status = firstString(
     job.billing_status,
@@ -149,26 +153,41 @@ function getJobBillingSummary(job: AsyncJob): {
   );
   const failure_reason = firstString(job.failure_reason, meta.failure_reason, meta.failureReason);
 
+  const reported =
+    billing_status !== null ||
+    credits_reserved !== null ||
+    credits_charged !== null ||
+    credits_refunded !== null ||
+    failure_reason !== null;
+
+  if (!reported && job.status === 'failed') {
+    return {
+      billing_status: 'failed_no_charge',
+      credits_reserved: 0,
+      credits_charged: 0,
+      credits_refunded: 0,
+      failure_reason:
+        firstString(job.failure_reason, meta.failure_reason, meta.failureReason, job.error_message) ??
+        'backend did not report a failure reason',
+      reported: false,
+      inferred: true,
+    };
+  }
+
   return {
     billing_status,
     credits_reserved,
     credits_charged,
     credits_refunded,
     failure_reason,
-    reported:
-      billing_status !== null ||
-      credits_reserved !== null ||
-      credits_charged !== null ||
-      credits_refunded !== null ||
-      failure_reason !== null,
+    reported,
+    inferred: false,
   };
 }
 
 function formatBillingSummary(job: AsyncJob): string | null {
   const billing = getJobBillingSummary(job);
-  if (!billing.reported) {
-    return job.status === 'failed' ? 'Billing status: not reported by backend' : null;
-  }
+  if (!billing.reported && !billing.inferred) return null;
 
   const parts = [
     billing.billing_status ? `status=${billing.billing_status}` : null,
@@ -325,10 +344,7 @@ export function registerContentTools(server: McpServer): void {
             MAX_ASSETS_PER_RUN,
           },
         });
-        return {
-          content: [{ type: 'text' as const, text: assetBudget.message }],
-          isError: true,
-        };
+        return toolError('billing_error', assetBudget.message);
       }
       const estimatedCost = VIDEO_CREDIT_ESTIMATES[model] ?? 120;
       const budgetCheck = checkCreditBudget(estimatedCost);
@@ -344,10 +360,7 @@ export function registerContentTools(server: McpServer): void {
             MAX_CREDITS_PER_RUN,
           },
         });
-        return {
-          content: [{ type: 'text' as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return toolError('billing_error', budgetCheck.message);
       }
       const rateLimit = checkRateLimit('posting', `generate_video:${userId}`);
       if (!rateLimit.allowed) {
@@ -357,15 +370,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: rateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('rate_limited', `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`);
       }
 
       const { data, error } = await callEdgeFunction<GenerateVideoResponse>(
@@ -389,15 +394,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Video generation failed to start: ${error}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', `Video generation failed to start: ${safeErrorMessage(error)}`);
       }
 
       if (!data?.taskId && !data?.asyncJobId) {
@@ -407,15 +404,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: 'No job ID returned' },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Video generation failed: no job ID returned.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', 'Video generation failed: no job ID returned.');
       }
 
       const jobId = data.asyncJobId ?? data.taskId;
@@ -541,10 +530,7 @@ export function registerContentTools(server: McpServer): void {
             MAX_ASSETS_PER_RUN,
           },
         });
-        return {
-          content: [{ type: 'text' as const, text: assetBudget.message }],
-          isError: true,
-        };
+        return toolError('billing_error', assetBudget.message);
       }
       const estimatedCost = IMAGE_CREDIT_ESTIMATES[model] ?? 30;
       const budgetCheck = checkCreditBudget(estimatedCost);
@@ -560,10 +546,7 @@ export function registerContentTools(server: McpServer): void {
             MAX_CREDITS_PER_RUN,
           },
         });
-        return {
-          content: [{ type: 'text' as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return toolError('billing_error', budgetCheck.message);
       }
       const rateLimit = checkRateLimit('posting', `generate_image:${userId}`);
       if (!rateLimit.allowed) {
@@ -573,15 +556,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: rateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('rate_limited', `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`);
       }
 
       const { data, error } = await callEdgeFunction<GenerateImageResponse>(
@@ -602,15 +577,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Image generation failed to start: ${error}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', `Image generation failed to start: ${safeErrorMessage(error)}`);
       }
 
       if (!data?.taskId && !data?.asyncJobId) {
@@ -620,15 +587,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: 'No job ID returned' },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Image generation failed: no job ID returned.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', 'Image generation failed: no job ID returned.');
       }
 
       const jobId = data.asyncJobId ?? data.taskId;
@@ -713,15 +672,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: 'Invalid job_id format' },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Invalid job_id format.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError('validation_error', 'Invalid job_id format.');
       }
 
       // Route through mcp-data EF (works with API key via gateway — no service role key needed)
@@ -742,15 +693,7 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: jobLookupError },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Failed to look up job: ${jobLookupError}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', `Failed to look up job: ${safeErrorMessage(jobLookupError)}`);
       }
 
       if (!job) {
@@ -760,15 +703,10 @@ export function registerContentTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: 'No job found', jobId: job_id },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `No job found with ID "${job_id}". The ID may be incorrect or the job has expired.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'not_found',
+          `No job found with ID "${job_id}". The ID may be incorrect or the job has expired.`
+        );
       }
 
       // If job is still pending/processing, try to get live status from Kie.ai
@@ -779,6 +717,11 @@ export function registerContentTools(server: McpServer): void {
         });
 
         if (liveStatus) {
+          const liveJob = {
+            ...job,
+            status: liveStatus.status === 'failed' ? 'failed' : job.status,
+            error_message: liveStatus.error ?? job.error_message,
+          };
           const lines = [
             `Job: ${job.id}`,
             `Type: ${job.job_type}`,
@@ -793,6 +736,8 @@ export function registerContentTools(server: McpServer): void {
             lines.push(`Error: ${liveStatus.error}`);
           }
           lines.push(`Credits: ${job.credits_cost}`);
+          const billingLine = formatBillingSummary(liveJob);
+          if (billingLine) lines.push(billingLine);
           lines.push(`Created: ${job.created_at}`);
 
           await logMcpToolInvocation({
@@ -813,6 +758,7 @@ export function registerContentTools(server: McpServer): void {
                       model: job.model,
                       ...liveStatus,
                       credits: job.credits_cost,
+                      billing: getJobBillingSummary(liveJob),
                       createdAt: job.created_at,
                     }),
                     null,
@@ -888,6 +834,116 @@ export function registerContentTools(server: McpServer): void {
       }
       return {
         content: [{ type: 'text' as const, text: lines.join('\n') }],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // cancel_async_job
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'cancel_async_job',
+    'Cancel a queued or processing async generation job created by generate_image, generate_video, render_template_video, or similar async media tools. Requires cancel_confirmed=true because it stops paid/background work.',
+    {
+      job_id: z
+        .string()
+        .describe('The async job ID returned by a generation or render tool.'),
+      cancel_confirmed: z
+        .boolean()
+        .default(false)
+        .describe('Required. Set true only after the user confirms they want to cancel this job.'),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Optional response format. Defaults to text.'),
+    },
+    async ({ job_id, cancel_confirmed, response_format }) => {
+      const format = response_format ?? 'text';
+      const startedAt = Date.now();
+
+      if (!/^[a-zA-Z0-9_.:-]{1,160}$/.test(job_id)) {
+        await logMcpToolInvocation({
+          toolName: 'cancel_async_job',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { error: 'Invalid job_id format' },
+        });
+        return toolError('validation_error', 'Invalid job_id format.');
+      }
+
+      if (!cancel_confirmed) {
+        return toolError(
+          'validation_error',
+          'Canceling an async job requires explicit confirmation. Re-run with cancel_confirmed=true after the user approves cancellation.'
+        );
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        job_id?: string;
+        status?: string;
+        canceled?: boolean;
+        message?: string;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'cancel-async-job', jobId: job_id, job_id },
+        { timeoutMs: 10_000 }
+      );
+
+      if (error) {
+        await logMcpToolInvocation({
+          toolName: 'cancel_async_job',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { error },
+        });
+        return toolError('server_error', `Failed to cancel async job: ${safeErrorMessage(error)}`);
+      }
+
+      if (!result?.success) {
+        const message = safeErrorMessage(result?.error, 'No matching cancelable async job found.');
+        await logMcpToolInvocation({
+          toolName: 'cancel_async_job',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { job_id, error: message },
+        });
+        return toolError(
+          /not found|no matching/i.test(message) ? 'not_found' : 'server_error',
+          `Failed to cancel async job: ${message}`
+        );
+      }
+
+      const payload = {
+        job_id: result.job_id ?? job_id,
+        canceled: result.canceled ?? true,
+        status: result.status ?? 'canceled',
+        message: result.message ?? null,
+      };
+
+      await logMcpToolInvocation({
+        toolName: 'cancel_async_job',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        details: { job_id: payload.job_id, status: payload.status },
+      });
+
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          isError: false,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Canceled async job ${payload.job_id}. Status: ${payload.status}.`,
+          },
+        ],
+        isError: false,
       };
     }
   );

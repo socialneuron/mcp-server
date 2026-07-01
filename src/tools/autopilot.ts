@@ -4,6 +4,8 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { safeErrorMessage } from '../lib/sanitize-error.js';
+import { toolError } from '../lib/tool-error.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -149,17 +151,10 @@ export function registerAutopilotTools(server: McpServer): void {
     }) => {
       const startedAt = Date.now();
       if (is_active === true && !activation_confirmed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                'Enabling autopilot requires explicit confirmation. Re-run with ' +
-                'activation_confirmed=true after the user approves recurring automation.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'validation_error',
+          'Enabling autopilot requires explicit confirmation. Re-run with activation_confirmed=true after the user approves recurring automation.'
+        );
       }
 
       // Autopilot configs drive recurring automated posting. Rate-limit
@@ -174,15 +169,10 @@ export function registerAutopilotTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: apRateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${apRateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'rate_limited',
+          `Rate limit exceeded. Retry in ~${apRateLimit.retryAfter}s.`
+        );
       }
 
       if (
@@ -223,15 +213,7 @@ export function registerAutopilotTools(server: McpServer): void {
       });
 
       if (efError) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error updating config: ${efError}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', `Error updating config: ${safeErrorMessage(efError)}`);
       }
 
       const updated = result?.updated;
@@ -256,6 +238,99 @@ export function registerAutopilotTools(server: McpServer): void {
               `Schedule: ${JSON.stringify(updated.schedule_config)}`,
           },
         ],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // delete_autopilot_config
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'delete_autopilot_config',
+    'Delete an autopilot configuration and stop future automated runs for it. Use list_autopilot_configs to find config_id first. Requires delete_confirmed=true because it removes automation state.',
+    {
+      config_id: z.string().uuid().describe('The autopilot config ID to delete.'),
+      delete_confirmed: z
+        .boolean()
+        .default(false)
+        .describe('Required. Set true only after the user confirms deletion.'),
+      response_format: z.enum(['text', 'json']).optional().describe('Default: text.'),
+    },
+    async ({ config_id, delete_confirmed, response_format }) => {
+      const format = response_format ?? 'text';
+      const startedAt = Date.now();
+
+      if (!delete_confirmed) {
+        return toolError(
+          'validation_error',
+          'Deleting an autopilot config requires explicit confirmation. Re-run with delete_confirmed=true after the user approves deletion.'
+        );
+      }
+
+      const { data: result, error: efError } = await callEdgeFunction<{
+        success: boolean;
+        config_id?: string;
+        deleted?: boolean;
+        message?: string;
+        error?: string;
+      }>(
+        'mcp-data',
+        { action: 'delete-autopilot-config', config_id },
+        { timeoutMs: 10_000 }
+      );
+
+      if (efError) {
+        logMcpToolInvocation({
+          toolName: 'delete_autopilot_config',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { config_id, error: efError },
+        });
+        return toolError(
+          'server_error',
+          `Error deleting autopilot config: ${safeErrorMessage(efError)}`
+        );
+      }
+
+      if (!result?.success) {
+        const message = safeErrorMessage(result?.error, 'Autopilot config not found.');
+        logMcpToolInvocation({
+          toolName: 'delete_autopilot_config',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { config_id, error: message },
+        });
+        return toolError(
+          /not found/i.test(message) ? 'not_found' : 'server_error',
+          `Error deleting autopilot config: ${message}`
+        );
+      }
+
+      const payload = {
+        config_id: result.config_id ?? config_id,
+        deleted: result.deleted ?? true,
+        message: result.message ?? null,
+      };
+
+      logMcpToolInvocation({
+        toolName: 'delete_autopilot_config',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        details: { config_id: payload.config_id },
+      });
+
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          isError: false,
+        };
+      }
+
+      return {
+        content: [
+          { type: 'text' as const, text: `Deleted autopilot config ${payload.config_id}.` },
+        ],
+        isError: false,
       };
     }
   );
@@ -374,18 +449,10 @@ export function registerAutopilotTools(server: McpServer): void {
     }) => {
       const startedAt = Date.now();
       if (is_active && !activation_confirmed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                'Activating autopilot requires explicit confirmation. Re-run with ' +
-                'activation_confirmed=true after the user approves recurring automation, ' +
-                'or set is_active=false to create a paused config.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'validation_error',
+          'Activating autopilot requires explicit confirmation. Re-run with activation_confirmed=true after the user approves recurring automation, or set is_active=false to create a paused config.'
+        );
       }
 
       const crUserId = await getDefaultUserId();
@@ -397,15 +464,10 @@ export function registerAutopilotTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: crRateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${crRateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'rate_limited',
+          `Rate limit exceeded. Retry in ~${crRateLimit.retryAfter}s.`
+        );
       }
 
       const format = response_format ?? 'text';
@@ -435,23 +497,15 @@ export function registerAutopilotTools(server: McpServer): void {
       });
 
       if (efError) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Error creating autopilot config: ${efError}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError(
+          'server_error',
+          `Error creating autopilot config: ${safeErrorMessage(efError)}`
+        );
       }
 
       const created = result?.created;
       if (!created) {
-        return {
-          content: [{ type: 'text' as const, text: 'Failed to create config.' }],
-          isError: true,
-        };
+        return toolError('server_error', 'Failed to create config.');
       }
 
       if (format === 'json') {

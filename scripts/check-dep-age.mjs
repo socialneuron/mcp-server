@@ -63,6 +63,7 @@ const deps = {
 
 const failures = [];
 const checked = [];
+const checkErrors = [];
 
 function isExempt(name) {
   for (const prefix of EXEMPT_PREFIXES) {
@@ -91,13 +92,17 @@ for (const [name, versionRange] of Object.entries(deps)) {
     // Use default Accept — the abbreviated v1 format omits `time`.
     const res = await fetch(`https://registry.npmjs.org/${name}`);
     if (!res.ok) {
-      console.warn(`⚠️  Could not fetch registry for ${name}: HTTP ${res.status}`);
+      const message = `Could not fetch registry for ${name}: HTTP ${res.status}`;
+      console.warn(`⚠️  ${message}`);
+      checkErrors.push(message);
       continue;
     }
     const data = await res.json();
     const publishedAt = data.time?.[version];
     if (!publishedAt) {
-      console.warn(`⚠️  No publish time for ${name}@${version} — skipping`);
+      const message = `No publish time for ${name}@${version}`;
+      console.warn(`⚠️  ${message} — skipping`);
+      checkErrors.push(message);
       continue;
     }
     const ageMs = Date.now() - new Date(publishedAt).getTime();
@@ -107,11 +112,20 @@ for (const [name, versionRange] of Object.entries(deps)) {
       failures.push(`${name}@${version} — published ${ageDays} days ago (< ${MIN_AGE_DAYS} day cooldown) on ${publishedAt}`);
     }
   } catch (err) {
-    console.warn(`⚠️  Error checking ${name}: ${err.message}`);
+    const message = `Error checking ${name}: ${err.message}`;
+    console.warn(`⚠️  ${message}`);
+    checkErrors.push(message);
   }
 }
 
 console.log(`Checked ${checked.length} deps against ${MIN_AGE_DAYS}-day cooldown.`);
+
+if (checkErrors.length > 0 && ENFORCE) {
+  console.error(`\n❌ Dependency cooldown check could not verify all direct dependencies:`);
+  for (const error of checkErrors) console.error(`   - ${error}`);
+  console.error(`\nRelease mode requires a successful registry age check for every direct dependency.`);
+  process.exit(1);
+}
 
 if (failures.length > 0) {
   const label = ENFORCE ? '❌' : '⚠️';

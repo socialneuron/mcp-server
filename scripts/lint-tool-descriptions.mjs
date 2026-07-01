@@ -44,18 +44,18 @@ const NEWLINE_RUN = /\n{3,}/;
 
 const PUBLIC_CONTRACT_EXPECTATIONS = [
   // Tool surface counts: local package vs hosted product.
-  ['README.md', 'This npm package registers **75 tools** over stdio'],
+  ['README.md', 'This npm package registers **80 tools** over stdio'],
   ['README.md', 'full **94-tool** product surface'],
   ['docs/rest-api.md', 'currently 94 tools on the hosted product'],
-  ['docs/integration-methods.md', 'exposes **75 tools** over stdio'],
+  ['docs/integration-methods.md', 'exposes **80 tools** over stdio'],
   ['docs/integration-methods.md', 'expanded **94-tool** product surface'],
   ['docs/integration-methods.md', '94 tools on the hosted product'],
-  ['docs/tools-reference.md', 'registers **75 tools** over stdio'],
-  ['docs/verifying-tools-lock.md', '75 tools a stdio'],
-  ['docs/verifying-tools-lock.md', '76 model-visible tool surfaces'],
+  ['docs/tools-reference.md', 'registers **80 tools** over stdio'],
+  ['docs/verifying-tools-lock.md', '80 tools a stdio'],
+  ['docs/verifying-tools-lock.md', '81 model-visible tool surfaces'],
   ['docs/landing-page-brief.md', '"94 AI tools'],
   ['docs/landing-page-brief.md', '| MCP tools | 94 |'],
-  ['server.json', '75 MCP tools'],
+  ['server.json', '80 MCP tools'],
 
   // Model breadth.
   ['README.md', '35+ AI models'],

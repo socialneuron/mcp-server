@@ -96,4 +96,30 @@ describe('applyScopeEnforcement', () => {
       expect.arrayContaining([expect.stringContaining('server configuration issue')])
     );
   });
+
+  it('adds error_type metadata to legacy plain-text tool errors', async () => {
+    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
+
+    const server = {
+      tool: vi.fn(
+        (name: string, _schema: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
+          handlers.set(name, handler);
+        }
+      ),
+    };
+
+    applyScopeEnforcement(server as never, () => ['mcp:read']);
+
+    server.tool('fetch_trends', {}, async () => ({
+      content: [{ type: 'text', text: 'Rate limit exceeded. Retry in 30s.' }],
+      isError: true,
+    }));
+
+    const result = await handlers.get('fetch_trends')?.();
+
+    expect(result).toMatchObject({
+      isError: true,
+      _meta: { error_type: 'rate_limited', code: 'rate_limited' },
+    });
+  });
 });

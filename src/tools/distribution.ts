@@ -7,6 +7,7 @@ import { checkRateLimit } from '../lib/rate-limit.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
+import { inferToolErrorType, toolError } from '../lib/tool-error.js';
 import type {
   SchedulePostResult,
   ConnectedAccount,
@@ -322,10 +323,7 @@ export function registerDistributionTools(server: McpServer): void {
       const format = response_format ?? 'text';
       const startedAt = Date.now();
       if ((!caption || caption.trim().length === 0) && (!title || title.trim().length === 0)) {
-        return {
-          content: [{ type: 'text' as const, text: 'Either caption or title is required.' }],
-          isError: true,
-        };
+        return toolError('validation_error', 'Either caption or title is required.');
       }
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `schedule_post:${userId}`);
@@ -336,15 +334,7 @@ export function registerDistributionTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { retryAfter: rateLimit.retryAfter },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('rate_limited', `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`);
       }
 
       // --- Resolve R2 keys / job IDs to signed URLs ---
@@ -376,29 +366,19 @@ export function registerDistributionTools(server: McpServer): void {
         if (r2_key && !resolvedMediaUrl) {
           const signed = await signR2Key(r2_key);
           if (!signed) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to sign media key. Verify the key exists and you have access.`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              'not_found',
+              'Failed to sign media key. Verify the key exists and you have access.'
+            );
           }
           resolvedMediaUrl = signed;
         } else if (job_id && !resolvedMediaUrl && !r2_key) {
           const resolved = await resolveJobId(job_id);
           if (!resolved) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Job ${job_id} has no result URL. It may still be processing — use check_status first.`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              'validation_error',
+              `Job ${job_id} has no result URL. It may still be processing — use check_status first.`
+            );
           }
           resolvedMediaUrl = resolved;
         }
@@ -407,30 +387,20 @@ export function registerDistributionTools(server: McpServer): void {
           const signed = await Promise.all(r2_keys.map(signR2Key));
           const failIdx = signed.findIndex(s => !s);
           if (failIdx !== -1) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Failed to sign media key at index ${failIdx}. Verify the key exists and you have access.`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              'not_found',
+              `Failed to sign media key at index ${failIdx}. Verify the key exists and you have access.`
+            );
           }
           resolvedMediaUrls = signed as string[];
         } else if (job_ids && job_ids.length > 0 && !resolvedMediaUrls && !r2_keys) {
           const resolved = await Promise.all(job_ids.map(resolveJobId));
           const failIdx = resolved.findIndex(r => !r);
           if (failIdx !== -1) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: `Job ${job_ids[failIdx]} has no result URL. Use check_status to verify completion.`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              'validation_error',
+              `Job ${job_ids[failIdx]} has no result URL. Use check_status to verify completion.`
+            );
           }
           resolvedMediaUrls = resolved as string[];
         }
@@ -447,19 +417,13 @@ export function registerDistributionTools(server: McpServer): void {
         if (shouldRehost && resolvedMediaUrl && !isAlreadyR2Signed(resolvedMediaUrl)) {
           const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
           if ('error' in rehost) {
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text:
-                    `Failed to persist media URL into R2: ${rehost.error}. ` +
-                    `Try upload_media first and pass r2_key instead, or set auto_rehost=false ` +
-                    `if you're sure the URL is publicly durable and every target platform ` +
-                    `accepts URL ingest.`,
-                },
-              ],
-              isError: true,
-            };
+            return toolError(
+              'validation_error',
+              `Failed to persist media URL into R2: ${rehost.error}. ` +
+                `Try upload_media first and pass r2_key instead, or set auto_rehost=false ` +
+                `if you're sure the URL is publicly durable and every target platform ` +
+                `accepts URL ingest.`
+            );
           }
           resolvedMediaUrl = rehost.signedUrl;
         }
@@ -477,17 +441,11 @@ export function registerDistributionTools(server: McpServer): void {
             const failIdx = rehosted.findIndex(r => 'error' in r);
             if (failIdx !== -1) {
               const failed = rehosted[failIdx] as { error: string };
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text:
-                      `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
-                      `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
-                  },
-                ],
-                isError: true,
-              };
+              return toolError(
+                'validation_error',
+                `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
+                  `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`
+              );
             }
             resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
               r => r.signedUrl
@@ -495,15 +453,7 @@ export function registerDistributionTools(server: McpServer): void {
           }
         }
       } catch (resolveErr) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Failed to resolve media: ${sanitizeError(resolveErr)}`,
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', `Failed to resolve media: ${sanitizeError(resolveErr)}`);
       }
 
       // Normalize platform names to DB convention (capitalized) before sending
@@ -545,15 +495,8 @@ export function registerDistributionTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error, platformCount: platforms.length },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Failed to schedule post: ${error}`,
-            },
-          ],
-          isError: true,
-        };
+        const safeMessage = safeErrorMessage(error);
+        return toolError(inferToolErrorType(safeMessage), `Failed to schedule post: ${safeMessage}`);
       }
 
       if (!data) {
@@ -563,15 +506,7 @@ export function registerDistributionTools(server: McpServer): void {
           durationMs: Date.now() - startedAt,
           details: { error: 'No response from schedule-post edge function' },
         });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Post scheduling returned no response.',
-            },
-          ],
-          isError: true,
-        };
+        return toolError('server_error', 'Post scheduling returned no response.');
       }
 
       const lines: string[] = [
@@ -608,6 +543,123 @@ export function registerDistributionTools(server: McpServer): void {
       return {
         content: [{ type: 'text' as const, text: lines.join('\n') }],
         isError: !data.success,
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
+  // cancel_scheduled_post
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'cancel_scheduled_post',
+    'Cancel a scheduled post before publication. Use list_recent_posts with status=scheduled to find post_id first. Requires cancel_confirmed=true because this removes a pending external platform action.',
+    {
+      post_id: z.string().min(1).max(200).describe('Scheduled post ID from list_recent_posts.'),
+      platform: z
+        .enum([
+          'youtube',
+          'tiktok',
+          'instagram',
+          'twitter',
+          'linkedin',
+          'facebook',
+          'threads',
+          'bluesky',
+        ])
+        .optional()
+        .describe('Optional platform filter when the same post_id appears across platforms.'),
+      cancel_confirmed: z
+        .boolean()
+        .default(false)
+        .describe('Required. Set true only after the user confirms cancellation.'),
+      response_format: z.enum(['text', 'json']).optional().describe('Default: text.'),
+    },
+    async ({ post_id, platform, cancel_confirmed, response_format }) => {
+      const format = response_format ?? 'text';
+      const startedAt = Date.now();
+
+      if (!cancel_confirmed) {
+        return toolError(
+          'validation_error',
+          'Canceling a scheduled post requires explicit confirmation. Re-run with cancel_confirmed=true after the user approves cancellation.'
+        );
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        post_id?: string;
+        canceled?: boolean;
+        status?: string;
+        message?: string;
+        error?: string;
+      }>(
+        'mcp-data',
+        {
+          action: 'cancel-scheduled-post',
+          post_id,
+          postId: post_id,
+          ...(platform ? { platform, platform_name: PLATFORM_CASE_MAP[platform] ?? platform } : {}),
+        },
+        { timeoutMs: 15_000 }
+      );
+
+      if (error) {
+        await logMcpToolInvocation({
+          toolName: 'cancel_scheduled_post',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { post_id, platform, error },
+        });
+        return toolError(
+          'server_error',
+          `Failed to cancel scheduled post: ${safeErrorMessage(error)}`
+        );
+      }
+
+      if (!result?.success) {
+        const message = safeErrorMessage(result?.error, 'Scheduled post not found or not cancelable.');
+        await logMcpToolInvocation({
+          toolName: 'cancel_scheduled_post',
+          status: 'error',
+          durationMs: Date.now() - startedAt,
+          details: { post_id, platform, error: message },
+        });
+        return toolError(
+          /not found/i.test(message) ? 'not_found' : 'server_error',
+          `Failed to cancel scheduled post: ${message}`
+        );
+      }
+
+      const payload = {
+        post_id: result.post_id ?? post_id,
+        canceled: result.canceled ?? true,
+        status: result.status ?? 'canceled',
+        platform: platform ?? null,
+        message: result.message ?? null,
+      };
+
+      await logMcpToolInvocation({
+        toolName: 'cancel_scheduled_post',
+        status: 'success',
+        durationMs: Date.now() - startedAt,
+        details: { post_id: payload.post_id, platform, status: payload.status },
+      });
+
+      if (format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+          isError: false,
+        };
+      }
+
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Canceled scheduled post ${payload.post_id}. Status: ${payload.status}.`,
+          },
+        ],
+        isError: false,
       };
     }
   );
