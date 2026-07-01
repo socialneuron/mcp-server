@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "92 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
+**Subheadline:** "94 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
@@ -89,7 +89,7 @@ socialneuron-mcp sn publish \
 ### Card 1: Content Generation
 **Icon:** Sparkle / Wand
 **Title:** "AI-Powered Content"
-**Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 20+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
+**Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 35+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
 **Endpoints:** `POST /v1/content/video`, `POST /v1/content/image`, `POST /v1/content/generate`, `POST /v1/tools/generate_carousel`
 
 ### Card 2: Multi-Platform Scheduling
@@ -155,7 +155,7 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 92 |
+| MCP tools | 94 |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |

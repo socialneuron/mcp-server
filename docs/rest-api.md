@@ -2,7 +2,7 @@
 
 > **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
 
-REST interface to the Social Neuron AI content tools (92 tools on the hosted product). Same auth, scopes, and rate limits as the hosted MCP endpoint.
+REST interface to the Social Neuron AI content tools (currently 94 tools on the hosted product; query the server card for the live count). Same auth, scopes, and rate limits as the hosted MCP endpoint.
 
 ## Base URL
 
@@ -151,9 +151,9 @@ These are thin wrappers over the tool proxy for common operations.
 ```json
 {
   "data": {
-    "balance": 1850,
+    "balance": 1350,
     "monthlyUsed": 150,
-    "monthlyLimit": 2000,
+    "monthlyLimit": 1500,
     "plan": "pro"
   },
   "_meta": {
@@ -190,11 +190,13 @@ These are thin wrappers over the tool proxy for common operations.
 
 ## Rate Limits
 
-| Tier | Requests/min | Credits/mo |
-|------|-------------|------------|
-| Starter | 60 | 800 |
-| Pro | 60 | 2,000 |
-| Team | 60 | 6,500 |
+| Tier | Requests/min | Credits/mo | API/MCP access |
+|------|-------------|------------|----------------|
+| Free | 60 | 100 | — |
+| Starter | 60 | 500 | — |
+| Pro | 60 | 1,500 | MCP read + analytics |
+| Team | 60 | 3,500 | Full MCP |
+| Agency | 60 | 10,000 | Full MCP + REST API |
 
 Per-IP rate limit: 60 requests/minute (before auth).
 

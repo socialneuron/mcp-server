@@ -18,6 +18,11 @@
  */
 
 import { enumerateLockedTools, collectModelVisibleText } from './lib/enumerate-runtime-tools.mjs';
+import { readFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 
 // Invisible / formatting characters that have no place in a tool description.
 const ZERO_WIDTH = /[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/;
@@ -36,6 +41,67 @@ const URL_ALLOWLIST = new Set([
 ]);
 // Three or more consecutive newlines is the classic truncation-hiding trick.
 const NEWLINE_RUN = /\n{3,}/;
+
+const PUBLIC_CONTRACT_EXPECTATIONS = [
+  // Tool surface counts: local package vs hosted product.
+  ['README.md', 'This npm package registers **75 tools** over stdio'],
+  ['README.md', 'full **94-tool** product surface'],
+  ['docs/rest-api.md', 'currently 94 tools on the hosted product'],
+  ['docs/integration-methods.md', 'exposes **75 tools** over stdio'],
+  ['docs/integration-methods.md', 'expanded **94-tool** product surface'],
+  ['docs/integration-methods.md', '94 tools on the hosted product'],
+  ['docs/tools-reference.md', 'registers **75 tools** over stdio'],
+  ['docs/verifying-tools-lock.md', '75 tools a stdio'],
+  ['docs/verifying-tools-lock.md', '76 model-visible tool surfaces'],
+  ['docs/landing-page-brief.md', '"94 AI tools'],
+  ['docs/landing-page-brief.md', '| MCP tools | 94 |'],
+  ['server.json', '75 MCP tools'],
+
+  // Model breadth.
+  ['README.md', '35+ AI models'],
+  ['docs/landing-page-brief.md', '35+ AI models'],
+  ['server.json', '35+ AI models'],
+
+  // Canonical plan/credit table.
+  ['README.md', '| Starter | $19/mo | 500 | — |'],
+  ['README.md', '| Pro | $49/mo | 1,500 | Read + Analytics |'],
+  ['README.md', '| Team | $99/mo | 3,500 | Full + 5 keys |'],
+  ['README.md', '| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |'],
+  ['docs/rest-api.md', '| Starter | 60 | 500 | — |'],
+  ['docs/rest-api.md', '| Pro | 60 | 1,500 | MCP read + analytics |'],
+  ['docs/rest-api.md', '| Team | 60 | 3,500 | Full MCP |'],
+  ['docs/rest-api.md', '| Agency | 60 | 10,000 | Full MCP + REST API |'],
+  ['docs/auth.md', '| Pro | `mcp:read`, `mcp:analytics` |'],
+  ['docs/auth.md', '| Agency | `mcp:full` |'],
+  ['docs/troubleshooting.md', '1.7.13 or newer includes the fix'],
+  ['docs/troubleshooting.md', 'If npm still reports `1.7.12`, the fixed package has not been published yet'],
+
+  // Security/package hygiene docs.
+  ['SECURITY.md', '| 1.7.x   | Yes       |'],
+  ['SECURITY.md', '`tools.lock.json`'],
+  ['SECURITY.md', 'Key cache entries expire after 5 minutes'],
+];
+
+const PUBLIC_CONTRACT_FORBIDDEN = [
+  ['README.md', '92-tool'],
+  ['README.md', '92 tools'],
+  ['docs/rest-api.md', '92 tools'],
+  ['docs/rest-api.md', 'Starter | 60 | 800'],
+  ['docs/rest-api.md', 'Pro | 60 | 2,000'],
+  ['docs/rest-api.md', 'Team | 60 | 6,500'],
+  ['docs/rest-api.md', '"monthlyLimit": 2000'],
+  ['docs/integration-methods.md', '92 tools'],
+  ['docs/landing-page-brief.md', '92 AI tools'],
+  ['docs/landing-page-brief.md', '20+ AI models'],
+  ['docs/landing-page-brief.md', '| MCP tools | 92 |'],
+  ['docs/auth.md', '| Pro | `mcp:full`'],
+  ['docs/troubleshooting.md', 'should be >= 1.7.13'],
+  ['SECURITY.md', 'Key cache entries expire after 10 seconds'],
+];
+
+function readRepoFile(path) {
+  return readFileSync(resolve(ROOT, path), 'utf8');
+}
 
 function lintText(desc) {
   const findings = [];
@@ -66,6 +132,29 @@ function lintText(desc) {
   return findings;
 }
 
+function lintPublicContract() {
+  const findings = [];
+  const cache = new Map();
+  const contents = (file) => {
+    if (!cache.has(file)) cache.set(file, readRepoFile(file));
+    return cache.get(file);
+  };
+
+  for (const [file, expectedText] of PUBLIC_CONTRACT_EXPECTATIONS) {
+    if (!contents(file).includes(expectedText)) {
+      findings.push(`${file} is missing required public-contract text: ${expectedText}`);
+    }
+  }
+
+  for (const [file, forbiddenText] of PUBLIC_CONTRACT_FORBIDDEN) {
+    if (contents(file).includes(forbiddenText)) {
+      findings.push(`${file} still contains stale public-contract text: ${forbiddenText}`);
+    }
+  }
+
+  return findings;
+}
+
 const locked = await enumerateLockedTools();
 
 let totalFindings = 0;
@@ -81,8 +170,14 @@ for (const [name, info] of Object.entries(locked)) {
   }
 }
 
+const publicContractFindings = lintPublicContract();
+if (publicContractFindings.length) {
+  perTool.push({ name: 'public-metadata-contract', findings: publicContractFindings });
+  totalFindings += publicContractFindings.length;
+}
+
 if (totalFindings === 0) {
-  console.log(`✅ Lint passed: ${Object.keys(locked).length} tool metadata entries are clean.`);
+  console.log(`✅ Lint passed: ${Object.keys(locked).length} tool metadata entries and public metadata contract are clean.`);
   process.exit(0);
 }
 
