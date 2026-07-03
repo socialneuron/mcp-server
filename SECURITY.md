@@ -37,10 +37,8 @@ This policy covers:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.6.x   | Yes       |
-| 1.5.x   | Yes       |
-| 1.4.x   | Yes       |
-| < 1.4   | No        |
+| 1.7.x   | Yes       |
+| < 1.7   | No        |
 
 ## Credential Safety
 
