@@ -1,8 +1,6 @@
 # @socialneuron/mcp-server
 
-> 75 MCP tools for AI-powered social media management — create content, schedule posts, track analytics, and optimize. Available over MCP, REST API, and CLI.
->
-> This npm package registers **75 tools** over stdio. The hosted endpoint [`mcp.socialneuron.com`](https://mcp.socialneuron.com) and REST API expose the full **92-tool** product surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+> 96 MCP tools for AI-powered social media management — 94 exposed over the remote MCP endpoint and REST API (2 screen-capture tools run locally over stdio). Query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
@@ -17,7 +15,7 @@
 - [Platform Status](#platform-status)
 - [Quick Start](#quick-start)
 - [What You Can Do](#what-you-can-do)
-- [Tool Categories](#tool-categories)
+- [Tool Categories](#tool-categories-96-tools)
 - [Authentication](#authentication)
 - [Pricing](#pricing)
 - [Scopes](#scopes)
@@ -75,7 +73,7 @@ The hosted endpoint and REST API track the live matrix; check [socialneuron.com/
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a Social Neuron Pro plan or above (Pro = MCP read + analytics; Team/Agency = full MCP). See [pricing](https://socialneuron.com/pricing).
+This opens your browser to authorize access. Requires a Social Neuron Pro plan or above (Pro = MCP read + analytics + write + distribute; Team/Agency = full MCP). See [pricing](https://socialneuron.com/pricing).
 
 <details>
 <summary><strong>Using pnpm, bun, or yarn?</strong></summary>
@@ -282,11 +280,11 @@ Ask Claude things like:
 - "Check my analytics and suggest improvements"
 - "Set up autopilot to post 3 times per week"
 
-## Tool Categories
+## Tool Categories (96 tools)
 
 > Full machine-readable listing in [`tools.lock.json`](tools.lock.json) (sealed manifest, verified in CI).
 
-All tools are accessible via MCP, REST API (`POST /v1/tools/{name}`), and CLI.
+94 hosted tools are accessible via MCP and REST API (`POST /v1/tools/{name}`); the 2 screen-capture tools run locally over stdio.
 
 ### Content Lifecycle
 
@@ -360,11 +358,11 @@ MCP access requires a Pro plan or higher:
 
 | Plan | Price | Credits/mo | MCP Access |
 |------|-------|-----------|------------|
-| Free | $0 | 100 | — |
-| Starter | $19/mo | 500 | — |
-| Pro | $49/mo | 1,500 | Read + Analytics |
-| Team | $99/mo | 3,500 | Full + 5 keys |
-| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |
+| Free   | $0     | 50     | — |
+| Starter| $19/mo | 500    | — |
+| Pro    | $49/mo | 1,500  | Read + Analytics + Write + Distribute |
+| Team   | $99/mo | 3,500  | Full |
+| Agency | $249/mo| 10,000 | Full |
 
 Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 
@@ -517,4 +515,3 @@ See the [`examples/`](examples/) directory:
 ## License
 
 [MIT](LICENSE) © Social Neuron
-
