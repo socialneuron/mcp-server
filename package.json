@@ -101,7 +101,7 @@
     "typescript": "^6.0.3",
     "vitest": "^3.2.6",
     "playwright": "1.61.1",
-    "@remotion/bundler": "4.0.481",
+    "@remotion/bundler": "4.0.485",
     "@remotion/renderer": "4.0.485"
   },
   "overrides": {
