@@ -2,7 +2,7 @@
 
 > **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
 
-REST interface to the Social Neuron AI content tools (92 tools on the hosted product). Same auth, scopes, and rate limits as the hosted MCP endpoint.
+REST interface to the Social Neuron AI content tools (85 tools on the hosted product — live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)). Same auth, scopes, and rate limits as the hosted MCP endpoint.
 
 ## Base URL
 
@@ -142,7 +142,6 @@ These are thin wrappers over the tool proxy for common operations.
 | Method | Path | Auth | Description |
 |--------|------|------|-------------|
 | GET | `/v1/` | Required | API info and endpoint directory |
-| GET | `/v1/openapi.json` | **None** | OpenAPI 3.1 specification |
 
 ## Response Format
 
@@ -153,12 +152,12 @@ These are thin wrappers over the tool proxy for common operations.
   "data": {
     "balance": 1850,
     "monthlyUsed": 150,
-    "monthlyLimit": 2000,
+    "monthlyLimit": 1500,
     "plan": "pro"
   },
   "_meta": {
     "tool": "get_credit_balance",
-    "version": "1.5.2",
+    "version": "1.7.15",
     "timestamp": "<ISO-8601 timestamp>"
   }
 }
@@ -192,9 +191,12 @@ These are thin wrappers over the tool proxy for common operations.
 
 | Tier | Requests/min | Credits/mo |
 |------|-------------|------------|
-| Starter | 60 | 800 |
-| Pro | 60 | 2,000 |
-| Team | 60 | 6,500 |
+| Trial (14 days) | 15 | 300 one-time |
+| Pro | 60 | 1,500 |
+| Team | 60 | 3,500 |
+| Agency | 60 | 10,000 |
+
+Free and Starter plans do not include MCP/API access.
 
 Per-IP rate limit: 60 requests/minute (before auth).
 
@@ -215,7 +217,6 @@ Per-IP rate limit: 60 requests/minute (before auth).
 The full OpenAPI 3.1 specification is served at:
 
 ```
-GET https://mcp.socialneuron.com/v1/openapi.json
 ```
 
 Import into Postman, generate client SDKs, or use with Swagger UI.

@@ -17,7 +17,7 @@ npm run build:app
 
 # Or directly:
 cd apps/content-calendar
-npm install
+npm install --ignore-scripts
 npm run build
 ```
 

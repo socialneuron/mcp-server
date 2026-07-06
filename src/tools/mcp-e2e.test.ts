@@ -62,7 +62,7 @@ describe('search_tools detail levels', () => {
 
   it('"name" returns string array', async () => {
     const result = parseResult(await handler({ detail: 'name' }));
-    expect(result.toolCount).toBe(TOOL_CATALOG.length);
+    expect(result.toolCount).toBe(TOOL_CATALOG.filter(t => !t.internal).length);
     expect(typeof result.tools[0]).toBe('string');
   });
 
@@ -150,8 +150,8 @@ describe('search_tools combined filters', () => {
     }
   });
 
-  it('empty query returns all tools', async () => {
+  it('empty query returns all discoverable tools', async () => {
     const result = parseResult(await handler({ detail: 'name' }));
-    expect(result.toolCount).toBe(TOOL_CATALOG.length);
+    expect(result.toolCount).toBe(TOOL_CATALOG.filter(t => !t.internal).length);
   });
 });

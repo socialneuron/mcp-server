@@ -1,8 +1,8 @@
 {
   "name": "@socialneuron/mcp-server",
   "display_name": "Social Neuron",
-  "description": "96 MCP tools for end-to-end social media content lifecycle. The only MCP server where performance analytics feed back into content generation. Create with 35+ AI models, distribute to X, Bluesky, and YouTube today (Instagram, TikTok, LinkedIn, Facebook, Threads rolling out), track analytics, and optimise automatically. Now ships with the Content Calendar MCP App for interactive drag-drop scheduling inside Claude. Includes 5 prompt templates and 4 resources.",
-  "version": "1.7.7",
+  "description": "85+ MCP tools for end-to-end social media content lifecycle. The only MCP server where performance analytics feed back into content generation. Create with 35+ AI models, distribute to X, Bluesky, and YouTube today (Instagram, TikTok, LinkedIn, Facebook, Threads rolling out), track analytics, and optimise automatically. Now ships with the Content Calendar MCP App for interactive drag-drop scheduling inside Claude. Includes 5 prompt templates and 4 resources.",
+  "version": "1.7.15",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
   "license": "MIT",
@@ -19,7 +19,7 @@
     "url": "https://socialneuron.com"
   },
   "categories": ["social-media", "content-creation", "analytics", "marketing", "automation"],
-  "tools_count": 96,
+  "tools_count": 85,
   "transport": ["stdio", "http"],
   "http_endpoint": "https://mcp.socialneuron.com/mcp",
   "install": {
@@ -49,8 +49,8 @@
   },
   "pricing": {
     "has_free_tier": true,
-    "free_tier_note": "100 credits/mo (no MCP access). MCP requires Starter ($29/mo) or higher.",
-    "starting_price": "$29/mo",
+    "free_tier_note": "50 credits/mo (no MCP access). MCP/API requires Pro ($49/mo) or higher; the 14-day trial includes full MCP.",
+    "starting_price": "$19/mo",
     "pricing_url": "https://socialneuron.com/pricing"
   }
 }

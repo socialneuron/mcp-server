@@ -89,8 +89,9 @@ async function computeDiscoveryCatalog(): Promise<DiscoveryTool[]> {
   }
 
   // localOnly tools (e.g. screenshots needing Playwright) aren't registered on
-  // the HTTP transport — don't advertise them in HTTP discovery.
-  return TOOL_CATALOG.filter(t => !t.localOnly).map(t => ({
+  // the HTTP transport — don't advertise them in HTTP discovery. Internal
+  // operations tools are registered but likewise not advertised.
+  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).map(t => ({
     name: t.name,
     description: t.description,
     inputSchema: schemaByName.get(t.name) ?? { type: 'object' as const, properties: {} },

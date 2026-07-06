@@ -5,6 +5,16 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+  - package-ecosystem: npm
+    directory: /packages/sdk
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: /apps/content-calendar
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
   - package-ecosystem: github-actions
     directory: /
     schedule:
