@@ -11,7 +11,11 @@ describe('wrapToolWithScanner', () => {
     );
     expect(handler).not.toHaveBeenCalled();
     expect((result as any).isError).toBe(true);
-    expect((result as any).content[0].text).toContain('harness:input_blocked');
+    // #188: input blocks now carry a machine-readable error_type (policy_block)
+    // with the flagged patterns in structuredContent instead of a bare string.
+    expect((result as any).structuredContent.error.error_type).toBe('policy_block');
+    expect((result as any).structuredContent.error.blocked_patterns).toBeInstanceOf(Array);
+    expect((result as any).content[0].text).toContain('policy_block');
   });
 
   it('sanitizes PII in tool output before returning', async () => {

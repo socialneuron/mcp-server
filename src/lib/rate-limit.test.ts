@@ -79,29 +79,40 @@ describe('RateLimiter', () => {
       expect(result.allowed).toBe(true);
     });
 
-    it('partitions by key so users are independent', () => {
-      // Note: keyed buckets (e.g. 'posting:user-a') don't match CATEGORY_CONFIGS
-      // entries directly, so they get 'read' fallback (60 tokens).
-      // Exhaust user-a's bucket (60 tokens from read fallback)
-      for (let i = 0; i < 60; i++) {
-        checkRateLimit('posting', 'partition-user-a');
+    it('applies the CATEGORY config to keyed buckets, not the read fallback', () => {
+      // Fixed 2026-07-06: keyed buckets (e.g. 'posting:user-a') now resolve the
+      // limit from the bare category. 'posting' burst is 30, so the 31st keyed
+      // call is rejected — proving it is NOT on the loose 60-token read bucket.
+      for (let i = 0; i < 30; i++) {
+        expect(checkRateLimit('posting', 'partition-user-a').allowed).toBe(true);
       }
-      const resultA = checkRateLimit('posting', 'partition-user-a');
-      expect(resultA.allowed).toBe(false);
+      expect(checkRateLimit('posting', 'partition-user-a').allowed).toBe(false);
 
-      // user-b should still have tokens
-      const resultB = checkRateLimit('posting', 'partition-user-b');
-      expect(resultB.allowed).toBe(true);
+      // A different key is independent and still has its own 30-token bucket.
+      expect(checkRateLimit('posting', 'partition-user-b').allowed).toBe(true);
     });
 
-    it('returns retryAfter when rate limited', () => {
-      // Keyed bucket falls back to 'read' config (60 tokens)
-      for (let i = 0; i < 60; i++) {
-        checkRateLimit('screenshot', 'retry-test');
+    it('applies the tight screenshot limit (10) to keyed buckets', () => {
+      for (let i = 0; i < 10; i++) {
+        expect(checkRateLimit('screenshot', 'ss-keyed').allowed).toBe(true);
       }
-      const result = checkRateLimit('screenshot', 'retry-test');
+      const result = checkRateLimit('screenshot', 'ss-keyed');
       expect(result.allowed).toBe(false);
       expect(result.retryAfter).toBeGreaterThan(0);
+    });
+
+    it('applies the generation limit (15) — previously silent read fallback', () => {
+      for (let i = 0; i < 15; i++) {
+        expect(checkRateLimit('generation', 'gen-keyed').allowed).toBe(true);
+      }
+      expect(checkRateLimit('generation', 'gen-keyed').allowed).toBe(false);
+    });
+
+    it('applies the upload limit (20)', () => {
+      for (let i = 0; i < 20; i++) {
+        expect(checkRateLimit('upload', 'up-keyed').allowed).toBe(true);
+      }
+      expect(checkRateLimit('upload', 'up-keyed').allowed).toBe(false);
     });
   });
 

@@ -19,9 +19,11 @@ export interface RateLimitCheckResult {
 }
 
 const CATEGORY_CONFIGS: Record<string, BucketConfig> = {
-  posting: { maxTokens: 30, refillRate: 30 / 60 }, // 30 req/min
-  screenshot: { maxTokens: 10, refillRate: 10 / 60 }, // 10 req/min
-  read: { maxTokens: 60, refillRate: 60 / 60 }, // 60 req/min
+  posting: { maxTokens: 30, refillRate: 30 / 60 }, // 30 req/min — publish/schedule/comment
+  generation: { maxTokens: 15, refillRate: 15 / 60 }, // 15 req/min — expensive AI media gen
+  upload: { maxTokens: 20, refillRate: 20 / 60 }, // 20 req/min — media upload
+  screenshot: { maxTokens: 10, refillRate: 10 / 60 }, // 10 req/min — browser capture
+  read: { maxTokens: 60, refillRate: 60 / 60 }, // 60 req/min — default
 };
 
 export class RateLimiter {
@@ -71,17 +73,24 @@ export class RateLimiter {
 const limiters = new Map<string, RateLimiter>();
 
 /**
- * Get (or create) the rate limiter for a given category.
+ * Get (or create) the rate limiter for a given bucket.
  *
- * Known categories: 'posting' (30/min), 'screenshot' (10/min), 'read' (60/min).
- * Unknown categories fall back to 'read' limits.
+ * `bucketKey` is the storage key (may be partitioned as `category:key`);
+ * `category` selects the limit config. Splitting the two is deliberate: the
+ * config MUST resolve from the bare category, never from the partitioned bucket
+ * key — otherwise `posting:user-1` misses `CATEGORY_CONFIGS` and every keyed
+ * call silently degrades to the loose `read` bucket (fixed 2026-07-06).
+ *
+ * Known categories: 'posting' (30/min), 'generation' (15/min), 'upload'
+ * (20/min), 'screenshot' (10/min), 'read' (60/min). Unknown → 'read'.
  */
-export function getRateLimiter(category: string): RateLimiter {
-  let limiter = limiters.get(category);
+export function getRateLimiter(bucketKey: string, category?: string): RateLimiter {
+  let limiter = limiters.get(bucketKey);
   if (!limiter) {
-    const config = CATEGORY_CONFIGS[category] ?? CATEGORY_CONFIGS.read;
+    const resolved = category ?? bucketKey;
+    const config = CATEGORY_CONFIGS[resolved] ?? CATEGORY_CONFIGS.read;
     limiter = new RateLimiter(config);
-    limiters.set(category, limiter);
+    limiters.set(bucketKey, limiter);
   }
   return limiter;
 }
@@ -93,7 +102,7 @@ export function getRateLimiter(category: string): RateLimiter {
  */
 export function checkRateLimit(category: string, key?: string): RateLimitCheckResult {
   const bucketKey = key ? `${category}:${key}` : category;
-  const limiter = getRateLimiter(bucketKey);
+  const limiter = getRateLimiter(bucketKey, category);
   const allowed = limiter.consume();
   return {
     allowed,
