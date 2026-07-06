@@ -164,11 +164,11 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:read
   get_active_campaigns: 'mcp:read',
 
-  // mcp:read / mcp:write (Skills — PR #4.4)
+  // mcp:read / mcp:write (Skills)
   list_skills: 'mcp:read',
   run_skill: 'mcp:write',
 
-  // mcp:read (Loop observability — growth-loop KPIs + bandit posteriors)
+  // mcp:read (Loop observability — growth-loop KPIs + content learning state)
   get_loop_pulse: 'mcp:read',
   get_bandit_state: 'mcp:read',
 };

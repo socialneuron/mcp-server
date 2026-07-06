@@ -26,15 +26,18 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     }
   });
 
-  it('advertises TOOL_CATALOG minus localOnly tools (only adds schemas)', async () => {
+  it('advertises TOOL_CATALOG minus localOnly and internal tools (only adds schemas)', async () => {
     const tools = await buildDiscoveryCatalog();
-    const expected = TOOL_CATALOG.filter(t => !t.localOnly)
+    const expected = TOOL_CATALOG.filter(t => !t.localOnly && !t.internal)
       .map(t => t.name)
       .sort();
     expect(tools.map(t => t.name).sort()).toEqual(expected);
     // localOnly tools (screenshots — no Playwright on HTTP) are not registered on
     // the HTTP transport, so discovery must not advertise them.
     expect(tools.map(t => t.name)).not.toContain('capture_screenshot');
+    // Internal operations tools stay runtime-registered but undiscoverable.
+    expect(tools.map(t => t.name)).not.toContain('write_agent_reflection');
+    expect(tools.map(t => t.name)).not.toContain('save_draft_to_library');
     for (const t of tools) {
       expect(t.inputSchema.type, `${t.name} inputSchema.type`).toBe('object');
       expect(t.inputSchema.properties, `${t.name} inputSchema.properties`).toBeTypeOf('object');

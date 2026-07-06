@@ -1,6 +1,6 @@
 # Integration Methods
 
-Social Neuron provides 4 ways to integrate. All share the same auth system, scopes, rate limits, and credit pool. The npm package exposes **75 tools** over stdio; the hosted endpoint at `mcp.socialneuron.com` exposes more — see the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+Social Neuron provides 4 ways to integrate. All share the same auth system, scopes, rate limits, and credit pool. The npm package exposes **87 discoverable tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises **85** — see the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 ## Comparison
 
@@ -53,7 +53,7 @@ curl -X POST \
   https://mcp.socialneuron.com/v1/tools/get_brand_profile
 ```
 
-Full reference: [REST API docs](rest-api.md) | [OpenAPI spec](https://mcp.socialneuron.com/v1/openapi.json)
+Full reference: [REST API docs](rest-api.md)
 
 ## CLI (Terminal & CI/CD)
 

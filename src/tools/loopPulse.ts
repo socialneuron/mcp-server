@@ -14,19 +14,18 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 /**
  * Loop Pulse MCP tools.
  *
- * Exposes the same dynamic loop KPIs that back the admin "Loop Health" tab
- * (mc-loop-pulse EF + v_loop_pulse view) — so brain skills (Hermes,
- * agent-chat, Claude Code) can reason about whether the loop is actually
- * closing and where it is stuck.
+ * Exposes the same dynamic loop KPIs that back the admin "Loop Health" tab —
+ * so agent callers (autonomous agents, agent-chat, Claude Code) can reason
+ * about whether the loop is actually closing and where it is stuck.
  *
- * Companion: `get_bandit_state` (separate tool, returns per-arm posteriors).
+ * Companion: `get_bandit_state` (separate tool, returns per-arm learning state).
  */
 export function registerLoopPulseTools(server: McpServer): void {
   server.tool(
     'get_loop_pulse',
     'Read the dynamic loop-health KPIs for the Social Neuron growth loop over the last 7 days. ' +
-      'Returns reflection coverage, decision coverage, visual gate pass rate, bandit-update ' +
-      'application rate, per-platform bandit uptake, autopilot lag, and pattern aggregation ' +
+      'Returns reflection coverage, decision coverage, visual gate pass rate, learning-update ' +
+      'application rate, per-platform learning uptake, autopilot lag, and pattern aggregation ' +
       'counts — each with a status ("ok" / "warn" / "bad") and a why-line explaining what the ' +
       'metric measures. Use this to decide whether the loop is closing or where it is stuck ' +
       'before recommending next moves.',

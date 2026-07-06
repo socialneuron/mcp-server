@@ -2,7 +2,7 @@
  * Agentic harness MCP tools — learning loop write-back + read-back.
  *
  * write_agent_reflection: Persist a verbal reflection from an agent loop.
- *   - Provenance keys are restricted (Anti-Goodhart safety).
+ *   - Provenance keys are restricted to an allowlist.
  *   - Calls the write-agent-reflection EF via mcp-gateway.
  *   - Requires mcp:write scope.
  *
@@ -66,7 +66,7 @@ const writeReflectionSchema = {
     })
     .strict()
     .describe(
-      'Source evidence for this reflection. Only these four keys are accepted (Anti-Goodhart guard — unknown keys are rejected to prevent spurious provenance claims).'
+      'Source evidence for this reflection. Only these four keys are accepted — unknown keys are rejected to prevent spurious provenance claims.'
     ),
   brand_id: z.string().describe('Brand profile UUID this reflection belongs to.'),
   pipeline_id: z.string().optional().describe('Optional: pipeline run UUID.'),
@@ -101,7 +101,7 @@ const recordOutcomeSchema = {
   horizon: z
     .enum(['1h', '6h', '24h'])
     .describe(
-      'Observation horizon. Only horizon=24h with a non-null reward triggers a content_bandits posterior update; 1h/6h are stored but inert for learning.'
+      'Observation horizon. Only horizon=24h with a non-null reward triggers a learning-loop update; 1h/6h are stored but inert for learning.'
     ),
   reward: z
     .number()
@@ -127,7 +127,7 @@ export function registerHarnessTools(server: McpServer, _ctx: unknown): void {
   server.tool(
     'write_agent_reflection',
     'Persist a verbal reflection for an agent loop. Provenance keys are restricted ' +
-      '(Anti-Goodhart safety): only content_history_id, outcome_event_id, prm_score_ids, ' +
+      'to an allowlist: only content_history_id, outcome_event_id, prm_score_ids, ' +
       'and handoff_ids are accepted — unknown keys are rejected at the input layer. ' +
       'Requires mcp:write scope. Returns the created reflection UUID on success.',
     writeReflectionSchema,
@@ -171,7 +171,7 @@ export function registerHarnessTools(server: McpServer, _ctx: unknown): void {
       '(decision_event_id, horizon) — safe to call multiple times. ' +
       'Returns idempotent:true when the row already existed (UPDATE), ' +
       'idempotent:false on fresh INSERT. ' +
-      'Note: only horizon=24h with reward != null triggers a content_bandits posterior update; ' +
+      'Note: only horizon=24h with reward != null triggers a learning-loop update; ' +
       '1h/6h outcomes are stored but are inert for the learning loop. ' +
       'Requires mcp:write scope.',
     recordOutcomeSchema,

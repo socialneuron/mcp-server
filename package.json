@@ -1,6 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.7.14",
+  "mcpName": "com.socialneuron/mcp-server",
+  "version": "1.7.15",
   "description": "Official MCP server, REST API & CLI for Social Neuron \u2014 create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
@@ -78,7 +79,8 @@
     "test:watch": "vitest",
     "clean": "rm -rf dist/",
     "prepublishOnly": "npm run clean && npm run build:all && npm test",
-    "build:docs": "node scripts/build-tools-reference.mjs"
+    "build:docs": "node scripts/build-tools-reference.mjs",
+    "verify:metadata": "node scripts/verify-metadata.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.4",

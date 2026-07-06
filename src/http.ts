@@ -482,8 +482,8 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       required: true,
       schemes: ['oauth2'],
     },
-    toolCount: TOOL_CATALOG.filter(t => !t.localOnly).length,
-    tools: TOOL_CATALOG.filter(t => !t.localOnly).map(t => ({
+    toolCount: TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).length,
+    tools: TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).map(t => ({
       name: t.name,
       description: t.description,
       module: t.module,
