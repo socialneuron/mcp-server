@@ -54,8 +54,7 @@ const FORBIDDEN = [
   'founder approves',
   'PR #4.4',
   'niche_winners',
-  // dead endpoint — remove from this list when /v1/openapi.json ships
-  'mcp.socialneuron.com/v1/openapi.json',
+  // /v1/openapi.json is live as of v1.7.17 — the link is allowed again.
 ];
 
 const SURFACE = [
@@ -108,6 +107,28 @@ if (process.argv.includes('--live')) {
     }
   } catch (err) {
     failures.push(`live server card fetch failed: ${err.message}`);
+  }
+
+  // Live OpenAPI check — version match, right operation count, no leaks.
+  const OPENAPI_URL = 'https://mcp.socialneuron.com/v1/openapi.json';
+  try {
+    const res = await fetch(OPENAPI_URL, { signal: AbortSignal.timeout(15_000) });
+    if (!res.ok) {
+      failures.push(`live openapi: HTTP ${res.status}`);
+    } else {
+      const doc = await res.json();
+      if (doc.info?.version !== pkg.version) {
+        failures.push(`live openapi version "${doc.info?.version}" !== package.json "${pkg.version}"`);
+      }
+      const docText = JSON.stringify(doc);
+      for (const needle of FORBIDDEN) {
+        if (docText.includes(needle)) {
+          failures.push(`live openapi contains forbidden string: ${JSON.stringify(needle)}`);
+        }
+      }
+    }
+  } catch (err) {
+    failures.push(`live openapi fetch failed: ${err.message}`);
   }
 }
 

@@ -42,6 +42,7 @@ const COMMAND_REGISTRY: Record<string, CommandEntry> = {
   loop: { handler: lazyAnalytics('handleLoop'), needsAuth: true, group: 'analytics' },
   tools: { handler: lazyDiscovery('handleTools'), needsAuth: false, group: 'discovery' },
   info: { handler: lazyDiscovery('handleInfo'), needsAuth: false, group: 'discovery' },
+  call: { handler: lazyCall('handleCall'), needsAuth: true, group: 'discovery' },
   plan: { handler: lazyPlanning('handlePlan'), needsAuth: true, group: 'content' },
   preset: { handler: lazyPresets('handlePreset'), needsAuth: false, group: 'content' },
 };
@@ -52,7 +53,7 @@ const GROUP_COMMANDS: Record<string, string[]> = {
   account: ['oauth-health', 'oauth-refresh', 'preflight'],
   analytics: ['posts', 'refresh-analytics', 'loop'],
   system: ['status', 'autopilot', 'usage', 'credits'],
-  discovery: ['tools', 'info'],
+  discovery: ['tools', 'info', 'call'],
 };
 
 // ── Lazy loaders (avoid importing all modules upfront) ──────────────
@@ -88,6 +89,13 @@ function lazySystem(name: string) {
 function lazyDiscovery(name: string) {
   return async (args: SnArgs, asJson: boolean) => {
     const mod = await import('./sn/discovery.js');
+    return (mod as any)[name](args, asJson);
+  };
+}
+
+function lazyCall(name: string) {
+  return async (args: SnArgs, asJson: boolean) => {
+    const mod = await import('./sn/call.js');
     return (mod as any)[name](args, asJson);
   };
 }

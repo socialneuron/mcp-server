@@ -143,49 +143,55 @@ These are thin wrappers over the tool proxy for common operations.
 |--------|------|------|-------------|
 | GET | `/v1/` | Required | API info and endpoint directory |
 
+## Machine-readable spec
+
+The full contract is generated from the tool catalog and served at
+[`GET /v1/openapi.json`](https://mcp.socialneuron.com/v1/openapi.json) (OpenAPI
+3.1, unauthenticated). Import it into Postman / Swagger UI or generate a client
+from it — it always matches the live tool set.
+
 ## Response Format
 
 ### Success
 
+Each call returns the tool result. `content` carries the output (usually a JSON
+string); `structuredContent` is present when the tool declares structured output.
+
 ```json
 {
-  "data": {
-    "balance": 1850,
-    "monthlyUsed": 150,
-    "monthlyLimit": 1500,
-    "plan": "pro"
-  },
-  "_meta": {
-    "tool": "get_credit_balance",
-    "version": "1.7.15",
-    "timestamp": "<ISO-8601 timestamp>"
-  }
+  "content": [{ "type": "text", "text": "{\"balance\":1850,\"monthlyUsed\":150,\"monthlyLimit\":1500,\"plan\":\"pro\"}" }]
 }
 ```
 
 ### Error
 
+Errors carry a machine-readable `error_type` and map to a matching HTTP status.
+
 ```json
 {
   "error": {
-    "code": "insufficient_scope",
-    "message": "Tool 'schedule_post' requires scope 'mcp:distribute'.",
-    "required_scope": "mcp:distribute",
-    "status": 403
-  }
+    "error_type": "permission_denied",
+    "message": "Tool schedule_post requires scope mcp:distribute.",
+    "recover_with": ["Regenerate the key with mcp:distribute or upgrade the plan tier."]
+  },
+  "isError": true
 }
 ```
 
-## Error Codes
+## Error Types
 
-| Code | Status | Description | Resolution |
-|------|--------|-------------|------------|
-| `unauthorized` | 401 | Missing Bearer token | Add `Authorization: Bearer snk_live_...` header |
-| `invalid_token` | 401 | Token expired or invalid | Generate a new key at Settings > Developer |
-| `insufficient_scope` | 403 | Key lacks required scope | Regenerate key with needed scope |
-| `tool_not_found` | 404 | Tool name doesn't exist | Check `GET /v1/tools` for available tools |
-| `tool_error` | 400 | Tool execution failed | Check error message for details |
-| `rate_limited` | 429 | Too many requests | Wait for `Retry-After` seconds |
+| `error_type` | Status | Description |
+|------|--------|-------------|
+| `validation_error` | 400 | Bad or missing arguments |
+| `policy_block` | 400 | Blocked by the input safety policy |
+| `billing_error` | 402 | Insufficient credits |
+| `permission_denied` | 403 | Key lacks the required scope for the tool |
+| `not_found` | 404 | Tool name or referenced object doesn't exist |
+| `rate_limited` | 429 | Too many requests — honor `Retry-After` |
+| `upstream_error` | 502 | A downstream dependency failed |
+| `server_error` | 500 | Unclassified server fault |
+
+A missing/invalid bearer token returns **401** (no body).
 
 ## Rate Limits
 
