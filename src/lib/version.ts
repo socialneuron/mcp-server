@@ -4,4 +4,4 @@
  * scripts/write-version.mjs via the `prebuild` npm lifecycle. To change the
  * version, bump package.json and rebuild (version.test.ts guards against drift).
  */
-export const MCP_VERSION = '1.7.16';
+export const MCP_VERSION = '1.7.18';

@@ -2,6 +2,22 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.18] - 2026-07-06
+
+### Added
+
+- **REST API is real.** `POST /v1/tools/{name}`, `GET /v1/tools`, and `GET /v1/openapi.json` are now served (previously documented but 404). The REST surface is a faithful projection of the MCP engine — same auth, scopes, rate limits, credit pool, and tool handlers — not a second implementation.
+- **Generated OpenAPI 3.1 spec** at `/v1/openapi.json` (unauthenticated), built from the tool catalog + the same input schemas `tools/list` serves, so it can never drift from the tools. Import into Postman/Swagger or generate a client.
+- **`sn call <tool> [--json|--arg]`** — CLI tool invoker that mirrors the same projection, resolving the caller's scopes from their key. Four surfaces (MCP · REST · SDK · CLI), one catalog.
+
+### Fixed
+
+- Scrubbed an internal codename from `schedule_post`'s param descriptions (exposed via the new unauthenticated OpenAPI). Added a regression guard.
+
+### Changed
+
+- `docs/rest-api.md` updated to the real response shape (MCP result on success, `error_type` on error) and re-links the live OpenAPI spec.
+
 ## [1.7.16] - 2026-07-06
 
 ### Fixed
