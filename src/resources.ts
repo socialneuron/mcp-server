@@ -189,9 +189,19 @@ export function registerResources(server: McpServer): void {
         tiers: {
           free: {
             price: '$0/mo',
-            credits: 100,
+            credits: 50,
             mcp_access: 'None',
             features: ['5 free tools', 'Basic content generation'],
+          },
+          trial: {
+            price: '$0 (14 days)',
+            credits: 300,
+            mcp_access: 'Full engine (read + write + distribute + analytics), 15 rpm',
+            features: [
+              'Full MCP agent engine for 14 days',
+              'One-time 300 credits',
+              'Generate, gate, and publish via MCP',
+            ],
           },
           starter: {
             price: '$19/mo',
