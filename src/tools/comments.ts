@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { YouTubeComment, ResponseEnvelope } from '../types/index.js';
 
@@ -130,16 +130,9 @@ export function registerCommentsTools(server: McpServer): void {
     },
     async ({ parent_id, text, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `reply_to_comment:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'reply_to_comment',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -158,12 +151,6 @@ export function registerCommentsTools(server: McpServer): void {
       });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'reply_to_comment',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Error replying to comment: ${error}` }],
           isError: true,
@@ -171,12 +158,6 @@ export function registerCommentsTools(server: McpServer): void {
       }
 
       const result = data as { comment: { id: string; textDisplay: string } };
-      await logMcpToolInvocation({
-        toolName: 'reply_to_comment',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { commentId: result.comment?.id },
-      });
       if (format === 'json') {
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
@@ -209,16 +190,9 @@ export function registerCommentsTools(server: McpServer): void {
     },
     async ({ video_id, text, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `post_comment:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'post_comment',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -237,12 +211,6 @@ export function registerCommentsTools(server: McpServer): void {
       });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'post_comment',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Error posting comment: ${error}` }],
           isError: true,
@@ -250,12 +218,6 @@ export function registerCommentsTools(server: McpServer): void {
       }
 
       const result = data as { comment: { id: string; textDisplay: string } };
-      await logMcpToolInvocation({
-        toolName: 'post_comment',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { commentId: result.comment?.id, videoId: video_id },
-      });
       if (format === 'json') {
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
@@ -290,16 +252,9 @@ export function registerCommentsTools(server: McpServer): void {
     },
     async ({ comment_id, moderation_status, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `moderate_comment:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'moderate_comment',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -318,24 +273,12 @@ export function registerCommentsTools(server: McpServer): void {
       });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'moderate_comment',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Error moderating comment: ${error}` }],
           isError: true,
         };
       }
 
-      await logMcpToolInvocation({
-        toolName: 'moderate_comment',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { commentId: comment_id, moderationStatus: moderation_status },
-      });
       if (format === 'json') {
         return {
           content: [
@@ -380,16 +323,9 @@ export function registerCommentsTools(server: McpServer): void {
     },
     async ({ comment_id, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `delete_comment:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'delete_comment',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -407,24 +343,12 @@ export function registerCommentsTools(server: McpServer): void {
       });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'delete_comment',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Error deleting comment: ${error}` }],
           isError: true,
         };
       }
 
-      await logMcpToolInvocation({
-        toolName: 'delete_comment',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { commentId: comment_id },
-      });
       if (format === 'json') {
         return {
           content: [

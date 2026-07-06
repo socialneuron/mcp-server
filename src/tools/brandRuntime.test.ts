@@ -75,7 +75,7 @@ describe('brandRuntime tools', () => {
       const result = await handler({});
 
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Network request failed. Please try again.');
+      expect(result.content[0].text).toContain('Network error');
     });
 
     it('returns message when no brand profile exists', async () => {
@@ -86,6 +86,27 @@ describe('brandRuntime tools', () => {
 
       expect(result.content[0].text).toContain('No brand profile found');
       expect(result.content[0].text).toContain('extract_brand');
+    });
+
+    it('distinguishes "row exists but profile_data empty" from "no row"', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          profile: {
+            profile_data: null,
+            version: 22,
+            extraction_method: 'manual',
+          },
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_brand_runtime')!;
+      const result = await handler({});
+
+      expect(result.content[0].text).toContain('profile_data is empty');
+      expect(result.content[0].text).toContain('version 22');
+      expect(result.content[0].text).toContain('extraction_method: manual');
     });
   });
 

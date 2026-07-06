@@ -139,13 +139,30 @@ async function runLoginDevice(): Promise<void> {
     // Can't open browser — that's fine, user has the URL
   }
 
-  // Poll for authorization
+  // Poll for authorization.
+  //
+  // TTL fix (PR #B): The server TTL starts at row-creation time (before this
+  // function runs). Network latency on the device-code request plus any delay
+  // before the first poll means the CLI's effective window is slightly shorter
+  // than the server's. We add a 30-second grace period so the CLI keeps polling
+  // past its nominal deadline, ensuring the final "did it just get authorized?"
+  // poll still fires even if the browser confirmed at the last second.
+  //
+  // Loop structure: sleep FIRST, then check deadline, then poll.  This prevents
+  // the previous bug where the loop exited after the last sleep without ever
+  // making the poll that would have captured the 200.
   const pollInterval = (data.interval || 5) * 1000;
-  const maxTime = data.expires_in * 1000;
-  const startTime = Date.now();
+  const GRACE_MS = 30_000; // 30s extra beyond server-reported expires_in
+  const deadline = Date.now() + data.expires_in * 1000 + GRACE_MS;
 
-  while (Date.now() - startTime < maxTime) {
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
+
+    // Check deadline AFTER the sleep so the last poll always fires.
+    if (Date.now() > deadline) {
+      break;
+    }
 
     let pollResponse;
     try {
@@ -155,31 +172,38 @@ async function runLoginDevice(): Promise<void> {
         body: JSON.stringify({ device_code: data.device_code }),
       });
     } catch {
-      // Network error — keep trying
+      // Network error — keep trying until deadline
       continue;
     }
 
     if (pollResponse.status === 200) {
       const pollData = (await pollResponse.json()) as { api_key?: string };
       if (pollData.api_key) {
-        // Key received — save is critical, never swallow errors here.
-        // If save fails, print the key so the user can recover with --paste.
+        // Key received — save is critical, but never print the bearer token to logs.
         try {
           await saveApiKey(pollData.api_key);
+        } catch (saveErr) {
+          console.error('');
+          console.error('  Warning: Could not save API key securely.');
+          console.error(`  Error: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`);
+          console.error('');
+          console.error('  For security, the API key was not printed to the terminal.');
+          console.error('  Create or copy an API key from your Social Neuron dashboard, then run:');
+          console.error('  npx @socialneuron/mcp-server login --paste');
+          console.error('');
+          return;
+        }
+
+        try {
           await saveSupabaseUrl(supabaseUrl);
         } catch (saveErr) {
           console.error('');
-          console.error('  Warning: Could not save key to keychain.');
+          console.error('  Authorized!');
+          console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+          console.error('');
+          console.error('  Warning: API key saved, but could not save the Supabase URL.');
           console.error(`  Error: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`);
-          console.error('');
-          console.error('  Your API key (save this — it cannot be retrieved again):');
-          console.error(`  ${pollData.api_key}`);
-          console.error('');
-          console.error('  To authenticate manually, run:');
-          console.error('  npx @socialneuron/mcp-server login --paste');
-          console.error('');
-          console.error('  Or set the environment variable:');
-          console.error(`  export SOCIALNEURON_API_KEY="${pollData.api_key}"`);
+          console.error('  If needed, set SOCIALNEURON_SUPABASE_URL to your Supabase URL.');
           console.error('');
           return;
         }
@@ -193,12 +217,36 @@ async function runLoginDevice(): Promise<void> {
     }
 
     if (pollResponse.status === 410) {
+      // Check whether the browser DID confirm but the poll arrived too late.
+      const expiredData = (await pollResponse.json().catch(() => ({}))) as {
+        error?: string;
+        authorized?: boolean;
+        dashboard_url?: string;
+        hint?: string;
+      };
+
+      if (expiredData.authorized) {
+        // Race: key was minted on the server but the row aged out before delivery.
+        const dashUrl =
+          expiredData.dashboard_url || 'https://www.socialneuron.com/settings?tab=api-keys';
+        console.error('');
+        console.error('  Your browser confirmed the code and a key WAS issued on the server,');
+        console.error('  but the CLI polled after the 15-minute server TTL elapsed.');
+        console.error('');
+        console.error('  To recover your key:');
+        console.error(`  1. Open: ${dashUrl}`);
+        console.error('  2. Copy the key named "Device Auth (…)"');
+        console.error('  3. Run: npx @socialneuron/mcp-server login --paste');
+        console.error('');
+        process.exit(1);
+      }
+
       console.error('');
       console.error('  Error: Device code expired. Please try again.');
       process.exit(1);
     }
 
-    // 428 = pending or slow_down, keep polling
+    // 428 = authorization_pending or slow_down — keep polling
   }
 
   console.error('');
@@ -236,6 +284,10 @@ export async function runLogoutCommand(options?: { json?: boolean }): Promise<vo
   }
 
   await deleteApiKey();
+
+  // Clear validation cache on logout so stale auth doesn't persist
+  const { clearValidationCache } = await import('../lib/validation-cache.js');
+  clearValidationCache();
 
   if (asJson) {
     process.stdout.write(

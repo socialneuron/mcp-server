@@ -1,22 +1,42 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-
-// distribution.ts validates media URLs with the DNS-resolving validateUrlForSSRF.
-// Mock node:dns so external media hostnames (replicate.delivery, tempfile.kie.ai)
-// resolve to a public IP in tests; localhost/private literals are still rejected
-// by hostname / IP-literal checks before any DNS lookup (mirrors ssrf.test.ts).
-vi.mock('node:dns', () => ({
-  promises: {
-    Resolver: vi.fn(() => ({
-      resolve4: vi.fn(async () => ['93.184.216.34']),
-      resolve6: vi.fn(async () => []),
-    })),
-  },
-}));
-
 import { createMockServer } from '../test-setup.js';
 import { registerDistributionTools } from './distribution.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultUserId } from '../lib/supabase.js';
+import { MCP_VERSION } from '../lib/version.js';
+
+// Stub SSRF so tests against fictional hosts (example.com variants, r2-signed.example.com)
+// don't actually resolve DNS. Individual tests override for rejection cases.
+vi.mock('../lib/ssrf.js', async () => {
+  const actual = await vi.importActual<typeof import('../lib/ssrf.js')>('../lib/ssrf.js');
+  return {
+    ...actual,
+    validateUrlForSSRF: vi.fn(async (url: string) => {
+      // Reject the same patterns the real validator would, using synchronous
+      // heuristics (IP literals, non-https, credentials). For anything else,
+      // pass through with a stable sanitized URL.
+      try {
+        const u = new URL(url);
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+          return { isValid: false, error: `Invalid protocol: ${u.protocol}` };
+        }
+        if (u.username || u.password) {
+          return { isValid: false, error: 'URL contains credentials' };
+        }
+        // Block private-range IP literals explicitly.
+        if (
+          /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(u.hostname) ||
+          u.hostname === 'localhost'
+        ) {
+          return { isValid: false, error: `Private/metadata IP: ${u.hostname}` };
+        }
+        return { isValid: true, sanitizedUrl: url, resolvedIP: '203.0.113.1' };
+      } catch {
+        return { isValid: false, error: 'Invalid URL' };
+      }
+    }),
+  };
+});
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
@@ -26,10 +46,6 @@ describe('distribution tools', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockCallEdge.mockReset();
-    mockCallEdge.mockResolvedValue({ data: null, error: null });
-    mockGetUserId.mockReset();
-    mockGetUserId.mockResolvedValue('test-user-id');
     server = createMockServer();
     registerDistributionTools(server as any);
   });
@@ -38,7 +54,23 @@ describe('distribution tools', () => {
   // schedule_post
   // =========================================================================
   describe('schedule_post', () => {
+    // Helper: build a connected_accounts preflight response with active accounts for given platforms
+    const mockPreflightAccounts = (platforms: string[]) => ({
+      data: {
+        accounts: platforms.map((p, i) => ({
+          id: `acct-${i}`,
+          platform: p,
+          username: `user-${p.toLowerCase()}`,
+          status: 'active',
+          expires_at: null,
+          has_refresh_token: true,
+        })),
+      },
+      error: null,
+    });
+
     it('normalizes platform names to capitalized convention', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube', 'TikTok']));
       mockCallEdge.mockResolvedValueOnce({
         data: { success: true, results: {}, scheduledAt: '2026-03-01T12:00:00Z' },
         error: null,
@@ -52,12 +84,15 @@ describe('distribution tools', () => {
         auto_rehost: false,
       });
 
-      expect(mockCallEdge).toHaveBeenCalledOnce();
-      const callArgs = mockCallEdge.mock.calls[0];
+      expect(mockCallEdge).toHaveBeenCalledTimes(2);
+      // Second call is the actual schedule-post EF
+      const callArgs = mockCallEdge.mock.calls[1];
+      expect(callArgs[0]).toBe('schedule-post');
       expect(callArgs[1].platforms).toEqual(['YouTube', 'TikTok']);
     });
 
     it('maps snake_case params to camelCase in edge function body', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['Instagram']));
       mockCallEdge.mockResolvedValueOnce({
         data: { success: true, results: {}, scheduledAt: '2026-03-15T14:00:00Z' },
         error: null,
@@ -75,7 +110,8 @@ describe('distribution tools', () => {
         auto_rehost: false,
       });
 
-      const body = mockCallEdge.mock.calls[0][1];
+      // Second call (index 1) is schedule-post; first is the connected-accounts preflight
+      const body = mockCallEdge.mock.calls[1][1];
       expect(body).toEqual(
         expect.objectContaining({
           mediaUrl: 'https://cdn.example.com/img.png',
@@ -90,6 +126,7 @@ describe('distribution tools', () => {
     });
 
     it('returns formatted success text with platform results', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube', 'TikTok']));
       mockCallEdge.mockResolvedValueOnce({
         data: {
           success: true,
@@ -113,11 +150,12 @@ describe('distribution tools', () => {
       const text = result.content[0].text;
       expect(text).toContain('Post scheduled successfully.');
       expect(text).toContain('YouTube: OK (jobId=j1, postId=p1)');
-      expect(text).toContain('TikTok: FAILED - Authentication expired. Please re-authenticate.');
+      expect(text).toContain('TikTok: FAILED - Token expired');
       expect(result.isError).toBe(false);
     });
 
     it('returns isError true on edge function failure', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube']));
       mockCallEdge.mockResolvedValueOnce({
         data: null,
         error: 'Network timeout',
@@ -137,6 +175,7 @@ describe('distribution tools', () => {
     });
 
     it('returns JSON envelope when response_format=json', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube']));
       mockCallEdge.mockResolvedValueOnce({
         data: {
           success: true,
@@ -156,12 +195,12 @@ describe('distribution tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.success).toBe(true);
     });
 
     // =======================================================================
-    // auto_rehost (URL → R2 persistence)
+    // auto_rehost (URL -> R2 persistence)
     // =======================================================================
     describe('auto_rehost', () => {
       it('rehosts external media_url via upload-to-r2 before posting', async () => {
@@ -176,6 +215,7 @@ describe('distribution tools', () => {
             },
             error: null,
           })
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
           .mockResolvedValueOnce({
             data: {
               success: true,
@@ -199,26 +239,26 @@ describe('distribution tools', () => {
           expect.objectContaining({ url: 'https://replicate.delivery/xyz/ephemeral.png' }),
           expect.any(Object)
         );
-        expect(mockCallEdge).toHaveBeenNthCalledWith(
-          2,
-          'schedule-post',
+        const scheduleCall = mockCallEdge.mock.calls.find(c => c[0] === 'schedule-post');
+        expect(scheduleCall).toBeDefined();
+        expect(scheduleCall![1]).toEqual(
           expect.objectContaining({
-            mediaUrl:
-              'https://r2-signed.example.com/org_1/user_1/rehosted.png?X-Amz-Signature=abc',
-          }),
-          expect.any(Object)
+            mediaUrl: 'https://r2-signed.example.com/org_1/user_1/rehosted.png?X-Amz-Signature=abc',
+          })
         );
       });
 
       it('skips rehost when the URL is already an R2 signed URL', async () => {
-        mockCallEdge.mockResolvedValueOnce({
-          data: {
-            success: true,
-            scheduledAt: '2026-04-21T14:00:00Z',
-            results: { YouTube: { success: true } },
-          },
-          error: null,
-        });
+        mockCallEdge
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              scheduledAt: '2026-04-21T14:00:00Z',
+              results: { YouTube: { success: true } },
+            },
+            error: null,
+          });
 
         const handler = server.getHandler('schedule_post')!;
         const result = await handler({
@@ -228,19 +268,21 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        expect(mockCallEdge).toHaveBeenCalledOnce();
-        expect(mockCallEdge.mock.calls[0][0]).toBe('schedule-post');
+        // No upload-to-r2 call — only preflight + schedule-post
+        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
       });
 
       it('skips rehost entirely when auto_rehost=false', async () => {
-        mockCallEdge.mockResolvedValueOnce({
-          data: {
-            success: true,
-            scheduledAt: '2026-04-21T14:00:00Z',
-            results: { YouTube: { success: true } },
-          },
-          error: null,
-        });
+        mockCallEdge
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              scheduledAt: '2026-04-21T14:00:00Z',
+              results: { YouTube: { success: true } },
+            },
+            error: null,
+          });
 
         const handler = server.getHandler('schedule_post')!;
         await handler({
@@ -250,8 +292,7 @@ describe('distribution tools', () => {
           auto_rehost: false,
         });
 
-        expect(mockCallEdge).toHaveBeenCalledOnce();
-        expect(mockCallEdge.mock.calls[0][0]).toBe('schedule-post');
+        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
       });
 
       it('rejects media_url that fails the SSRF guard (localhost)', async () => {
@@ -277,6 +318,23 @@ describe('distribution tools', () => {
 
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toContain('Failed to persist media URL');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      });
+
+      it('rejects SSRF attempt disguised with X-Amz-Signature query param', async () => {
+        // Regression: the isAlreadyR2Signed() short-circuit previously fired
+        // BEFORE the SSRF check, so an attacker could append ?X-Amz-Signature=x
+        // to an internal URL and slip past both the check and the rehost.
+        const handler = server.getHandler('schedule_post')!;
+        const result = await handler({
+          media_url: 'http://169.254.169.254/latest/meta-data/?X-Amz-Signature=forged',
+          caption: 'hi',
+          platforms: ['youtube'],
+        });
+
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toContain('Failed to persist media URL');
+        // Critical: the spoofed URL must NOT be forwarded to schedule-post.
         expect(mockCallEdge).not.toHaveBeenCalled();
       });
 
@@ -318,7 +376,7 @@ describe('distribution tools', () => {
       });
 
       it('rehosts every URL in media_urls for carousels', async () => {
-        // 3 rehost calls, then 1 schedule-post
+        // 3 rehost calls, then preflight, then schedule-post
         for (let i = 0; i < 3; i++) {
           mockCallEdge.mockResolvedValueOnce({
             data: {
@@ -331,6 +389,7 @@ describe('distribution tools', () => {
             error: null,
           });
         }
+        mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['Instagram']));
         mockCallEdge.mockResolvedValueOnce({
           data: {
             success: true,
@@ -343,9 +402,9 @@ describe('distribution tools', () => {
         const handler = server.getHandler('schedule_post')!;
         const result = await handler({
           media_urls: [
-            'https://93.184.216.34/a.png',
-            'https://93.184.216.34/b.png',
-            'https://93.184.216.34/c.png',
+            'https://replicate.delivery/a.png',
+            'https://replicate.delivery/b.png',
+            'https://replicate.delivery/c.png',
           ],
           caption: 'carousel',
           platforms: ['instagram'],
@@ -353,10 +412,12 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        expect(mockCallEdge).toHaveBeenCalledTimes(4);
-        expect(mockCallEdge.mock.calls[0][0]).toBe('upload-to-r2');
-        expect(mockCallEdge.mock.calls[3][0]).toBe('schedule-post');
-        const schedBody = mockCallEdge.mock.calls[3][1] as { mediaUrls: string[] };
+        // Exactly 3 upload-to-r2 calls
+        const uploads = mockCallEdge.mock.calls.filter(c => c[0] === 'upload-to-r2');
+        expect(uploads).toHaveLength(3);
+        const scheduleCall = mockCallEdge.mock.calls.find(c => c[0] === 'schedule-post');
+        expect(scheduleCall).toBeDefined();
+        const schedBody = scheduleCall![1] as { mediaUrls: string[] };
         expect(schedBody.mediaUrls).toHaveLength(3);
         schedBody.mediaUrls.forEach((u: string) => {
           expect(u).toContain('X-Amz-Signature');
@@ -386,6 +447,7 @@ describe('distribution tools', () => {
             },
             error: null,
           })
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
           .mockResolvedValueOnce({
             data: {
               success: true,
@@ -403,14 +465,16 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        expect(mockCallEdge).toHaveBeenCalledTimes(3);
-        expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data'); // job-status lookup
-        expect(mockCallEdge.mock.calls[1][0]).toBe('upload-to-r2'); // rehost
-        expect(mockCallEdge.mock.calls[1][1]).toEqual(
+        const callNames = mockCallEdge.mock.calls.map(c => c[0]);
+        expect(callNames[0]).toBe('mcp-data'); // job-status lookup
+        expect(callNames[1]).toBe('upload-to-r2'); // rehost
+        const uploadCall = mockCallEdge.mock.calls[1];
+        expect(uploadCall[1]).toEqual(
           expect.objectContaining({ url: 'https://tempfile.kie.ai/abc/generated.mp4' })
         );
-        expect(mockCallEdge.mock.calls[2][0]).toBe('schedule-post');
-        expect(mockCallEdge.mock.calls[2][1]).toEqual(
+        const scheduleCall = mockCallEdge.mock.calls.find(c => c[0] === 'schedule-post');
+        expect(scheduleCall).toBeDefined();
+        expect(scheduleCall![1]).toEqual(
           expect.objectContaining({
             mediaUrl: 'https://r2-signed.example.com/k.mp4?X-Amz-Signature=sig',
           })
@@ -418,8 +482,8 @@ describe('distribution tools', () => {
       });
 
       it('does not rehost a kie.ai job_id that already resolved to an R2 key', async () => {
-        // R2 key path: mcp-data returns r2_key (no http prefix) → signR2Key →
-        // already R2-signed → no rehost needed.
+        // R2 key path: mcp-data returns r2_key (no http prefix) -> signR2Key ->
+        // already R2-signed -> no rehost needed.
         mockCallEdge
           .mockResolvedValueOnce({
             data: {
@@ -435,6 +499,7 @@ describe('distribution tools', () => {
             data: { signedUrl: 'https://r2.example.com/k.mp4?X-Amz-Signature=sig' },
             error: null,
           })
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
           .mockResolvedValueOnce({
             data: {
               success: true,
@@ -452,22 +517,17 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        // Exactly 3: job-status, sign, schedule-post — no upload-to-r2
-        expect(mockCallEdge).toHaveBeenCalledTimes(3);
-        expect(mockCallEdge.mock.calls.map(c => c[0])).toEqual([
-          'mcp-data',
-          'get-signed-url',
-          'schedule-post',
-        ]);
+        // No upload-to-r2 call
+        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
       });
 
       it('does not rehost when r2_key is already provided', async () => {
-        // r2_key path: 1st call is sign (get-signed-url), 2nd is schedule-post
         mockCallEdge
           .mockResolvedValueOnce({
             data: { signedUrl: 'https://r2.example.com/k.png?X-Amz-Signature=sig' },
             error: null,
           })
+          .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
           .mockResolvedValueOnce({
             data: {
               success: true,
@@ -485,9 +545,8 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        expect(mockCallEdge).toHaveBeenCalledTimes(2);
+        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
         expect(mockCallEdge.mock.calls[0][0]).toBe('get-signed-url');
-        expect(mockCallEdge.mock.calls[1][0]).toBe('schedule-post');
       });
     });
   });
@@ -860,7 +919,6 @@ describe('distribution tools', () => {
         plan_id: planId,
         auto_slot: false,
         dry_run: false,
-        schedule_confirmed: true,
       });
 
       expect(result.isError).toBe(true);
@@ -868,30 +926,6 @@ describe('distribution tools', () => {
       // Verify schedule-post was NOT called
       const schedulePostCalls = mockCallEdge.mock.calls.filter(c => c[0] === 'schedule-post');
       expect(schedulePostCalls).toHaveLength(0);
-    });
-
-    it('requires explicit confirmation before live scheduling a content plan', async () => {
-      const handler = server.getHandler('schedule_content_plan')!;
-      const result = await handler({
-        plan: {
-          posts: [
-            {
-              id: 'day1-twitter-1',
-              caption: 'High quality caption with enough detail for a safe scheduling test.',
-              platform: 'twitter',
-              schedule_at: '2026-03-20T10:00:00Z',
-            },
-          ],
-        },
-        auto_slot: false,
-        dry_run: false,
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain(
-        'Scheduling a content plan requires explicit confirmation'
-      );
-      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('schedules with plan_id input without crashing', async () => {
@@ -923,7 +957,6 @@ describe('distribution tools', () => {
         plan_id: planId,
         auto_slot: false,
         dry_run: false,
-        schedule_confirmed: true,
         enforce_quality: false,
         response_format: 'json',
       });

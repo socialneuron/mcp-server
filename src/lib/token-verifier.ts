@@ -4,6 +4,7 @@
  * Supports:
  *   1. Supabase JWTs (from OAuth flow) - verified via JWKS
  *   2. API keys (snk_live_...) - validated via mcp-auth Edge Function // gitleaks:allow
+ *   3. Opaque connector access tokens - validated via mcp-auth Edge Function
  */
 import { createHash } from 'node:crypto';
 import type { AuthInfo } from '@modelcontextprotocol/sdk/server/auth/types.js';
@@ -12,15 +13,7 @@ import * as jose from 'jose';
 interface TokenVerifierOptions {
   supabaseUrl: string;
   supabaseAnonKey: string;
-}
-
-interface AccountContextFields {
-  organizationId?: string;
-  organization_id?: string;
-  projectId?: string;
-  project_id?: string;
-  brandProfileId?: string;
-  brand_profile_id?: string;
+  resource?: string;
 }
 
 let jwks: jose.JWTVerifyGetKey | null = null;
@@ -33,100 +26,114 @@ function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
   return jwks;
 }
 
-// Cache validated API keys to avoid hitting mcp-auth rate limits (5/min per IP).
-// Keys are stored as sha256(token) so a heap/core dump never exposes the
-// plaintext secret (A7).
-const apiKeyCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
-// 5 min. The connector re-validates a *valid* token on a background heartbeat
-// ~1-2x/min even when idle. At 30s that was ~10 validate-key-public hits/5min
-// per replica — right at mcp-auth's 10/5min brute-force cap — so the shared
-// Anthropic egress IP pinned the limit and tool calls 401'd ("connection
-// invalidated"). 5min cuts a steady valid key to ~1 miss/5min per replica.
-//
-// Tradeoff: a revoked key can stay cached (and keep authenticating) up to the
-// TTL on a replica that didn't process the eviction. revokeToken() calls
-// evictFromCache() (see oauth-provider.ts) so the revoking replica drops it
-// immediately; 5 min of residual validity on *other* replicas is acceptable
-// for a 90-day key. NOTE: this cache is per-process, so N replicas multiply
-// the miss count by N — the real fix is making mcp-auth not count successful
-// validations toward the brute-force lock (server-side, P0); this TTL bump is
-// mitigation, not the cure.
-const API_KEY_CACHE_TTL_MS = 300_000;
+// Cache validated connector tokens to avoid repeated background heartbeat
+// validations. Keys are sha256(token), never the plaintext bearer token.
+// User-owned API keys are intentionally not cached: the normal revoke-key path
+// only updates mcp-auth's database, so every API-key request must revalidate
+// against mcp-auth to observe revocation and scope changes immediately.
+const tokenValidationCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
+const CONNECTOR_TOKEN_VALIDATION_CACHE_TTL_MS = 300_000;
+const DEFAULT_MCP_RESOURCE = 'https://mcp.socialneuron.com';
 
 function cacheKey(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-function optionalString(value: unknown): string | undefined {
-  return typeof value === 'string' && value.length > 0 ? value : undefined;
-}
-
-function extractAccountContext(source: AccountContextFields): {
-  organizationId?: string;
-  projectId?: string;
-  brandProfileId?: string;
-} {
-  const context: {
-    organizationId?: string;
-    projectId?: string;
-    brandProfileId?: string;
-  } = {};
-  const organizationId =
-    optionalString(source.organizationId) ?? optionalString(source.organization_id);
-  const projectId = optionalString(source.projectId) ?? optionalString(source.project_id);
-  const brandProfileId =
-    optionalString(source.brandProfileId) ?? optionalString(source.brand_profile_id);
-  if (organizationId) context.organizationId = organizationId;
-  if (projectId) context.projectId = projectId;
-  if (brandProfileId) context.brandProfileId = brandProfileId;
-  return context;
-}
-
 /** Evict a token from the validation cache (used by revocation). */
 export function evictFromCache(token: string): void {
-  apiKeyCache.delete(cacheKey(token));
+  tokenValidationCache.delete(cacheKey(token));
+}
+
+async function verifyCachedOpaqueToken(
+  token: string,
+  validate: () => Promise<AuthInfo>,
+  ttlMs: number
+): Promise<AuthInfo> {
+  const key = cacheKey(token);
+  const cached = tokenValidationCache.get(key);
+  const now = Date.now();
+  if (cached && cached.expiresAt > now) {
+    const tokenExpiresAtMs = cached.authInfo.expiresAt
+      ? cached.authInfo.expiresAt * 1000
+      : undefined;
+    if (!tokenExpiresAtMs || tokenExpiresAtMs > now) {
+      return cached.authInfo;
+    }
+  }
+  if (cached) tokenValidationCache.delete(key);
+
+  const authInfo = await validate();
+  const tokenExpiresAtMs = authInfo.expiresAt ? authInfo.expiresAt * 1000 : undefined;
+  const cacheExpiresAt = Math.min(Date.now() + ttlMs, tokenExpiresAtMs ?? Number.POSITIVE_INFINITY);
+  if (cacheExpiresAt > Date.now()) {
+    tokenValidationCache.set(key, {
+      authInfo,
+      expiresAt: cacheExpiresAt,
+    });
+  }
+
+  if (tokenValidationCache.size > 100) {
+    const now = Date.now();
+    for (const [k, v] of tokenValidationCache) {
+      if (v.expiresAt <= now) tokenValidationCache.delete(k);
+    }
+  }
+
+  return authInfo;
 }
 
 export function createTokenVerifier(options: TokenVerifierOptions) {
   const { supabaseUrl, supabaseAnonKey } = options;
+  const expectedResource =
+    normalizeResource(
+      options.resource ?? process.env.MCP_RESOURCE_URL ?? process.env.MCP_SERVER_URL
+    ) ?? DEFAULT_MCP_RESOURCE;
 
   return {
     async verifyAccessToken(token: string): Promise<AuthInfo> {
       // Path 1: API key (snk_live_... or snk_test_...) // gitleaks:allow
       if (token.startsWith('snk_')) {
-        const key = cacheKey(token);
-        const cached = apiKeyCache.get(key);
-        if (cached && cached.expiresAt > Date.now()) {
-          return cached.authInfo;
-        }
-        if (cached) apiKeyCache.delete(key);
-
-        const authInfo = await verifyApiKey(token, supabaseUrl, supabaseAnonKey);
-        apiKeyCache.set(key, { authInfo, expiresAt: Date.now() + API_KEY_CACHE_TTL_MS });
-
-        // Evict stale entries if cache grows
-        if (apiKeyCache.size > 100) {
-          const now = Date.now();
-          for (const [k, v] of apiKeyCache) {
-            if (v.expiresAt <= now) apiKeyCache.delete(k);
-          }
-        }
-
-        return authInfo;
+        return verifyApiKey(token, supabaseUrl, supabaseAnonKey);
       }
 
-      // Path 2: Supabase JWT
+      // Path 2: short-lived opaque connector token
+      if (token.startsWith('sno_')) {
+        return verifyCachedOpaqueToken(
+          token,
+          () => verifyConnectorToken(token, supabaseUrl, supabaseAnonKey, expectedResource),
+          CONNECTOR_TOKEN_VALIDATION_CACHE_TTL_MS
+        );
+      }
+
+      // Path 3: Supabase JWT
       return verifySupabaseJwt(token, supabaseUrl);
     },
   };
 }
 
+function normalizeResource(value: string | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = new URL(value);
+    return `${parsed.protocol}//${parsed.host}`;
+  } catch {
+    return value.replace(/\/$/, '');
+  }
+}
+
+function audienceIncludesExpected(audience: unknown, expectedResource: string): boolean {
+  if (typeof audience === 'string') {
+    return normalizeResource(audience) === expectedResource;
+  }
+  if (Array.isArray(audience)) {
+    return audience.some(item => audienceIncludesExpected(item, expectedResource));
+  }
+  return false;
+}
+
 async function verifySupabaseJwt(token: string, supabaseUrl: string): Promise<AuthInfo> {
   const jwksKeySet = getJWKS(supabaseUrl);
 
-  // Pin algorithms to prevent JWKS-supplied alg confusion, require the
-  // Supabase 'authenticated' audience so tokens minted for other services
-  // sharing this project URL are rejected, and tolerate small clock skew.
   const { payload } = await jose.jwtVerify(token, jwksKeySet, {
     issuer: `${supabaseUrl}/auth/v1`,
     audience: 'authenticated',
@@ -145,14 +152,12 @@ async function verifySupabaseJwt(token: string, supabaseUrl: string): Promise<Au
     ? appMetadata.mcp_scopes.map(String)
     : ['mcp:read'];
 
-  const appContext = extractAccountContext(appMetadata as AccountContextFields);
-
   return {
     token,
     clientId: (payload.client_id as string) ?? 'supabase-oauth',
     scopes,
     expiresAt: payload.exp,
-    extra: { userId, ...appContext },
+    extra: { userId },
   };
 }
 
@@ -191,7 +196,7 @@ async function verifyApiKey(
       email?: string;
       expiresAt?: string;
       error?: string;
-    } & AccountContextFields;
+    };
 
     if (!data.valid || !data.userId) {
       throw new Error(data.error ?? 'Invalid API key');
@@ -206,14 +211,12 @@ async function verifyApiKey(
       throw new Error('API key expired');
     }
 
-    const context = extractAccountContext(data);
-
     return {
       token: apiKey,
       clientId: 'api-key',
       scopes: data.scopes ?? ['mcp:read'],
       expiresAt,
-      extra: { userId: data.userId, email: data.email, ...context },
+      extra: { userId: data.userId, email: data.email },
     };
   } catch (err) {
     clearTimeout(timer);
@@ -221,5 +224,79 @@ async function verifyApiKey(
       throw new Error('API key validation timed out');
     }
     throw err;
+  }
+}
+
+async function verifyConnectorToken(
+  accessToken: string,
+  supabaseUrl: string,
+  supabaseAnonKey: string,
+  expectedResource: string
+): Promise<AuthInfo> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 10_000);
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/functions/v1/mcp-auth?action=validate-connector-token`,
+      {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${supabaseAnonKey}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ access_token: accessToken, resource: expectedResource }),
+        signal: controller.signal,
+      }
+    );
+
+    if (!response.ok) {
+      throw new Error(`Connector token validation failed: HTTP ${response.status}`);
+    }
+
+    const data = (await response.json()) as {
+      valid: boolean;
+      userId?: string;
+      clientId?: string;
+      scopes?: string[];
+      email?: string;
+      expiresAt?: string;
+      resource?: string;
+      audience?: string | string[];
+      aud?: string | string[];
+      error?: string;
+    };
+
+    if (!data.valid || !data.userId) {
+      throw new Error(data.error ?? 'Invalid connector token');
+    }
+
+    const expiresAt = data.expiresAt
+      ? Math.floor(new Date(data.expiresAt).getTime() / 1000)
+      : undefined;
+
+    if (expiresAt && expiresAt < Math.floor(Date.now() / 1000)) {
+      throw new Error('Connector token expired');
+    }
+
+    const tokenResource = data.resource ?? data.audience ?? data.aud;
+    if (!audienceIncludesExpected(tokenResource, expectedResource)) {
+      throw new Error('Connector token audience/resource mismatch');
+    }
+
+    return {
+      token: accessToken,
+      clientId: data.clientId ?? 'connector-oauth',
+      scopes: data.scopes ?? ['mcp:read'],
+      expiresAt,
+      extra: { userId: data.userId, email: data.email, resource: expectedResource },
+    };
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error('Connector token validation timed out');
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }

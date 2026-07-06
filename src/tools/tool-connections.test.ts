@@ -14,6 +14,7 @@ import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 // Module registrars
 import { registerIdeationTools } from './ideation.js';
@@ -33,6 +34,7 @@ import { registerUsageTools } from './usage.js';
 import { registerAutopilotTools } from './autopilot.js';
 import { registerExtractionTools } from './extraction.js';
 import { registerQualityTools } from './quality.js';
+import { registerVisualQualityTools } from './visualQuality.js';
 import { registerPlanningTools } from './planning.js';
 import { registerPlanApprovalTools } from './plan-approvals.js';
 import { registerDiscoveryTools } from './discovery.js';
@@ -42,9 +44,18 @@ import { registerDigestTools } from './digest.js';
 import { registerBrandRuntimeTools } from './brandRuntime.js';
 import { registerRecipeTools } from './recipes.js';
 import { registerCarouselTools } from './carousel.js';
+import { registerNicheResearchTools } from './niche-research.js';
+import { registerHyperframesTools } from './hyperframes.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
 import { registerConnectionTools } from './connections.js';
+import { registerHarnessTools } from './harness.js';
+import { registerHermesTools } from './hermes.js';
+import { registerSkillsTools } from './skills.js';
+import { registerLoopPulseTools } from './loopPulse.js';
+import { registerBanditStateTools } from './banditState.js';
+import { registerAllTools } from '../lib/register-tools.js';
 // Screenshot tools require browser mocks; tested separately below.
+// (Individual registrars above remain used by the per-module tests in SECTION 2.)
 import { registerScreenshotTools } from './screenshot.js';
 
 // ---------------------------------------------------------------------------
@@ -219,36 +230,11 @@ describe('Registration & Scope Coverage', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     server = createMockServer();
-    // Register every module (mirrors registerAllTools)
-    registerIdeationTools(server as any);
-    registerContentTools(server as any);
-    registerDistributionTools(server as any);
-    registerMediaTools(server as any);
-    registerAnalyticsTools(server as any);
-    registerBrandTools(server as any);
-    registerScreenshotTools(server as any);
-    registerRemotionTools(server as any);
-    registerInsightsTools(server as any);
-    registerYouTubeAnalyticsTools(server as any);
-    registerCommentsTools(server as any);
-    registerIdeationContextTools(server as any);
-    registerCreditsTools(server as any);
-    registerLoopSummaryTools(server as any);
-    registerUsageTools(server as any);
-    registerAutopilotTools(server as any);
-    registerExtractionTools(server as any);
-    registerQualityTools(server as any);
-    registerPlanningTools(server as any);
-    registerPlanApprovalTools(server as any);
-    registerDiscoveryTools(server as any);
-    registerPipelineTools(server as any);
-    registerSuggestTools(server as any);
-    registerDigestTools(server as any);
-    registerBrandRuntimeTools(server as any);
-    registerRecipeTools(server as any);
-    registerCarouselTools(server as any);
-    registerContentCalendarApp(server as any);
-    registerConnectionTools(server as any);
+    // Use the REAL registerAllTools so this coverage check can never drift from
+    // production (the previous hand-mirrored list silently omitted skills /
+    // loopPulse / banditState). The standalone registered==scoped==cataloged
+    // invariant lives in src/lib/registration-invariant.test.ts (P1.12).
+    registerAllTools(server as any);
   });
 
   it('every tool in TOOL_SCOPES is actually registered (no orphaned scope entries)', () => {
@@ -539,6 +525,23 @@ describe('Module: distribution', () => {
   });
 
   it('schedule_post: happy path calls schedule-post edge function', async () => {
+    // Preflight: connected-accounts validation
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        accounts: [
+          {
+            id: 'a1',
+            platform: 'YouTube',
+            username: 'chan',
+            status: 'active',
+            expires_at: null,
+            has_refresh_token: true,
+          },
+        ],
+      },
+      error: null,
+    });
+    // Main schedule-post call
     mockCallEdge.mockResolvedValueOnce({
       data: {
         success: true,
@@ -552,10 +555,28 @@ describe('Module: distribution', () => {
       platforms: ['youtube'],
     });
     expect(result.content[0].text).toContain('Post scheduled successfully');
-    expect(mockCallEdge.mock.calls[0][0]).toBe('schedule-post');
+    // Second call (index 1) is the actual schedule-post EF; index 0 is preflight
+    expect(mockCallEdge.mock.calls[1][0]).toBe('schedule-post');
   });
 
   it('schedule_post: error path returns isError', async () => {
+    // Preflight succeeds
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        accounts: [
+          {
+            id: 'a1',
+            platform: 'YouTube',
+            username: 'chan',
+            status: 'active',
+            expires_at: null,
+            has_refresh_token: true,
+          },
+        ],
+      },
+      error: null,
+    });
+    // Main schedule-post call fails
     mockCallEdge.mockResolvedValueOnce({ data: null, error: 'Token expired' });
     const result = await server.getHandler('schedule_post')!({
       caption: 'Test',
@@ -1059,20 +1080,29 @@ describe('Module: extraction', () => {
   });
 
   it('extract_url_content: happy path for YouTube URL', async () => {
-    mockCallEdge.mockResolvedValueOnce({
-      data: {
-        title: 'My Video',
-        description: 'Video desc',
-        transcript: 'Hello world transcript',
-        metadata: { views: 5000, likes: 100, duration: 300, tags: ['tech'], channelName: 'TestCh' },
-      },
-      error: null,
-    });
+    // Video path makes parallel transcript + metadata calls; both return the
+    // { success, data } envelope.
+    mockCallEdge.mockImplementation(((fn: string, body: Record<string, unknown>) => {
+      if (fn === 'scrape-youtube' && body.action === 'transcript') {
+        return Promise.resolve({
+          data: { success: true, data: { segments: [{ text: 'Hello world transcript' }] } },
+          error: null,
+        });
+      }
+      if (fn === 'scrape-youtube' && body.action === 'metadata') {
+        return Promise.resolve({
+          data: {
+            success: true,
+            data: { title: 'My Video', viewCount: 5000, channelName: 'TestCh' },
+          },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: null, error: 'unexpected' });
+    }) as never);
     const result = await server.getHandler('extract_url_content')!({
       url: 'https://youtube.com/watch?v=abc',
       extract_type: 'auto',
-      include_comments: false,
-      max_results: 10,
       response_format: 'text',
     });
     expect(result.isError).toBe(false);
@@ -1081,12 +1111,11 @@ describe('Module: extraction', () => {
   });
 
   it('extract_url_content: error path returns isError', async () => {
-    mockCallEdge.mockResolvedValueOnce({ data: null, error: 'Failed to scrape' });
+    mockCallEdge.mockImplementation((() =>
+      Promise.resolve({ data: null, error: 'Failed to scrape' })) as never);
     const result = await server.getHandler('extract_url_content')!({
       url: 'https://youtube.com/watch?v=fail',
       extract_type: 'auto',
-      include_comments: false,
-      max_results: 10,
       response_format: 'text',
     });
     expect(result.isError).toBe(true);
@@ -1345,12 +1374,28 @@ describe('JSON envelope format (spot checks)', () => {
       response_format: 'json',
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed._meta.version).toBe('1.7.13');
+    expect(parsed._meta.version).toBe(MCP_VERSION);
     expect(parsed._meta.timestamp).toBeDefined();
     expect(parsed.data.jobId).toBe('env-test');
   });
 
   it('schedule_post returns valid _meta envelope when response_format=json', async () => {
+    // Preflight: connected-accounts validation
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        accounts: [
+          {
+            id: 'a1',
+            platform: 'YouTube',
+            username: 'chan',
+            status: 'active',
+            expires_at: null,
+            has_refresh_token: true,
+          },
+        ],
+      },
+      error: null,
+    });
     mockCallEdge.mockResolvedValueOnce({
       data: {
         success: true,
@@ -1365,7 +1410,7 @@ describe('JSON envelope format (spot checks)', () => {
       response_format: 'json',
     });
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed._meta.version).toBe('1.7.13');
+    expect(parsed._meta.version).toBe(MCP_VERSION);
     expect(parsed.data.success).toBe(true);
   });
 });

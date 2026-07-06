@@ -3,6 +3,7 @@ import { createMockServer } from '../test-setup.js';
 import { registerIdeationContextTools } from './ideation-context.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
@@ -70,7 +71,7 @@ describe('ideation context tools', () => {
     const result = await handler({ response_format: 'json' });
 
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed._meta.version).toBe('1.7.13');
+    expect(parsed._meta.version).toBe(MCP_VERSION);
     expect(parsed.data.hasHistoricalData).toBe(false);
   });
 });

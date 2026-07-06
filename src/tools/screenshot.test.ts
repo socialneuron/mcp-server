@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerScreenshotTools } from './screenshot.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { logMcpToolInvocation } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 
 vi.mock('../lib/browser.js', () => ({
@@ -46,7 +45,6 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 const mockRateLimit = vi.mocked(checkRateLimit);
-const mockLog = vi.mocked(logMcpToolInvocation);
 const mockSSRF = vi.mocked(validateUrlForSSRF);
 
 describe('screenshot tools', () => {
@@ -89,16 +87,9 @@ describe('screenshot tools', () => {
       const handler = server.getHandler('capture_screenshot')!;
       const result = await handler({ url: 'http://localhost:3000' });
 
-      expect(result.isError).toBe(false);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed).toMatchObject({
-        ok: false,
-        error_type: 'policy_block',
-        policy: 'ssrf',
-        tool: 'capture_screenshot',
-        input_kind: 'url',
-        reason: 'Access to internal/localhost addresses is not allowed.',
-      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('URL blocked by SSRF protection');
+      expect(result.content[0].text).toContain('internal/localhost');
     });
 
     it('blocks private IP addresses via SSRF', async () => {
@@ -110,10 +101,8 @@ describe('screenshot tools', () => {
       const handler = server.getHandler('capture_screenshot')!;
       const result = await handler({ url: 'http://192.168.1.1' });
 
-      expect(result.isError).toBe(false);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.error_type).toBe('policy_block');
-      expect(parsed.policy).toBe('ssrf');
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('URL blocked by SSRF protection');
     });
 
     it('returns rate limit error when rate limited', async () => {

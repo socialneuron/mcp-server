@@ -1,110 +1,24 @@
 # @socialneuron/mcp-server
 
-> 96 MCP tools for AI-powered social media management — 94 exposed over the remote MCP endpoint and REST API (2 screen-capture tools run locally over stdio). Query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+> 96 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
-[![npm provenance](https://img.shields.io/badge/npm-provenance%20%E2%9C%93-blueviolet?logo=npm)](https://docs.npmjs.com/generating-provenance-statements)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Node](https://img.shields.io/node/v/@socialneuron/mcp-server)](https://nodejs.org/)
-[![CI](https://github.com/socialneuron/mcp-server/actions/workflows/ci.yml/badge.svg)](https://github.com/socialneuron/mcp-server/actions/workflows/ci.yml)
-
-## Contents
-
-- [Compatibility](#compatibility)
-- [Integration Methods](#integration-methods)
-- [Platform Status](#platform-status)
-- [Quick Start](#quick-start)
-- [What You Can Do](#what-you-can-do)
-- [Tool Categories](#tool-categories-96-tools)
-- [Authentication](#authentication)
-- [Pricing](#pricing)
-- [Scopes](#scopes)
-- [CLI Reference](#cli-reference)
-- [Automation Flow](#automation-flow-e2e-loop)
-- [Security](#security)
-- [Telemetry](#telemetry)
-- [Examples](#examples)
-- [Documentation](#documentation)
-
-## Compatibility
-
-| Surface | Minimum |
-|--------|---------|
-| Node.js | 20.x or 22.x+ |
-| Claude Desktop | 0.7.0+ |
-| Claude Code | any |
-| Cursor | 0.42.0+ (MCP support) |
-| VS Code | 1.99+ (MCP preview) |
-| Zed | 0.151.0+ |
-| Windsurf | 1.4.0+ |
-| Continue.dev | 0.9.230+ |
-
-Every release is published from GitHub Actions with [npm provenance attestation](https://docs.npmjs.com/generating-provenance-statements) (SLSA Build L2 via OIDC Trusted Publishing) — verify with `npm view @socialneuron/mcp-server --json | jq .dist.attestations`.
-
-## Integration Methods
-
-| Method | Best For | Docs |
-|--------|----------|------|
-| **MCP** | AI agents (Claude, Cursor, VS Code) | [Setup](#quick-start) |
-| **REST API** | Any HTTP client, webhooks, Zapier | [Guide](docs/rest-api.md) |
-| **CLI** | Terminal, CI/CD pipelines | [Guide](docs/cli-guide.md) |
-| **SDK** | TypeScript/Node.js apps | [Preview](docs/sdk-guide.md) |
-
-All methods share the same tool catalog, auth, scopes, and credit system. [Compare methods](docs/integration-methods.md).
-
-## Platform Status
-
-| Platform | Status |
-|----------|--------|
-| YouTube | ✅ Live |
-| TikTok | ✅ Live |
-| Instagram | 🔶 Pending app review |
-| LinkedIn · X · Facebook · Threads · Bluesky | Supported — see [integrations](https://socialneuron.com/integrations) for live status |
-
-The hosted endpoint and REST API track the live matrix; check [socialneuron.com/integrations](https://socialneuron.com/integrations) for current availability.
 
 ## Quick Start
 
-### MCP (AI Agents)
-
-#### 1. Authenticate
+### 1. Authenticate
 
 ```bash
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a Social Neuron Pro plan or above (Pro = MCP read + analytics + write + distribute; Team/Agency = full MCP). See [pricing](https://socialneuron.com/pricing).
+This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
 
-<details>
-<summary><strong>Using pnpm, bun, or yarn?</strong></summary>
-
-```bash
-# pnpm
-pnpm dlx -y @socialneuron/mcp-server login --device
-
-# bun
-bunx -y @socialneuron/mcp-server login --device
-
-# yarn (Classic / Berry)
-yarn dlx -y @socialneuron/mcp-server login --device
-
-# Global install (any package manager)
-npm install -g @socialneuron/mcp-server   # or: pnpm add -g … / bun add -g …
-socialneuron-mcp login --device
-```
-
-The package is published to npmjs.com with provenance attestation; any registry-compatible client works.
-</details>
-
-#### 2. Add to Claude Code
+### 2. Add to Claude Code
 
 ```bash
-# Local stdio (uses key from step 1)
 claude mcp add socialneuron -- npx -y @socialneuron/mcp-server
-
-# Or HTTP transport — no local process, key in header
-claude mcp add --transport http socialneuron https://mcp.socialneuron.com/mcp \
-  --header "Authorization: Bearer $SOCIALNEURON_API_KEY"
 ```
 
 <details>
@@ -162,111 +76,9 @@ Add to `.cursor/mcp.json` in your workspace:
 ```
 </details>
 
-<details>
-<summary><strong>Windsurf</strong></summary>
-
-Add to `~/.codeium/windsurf/mcp_config.json` (or via Settings → MCP servers):
-
-```json
-{
-  "mcpServers": {
-    "socialneuron": {
-      "command": "npx",
-      "args": ["-y", "@socialneuron/mcp-server"]
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Zed</strong></summary>
-
-Add to `~/.config/zed/settings.json` under `context_servers`:
-
-```json
-{
-  "context_servers": {
-    "socialneuron": {
-      "command": {
-        "path": "npx",
-        "args": ["-y", "@socialneuron/mcp-server"]
-      }
-    }
-  }
-}
-```
-</details>
-
-<details>
-<summary><strong>Continue.dev</strong></summary>
-
-Add to `~/.continue/config.yaml` under `mcpServers`:
-
-```yaml
-mcpServers:
-  - name: socialneuron
-    command: npx
-    args:
-      - "-y"
-      - "@socialneuron/mcp-server"
-```
-</details>
-
-<details>
-<summary><strong>Cline (VS Code)</strong></summary>
-
-Add via Cline → MCP Servers → Edit config, or directly to `~/Library/Application Support/Code/User/globalStorage/saoudrizwan.claude-dev/settings/cline_mcp_settings.json` (macOS path):
-
-```json
-{
-  "mcpServers": {
-    "socialneuron": {
-      "command": "npx",
-      "args": ["-y", "@socialneuron/mcp-server"],
-      "disabled": false,
-      "autoApprove": []
-    }
-  }
-}
-```
-</details>
-
-#### 3. Start using
+### 3. Start using
 
 Ask Claude: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
-
-### REST API (Any Language)
-
-```bash
-# Check credits
-curl -H "Authorization: Bearer snk_live_..." \
-  https://mcp.socialneuron.com/v1/credits
-
-# Generate content
-curl -X POST -H "Authorization: Bearer snk_live_..." \
-  -H "Content-Type: application/json" \
-  -d '{"topic": "AI trends", "platforms": ["linkedin"]}' \
-  https://mcp.socialneuron.com/v1/content/generate
-
-# Execute any tool via proxy
-curl -X POST -H "Authorization: Bearer snk_live_..." \
-  -H "Content-Type: application/json" \
-  -d '{"response_format": "json"}' \
-  https://mcp.socialneuron.com/v1/tools/get_brand_profile
-```
-
-See [REST API docs](docs/rest-api.md) | [OpenAPI spec](https://mcp.socialneuron.com/v1/openapi.json) | [Examples](examples/rest/)
-
-### CLI (Terminal & CI/CD)
-
-```bash
-npx @socialneuron/mcp-server sn system credits --json
-npx @socialneuron/mcp-server sn analytics loop --json
-npx @socialneuron/mcp-server sn discovery tools --module content
-```
-
-See [CLI guide](docs/cli-guide.md) | [Examples](examples/cli/)
 
 ## What You Can Do
 
@@ -274,7 +86,7 @@ Ask Claude things like:
 
 - "Generate 5 content ideas about sustainable fashion for Gen Z"
 - "Create a 30-second video ad for my product launch"
-- "Schedule this video to YouTube and TikTok at 9am tomorrow"
+- "Schedule this post to X and Bluesky at 9am tomorrow"
 - "Show me my best-performing content this month"
 - "What are the trending topics in my niche right now?"
 - "Check my analytics and suggest improvements"
@@ -282,9 +94,7 @@ Ask Claude things like:
 
 ## Tool Categories (96 tools)
 
-> Full machine-readable listing in [`tools.lock.json`](tools.lock.json) (sealed manifest, verified in CI).
-
-94 hosted tools are accessible via MCP and REST API (`POST /v1/tools/{name}`); the 2 screen-capture tools run locally over stdio.
+These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
 ### Content Lifecycle
 
@@ -354,15 +164,15 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
-MCP access requires a Pro plan or higher:
+MCP access requires a paid plan:
 
 | Plan | Price | Credits/mo | MCP Access |
 |------|-------|-----------|------------|
-| Free   | $0     | 50     | — |
-| Starter| $19/mo | 500    | — |
-| Pro    | $49/mo | 1,500  | Read + Analytics + Write + Distribute |
-| Team   | $99/mo | 3,500  | Full |
-| Agency | $249/mo| 10,000 | Full |
+| Free | $0 | 50 | — |
+| Starter | $19/mo | 500 | — |
+| Pro | $49/mo | 1,500 | Read + Analytics + Write + Distribute |
+| Team | $99/mo | 3,500 | Full + 5 keys |
+| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |
 
 Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 
@@ -391,43 +201,32 @@ These commands run directly in your terminal — no AI agent needed. Useful for 
 # Auth
 socialneuron-mcp login [--device|--paste]
 socialneuron-mcp logout
-socialneuron-mcp whoami
-socialneuron-mcp health
 
-# Content (publish, quality-check, e2e workflows, plan, preset)
-socialneuron-mcp sn content publish --media-url <url> --caption <text> --platforms <list> --confirm
-socialneuron-mcp sn content e2e --media-url <url> --caption <text> --platforms <list> --confirm
-socialneuron-mcp sn content quality-check --content "your text here"
-socialneuron-mcp sn content plan list|view|approve
-socialneuron-mcp sn content preset list|show|save|delete
+# Deterministic CLI (no LLM)
+socialneuron-mcp sn publish --media-url <url> --caption <text> --platforms <list> --confirm
+socialneuron-mcp sn status --job-id <id>
+socialneuron-mcp sn posts --days 7 --platform youtube
+socialneuron-mcp sn refresh-analytics
+socialneuron-mcp sn preflight --check-urls
+socialneuron-mcp sn oauth-health --json
+socialneuron-mcp sn oauth-refresh --platform instagram
+socialneuron-mcp sn quality-check --content "your text here"
+socialneuron-mcp sn autopilot
+socialneuron-mcp sn usage
+socialneuron-mcp sn loop
+socialneuron-mcp sn credits
 
-# Analytics
-socialneuron-mcp sn analytics posts --days 7 --platform youtube
-socialneuron-mcp sn analytics refresh
-socialneuron-mcp sn analytics loop
-
-# System (status, credits, usage, autopilot)
-socialneuron-mcp sn system status
-socialneuron-mcp sn system credits
-socialneuron-mcp sn system usage
-socialneuron-mcp sn system autopilot
-
-# Account (platform connections)
-socialneuron-mcp sn account preflight --check-urls
-socialneuron-mcp sn account oauth-health
-socialneuron-mcp sn account oauth-refresh --platform instagram
-
-# Discovery (find tools)
-socialneuron-mcp sn discovery tools [--module ideation] [--scope mcp:write]
-socialneuron-mcp sn discovery info
+# Agent-native CLI v2
+socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 96 tools
+socialneuron-mcp sn info                                            # Version, auth, credits, tool count
+socialneuron-mcp sn plan list|view|approve                          # Content plan management
+socialneuron-mcp sn preset list|show|save|delete                    # Platform presets (6 built-in)
 
 # Interactive REPL
 socialneuron-mcp repl
 
 # Add --json to any command for machine-readable output
 ```
-
-> Each grouped command also has a flat alias (e.g. `sn credits` ≡ `sn system credits`, `sn publish` ≡ `sn content publish`). The grouped form is the documented surface; flat aliases exist for shell ergonomics.
 
 ## Automation Flow (E2E Loop)
 
@@ -452,66 +251,38 @@ Each iteration produces smarter content as performance data feeds back into the 
 - SSRF protection on all URL parameters with DNS rebinding prevention
 - Rate limiting per user with per-tool limits for expensive operations
 - Agent loop detection prevents runaway automation
-- Telemetry is off by default — opt in with `SOCIALNEURON_TELEMETRY=1`
+- Set `DO_NOT_TRACK=1` to disable anonymous usage telemetry
 
 See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy and credential safety details.
 
-### HTTP server tuning (cloud / Railway)
-
-The HTTP MCP server reads a few security-related env vars. Defaults are safe for the standard Railway deployment.
-
-| Variable | Default | Purpose |
-| --- | --- | --- |
-| `TRUST_PROXY` | `1` | Number of upstream proxy hops to trust for `req.ip` / `X-Forwarded-For`. Set to `0` (or `false`) when running the server without a trusted reverse proxy in front — otherwise the per-IP rate limit can be bypassed by spoofing `X-Forwarded-For`. Accepts any value Express's `trust proxy` accepts (integer, `'loopback'`, CIDR, …). |
-| `SESSION_HARD_TTL_MS` | `14400000` (4 h) | Hard ceiling on session lifetime regardless of activity. Prevents a slow-read SSE client from pinning a session slot indefinitely. |
-| `SN_ALLOW_SELF_HOST` | unset | Acknowledge running in self-host (service-role-key) mode. Suppresses the deprecation warning emitted on first Edge Function call. Self-host bypasses Supabase RLS, so caller-supplied IDs are higher-risk; the recommended path is cloud mode (`SOCIALNEURON_API_KEY`). |
-
 ## Telemetry
 
-Telemetry is **off by default**. No data is collected unless you explicitly opt in.
+This package collects anonymous usage metrics (tool name, duration, success/failure) to improve the product. Your user ID is hashed before transmission.
 
-**To enable**: Set `SOCIALNEURON_TELEMETRY=1` in your environment.
+**To disable**: Set `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` in your environment.
 
-**To disable**: `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` always disables telemetry, even if `SOCIALNEURON_TELEMETRY=1` is set.
-
-When enabled, the following anonymous metrics are collected via PostHog:
-- Tool name invoked
-- Success or failure status
-- Invocation duration (ms)
-
-No personal content, API keys, or request payloads are ever collected. Your user ID is hashed (SHA-256) before transmission.
-
-`posthog-node` is an optional dependency — if it is not installed, telemetry is a silent no-op regardless of environment variables.
+No personal content, API keys, or request payloads are ever collected.
 
 ## Examples
 
-See the [`examples/`](examples/) directory:
+See the [examples repo](https://github.com/socialneuron/examples) for prompt-driven workflow templates:
 
-- [REST API examples](examples/rest/) — curl scripts for every endpoint
-- [CLI examples](examples/cli/) — automation workflows
-- [MCP prompts](examples/mcp/claude-prompts.md) — natural language examples
-- [External examples repo](https://github.com/socialneuron/examples) — prompt-driven workflow templates
+- Weekly content batch planning
+- Cross-platform content repurposing
 - Performance review and optimization loops
 - Brand-aligned content generation
 - Comment engagement automation
 
-## Documentation
-
-- [Tool Reference](docs/tools-reference.md) — every tool, by scope
-- [Authentication](docs/auth.md) — device-code, browser, and API-key flows
-- [REST API](docs/rest-api.md) — endpoint reference
-- [CLI Guide](docs/cli-guide.md) — terminal commands
-- [TypeScript SDK](docs/sdk-guide.md) — `@socialneuron/sdk`
-- [Integration Methods](docs/integration-methods.md) — MCP vs REST vs CLI vs SDK
-- [Troubleshooting](docs/troubleshooting.md) — common issues & fixes
-- [Verifying tools.lock.json](docs/verifying-tools-lock.md) — supply-chain integrity
-
 ## Links
 
-- [For Developers](https://socialneuron.com/for-developers) · [Pricing](https://socialneuron.com/pricing) · [Developer Settings](https://socialneuron.com/settings/developer)
-- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) · [Server Card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)
-- [Docs Site](https://socialneuron.com/docs) · [Report an Issue](https://github.com/socialneuron/mcp-server/issues) · [Agent Protocol](https://socialneuron.com/system-prompt.txt)
+- [Social Neuron](https://socialneuron.com)
+- [For Developers](https://socialneuron.com/for-developers)
+- [Documentation](https://socialneuron.com/docs)
+- [Examples](https://github.com/socialneuron/examples)
+- [Agent Protocol](https://socialneuron.com/system-prompt.txt)
+- [Developer Settings](https://socialneuron.com/settings/developer)
+- [Pricing](https://socialneuron.com/pricing)
 
 ## License
 
-[MIT](LICENSE) © Social Neuron
+MIT - see [LICENSE](./LICENSE)

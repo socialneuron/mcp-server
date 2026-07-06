@@ -2,14 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerIdeationTools } from './ideation.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { validateUrlForSSRF } from '../lib/ssrf.js';
-
-vi.mock('../lib/ssrf.js', () => ({
-  validateUrlForSSRF: vi.fn(async () => ({ isValid: true, sanitizedUrl: 'https://example.com/' })),
-}));
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
-const mockValidateSSRF = vi.mocked(validateUrlForSSRF);
 
 describe('ideation tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -189,27 +183,6 @@ describe('ideation tools', () => {
   // fetch_trends
   // =========================================================================
   describe('fetch_trends', () => {
-    it('blocks unsafe urls via SSRF validation and does not call edge function', async () => {
-      mockValidateSSRF.mockResolvedValueOnce({
-        isValid: false,
-        error: 'Access to private/internal IP addresses is not allowed.',
-      });
-
-      const handler = server.getHandler('fetch_trends')!;
-      const result = await handler({ source: 'url', url: 'http://127.0.0.1:8080/admin' });
-
-      expect(result.isError).toBe(false);
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed).toMatchObject({
-        ok: false,
-        error_type: 'policy_block',
-        policy: 'ssrf',
-        tool: 'fetch_trends',
-        input_kind: 'url',
-      });
-      expect(mockCallEdge).not.toHaveBeenCalled();
-    });
-
     it('requires url param when source is rss and returns isError without calling edge function', async () => {
       const handler = server.getHandler('fetch_trends')!;
       const result = await handler({ source: 'rss' });

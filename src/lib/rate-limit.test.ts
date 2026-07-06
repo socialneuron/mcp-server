@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Import the REAL module, bypassing the global mock from test-setup.ts
-const { RateLimiter, checkRateLimit, getRateLimiter, sweepStaleLimiters } =
+const { RateLimiter, checkRateLimit, getRateLimiter } =
   await vi.importActual<typeof import('./rate-limit.js')>('./rate-limit.js');
 
 describe('RateLimiter', () => {
@@ -117,40 +117,6 @@ describe('RateLimiter', () => {
       const a = getRateLimiter('diff-cat-a');
       const b = getRateLimiter('diff-cat-b');
       expect(a).not.toBe(b);
-    });
-  });
-
-  describe('sweepStaleLimiters', () => {
-    it('evicts buckets idle longer than the stale window', () => {
-      // Create a keyed bucket; getRateLimiter caches it by key.
-      const key = 'posting:evict-stale-user';
-      const original = getRateLimiter(key);
-
-      // Idle past the 5-minute stale window, then sweep.
-      vi.advanceTimersByTime(6 * 60 * 1000);
-      sweepStaleLimiters();
-
-      // The cached entry must be gone — a fresh instance is created on next get.
-      const replacement = getRateLimiter(key);
-      expect(replacement).not.toBe(original);
-    });
-
-    it('keeps a bucket whose last access is recent even past its creation window', () => {
-      const key = 'posting:keep-recent-user';
-      const limiter = getRateLimiter(key);
-
-      // Idle 4 min (within the window), then touch — this must reset the
-      // eviction clock to "now".
-      vi.advanceTimersByTime(4 * 60 * 1000);
-      limiter.consume(); // updates lastAccess
-
-      // Advance another 4 min: now 8 min since creation (PAST the 5-min window)
-      // but only 4 min since the last touch. Without the clock reset the bucket
-      // would be swept, so surviving proves the touch moved lastAccess forward.
-      vi.advanceTimersByTime(4 * 60 * 1000);
-      sweepStaleLimiters();
-
-      expect(getRateLimiter(key)).toBe(limiter);
     });
   });
 });

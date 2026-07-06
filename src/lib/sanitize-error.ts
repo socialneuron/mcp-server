@@ -45,22 +45,6 @@ const ERROR_PATTERNS: Array<[RegExp, string]> = [
   [/[a-z0-9]{32,}.*key|Bearer [a-zA-Z0-9._-]+/i, 'An internal error occurred. Please try again.'],
 ];
 
-function extractErrorText(error: unknown): string | null {
-  if (error instanceof Error) return error.message;
-  if (typeof error === 'string') return error;
-  if (!error || typeof error !== 'object') return null;
-
-  const record = error as Record<string, unknown>;
-  for (const key of ['error', 'message', 'details', 'hint']) {
-    const value = record[key];
-    if (typeof value === 'string' && value.trim().length > 0) return value;
-    const nested = extractErrorText(value);
-    if (nested) return nested;
-  }
-
-  return null;
-}
-
 export function sanitizeDbError(error: { message?: string; code?: string }): string {
   if (process.env.NODE_ENV !== 'production') {
     console.error('[DB Error]', error.message);
@@ -79,29 +63,11 @@ export function sanitizeDbError(error: { message?: string; code?: string }): str
 }
 
 /**
- * Format backend/Edge error fields for tool responses.
- *
- * Unlike sanitizeError(), this preserves non-sensitive plain messages so user
- * facing tools can still show actionable backend validation errors. Object
- * payloads are reduced to known text fields and never coerced with String(),
- * avoiding "[object Object]" responses and accidental raw JSON disclosure.
- */
-export function safeErrorMessage(error: unknown, fallback = 'Unknown error'): string {
-  const msg = extractErrorText(error);
-  if (!msg) return fallback;
-
-  for (const [pattern, userMessage] of ERROR_PATTERNS) {
-    if (pattern.test(msg)) return userMessage;
-  }
-
-  return msg;
-}
-
-/**
  * Sanitize any error (not just DB) for safe inclusion in MCP tool responses.
  */
 export function sanitizeError(error: unknown): string {
-  const msg = extractErrorText(error) ?? 'Unknown error';
+  const msg =
+    error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
 
   if (process.env.NODE_ENV !== 'production') {
     console.error('[Error]', msg);

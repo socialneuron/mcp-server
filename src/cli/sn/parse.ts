@@ -1,6 +1,5 @@
 import { createHash } from 'node:crypto';
 import { getSupabaseClient } from '../../lib/supabase.js';
-import { safeFetch } from '../../lib/safe-fetch.js';
 import type { SnArgs } from './types.js';
 
 export function parseSnArgs(argv: string[]): SnArgs {
@@ -11,13 +10,7 @@ export function parseSnArgs(argv: string[]): SnArgs {
       parsed._.push(token);
       continue;
     }
-    const body = token.slice(2);
-    const eq = body.indexOf('=');
-    if (eq !== -1) {
-      parsed[body.slice(0, eq)] = body.slice(eq + 1);
-      continue;
-    }
-    const key = body;
+    const key = token.slice(2);
     const next = argv[i + 1];
     if (!next || next.startsWith('--')) {
       parsed[key] = true;
@@ -60,17 +53,23 @@ export async function checkUrlReachability(url: string): Promise<{
   status?: number;
   error?: string;
 }> {
-  // safeFetch enforces SSRF protection, DNS pinning, and per-hop
-  // redirect validation. Without this, a user-supplied privacy/terms
-  // URL could probe the local network or VPN-reachable services from
-  // whichever machine the CLI runs on.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 8_000);
   try {
-    const head = await safeFetch(url, { method: 'HEAD', timeoutMs: 8_000 });
+    const head = await fetch(url, {
+      method: 'HEAD',
+      redirect: 'follow',
+      signal: controller.signal,
+    });
     if (head.ok) {
       return { ok: true, status: head.status };
     }
     if (head.status === 405 || head.status === 501) {
-      const get = await safeFetch(url, { method: 'GET', timeoutMs: 8_000 });
+      const get = await fetch(url, {
+        method: 'GET',
+        redirect: 'follow',
+        signal: controller.signal,
+      });
       return { ok: get.ok, status: get.status };
     }
     return { ok: false, status: head.status };
@@ -79,6 +78,8 @@ export async function checkUrlReachability(url: string): Promise<{
       ok: false,
       error: error instanceof Error ? error.message : String(error),
     };
+  } finally {
+    clearTimeout(timer);
   }
 }
 

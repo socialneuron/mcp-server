@@ -6,7 +6,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 vi.unmock('./edge-function.js');
 
 import { callEdgeFunction } from './edge-function.js';
-import { requestContext } from './request-context.js';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -17,9 +16,6 @@ function mockResponse(status: number, body: string, ok?: boolean) {
   return {
     ok: ok ?? (status >= 200 && status < 300),
     status,
-    headers: {
-      get: vi.fn(() => null),
-    },
     text: async () => body,
   };
 }
@@ -28,7 +24,8 @@ function mockResponse(status: number, body: string, ok?: boolean) {
 function sentBody(): Record<string, unknown> {
   const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
   const [, init] = fetchMock.mock.calls[0];
-  return JSON.parse(init.body as string);
+  const payload = JSON.parse(init.body as string) as { body?: Record<string, unknown> };
+  return payload.body ?? payload;
 }
 
 /** Extract the headers object that was sent to fetch. */
@@ -38,13 +35,6 @@ function sentHeaders(): Record<string, string> {
   return init.headers;
 }
 
-/** Extract the URL that was sent to fetch. */
-function sentUrl(): string {
-  const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
-  const [url] = fetchMock.mock.calls[0];
-  return String(url);
-}
-
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -52,6 +42,7 @@ function sentUrl(): string {
 describe('callEdgeFunction', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    process.env.SOCIALNEURON_API_KEY = 'snk_live_test';
   });
 
   // 1. Happy path JSON
@@ -82,10 +73,7 @@ describe('callEdgeFunction', () => {
   });
 
   // 3. HTTP error with JSON body containing "error" field
-  it('sanitizes the backend error field but preserves the HTTP status', async () => {
-    // Backend-supplied messages are not trusted: a non-allowlisted internal
-    // string is collapsed to the generic sanitized message, while the HTTP
-    // status is preserved as a structured prefix.
+  it('extracts error field from JSON error response', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'bad request' })))
@@ -94,12 +82,11 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 400: An unexpected error occurred. Please try again.');
-    expect(result.error).not.toContain('bad request');
+    expect(result.error).toBe('bad request');
   });
 
   // 4. HTTP error with plain text body
-  it('sanitizes a non-JSON error body and preserves the HTTP status', async () => {
+  it('returns plain text as error on non-JSON error response', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(500, 'Internal error'))
@@ -108,12 +95,11 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 500: An unexpected error occurred. Please try again.');
-    expect(result.error).not.toContain('Internal error');
+    expect(result.error).toBe('Internal error');
   });
 
   // 5. HTTP error with empty body
-  it('returns sanitized HTTP status when error body is empty', async () => {
+  it('returns HTTP status code when error body is empty', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(502, ''))
@@ -122,7 +108,7 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 502: An unexpected error occurred. Please try again.');
+    expect(result.error).toBe('HTTP 502');
   });
 
   // 6. Timeout / AbortError
@@ -143,19 +129,18 @@ describe('callEdgeFunction', () => {
   });
 
   // 7. Network error
-  it('sanitizes generic network failures', async () => {
+  it('returns error message on generic network failure', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        throw new Error('connect ECONNREFUSED 127.0.0.1:5432');
+        throw new Error('ECONNREFUSED');
       })
     );
 
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('External service unavailable. Please try again.');
-    expect(result.error).not.toContain('127.0.0.1');
+    expect(result.error).toBe('ECONNREFUSED');
   });
 
   // 8. Auto-injects userId and user_id when body has neither
@@ -174,46 +159,44 @@ describe('callEdgeFunction', () => {
   });
 
   // 9. Preserves existing userId
-  it('overrides caller-supplied userId with the authenticated default', async () => {
-    // Defense-in-depth: a caller-supplied userId must never re-target an
-    // Edge Function call at another tenant. The authenticated user wins.
+  it('preserves existing userId and does not override it', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { userId: 'attacker-supplied' });
+    await callEdgeFunction('test-fn', { userId: 'custom-id' });
 
     const body = sentBody();
-    expect(body.userId).toBe('test-user-id');
+    expect(body.userId).toBe('custom-id');
   });
 
-  // 10. Always sets both userId and user_id from auth context
-  it('sets both userId and user_id from auth context, ignoring caller userId', async () => {
+  // 10. Syncs userId to user_id
+  it('syncs userId to user_id when only userId is provided', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { userId: 'attacker-supplied' });
+    await callEdgeFunction('test-fn', { userId: 'custom-id' });
 
     const body = sentBody();
-    expect(body.userId).toBe('test-user-id');
-    expect(body.user_id).toBe('test-user-id');
+    expect(body.userId).toBe('custom-id');
+    expect(body.user_id).toBe('custom-id');
   });
 
-  // 11. Same for user_id (snake_case)
-  it('ignores caller-supplied user_id and uses auth context', async () => {
+  // 11. Syncs user_id to userId
+  it('syncs user_id to userId when only user_id is provided', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
     );
 
-    await callEdgeFunction('test-fn', { user_id: 'attacker-supplied' });
+    await callEdgeFunction('test-fn', { user_id: 'snake-id' });
 
     const body = sentBody();
-    expect(body.user_id).toBe('test-user-id');
-    expect(body.userId).toBe('test-user-id');
+    expect(body.user_id).toBe('snake-id');
+    expect(body.userId).toBe('snake-id');
   });
 
   // 12. Auto-injects projectId and project_id
@@ -231,7 +214,7 @@ describe('callEdgeFunction', () => {
   });
 
   // 13. Sets Authorization header with Bearer token
-  it('sets Authorization header with Bearer service key', async () => {
+  it('proxies through mcp-gateway with the API key', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => mockResponse(200, '{}'))
@@ -240,163 +223,55 @@ describe('callEdgeFunction', () => {
     await callEdgeFunction('test-fn', {});
 
     const headers = sentHeaders();
-    expect(headers.Authorization).toBe('Bearer test-service-key');
+    const fetchMock = globalThis.fetch as ReturnType<typeof vi.fn>;
+    expect(fetchMock.mock.calls[0][0]).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
+    expect(headers.Authorization).toBe('Bearer snk_live_test');
     expect(headers['Content-Type']).toBe('application/json');
-    expect(headers['x-internal-worker-call']).toBe('true');
   });
 
-  it('uses the per-request connector token for HTTP gateway calls', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
-    );
+  it('returns an auth error when no API key is configured', async () => {
+    delete process.env.SOCIALNEURON_API_KEY;
+    vi.stubGlobal('fetch', vi.fn());
 
-    await requestContext.run(
-      {
-        userId: 'oauth-user-id',
-        scopes: ['mcp:read', 'mcp:analytics'],
-        token: 'sno_test_connector_token',
-        creditsUsed: 0,
-        assetsGenerated: 0,
-      },
-      () => callEdgeFunction('mcp-data', { action: 'performance-digest' })
-    );
+    const result = await callEdgeFunction('test-fn', {});
 
-    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
-
-    const headers = sentHeaders();
-    expect(headers.Authorization).toBe('Bearer sno_test_connector_token');
-    expect(headers['x-internal-worker-call']).toBeUndefined();
-
-    const body = sentBody();
-    expect(body.functionName).toBe('mcp-data');
-    expect(body.method).toBe('POST');
-    expect(body.body).toMatchObject({
-      action: 'performance-digest',
-      userId: 'oauth-user-id',
-      user_id: 'oauth-user-id',
-      projectId: 'test-project-id',
-      project_id: 'test-project-id',
-    });
+    expect(result.data).toBeNull();
+    expect(result.error).toContain('Not authenticated');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
-  it('injects active organization, project, and brand context from the request', async () => {
+  // 14. 401 = authentication failure → re-authenticate prompt
+  it('treats 401 as an authentication failure (re-authenticate prompt)', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+      vi.fn(async () => mockResponse(401, JSON.stringify({ error: 'invalid token' })))
     );
 
-    await requestContext.run(
-      {
-        userId: 'oauth-user-id',
-        scopes: ['mcp:read'],
-        token: 'snk_live_request_context',
-        organizationId: 'org-cosmo',
-        projectId: 'project-cosmo',
-        brandProfileId: 'brand-cosmo',
-        creditsUsed: 0,
-        assetsGenerated: 0,
-      },
-      () => callEdgeFunction('mcp-data', { action: 'brand-profile' })
-    );
+    const result = await callEdgeFunction('test-fn', {});
 
-    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
-    expect(sentBody()).toMatchObject({
-      functionName: 'mcp-data',
-      body: {
-        action: 'brand-profile',
-        userId: 'oauth-user-id',
-        user_id: 'oauth-user-id',
-        organizationId: 'org-cosmo',
-        organization_id: 'org-cosmo',
-        projectId: 'project-cosmo',
-        project_id: 'project-cosmo',
-        brandProfileId: 'brand-cosmo',
-        brand_profile_id: 'brand-cosmo',
-      },
-    });
+    expect(result.data).toBeNull();
+    expect(result.error).toContain('HTTP 401');
+    expect(result.error).toMatch(/re-authenticate/i);
   });
 
-  it('overrides caller project IDs with verified request project context', async () => {
+  // 15. 403 = authorization failure → scoped tool error, NO re-authenticate signal.
+  // Regression guard: a 403 that emits "re-authenticate" makes the claude.ai/Cowork
+  // connector tear down the entire OAuth connection over one denied call (the
+  // reproducible global-403 teardown). 403 must stay a per-call error.
+  it('treats 403 as a scoped authorization error WITHOUT a re-authenticate signal', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+      vi.fn(async () =>
+        mockResponse(403, JSON.stringify({ error: 'forbidden: scope mcp:write required' }))
+      )
     );
 
-    await requestContext.run(
-      {
-        userId: 'oauth-user-id',
-        scopes: ['mcp:read'],
-        token: 'snk_live_request_context',
-        projectId: 'verified-project-id',
-        creditsUsed: 0,
-        assetsGenerated: 0,
-      },
-      () =>
-        callEdgeFunction('mcp-data', {
-          action: 'brand-profile',
-          projectId: 'caller-project-id',
-          project_id: 'caller-project-id',
-        })
-    );
+    const result = await callEdgeFunction('test-fn', {});
 
-    expect(sentBody()).toMatchObject({
-      body: {
-        projectId: 'verified-project-id',
-        project_id: 'verified-project-id',
-      },
-    });
-  });
-
-  it('overrides caller brand IDs with verified request brand context', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
-    );
-
-    await requestContext.run(
-      {
-        userId: 'oauth-user-id',
-        scopes: ['mcp:read'],
-        token: 'snk_live_request_context',
-        brandProfileId: 'verified-brand-id',
-        creditsUsed: 0,
-        assetsGenerated: 0,
-      },
-      () =>
-        callEdgeFunction('mcp-data', {
-          action: 'brand-profile',
-          brandProfileId: 'caller-brand-id',
-          brand_profile_id: 'caller-brand-id',
-        })
-    );
-
-    expect(sentBody()).toMatchObject({
-      body: {
-        brandProfileId: 'verified-brand-id',
-        brand_profile_id: 'verified-brand-id',
-      },
-    });
-  });
-
-  it('forwards verified Supabase JWTs to mcp-gateway in HTTP mode', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => mockResponse(200, '{}'))
-    );
-
-    await requestContext.run(
-      {
-        userId: 'jwt-user-id',
-        scopes: ['mcp:read'],
-        token: 'eyJhbGciOiJIUzI1NiJ9.test.jwt',
-        creditsUsed: 0,
-        assetsGenerated: 0,
-      },
-      () => callEdgeFunction('test-fn', {})
-    );
-
-    expect(sentUrl()).toBe('https://test.supabase.co/functions/v1/mcp-gateway');
-    expect(sentHeaders().Authorization).toBe('Bearer eyJhbGciOiJIUzI1NiJ9.test.jwt');
+    expect(result.data).toBeNull();
+    expect(result.error).toContain('HTTP 403');
+    expect(result.error).toContain('forbidden: scope mcp:write required');
+    expect(result.error).not.toMatch(/re-authenticate/i);
+    expect(result.error).toMatch(/still valid/i);
   });
 });

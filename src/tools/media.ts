@@ -5,24 +5,28 @@ import { basename, extname } from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { assertSafeLocalPath } from '../lib/safe-path.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
 const MAX_BASE64_SIZE = 10 * 1024 * 1024;
 
-/** Mirrors the allowlist enforced by supabase/functions/upload-to-r2. */
+/**
+ * Mirrors the ALLOWED_TYPES allowlist in supabase/functions/upload-to-r2/index.ts.
+ * Keep in sync — drift causes either wasted round-trips (client allows, EF rejects)
+ * or silent feature gaps (client blocks, EF would have accepted). URL-safe base64
+ * (`-`/`_`) is deliberately excluded to match the EF's `atob`-compatible decoding.
+ */
 const ALLOWED_UPLOAD_TYPES = new Set<string>([
-  'image/png',
   'image/jpeg',
+  'image/png',
   'image/gif',
   'image/webp',
-  'image/svg+xml',
   'video/mp4',
-  'video/quicktime',
-  'video/x-msvideo',
   'video/webm',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/wav',
 ]);
 
 const BASE64_CHARS = /^[A-Za-z0-9+/]+={0,2}$/;
@@ -34,7 +38,9 @@ function maskR2Key(key: string): string {
   return segments.length >= 3 ? `…/${segments.slice(-2).join('/')}` : key;
 }
 
-/** Infer content type from file extension */
+/** Infer content type from file extension. Restricted to extensions whose
+ *  MIME type is in ALLOWED_UPLOAD_TYPES — keeps inferred types in sync with
+ *  what the upload-to-r2 EF actually accepts. */
 function inferContentType(filePath: string): string {
   const ext = extname(filePath).toLowerCase();
   const map: Record<string, string> = {
@@ -45,9 +51,9 @@ function inferContentType(filePath: string): string {
     '.webp': 'image/webp',
     '.mp4': 'video/mp4',
     '.mov': 'video/quicktime',
-    '.avi': 'video/x-msvideo',
     '.webm': 'video/webm',
-    '.svg': 'image/svg+xml',
+    '.mp3': 'audio/mpeg',
+    '.wav': 'audio/wav',
   };
   return map[ext] || 'application/octet-stream';
 }
@@ -62,11 +68,7 @@ function approxBase64Size(raw: string): number {
   return Math.floor((len * 3) / 4) - padding;
 }
 
-export function registerMediaTools(
-  server: McpServer,
-  options?: { allowLocalFileSource?: boolean }
-): void {
-  const allowLocalFileSource = options?.allowLocalFileSource ?? true;
+export function registerMediaTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   // upload_media — Upload local file, external URL, or inline base64 to R2
   // ---------------------------------------------------------------------------
@@ -120,17 +122,10 @@ export function registerMediaTools(
     },
     async ({ source, file_data, file_name, content_type, project_id, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
 
       const rateLimit = checkRateLimit('upload', `upload_media:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'upload_media',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -245,12 +240,6 @@ export function registerMediaTools(
         }>('upload-to-r2', uploadBody, { timeoutMs: 60_000 });
 
         if (error) {
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error, source: 'base64', contentType: ct, size: approxSize },
-          });
           return {
             content: [{ type: 'text' as const, text: `Upload failed: ${error}` }],
             isError: true,
@@ -263,18 +252,6 @@ export function registerMediaTools(
             isError: true,
           };
         }
-
-        await logMcpToolInvocation({
-          toolName: 'upload_media',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: {
-            source: 'base64',
-            r2Key: data.key,
-            size: data.size,
-            contentType: data.contentType,
-          },
-        });
 
         if (format === 'json') {
           return {
@@ -323,87 +300,56 @@ export function registerMediaTools(
       let uploadBody: Record<string, unknown>;
 
       if (isUrl) {
-        // External URL — SSRF-validate before the upload-to-r2 EF fetches it,
-        // so an internal/localhost/cloud-metadata URL can't be smuggled through
-        // this tool. (The EF should defend itself too; this is defense-in-depth
-        // at the MCP boundary, matching extract_url_content and schedule_post.)
-        const ssrfCheck = await validateUrlForSSRF(src);
-        if (!ssrfCheck.isValid) {
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error: 'ssrf_blocked', reason: ssrfCheck.error },
-          });
+        // External URL — defence-in-depth SSRF check before round-tripping
+        // to the EF. The upload-to-r2 EF re-validates server-side, but
+        // failing fast here saves a network call and avoids burning a
+        // rate-limit token against the EF on obviously-bad URLs.
+        const ssrf = await validateUrlForSSRF(src);
+        if (!ssrf.isValid) {
           return {
-            content: [{ type: 'text' as const, text: `URL rejected: ${ssrfCheck.error}` }],
+            content: [
+              {
+                type: 'text' as const,
+                text: `Source URL rejected by SSRF check: ${ssrf.error ?? 'invalid URL'}`,
+              },
+            ],
             isError: true,
           };
         }
-        // External URL — pass to upload-to-r2 EF which fetches it
-        const ct = content_type || inferContentType(src);
+        const safeSrc = ssrf.sanitizedUrl ?? src;
+        const ct = content_type || inferContentType(safeSrc);
         uploadBody = {
-          url: src,
+          url: safeSrc,
           contentType: ct,
-          fileName: basename(file_name ?? new URL(src).pathname) || 'upload',
+          fileName: basename(file_name ?? new URL(safeSrc).pathname) || 'upload',
           projectId: project_id,
         };
       } else {
-        // Local file path.
-        // (1) HTTP transport disables local file access entirely.
-        if (!allowLocalFileSource) {
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error: 'local_path_disabled_on_transport' },
-          });
+        // Local file — read, check size, base64 encode.
+        //
+        // SECURITY: Only allowed when transport === 'stdio' (the agent runs on
+        // the user's machine; reading their own filesystem is intended). On
+        // the cloud HTTP server (Railway) `readFile(src)` would read process
+        // secrets (`/proc/self/environ`, mounted k8s SA tokens, the very
+        // SUPABASE_SERVICE_ROLE_KEY this process runs with), so default-deny.
+        if (process.env.MCP_TRANSPORT !== 'stdio') {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: 'Local filesystem paths are disabled in this transport. Use an https:// URL or provide file_data (base64).',
+                text:
+                  `Local file paths are not accepted on the cloud MCP server. ` +
+                  `Pass the bytes via the \`file_data\` parameter (base64, up to 10MB) ` +
+                  `or supply a public URL via \`source\`.`,
               },
             ],
             isError: true,
           };
         }
-
-        // (2) stdio: local allowed — canonicalize and refuse known-sensitive
-        // paths (~/.ssh, /etc, …) so a prompt-injected agent cannot exfiltrate
-        // credentials from the user's machine via this tool.
-        let safeSrc: string;
-        try {
-          safeSrc = await assertSafeLocalPath(src);
-        } catch (err) {
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error: 'sensitive_path_rejected' },
-          });
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Refused: ${sanitizeError(err)}. Upload from a non-sensitive location, or pass bytes via \`file_data\`.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // Local file — read, check size, base64 encode
         let fileBuffer: Buffer;
         try {
-          fileBuffer = await readFile(safeSrc);
+          fileBuffer = await readFile(src);
         } catch {
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error: 'File not found', source: 'local' },
-          });
           return {
             content: [
               {
@@ -423,9 +369,10 @@ export function registerMediaTools(
         if (fileBuffer.length > MAX_BASE64_SIZE) {
           // Large file — use presigned PUT upload (up to ~500MB)
           const { data: putData, error: putError } = await callEdgeFunction<{
-            signedUrl: string;
+            signedUrl?: string;
+            url?: string;
             key: string;
-            expiresIn: number;
+            expiresIn?: number;
           }>(
             'get-signed-url',
             {
@@ -437,7 +384,8 @@ export function registerMediaTools(
             { timeoutMs: 10_000 }
           );
 
-          if (putError || !putData?.signedUrl) {
+          const putUrl = putData?.url ?? putData?.signedUrl;
+          if (putError || !putUrl || !putData?.key) {
             return {
               content: [
                 {
@@ -451,7 +399,7 @@ export function registerMediaTools(
 
           // Upload directly to R2 via presigned PUT
           try {
-            const putResp = await fetch(putData.signedUrl, {
+            const putResp = await fetch(putUrl, {
               method: 'PUT',
               headers: { 'Content-Type': ct },
               body: fileBuffer,
@@ -481,23 +429,11 @@ export function registerMediaTools(
           }
 
           // Presigned PUT succeeded — return the R2 key directly
-          const { data: signData } = await callEdgeFunction<{ signedUrl: string }>(
-            'get-signed-url',
-            { key: putData.key, operation: 'get' },
-            { timeoutMs: 10_000 }
-          );
-
-          await logMcpToolInvocation({
-            toolName: 'upload_media',
-            status: 'success',
-            durationMs: Date.now() - startedAt,
-            details: {
-              source: 'local-presigned-put',
-              r2Key: putData.key,
-              size: fileBuffer.length,
-              contentType: ct,
-            },
-          });
+          const { data: signData } = await callEdgeFunction<{
+            signedUrl?: string;
+            url?: string;
+          }>('get-signed-url', { r2Key: putData.key, operation: 'get' }, { timeoutMs: 10_000 });
+          const signedDownloadUrl = signData?.url ?? signData?.signedUrl ?? null;
 
           if (format === 'json') {
             return {
@@ -507,7 +443,7 @@ export function registerMediaTools(
                   text: JSON.stringify(
                     {
                       r2_key: putData.key,
-                      signed_url: signData?.signedUrl ?? null,
+                      signed_url: signedDownloadUrl,
                       size: fileBuffer.length,
                       content_type: ct,
                     },
@@ -527,7 +463,7 @@ export function registerMediaTools(
                 text: [
                   'Media uploaded successfully (presigned PUT).',
                   `Media key: ${maskR2Key(putData.key)}`,
-                  signData?.signedUrl ? `Signed URL: ${signData.signedUrl}` : '',
+                  signedDownloadUrl ? `Signed URL: ${signedDownloadUrl}` : '',
                   `Size: ${(fileBuffer.length / 1024 / 1024).toFixed(1)}MB`,
                   `Type: ${ct}`,
                   '',
@@ -559,12 +495,6 @@ export function registerMediaTools(
       }>('upload-to-r2', uploadBody, { timeoutMs: 60_000 });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'upload_media',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error, source: isUrl ? 'url' : 'local' },
-        });
         return {
           content: [{ type: 'text' as const, text: `Upload failed: ${error}` }],
           isError: true,
@@ -577,18 +507,6 @@ export function registerMediaTools(
           isError: true,
         };
       }
-
-      await logMcpToolInvocation({
-        toolName: 'upload_media',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          source: isUrl ? 'url' : 'local',
-          r2Key: data.key,
-          size: data.size,
-          contentType: data.contentType,
-        },
-      });
 
       if (format === 'json') {
         return {
@@ -649,40 +567,29 @@ export function registerMediaTools(
     },
     async ({ r2_key, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
 
       const { data, error } = await callEdgeFunction<{
-        signedUrl: string;
-        key: string;
-        expiresIn: number;
-      }>('get-signed-url', { key: r2_key, operation: 'get' }, { timeoutMs: 10_000 });
+        signedUrl?: string;
+        url?: string;
+        key?: string;
+        expiresIn?: number;
+      }>('get-signed-url', { r2Key: r2_key, operation: 'get' }, { timeoutMs: 10_000 });
+
+      const signedDownloadUrl = data?.url ?? data?.signedUrl;
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'get_media_url',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error, r2Key: r2_key },
-        });
         return {
           content: [{ type: 'text' as const, text: `Failed to sign R2 key: ${error}` }],
           isError: true,
         };
       }
 
-      if (!data?.signedUrl) {
+      if (!signedDownloadUrl) {
         return {
           content: [{ type: 'text' as const, text: 'No signed URL returned.' }],
           isError: true,
         };
       }
-
-      await logMcpToolInvocation({
-        toolName: 'get_media_url',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { r2Key: r2_key },
-      });
 
       if (format === 'json') {
         return {
@@ -690,7 +597,7 @@ export function registerMediaTools(
             {
               type: 'text' as const,
               text: JSON.stringify(
-                { signed_url: data.signedUrl, r2_key, expires_in: data.expiresIn ?? 3600 },
+                { signed_url: signedDownloadUrl, r2_key, expires_in: data?.expiresIn ?? 3600 },
                 null,
                 2
               ),
@@ -705,9 +612,9 @@ export function registerMediaTools(
           {
             type: 'text' as const,
             text: [
-              `Signed URL: ${data.signedUrl}`,
+              `Signed URL: ${signedDownloadUrl}`,
               `Media key: ${maskR2Key(r2_key)}`,
-              `Expires in: ${data.expiresIn ?? 3600}s`,
+              `Expires in: ${data?.expiresIn ?? 3600}s`,
             ].join('\n'),
           },
         ],

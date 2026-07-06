@@ -8,6 +8,17 @@ export type ToolEntry = {
   description: string;
   module: string;
   scope: string;
+  /** Tool is only registered on the stdio/local transport (e.g. needs Playwright);
+   *  HTTP discovery + the server-card must NOT advertise it. */
+  localOnly?: boolean;
+  /** Human goal this tool is meant to satisfy; used by search_tools for task-intent discovery. */
+  task_intent?: string;
+  /** Positive selection guidance for agents after a tool is discovered. */
+  use_when?: string;
+  /** Negative selection guidance to avoid API-wrapper-style over-selection. */
+  avoid_when?: string;
+  /** Common follow-up tools when this tool intentionally does not complete the full workflow. */
+  next_tools?: string[];
 };
 
 export const TOOL_CATALOG: ToolEntry[] = [
@@ -116,6 +127,19 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'distribution',
     scope: 'mcp:read',
   },
+  {
+    name: 'start_platform_connection',
+    description:
+      'Mint a single-use deep link for a user to complete platform OAuth in their browser',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+  },
+  {
+    name: 'wait_for_connection',
+    description: 'Poll until a platform connection becomes active or timeout',
+    module: 'distribution',
+    scope: 'mcp:read',
+  },
 
   // analytics
   {
@@ -195,12 +219,14 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description: 'Capture a screenshot of a URL',
     module: 'screenshot',
     scope: 'mcp:read',
+    localOnly: true,
   },
   {
     name: 'capture_app_page',
     description: 'Capture a screenshot of an app page',
     module: 'screenshot',
     scope: 'mcp:read',
+    localOnly: true,
   },
 
   // remotion
@@ -303,7 +329,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'find_next_slots',
     description: 'Find next available scheduling slots',
-    module: 'distribution',
+    module: 'planning',
     scope: 'mcp:read',
   },
 
@@ -337,6 +363,20 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'quality_check_plan',
     description: 'Run quality checks on an entire content plan',
+    module: 'quality',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'visual_quality_check',
+    description:
+      'Pre-render visual QA on carousel slides — predicts text overflow against per-layout constraints. Run before schedule_post to catch clipped text.',
+    module: 'quality',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'visual_gate_constraints',
+    description:
+      'Read the per-layout field constraints (font size, width, max lines) the visual gate uses. Useful when generating slide text that fits first time.',
     module: 'quality',
     scope: 'mcp:read',
   },
@@ -383,6 +423,15 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:read',
   },
 
+  // niche research
+  {
+    name: 'find_winning_content',
+    description:
+      "Find QA-gated high-performing short-form videos in the project's niche. Returns extracted hook patterns, content structures, and pre-compiled replication prompts (backed by niche_winners view, qa_score >= 0.5).",
+    module: 'research',
+    scope: 'mcp:read',
+  },
+
   // loop-summary
   {
     name: 'get_loop_summary',
@@ -403,6 +452,20 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'search_tools',
     description: 'Search and discover available MCP tools',
+    module: 'discovery',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'search',
+    description:
+      'Search public Social Neuron product, integration, developer, and MCP tool knowledge using the ChatGPT-compatible search schema.',
+    module: 'discovery',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'fetch',
+    description:
+      'Fetch one public Social Neuron knowledge document by ID using the ChatGPT-compatible fetch schema.',
     module: 'discovery',
     scope: 'mcp:read',
   },
@@ -505,7 +568,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     name: 'execute_recipe',
     description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
     module: 'recipes',
-    scope: 'mcp:autopilot',
+    scope: 'mcp:write',
   },
   {
     name: 'get_recipe_run_status',
@@ -514,18 +577,120 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:read',
   },
 
-  // platform connection deep-link flow
+  // F4 Hyperframes — HTML composition runtime
   {
-    name: 'start_platform_connection',
+    name: 'list_hyperframes_blocks',
     description:
-      'Mint a single-use deep link for a user to complete platform OAuth in their browser',
-    module: 'distribution',
-    scope: 'mcp:distribute',
+      'List the curated subset of pre-built Hyperframes blocks (transitions, social overlays, data-viz, branding, decorative) that can be composed into HTML video compositions',
+    module: 'hyperframes',
+    scope: 'mcp:read',
   },
   {
-    name: 'wait_for_connection',
-    description: 'Poll until a platform connection becomes active or timeout',
-    module: 'distribution',
+    name: 'render_hyperframes',
+    description:
+      'Render an HTML video composition (Hyperframes) to MP4. Author the composition as HTML with data-* timing attributes and GSAP timelines — frame-accurate, no React build step',
+    module: 'hyperframes',
+    scope: 'mcp:write',
+  },
+  // agentic-harness — learning loop write-back
+  {
+    name: 'write_agent_reflection',
+    description:
+      'Persist a verbal reflection for an agent loop. Provenance keys are restricted (Anti-Goodhart safety): only content_history_id, outcome_event_id, prm_score_ids, and handoff_ids are accepted.',
+    module: 'harness',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'record_outcome',
+    description:
+      'Record an outcome for a published decision event. Idempotent on (decision_event_id, horizon). Only horizon=24h triggers a content_bandits posterior update.',
+    module: 'harness',
+    scope: 'mcp:write',
+  },
+
+  // agentic-harness — learning loop read-back
+  {
+    name: 'read_agent_reflection',
+    description:
+      'Read past agent reflections for a brand. Ordered by created_at DESC, id ASC (deterministic tiebreak). ' +
+      'Only active reflections returned (superseded_by IS NULL). Optional generated_by_agent filter.',
+    module: 'harness',
+    scope: 'mcp:read',
+  },
+
+  // hermes — autonomous agent integration (closed-loop content)
+  {
+    name: 'save_draft_to_library',
+    description:
+      'Save a draft post to the SN content library with origin=hermes. Used by Hermes to persist drafts before the founder approves them.',
+    module: 'hermes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'record_voice_lesson',
+    description:
+      'Persist a learned voice lesson to brand_profiles.brand_context.voiceProfile.voice_lessons via atomic RPC. Used by Hermes reflection cron.',
+    module: 'hermes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'record_observation',
+    description:
+      'Record an agent observation (e.g. "topic X engagement up 23%") for the UnifiedAnalytics > Playbook surface.',
+    module: 'hermes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'record_intel_signal',
+    description:
+      'Record a research/trend signal from Hermes watchers (news, HN, competitor, etc.) for Niche Intelligence. Dedupes by URL.',
+    module: 'hermes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'record_campaign_spend',
+    description:
+      'Log a campaign cost line (hermes_drafts, carousel_renders, analytics_pulls, paid_amplification, other). Ownership-checked.',
+    module: 'hermes',
+    scope: 'mcp:write',
+  },
+  {
+    name: 'get_active_campaigns',
+    description:
+      'List currently-running campaigns with thesis, budget, hero format, and current spend. Used by Hermes pitch skill to bias drafts.',
+    module: 'hermes',
+    scope: 'mcp:read',
+  },
+
+  // skills (workflow skills — multi-step brand-locked content pipelines)
+  {
+    name: 'list_skills',
+    description:
+      'List Social Neuron content workflow skills available to the user. A skill is a brand-locked multi-step pipeline inspired by documented viral patterns (MrBeast 3-second hook, Hormozi pattern interrupt, etc.).',
+    module: 'skills',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'run_skill',
+    description:
+      'Run a Social Neuron workflow skill end-to-end (brand-locked content production). PR #4.4 v1 returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
+    module: 'skills',
+    scope: 'mcp:write',
+  },
+
+  // loop observability (growth-loop KPIs + Thompson Sampling bandit posteriors)
+  {
+    name: 'get_loop_pulse',
+    description:
+      'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, bandit-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
+    module: 'loop',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'get_bandit_state',
+    description:
+      'Read the current Thompson Sampling bandit posteriors for a project — top-K arms per (arm_type, platform) with Beta(alpha,beta) posterior mean and uncertainty. Use to reason about which hook family / format / timing slot the bandit currently prefers per platform.',
+    module: 'loop',
     scope: 'mcp:read',
   },
 ];
@@ -556,40 +721,4 @@ export function getModules(): string[] {
 /** Get minimal tool summaries for token efficiency. */
 export function getToolSummaries(): { name: string; description: string }[] {
   return TOOL_CATALOG.map(({ name, description }) => ({ name, description }));
-}
-
-/**
- * Tools registered only in stdio/local mode. The HTTP transport calls
- * registerAllTools with `skipScreenshots: true` (Playwright is unavailable on
- * Railway), so these never register over HTTP and must not be advertised on the
- * HTTP server card — otherwise a client discovers a tool it cannot call.
- * Mirrors the `registerScreenshotTools` gate in src/lib/register-tools.ts.
- */
-export const STDIO_ONLY_TOOLS = ['capture_app_page', 'capture_screenshot'] as const;
-
-/**
- * MCP App tools registered only over HTTP. stdio passes `skipApps: true` and the
- * npm package doesn't ship the app HTML bundle, so these are intentionally absent
- * from tools.lock.json (built with skipApps) — but they ARE callable over HTTP,
- * so the HTTP server card should list them. Mirrors registerContentCalendarApp.
- */
-export const HTTP_ONLY_APP_TOOLS: ToolEntry[] = [
-  {
-    name: 'open_content_calendar',
-    description:
-      "Open an interactive drag-drop calendar of the current week's scheduled posts (reschedule, filter by platform, drill in, quick-create).",
-    module: 'apps',
-    scope: 'mcp:read',
-  },
-];
-
-/**
- * Tools actually callable over the HTTP transport: the catalog minus stdio-only
- * tools, plus HTTP-only MCP App tools. Use this — not the raw TOOL_CATALOG — for
- * the HTTP server card so discovery matches the runtime registry a client gets
- * from `tools/list`.
- */
-export function getHttpRuntimeTools(): ToolEntry[] {
-  const stdioOnly = new Set<string>(STDIO_ONLY_TOOLS);
-  return [...TOOL_CATALOG.filter(t => !stdioOnly.has(t.name)), ...HTTP_ONLY_APP_TOOLS];
 }

@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { MCP_VERSION } from '../lib/version.js';
@@ -108,22 +108,20 @@ export function registerAnalyticsTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({
+            platform: platform ?? null,
+            days: lookbackDays,
+            totalViews: 0,
+            totalEngagement: 0,
+            postCount: 0,
+            posts: [],
+          });
           return {
+            structuredContent,
             content: [
               {
                 type: 'text' as const,
-                text: JSON.stringify(
-                  asEnvelope({
-                    platform: platform ?? null,
-                    days: lookbackDays,
-                    totalViews: 0,
-                    totalEngagement: 0,
-                    postCount: 0,
-                    posts: [],
-                  }),
-                  null,
-                  2
-                ),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
           };
@@ -188,16 +186,9 @@ export function registerAnalyticsTools(server: McpServer): void {
     },
     async ({ response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `refresh_platform_analytics:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'refresh_platform_analytics',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -212,12 +203,6 @@ export function registerAnalyticsTools(server: McpServer): void {
       const { data, error } = await callEdgeFunction('fetch-analytics', { userId });
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'refresh_platform_analytics',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Error refreshing analytics: ${error}` }],
           isError: true,
@@ -231,12 +216,6 @@ export function registerAnalyticsTools(server: McpServer): void {
       };
 
       if (!result.success) {
-        await logMcpToolInvocation({
-          toolName: 'refresh_platform_analytics',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Edge function returned success=false' },
-        });
         return {
           content: [{ type: 'text' as const, text: 'Analytics refresh failed.' }],
           isError: true,
@@ -255,31 +234,19 @@ export function registerAnalyticsTools(server: McpServer): void {
         lines.push(`  Errors: ${errored}`);
       }
 
-      await logMcpToolInvocation({
-        toolName: 'refresh_platform_analytics',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
+      if (format === 'json') {
+        const structuredContent = asEnvelope({
+          success: true,
           postsProcessed: result.postsProcessed,
           queued,
           errored,
-        },
-      });
-      if (format === 'json') {
+        });
         return {
+          structuredContent,
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                asEnvelope({
-                  success: true,
-                  postsProcessed: result.postsProcessed,
-                  queued,
-                  errored,
-                }),
-                null,
-                2
-              ),
+              text: JSON.stringify(structuredContent, null, 2),
             },
           ],
         };
@@ -290,11 +257,12 @@ export function registerAnalyticsTools(server: McpServer): void {
 }
 
 function formatAnalytics(summary: AnalyticsSummary, days: number, format: 'text' | 'json') {
+  const structuredContent = asEnvelope({ ...summary, days });
+
   if (format === 'json') {
     return {
-      content: [
-        { type: 'text' as const, text: JSON.stringify(asEnvelope({ ...summary, days }), null, 2) },
-      ],
+      structuredContent,
+      content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
     };
   }
 
@@ -326,6 +294,7 @@ function formatAnalytics(summary: AnalyticsSummary, days: number, format: 'text'
   }
 
   return {
+    structuredContent,
     content: [{ type: 'text' as const, text: lines.join('\n') }],
   };
 }

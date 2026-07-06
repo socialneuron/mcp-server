@@ -15,7 +15,6 @@ vi.mock('../lib/supabase.js', () => ({
   getSupabaseClient: vi.fn(),
   getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
   getDefaultProjectId: vi.fn().mockResolvedValue(null),
-  logMcpToolInvocation: vi.fn().mockResolvedValue(undefined),
 }));
 
 function makeCarouselResponse(slideCount = 3) {

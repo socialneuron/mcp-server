@@ -35,34 +35,12 @@ const BLOCKED_IP_PATTERNS: RegExp[] = [
 const BLOCKED_IPV6_PATTERNS: RegExp[] = [
   /^::1$/i, // loopback
   /^::$/i, // unspecified
+  /^fe[89ab][0-9a-f]:/i, // link-local fe80::/10
+  /^fc[0-9a-f]:/i, // unique local fc00::/7
+  /^fd[0-9a-f]:/i, // unique local fc00::/7
   /^::ffff:127\./i, // IPv4-mapped localhost
   /^::ffff:(0|10|127|169\.254|172\.(1[6-9]|2[0-9]|3[0-1])|192\.168)\./i, // IPv4-mapped private
 ];
-
-/**
- * Block IPv6 ranges that single-hextet regexes miss. The first hextet is parsed
- * to a number so the full ranges are covered regardless of digit count:
- * - ULA       fc00::/7   → first hextet fc00–fdff (e.g. AWS IMDSv6 fd00:ec2::254)
- * - link-local fe80::/10 → first hextet fe80–febf
- * - site-local fec0::/10 → first hextet fec0–feff (deprecated but still routable)
- *
- * Expects an already-lowercased, bracket-stripped IPv6 string.
- */
-function isBlockedIPv6Range(ip: string): boolean {
-  // Only consider bare IPv6 literals (no embedded IPv4 like ::ffff:a.b.c.d).
-  if (ip.includes('.')) return false;
-  const firstHextet = ip.split(':')[0];
-  if (!firstHextet) return false;
-  if (!/^[0-9a-f]{1,4}$/.test(firstHextet)) return false;
-  const value = Number.parseInt(firstHextet, 16);
-  if (Number.isNaN(value)) return false;
-  // ULA fc00::/7, link-local fe80::/10, site-local fec0::/10
-  return (
-    (value >= 0xfc00 && value <= 0xfdff) ||
-    (value >= 0xfe80 && value <= 0xfebf) ||
-    (value >= 0xfec0 && value <= 0xfeff)
-  );
-}
 
 // Hostnames that should be blocked
 const BLOCKED_HOSTNAMES: string[] = [
@@ -95,27 +73,8 @@ export interface SSRFValidationResult {
 
 function isBlockedIP(ip: string): boolean {
   const normalized = ip.replace(/^\[/, '').replace(/\]$/, '');
-  const ipv4MappedMatch = normalized.match(/^::ffff:(.+)$/i);
-  if (ipv4MappedMatch) {
-    const mapped = ipv4MappedMatch[1];
-    if (mapped.includes('.')) {
-      return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(mapped));
-    }
-    const parts = mapped.split(':').filter(Boolean);
-    if (parts.length === 2) {
-      const high = Number.parseInt(parts[0], 16);
-      const low = Number.parseInt(parts[1], 16);
-      if (!Number.isNaN(high) && !Number.isNaN(low)) {
-        const ipv4 = `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
-        return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(ipv4));
-      }
-    }
-  }
   if (normalized.includes(':')) {
-    const lowered = normalized.toLowerCase();
-    return (
-      isBlockedIPv6Range(lowered) || BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(lowered))
-    );
+    return BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(normalized));
   }
   return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(normalized));
 }

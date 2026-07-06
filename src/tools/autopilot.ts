@@ -1,8 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -117,16 +115,10 @@ export function registerAutopilotTools(server: McpServer): void {
   server.tool(
     'update_autopilot_config',
     'Update an existing autopilot configuration. Can enable/disable, change schedule, ' +
-      'or modify credit budgets. To enable recurring automation, set is_active=true and activation_confirmed=true after explicit user approval.',
+      'or modify credit budgets.',
     {
       config_id: z.string().uuid().describe('The autopilot config ID to update.'),
       is_active: z.boolean().optional().describe('Enable or disable this autopilot config.'),
-      activation_confirmed: z
-        .boolean()
-        .default(false)
-        .describe(
-          'Required when is_active=true. Set true only after the user explicitly approves recurring automation.'
-        ),
       schedule_days: z
         .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
         .optional()
@@ -141,50 +133,11 @@ export function registerAutopilotTools(server: McpServer): void {
     async ({
       config_id,
       is_active,
-      activation_confirmed,
       schedule_days,
       schedule_time,
       max_credits_per_run,
       max_credits_per_week,
     }) => {
-      const startedAt = Date.now();
-      if (is_active === true && !activation_confirmed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                'Enabling autopilot requires explicit confirmation. Re-run with ' +
-                'activation_confirmed=true after the user approves recurring automation.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      // Autopilot configs drive recurring automated posting. Rate-limit
-      // mutations on the `posting` bucket so an agent cannot rapidly
-      // re-tune the automation to flood platforms with content.
-      const apUserId = await getDefaultUserId();
-      const apRateLimit = checkRateLimit('posting', `update_autopilot_config:${apUserId}`);
-      if (!apRateLimit.allowed) {
-        logMcpToolInvocation({
-          toolName: 'update_autopilot_config',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: apRateLimit.retryAfter },
-        });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${apRateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
       if (
         is_active === undefined &&
         !schedule_days &&
@@ -215,7 +168,6 @@ export function registerAutopilotTools(server: McpServer): void {
         action: 'update-autopilot-config',
         config_id,
         is_active,
-        activation_confirmed,
         schedule_days,
         schedule_time,
         max_credits_per_run,
@@ -323,7 +275,7 @@ export function registerAutopilotTools(server: McpServer): void {
   server.tool(
     'create_autopilot_config',
     'Create a new autopilot configuration for automated content pipeline execution. ' +
-      'Defines schedule, credit budgets, and approval mode. To activate immediately, set is_active=true and activation_confirmed=true after explicit user approval.',
+      'Defines schedule, credit budgets, and approval mode.',
     {
       name: z.string().min(1).max(100).describe('Name for this autopilot config'),
       project_id: z.string().uuid().describe('Project to run autopilot for'),
@@ -347,12 +299,6 @@ export function registerAutopilotTools(server: McpServer): void {
         .default('review_low_confidence')
         .describe('How to handle post approvals'),
       is_active: z.boolean().default(true).describe('Whether to activate immediately'),
-      activation_confirmed: z
-        .boolean()
-        .default(false)
-        .describe(
-          'Required when is_active=true. Set true only after the user explicitly approves recurring automation.'
-        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -369,45 +315,8 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_week,
       approval_mode,
       is_active,
-      activation_confirmed,
       response_format,
     }) => {
-      const startedAt = Date.now();
-      if (is_active && !activation_confirmed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                'Activating autopilot requires explicit confirmation. Re-run with ' +
-                'activation_confirmed=true after the user approves recurring automation, ' +
-                'or set is_active=false to create a paused config.',
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      const crUserId = await getDefaultUserId();
-      const crRateLimit = checkRateLimit('posting', `create_autopilot_config:${crUserId}`);
-      if (!crRateLimit.allowed) {
-        logMcpToolInvocation({
-          toolName: 'create_autopilot_config',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: crRateLimit.retryAfter },
-        });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${crRateLimit.retryAfter}s.`,
-            },
-          ],
-          isError: true,
-        };
-      }
-
       const format = response_format ?? 'text';
 
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -431,7 +340,6 @@ export function registerAutopilotTools(server: McpServer): void {
         max_credits_per_week,
         approval_mode,
         is_active,
-        activation_confirmed,
       });
 
       if (efError) {

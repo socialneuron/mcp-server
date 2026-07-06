@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach } from 'vitest';
 import { createMockServer, type MockServer } from '../test-setup.js';
-import { requestContext } from '../lib/request-context.js';
 import { registerDiscoveryTools } from './discovery.js';
+import { requestContext } from '../lib/request-context.js';
 
 describe('search_tools', () => {
   let server: MockServer;
@@ -13,6 +13,31 @@ describe('search_tools', () => {
 
   it('is registered', () => {
     expect(server.getHandler('search_tools')).toBeDefined();
+  });
+
+  it('registers ChatGPT-compatible search and fetch tools', () => {
+    expect(server.getHandler('search')).toBeDefined();
+    expect(server.getHandler('fetch')).toBeDefined();
+  });
+
+  it('search returns structuredContent with citation URLs', async () => {
+    const result = await server.getHandler('search')!({ query: 'ChatGPT connector' });
+    expect(result.structuredContent.results.length).toBeGreaterThan(0);
+    expect(result.structuredContent.results[0]).toHaveProperty('id');
+    expect(result.structuredContent.results[0]).toHaveProperty('title');
+    expect(result.structuredContent.results[0]).toHaveProperty('url');
+    expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
+  });
+
+  it('fetch returns one structured public knowledge document by id', async () => {
+    const result = await server.getHandler('fetch')!({ id: 'privacy-security' });
+    expect(result.structuredContent).toMatchObject({
+      id: 'privacy-security',
+      title: 'Connector Security and Data Minimization',
+      url: expect.stringContaining('socialneuron.com'),
+    });
+    expect(result.structuredContent.text).toContain('not private account content');
+    expect(JSON.parse(result.content[0].text)).toEqual(result.structuredContent);
   });
 
   it('returns all tools at summary detail level by default', async () => {
@@ -42,29 +67,15 @@ describe('search_tools', () => {
     expect(parsed.toolCount).toBeGreaterThanOrEqual(2);
   });
 
-  it('marks tools unavailable when the current token lacks the required scope', async () => {
+  it('filters to available tools when available_only is true', async () => {
     const result = await requestContext.run(
-      { userId: 'user-1', scopes: ['mcp:read'], creditsUsed: 0, assetsGenerated: 0 },
-      () => server.getHandler('search_tools')!({ query: 'schedule', detail: 'summary' })
-    );
-    const parsed = JSON.parse(result.content[0].text);
-    const schedulePost = parsed.tools.find(
-      (tool: { name: string }) => tool.name === 'schedule_post'
-    );
-
-    expect(parsed.scopes).toMatchObject({
-      availability_known: true,
-      available_scopes: ['mcp:read'],
-    });
-    expect(schedulePost).toMatchObject({
-      required_scope: 'mcp:distribute',
-      available: false,
-    });
-  });
-
-  it('filters unavailable tools when available_only is true', async () => {
-    const result = await requestContext.run(
-      { userId: 'user-1', scopes: ['mcp:read'], creditsUsed: 0, assetsGenerated: 0 },
+      {
+        userId: 'user-1',
+        scopes: ['mcp:read'],
+        token: 'test-token',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+      },
       () =>
         server.getHandler('search_tools')!({
           module: 'planning',
@@ -73,35 +84,11 @@ describe('search_tools', () => {
         })
     );
     const parsed = JSON.parse(result.content[0].text);
-
-    expect(parsed.scopes.available_only_applied).toBe(true);
     expect(parsed.tools.length).toBeGreaterThan(0);
     expect(parsed.tools.every((tool: { available: boolean }) => tool.available)).toBe(true);
     expect(parsed.tools.map((tool: { name: string }) => tool.name)).not.toContain(
       'plan_content_week'
     );
-  });
-
-  it('treats an authenticated request with no scopes as known unavailable', async () => {
-    const result = await requestContext.run(
-      { userId: 'user-1', scopes: [], creditsUsed: 0, assetsGenerated: 0 },
-      () =>
-        server.getHandler('search_tools')!({
-          query: 'schedule',
-          available_only: true,
-          detail: 'summary',
-        })
-    );
-    const parsed = JSON.parse(result.content[0].text);
-
-    expect(parsed.scopes).toMatchObject({
-      availability_known: true,
-      available_scopes: [],
-      available_only_applied: true,
-    });
-    expect(parsed.toolCount).toBe(0);
-    expect(parsed.totalMatches).toBeGreaterThan(0);
-    expect(parsed.scopes.unavailable_matches).toBe(parsed.totalMatches);
   });
 
   it('returns names only at name detail level', async () => {

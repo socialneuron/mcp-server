@@ -1,9 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultProjectId, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
-import { safeErrorMessage } from '../lib/sanitize-error.js';
+import { getDefaultProjectId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -95,10 +93,7 @@ export function registerPlanApprovalTools(server: McpServer): void {
       if (!result?.success) {
         return {
           content: [
-            {
-              type: 'text' as const,
-              text: safeErrorMessage(result?.error, 'Failed to create plan approvals.'),
-            },
+            { type: 'text' as const, text: result?.error ?? 'Failed to create plan approvals.' },
           ],
           isError: true,
         };
@@ -131,7 +126,7 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
   server.tool(
     'list_plan_approvals',
-    'List approval items for a content plan, optionally filtered by status (pending / approved / rejected / edited). Use to check what needs review before scheduling, or to audit decisions after the fact. plan_id comes from get_content_plan or save_content_plan. For a single item\'s full state, get the plan via get_content_plan instead — that includes per-post approval data inline.',
+    "List approval items for a content plan, optionally filtered by status (pending / approved / rejected / edited). Use to check what needs review before scheduling, or to audit decisions after the fact. plan_id comes from get_content_plan or save_content_plan. For a single item's full state, get the plan via get_content_plan instead — that includes per-post approval data inline.",
     {
       plan_id: z.string().uuid().describe('Content plan ID'),
       status: z.enum(['pending', 'approved', 'rejected', 'edited']).optional(),
@@ -224,34 +219,10 @@ export function registerPlanApprovalTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).optional(),
     },
     async ({ approval_id, decision, edited_post, reason, response_format }) => {
-      const startedAt = Date.now();
       if (decision === 'edited' && !edited_post) {
         return {
           content: [
             { type: 'text' as const, text: 'edited_post is required when decision is "edited".' },
-          ],
-          isError: true,
-        };
-      }
-
-      // Approving / editing flips a post into the schedulable pool and
-      // typically triggers a downstream schedule_post call. Share the
-      // `posting` bucket so mass-approval is rate-limited like mass-posting.
-      const rlUserId = await getDefaultUserId();
-      const rateLimit = checkRateLimit('posting', `respond_plan_approval:${rlUserId}`);
-      if (!rateLimit.allowed) {
-        logMcpToolInvocation({
-          toolName: 'respond_plan_approval',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-            },
           ],
           isError: true,
         };
