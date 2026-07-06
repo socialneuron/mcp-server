@@ -211,7 +211,7 @@ if (command === 'sn') {
   // Auth is deferred — each subcommand calls ensureAuth() only if needed
   await runSnCli(process.argv.slice(3));
   // Wait for stdout to fully flush before exiting (process.exit can truncate piped output)
-  await new Promise<void>(resolve => process.stdout.write('', resolve));
+  await new Promise<void>(resolve => process.stdout.write('', () => resolve()));
   process.exit(0);
 }
 

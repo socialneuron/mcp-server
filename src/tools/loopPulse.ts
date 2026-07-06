@@ -58,7 +58,7 @@ export function registerLoopPulseTools(server: McpServer): void {
           content: [
             {
               type: 'text',
-              text: `Failed to read loop pulse: ${error?.message ?? 'no data'}`,
+              text: `Failed to read loop pulse: ${error || 'no data'}`,
             },
           ],
           isError: true,

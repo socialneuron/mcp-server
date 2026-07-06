@@ -402,7 +402,8 @@ export function registerMediaTools(server: McpServer): void {
             const putResp = await fetch(putUrl, {
               method: 'PUT',
               headers: { 'Content-Type': ct },
-              body: fileBuffer,
+              // Uint8Array: Buffer no longer satisfies BodyInit under @types/node 26 fetch types
+              body: new Uint8Array(fileBuffer),
             });
 
             if (!putResp.ok) {

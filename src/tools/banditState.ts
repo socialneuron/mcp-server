@@ -132,7 +132,7 @@ export function registerBanditStateTools(server: McpServer): void {
       if (error || !data) {
         return {
           content: [
-            { type: 'text', text: `Failed to read bandit state: ${error?.message ?? 'no data'}` },
+            { type: 'text', text: `Failed to read bandit state: ${error || 'no data'}` },
           ],
           isError: true,
         };
