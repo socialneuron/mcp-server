@@ -89,18 +89,18 @@
     "express-rate-limit": "^8.3.2",
     "jose": "^6.2.1",
     "open": "10.0.0",
-    "posthog-node": "5.39.1",
+    "posthog-node": "5.38.2",
     "zod": "^4.3.6"
   },
   "devDependencies": {
     "@types/express": "5.0.6",
-    "@types/node": "^26.1.0",
+    "@types/node": "26.0.0",
     "esbuild": "^0.28.1",
     "typescript": "^5.9.3",
     "vitest": "^3.2.6",
-    "playwright": "^1.59.1",
-    "@remotion/bundler": "^4.0.290",
-    "@remotion/renderer": "^4.0.290"
+    "playwright": "1.61.0",
+    "@remotion/bundler": "4.0.481",
+    "@remotion/renderer": "4.0.481"
   },
   "overrides": {
     "vite": "7.3.5",
