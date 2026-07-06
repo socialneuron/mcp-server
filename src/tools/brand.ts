@@ -3,9 +3,7 @@ import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
-import { policyBlockedResult } from '../lib/policy-block.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -43,12 +41,10 @@ export function registerBrandTools(server: McpServer): void {
     async ({ url, response_format }) => {
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
-        return policyBlockedResult({
-          toolName: 'extract_brand',
-          policy: 'ssrf',
-          inputKind: 'url',
-          reason: ssrfCheck.error,
-        });
+        return {
+          content: [{ type: 'text' as const, text: `URL blocked: ${ssrfCheck.error}` }],
+          isError: true,
+        };
       }
 
       const { data, error } = await callEdgeFunction<BrandProfile>(
@@ -82,8 +78,10 @@ export function registerBrandTools(server: McpServer): void {
       }
 
       if ((response_format || 'text') === 'json') {
+        const structuredContent = asEnvelope(data);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
         };
       }
 
@@ -144,14 +142,17 @@ export function registerBrandTools(server: McpServer): void {
         success: boolean;
         profile: Record<string, unknown> | null;
         error?: string;
-      }>('mcp-data', { action: 'brand-profile', ...(projectId ? { projectId } : {}) });
+      }>('mcp-data', {
+        action: 'brand-profile',
+        ...(projectId ? { projectId } : {}),
+      });
 
       if (efError || (result && !result.success)) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to load brand profile: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to load brand profile: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,
@@ -168,22 +169,27 @@ export function registerBrandTools(server: McpServer): void {
         };
       }
 
+      const structuredContent = asEnvelope(data);
+
       if ((response_format || 'text') === 'json') {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
         };
       }
 
+      const brandContext = data.brand_context as { name?: string } | undefined;
       const lines = [
         `Active Brand Profile`,
-        `Project: ${projectId ?? 'default'}`,
-        `Brand Name: ${data.brand_name || (data.brand_context as { name?: string } | null)?.name || 'N/A'}`,
+        `Project: ${data.project_id || projectId || 'default'}`,
+        `Brand Name: ${data.brand_name || brandContext?.name || 'N/A'}`,
         `Version: ${data.version ?? 'N/A'}`,
         `Updated: ${data.updated_at || 'N/A'}`,
         `Extraction Method: ${data.extraction_method || 'manual'}`,
       ];
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }
@@ -267,7 +273,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to save brand profile: ${safeErrorMessage(saveError ?? saveResult?.error)}`,
+              text: `Failed to save brand profile: ${saveError || saveResult?.error || 'Unknown error'}`,
             },
           ],
           isError: true,
@@ -385,7 +391,7 @@ export function registerBrandTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to update platform voice: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to update platform voice: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,

@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerRemotionTools } from './remotion.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { logMcpToolInvocation } from '../lib/supabase.js';
 
 vi.mock('@remotion/bundler', () => ({
   bundle: vi.fn(async () => '/tmp/bundle'),
@@ -24,7 +23,6 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 const mockRateLimit = vi.mocked(checkRateLimit);
-const mockLog = vi.mocked(logMcpToolInvocation);
 
 describe('remotion tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -140,47 +138,6 @@ describe('remotion tools', () => {
       expect(text).toContain('Composition: CaptionedClip');
       expect(text).toContain('Format: mp4');
       expect(text).toContain('1080x1920');
-    });
-
-    it('logs tool invocation on success', async () => {
-      const handler = server.getHandler('render_demo_video')!;
-      await handler({ composition_id: 'CaptionedClip' });
-
-      expect(mockLog).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toolName: 'render_demo_video',
-          status: 'success',
-          details: expect.objectContaining({ compositionId: 'CaptionedClip', format: 'mp4' }),
-        })
-      );
-    });
-
-    it('logs tool invocation on error', async () => {
-      const handler = server.getHandler('render_demo_video')!;
-      await handler({ composition_id: 'NonExistentComp' });
-
-      expect(mockLog).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toolName: 'render_demo_video',
-          status: 'error',
-          details: expect.objectContaining({ error: 'Unknown composition' }),
-        })
-      );
-    });
-
-    it('logs rate_limited status when rate limited', async () => {
-      mockRateLimit.mockReturnValueOnce({ allowed: false, retryAfter: 10 });
-
-      const handler = server.getHandler('render_demo_video')!;
-      await handler({ composition_id: 'CaptionedClip' });
-
-      expect(mockLog).toHaveBeenCalledWith(
-        expect.objectContaining({
-          toolName: 'render_demo_video',
-          status: 'rate_limited',
-          details: expect.objectContaining({ retryAfter: 10 }),
-        })
-      );
     });
   });
 });

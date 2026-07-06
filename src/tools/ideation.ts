@@ -2,10 +2,23 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { policyBlockedResult } from '../lib/policy-block.js';
 import { getDefaultUserId } from '../lib/supabase.js';
-import type { GenerateContentResponse, FetchTrendsResponse } from '../types/index.js';
+import { MCP_VERSION } from '../lib/version.js';
+import type {
+  GenerateContentResponse,
+  FetchTrendsResponse,
+  ResponseEnvelope,
+} from '../types/index.js';
+
+function asEnvelope<T>(data: T): ResponseEnvelope<T> {
+  return {
+    _meta: {
+      version: MCP_VERSION,
+      timestamp: new Date().toISOString(),
+    },
+    data,
+  };
+}
 
 export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -229,7 +242,14 @@ export function registerIdeationTools(server: McpServer): void {
       }
 
       const text = data?.text ?? '(empty response)';
+      const structuredContent = asEnvelope({
+        text,
+        content_type,
+        platform: platform ?? null,
+        model: model ?? 'gemini-2.5-flash',
+      });
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text }],
       };
     }
@@ -283,22 +303,13 @@ export function registerIdeationTools(server: McpServer): void {
         };
       }
 
-      if (url) {
-        const ssrfCheck = await validateUrlForSSRF(url);
-        if (!ssrfCheck.isValid) {
-          return policyBlockedResult({
-            toolName: 'fetch_trends',
-            policy: 'ssrf',
-            inputKind: 'url',
-            reason: ssrfCheck.error,
-          });
-        }
-      }
-
       const { data, error } = await callEdgeFunction<FetchTrendsResponse>(
         'fetch-trends',
         {
-          source,
+          // Forward as `trend_source`: the mcp-gateway overwrites top-level `source`
+          // with 'mcp' (attribution) before reaching the EF, which collided with the
+          // routing param. The EF reads `trend_source ?? source`.
+          trend_source: source,
           category: category ?? 'general',
           niche,
           url,
@@ -524,7 +535,14 @@ export function registerIdeationTools(server: McpServer): void {
 
       const text = data?.text ?? '(empty response)';
       const header = `Adapted for ${target_platform}${source_platform ? ` (from ${source_platform})` : ''}:\n\n`;
+      const structuredContent = asEnvelope({
+        text,
+        source_platform: source_platform ?? null,
+        target_platform,
+        model: 'gemini-2.5-flash',
+      });
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: header + text }],
       };
     }

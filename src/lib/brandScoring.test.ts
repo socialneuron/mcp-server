@@ -60,6 +60,15 @@ describe('brandScoring (MCP)', () => {
     expect(result.fabricationWarnings.length).toBeGreaterThan(0);
   });
 
+  it('does not backtrack excessively on long digit runs without percentages', () => {
+    const startedAt = performance.now();
+    const result = computeBrandConsistency('1'.repeat(50_000), makeProfile());
+    const elapsedMs = performance.now() - startedAt;
+
+    expect(result.fabricationWarnings).toEqual([]);
+    expect(elapsedMs).toBeLessThan(500);
+  });
+
   it('checks structural patterns', () => {
     const result = computeBrandConsistency(
       "They don't need this 🚀",

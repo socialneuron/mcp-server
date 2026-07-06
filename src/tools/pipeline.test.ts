@@ -154,38 +154,9 @@ describe('pipeline tools', () => {
         approval_mode: 'auto',
         auto_approve_threshold: 28,
         dry_run: false,
-        schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Insufficient credits');
-    });
-
-    it('requires explicit confirmation before scheduling', async () => {
-      const handler = server.getHandler('run_content_pipeline')!;
-      const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
-        dry_run: false,
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Scheduling requires explicit confirmation');
-      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
-    });
-
-    it('rejects scheduling when quality is skipped', async () => {
-      const handler = server.getHandler('run_content_pipeline')!;
-      const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
-        dry_run: false,
-        schedule_confirmed: true,
-        skip_stages: ['quality'],
-      });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Scheduling cannot run when the quality stage is skipped');
-      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
     });
 
     it('runs full pipeline in dry_run mode', async () => {
@@ -286,7 +257,6 @@ describe('pipeline tools', () => {
         approval_mode: 'auto',
         auto_approve_threshold: 28,
         dry_run: false,
-        schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Planning failed');
@@ -354,99 +324,68 @@ describe('pipeline tools', () => {
       expect(parsed.data.posts_approved).toBe(1); // auto-approved when quality skipped
     });
 
-    it('caps generated posts, drops unrequested platforms, and accounts for scheduling credits', async () => {
-      mockCallEdgeFunction.mockResolvedValueOnce({
-        data: { success: true, credits: 500 },
-        error: null,
-      } as any);
-      mockCallEdgeFunction.mockResolvedValueOnce({
-        data: { success: true },
-        error: null,
-      } as any);
-      mockCallEdgeFunction.mockResolvedValueOnce({
-        data: {
-          text: JSON.stringify([
-            {
-              id: '1',
-              day: 1,
-              platform: 'tiktok',
-              content_type: 'caption',
-              caption:
-                'How to build a repeatable content workflow for your audience - save this practical framework and try it today!',
-              hook: 'Stop guessing what to post',
-              angle: 'Practical workflow',
-              title: 'Content workflow',
+    // Regression: schedule stage must call schedule-post with the EF's real contract —
+    // a `platforms` ARRAY + camelCase keys. The prior bug sent singular `platform` +
+    // snake_case media_url/scheduled_at, so every schedule call 400'd
+    // ("At least one platform is required") and postsScheduled stayed 0.
+    it('schedules approved posts with a platforms array + camelCase keys (not singular platform)', async () => {
+      mockCallEdgeFunction.mockImplementation((fn: string) => {
+        if (fn === 'social-neuron-ai') {
+          return Promise.resolve({
+            data: {
+              text: JSON.stringify([
+                {
+                  id: 'day1-tiktok-1',
+                  day: 1,
+                  date: '2026-03-19',
+                  platform: 'tiktok',
+                  content_type: 'caption',
+                  caption: 'Test post for the scheduling contract regression check.',
+                  hook: 'Test hook',
+                  angle: 'Test angle',
+                },
+              ]),
             },
-            {
-              id: '2',
-              day: 1,
-              platform: 'linkedin',
-              content_type: 'caption',
-              caption:
-                'How to build a repeatable content workflow for your audience - save this practical framework and try it today!',
-              hook: 'Stop guessing what to post',
-              angle: 'Practical workflow',
-              title: 'Content workflow',
-            },
-            {
-              id: '3',
-              day: 1,
-              platform: 'tiktok',
-              content_type: 'caption',
-              caption:
-                'How to build a repeatable content workflow for your audience - save this practical framework and try it today!',
-              hook: 'Stop guessing what to post',
-              angle: 'Practical workflow',
-              title: 'Content workflow',
-            },
-          ]),
-        },
-        error: null,
-      } as any);
-      mockCallEdgeFunction.mockResolvedValueOnce({
-        data: { success: true },
-        error: null,
-      } as any);
-      mockCallEdgeFunction.mockResolvedValueOnce({
-        data: { success: true },
-        error: null,
-      } as any);
-      mockCallEdgeFunction.mockResolvedValue({
-        data: { success: true },
-        error: null,
-      } as any);
+            error: null,
+          } as any);
+        }
+        if (fn === 'schedule-post') {
+          return Promise.resolve({ data: { success: true, post_id: 'p1' }, error: null } as any);
+        }
+        // mcp-data (budget/create-run/deduct/persist/upsert/finalize) + anything else
+        return Promise.resolve({
+          data: { success: true, credits: 500, estimated_cost: 25 },
+          error: null,
+        } as any);
+      });
 
       const handler = server.getHandler('run_content_pipeline')!;
       const result = await handler({
         topic: 'AI tips',
         platforms: ['tiktok'],
-        days: 1,
+        days: 5,
         posts_per_day: 1,
         approval_mode: 'auto',
-        auto_approve_threshold: 1,
+        auto_approve_threshold: 28,
         dry_run: false,
-        schedule_confirmed: true,
-        max_credits: 16,
+        skip_stages: ['quality'],
         response_format: 'json',
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.posts_generated).toBe(1);
       expect(parsed.data.posts_scheduled).toBe(1);
-      expect(parsed.data.credits_used).toBe(16);
-      expect(parsed.data.errors).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ stage: 'planning', message: expect.stringContaining('truncated') }),
-          expect.objectContaining({
-            stage: 'planning',
-            message: expect.stringContaining('unrequested or invalid platform'),
-          }),
-        ])
-      );
 
-      const scheduleCalls = mockCallEdgeFunction.mock.calls.filter(call => call[0] === 'schedule-post');
-      expect(scheduleCalls).toHaveLength(1);
-      expect(scheduleCalls[0][1].platform).toBe('tiktok');
+      const schedCall = mockCallEdgeFunction.mock.calls.find(c => c[0] === 'schedule-post');
+      expect(schedCall, 'schedule-post should have been called').toBeDefined();
+      const body = schedCall![1] as Record<string, unknown>;
+      expect(Array.isArray(body.platforms)).toBe(true);
+      expect(body.platforms).toEqual(['tiktok']);
+      expect(typeof body.scheduledAt).toBe('string');
+      expect('mediaUrl' in body).toBe(true);
+      // The buggy field names must NOT be present
+      expect(body.platform).toBeUndefined();
+      expect(body.scheduled_at).toBeUndefined();
+      expect(body.media_url).toBeUndefined();
     });
   });
 

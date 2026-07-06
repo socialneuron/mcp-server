@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerUsageTools } from './usage.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 
@@ -79,7 +80,7 @@ describe('usage tools', () => {
       const handler = server.getHandler('get_mcp_usage')!;
       const result = await handler({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed._meta.timestamp).toBeDefined();
       expect(parsed.data.tools).toHaveLength(1);
       expect(parsed.data.totalCalls).toBe(3);

@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { logMcpToolInvocation, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { extractJsonArray } from '../lib/parse-utils.js';
@@ -32,7 +32,6 @@ const PLATFORM_ENUM = z.enum([
 // Cost estimate: ~15 credits per plan + 5 per source URL extraction
 const BASE_PLAN_CREDITS = 15;
 const SOURCE_EXTRACTION_CREDITS = 5;
-const SCHEDULE_POST_CREDITS = 1;
 
 export function registerPipelineTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -49,7 +48,6 @@ export function registerPipelineTools(server: McpServer): void {
     },
     async ({ project_id, platforms, estimated_posts, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
 
       try {
         const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
@@ -58,6 +56,7 @@ export function registerPipelineTools(server: McpServer): void {
         const { data: readiness, error: readinessError } = await callEdgeFunction<{
           success: boolean;
           credits: number;
+          is_unlimited?: boolean;
           estimated_cost: number;
           connected_platforms: string[];
           missing_platforms: string[];
@@ -84,6 +83,7 @@ export function registerPipelineTools(server: McpServer): void {
         }
 
         const credits = readiness.credits;
+        const isUnlimited = readiness.is_unlimited === true;
         const connectedPlatforms = readiness.connected_platforms;
         const missingPlatforms = readiness.missing_platforms;
         const hasBrand = readiness.has_brand;
@@ -94,7 +94,7 @@ export function registerPipelineTools(server: McpServer): void {
         const blockers: string[] = [];
         const warnings: string[] = [];
 
-        if (credits < estimatedCost) {
+        if (!isUnlimited && credits < estimatedCost) {
           blockers.push(`Insufficient credits: ${credits} available, ~${estimatedCost} needed`);
         }
         if (missingPlatforms.length > 0) {
@@ -135,14 +135,6 @@ export function registerPipelineTools(server: McpServer): void {
           warnings,
         };
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'check_pipeline_readiness',
-          status: 'success',
-          durationMs,
-          details: { ready: result.ready, blockers: blockers.length, warnings: warnings.length },
-        });
-
         if (format === 'json') {
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
@@ -177,14 +169,7 @@ export function registerPipelineTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'check_pipeline_readiness',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Readiness check failed: ${message}` }],
           isError: true,
@@ -198,7 +183,7 @@ export function registerPipelineTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'run_content_pipeline',
-    'Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts, set schedule_confirmed=true after the user explicitly approves publishing. Check check_pipeline_readiness first to verify credits, OAuth, and brand profile are ready.',
+    'Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. Check check_pipeline_readiness first to verify credits, OAuth, and brand profile are ready.',
     {
       project_id: z.string().uuid().optional().describe('Project ID (auto-detected if omitted)'),
       topic: z.string().optional().describe('Content topic (required if no source_url)'),
@@ -222,12 +207,6 @@ export function registerPipelineTools(server: McpServer): void {
         ),
       max_credits: z.number().optional().describe('Credit budget cap'),
       dry_run: z.boolean().default(false).describe('If true, skip scheduling and return plan only'),
-      schedule_confirmed: z
-        .boolean()
-        .default(false)
-        .describe(
-          'Required to schedule posts. Set true only after explicit user confirmation to publish/schedule.'
-        ),
       skip_stages: z
         .array(z.enum(['research', 'quality', 'schedule']))
         .optional()
@@ -245,11 +224,9 @@ export function registerPipelineTools(server: McpServer): void {
       auto_approve_threshold,
       max_credits,
       dry_run,
-      schedule_confirmed,
       skip_stages,
       response_format,
     }) => {
-      const startedAt = Date.now();
       const pipelineId = randomUUID();
       const stagesCompleted: string[] = [];
       const stagesSkipped: string[] = [];
@@ -264,33 +241,6 @@ export function registerPipelineTools(server: McpServer): void {
       }
 
       const skipSet = new Set(skip_stages ?? []);
-      const schedulingRequested = !dry_run && !skipSet.has('schedule');
-
-      if (schedulingRequested && !schedule_confirmed) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text:
-                'Scheduling requires explicit confirmation. Re-run with schedule_confirmed=true ' +
-                'after the user approves publishing, or set dry_run=true / skip_stages=["schedule"].',
-            },
-          ],
-          isError: true,
-        };
-      }
-
-      if (schedulingRequested && skipSet.has('quality')) {
-        return {
-          content: [
-            {
-              type: 'text' as const,
-              text: 'Scheduling cannot run when the quality stage is skipped.',
-            },
-          ],
-          isError: true,
-        };
-      }
 
       try {
         const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
@@ -300,6 +250,7 @@ export function registerPipelineTools(server: McpServer): void {
         const { data: budgetData } = await callEdgeFunction<{
           success: boolean;
           credits: number;
+          is_unlimited?: boolean;
         }>(
           'mcp-data',
           {
@@ -313,9 +264,10 @@ export function registerPipelineTools(server: McpServer): void {
         );
 
         const availableCredits = budgetData?.credits ?? 0;
+        const isUnlimited = budgetData?.is_unlimited === true;
         const creditLimit = max_credits ?? availableCredits;
 
-        if (availableCredits < estimatedCost) {
+        if (!isUnlimited && availableCredits < estimatedCost) {
           return {
             content: [
               {
@@ -344,7 +296,6 @@ export function registerPipelineTools(server: McpServer): void {
               approval_mode,
               auto_approve_threshold,
               dry_run,
-              schedule_confirmed,
               skip_stages: skip_stages ?? [],
             },
             current_stage: 'planning',
@@ -426,9 +377,7 @@ export function registerPipelineTools(server: McpServer): void {
         // Parse posts from AI response
         const rawText = String(planData.text ?? planData.content ?? '');
         const postsArray = extractJsonArray(rawText);
-        const requestedPlatformSet = new Set<Platform>(platforms);
-        const maxPosts = platforms.length * days * posts_per_day;
-        const parsedPosts: ContentPlanPost[] = (postsArray ?? []).map((p: any) => ({
+        const posts: ContentPlanPost[] = (postsArray ?? []).map((p: any) => ({
           id: String(p.id ?? randomUUID().slice(0, 8)),
           day: Number(p.day ?? 1),
           date: String(p.date ?? ''),
@@ -444,29 +393,6 @@ export function registerPipelineTools(server: McpServer): void {
             ? (String(p.media_type) as ContentPlanPost['media_type'])
             : undefined,
         }));
-
-        const platformFilteredPosts = parsedPosts.filter(post =>
-          requestedPlatformSet.has(post.platform)
-        );
-        // Cap to the requested plan size (days <= 7, posts_per_day <= 3 are
-        // schema-enforced) so a runaway LLM response cannot schedule an
-        // unbounded number of posts in the downstream scheduling loop.
-        const posts = platformFilteredPosts.slice(0, maxPosts);
-
-        if (parsedPosts.length > maxPosts) {
-          errors.push({
-            stage: 'planning',
-            message: `AI returned ${parsedPosts.length} posts; truncated to ${maxPosts}.`,
-          });
-        }
-
-        const invalidPlatformCount = parsedPosts.length - platformFilteredPosts.length;
-        if (invalidPlatformCount > 0) {
-          errors.push({
-            stage: 'planning',
-            message: `Dropped ${invalidPlatformCount} post(s) with unrequested or invalid platform.`,
-          });
-        }
 
         // Stage 3: Quality gate
         let postsApproved = 0;
@@ -610,21 +536,36 @@ export function registerPipelineTools(server: McpServer): void {
         let postsScheduled = 0;
         if (!dry_run && !skipSet.has('schedule') && postsApproved > 0) {
           const approvedPosts = posts.filter(p => p.status === 'approved');
+          // Posts aren't assigned concrete slot times during planning, so derive a
+          // scheduledAt from the planning window (base = tomorrow) keyed on the post's
+          // `day`. Without an explicit scheduledAt the schedule-post EF defaults to
+          // 'immediate', which would publish the entire approved plan at once.
+          const scheduleBase = new Date();
+          scheduleBase.setDate(scheduleBase.getDate() + 1);
+          const scheduleBaseMs = scheduleBase.getTime();
           for (const post of approvedPosts) {
             if (creditsUsed >= creditLimit) {
               errors.push({ stage: 'schedule', message: 'Credit limit reached' });
               break;
             }
+            const scheduledAt =
+              post.schedule_at ??
+              new Date(scheduleBaseMs + (Math.max(1, post.day) - 1) * 86_400_000).toISOString();
             try {
+              // schedule-post requires a `platforms` ARRAY + camelCase keys
+              // (supabase/functions/schedule-post/index.ts:301,392). Singular
+              // `platform` / snake_case keys 400 with "At least one platform is required".
               const { error: schedError } = await callEdgeFunction(
                 'schedule-post',
                 {
-                  platform: post.platform,
+                  platforms: [post.platform],
                   caption: post.caption,
                   title: post.title,
                   hashtags: post.hashtags,
-                  media_url: post.media_url,
-                  scheduled_at: post.schedule_at,
+                  mediaUrl: post.media_url,
+                  scheduledAt,
+                  planId,
+                  idempotencyKey: `pipeline-${planId}-${post.id}`,
                   ...(resolvedProjectId
                     ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
                     : {}),
@@ -639,7 +580,6 @@ export function registerPipelineTools(server: McpServer): void {
                 });
               } else {
                 postsScheduled++;
-                creditsUsed += SCHEDULE_POST_CREDITS;
               }
             } catch (schedErr) {
               errors.push({
@@ -684,20 +624,6 @@ export function registerPipelineTools(server: McpServer): void {
           },
           { timeoutMs: 10_000 }
         );
-
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'run_content_pipeline',
-          status: 'success',
-          durationMs,
-          details: {
-            pipeline_id: pipelineId,
-            posts: posts.length,
-            approved: postsApproved,
-            scheduled: postsScheduled,
-            flagged: postsFlagged,
-          },
-        });
 
         const resultPayload = {
           pipeline_id: pipelineId,
@@ -751,14 +677,7 @@ export function registerPipelineTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'run_content_pipeline',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         // Best-effort update of pipeline_runs to prevent orphaned 'running' records
         try {
           await callEdgeFunction(
@@ -879,8 +798,6 @@ export function registerPipelineTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).default('json'),
     },
     async ({ plan_id, quality_threshold, response_format }) => {
-      const startedAt = Date.now();
-
       try {
         // Load the plan via mcp-data
         const { data: loadResult, error: loadError } = await callEdgeFunction<{
@@ -990,14 +907,6 @@ export function registerPipelineTools(server: McpServer): void {
           { timeoutMs: 10_000 }
         );
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'auto_approve_plan',
-          status: 'success',
-          durationMs,
-          details: { plan_id, auto_approved: autoApproved, flagged, rejected },
-        });
-
         const resultPayload = {
           plan_id,
           auto_approved: autoApproved,
@@ -1031,14 +940,7 @@ export function registerPipelineTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'auto_approve_plan',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Auto-approve failed: ${message}` }],
           isError: true,

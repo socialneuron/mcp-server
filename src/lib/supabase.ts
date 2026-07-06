@@ -1,12 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import { captureToolEvent } from './posthog.js';
-import {
-  getRequestBrandProfileId,
-  getRequestOrganizationId,
-  getRequestProjectId,
-  getRequestUserId,
-} from './request-context.js';
+import { getRequestUserId } from './request-context.js';
 
 const SUPABASE_URL = process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || '';
 
@@ -18,15 +12,12 @@ let client: SupabaseClient | null = null;
 // ── Auth state ───────────────────────────────────────────────────────
 
 // Tracks current auth mode for logging/diagnostics
-let _authMode: 'api-key' | 'service-role' = 'service-role';
+let _authMode: 'api-key' | 'unauthenticated' = 'unauthenticated';
 let authenticatedUserId: string | null = null;
 let authenticatedScopes: string[] = [];
 let authenticatedEmail: string | null = null;
 let authenticatedExpiresAt: string | null = null;
 let authenticatedApiKey: string | null = null;
-let authenticatedOrganizationId: string | null = null;
-let authenticatedProjectId: string | null = null;
-let authenticatedBrandProfileId: string | null = null;
 const MCP_RUN_ID = randomUUID();
 
 /**
@@ -108,7 +99,7 @@ function getServiceKeyOrNull(): string | null {
 }
 
 /**
- * Returns a default user ID for service-role Edge Function calls.
+ * Returns a default user ID for Edge Function calls.
  *
  * Resolution order:
  *   1. Per-request context (HTTP mode)
@@ -135,118 +126,48 @@ export async function getDefaultUserId(): Promise<string> {
  * Returns a default project ID for scoping queries.
  *
  * Resolution order:
- *   1. Active request/auth context (OAuth/API-key metadata)
+ *   1. Per-user cache (safe for multi-user HTTP mode)
  *   2. SOCIALNEURON_PROJECT_ID env var
- *   3. Per-user + organization cache (safe for multi-user HTTP mode)
- *   4. Most recently created project inside a verified organization membership
+ *   3. Most recently created project owned by the current user
  */
-const projectIdCache = new Map<string, string>(); // userId[:organizationId] -> projectId
-
-function projectCacheKey(userId: string, organizationId: string | null): string {
-  return organizationId ? `${userId}:${organizationId}` : userId;
-}
-
-export function getDefaultOrganizationId(): string | null {
-  return (
-    getRequestOrganizationId() ||
-    authenticatedOrganizationId ||
-    process.env.SOCIALNEURON_ORGANIZATION_ID ||
-    process.env.SOCIALNEURON_ORG_ID ||
-    null
-  );
-}
-
-export function getDefaultBrandProfileId(): string | null {
-  return (
-    getRequestBrandProfileId() ||
-    authenticatedBrandProfileId ||
-    process.env.SOCIALNEURON_BRAND_PROFILE_ID ||
-    null
-  );
-}
+const projectIdCache = new Map<string, string>(); // userId -> projectId
 
 export async function getDefaultProjectId(): Promise<string | null> {
   const userId = await getDefaultUserId().catch(() => null);
-  const contextProjectId =
-    getRequestProjectId() || authenticatedProjectId || process.env.SOCIALNEURON_PROJECT_ID || null;
-  const organizationId = getDefaultOrganizationId();
-
-  if (contextProjectId) {
-    if (userId) projectIdCache.set(projectCacheKey(userId, organizationId), contextProjectId);
-    return contextProjectId;
-  }
 
   // Check per-user cache
   if (userId) {
-    const cached = projectIdCache.get(projectCacheKey(userId, organizationId));
+    const cached = projectIdCache.get(userId);
     if (cached) return cached;
+  }
+
+  const envProjectId = process.env.SOCIALNEURON_PROJECT_ID;
+  if (envProjectId) {
+    if (userId) projectIdCache.set(userId, envProjectId);
+    return envProjectId;
   }
 
   // Resolve from user's most recent project
   if (!userId) return null;
   try {
     const supabase = getSupabaseClient();
-    let organizationIds: string[] = [];
-
-    if (organizationId) {
-      const { data: membership, error: membershipError } = await supabase
-        .from('organization_members')
-        .select('organization_id')
-        .eq('user_id', userId)
-        .eq('organization_id', organizationId)
-        .maybeSingle();
-
-      if (membershipError) return null;
-
-      if (membership?.organization_id) {
-        organizationIds = [membership.organization_id];
-      } else {
-        const { data: ownedOrg, error: ownedOrgError } = await supabase
-          .from('organizations')
-          .select('id')
-          .eq('id', organizationId)
-          .eq('owner_id', userId)
-          .maybeSingle();
-
-        if (ownedOrgError || !ownedOrg?.id) return null;
-        organizationIds = [ownedOrg.id];
-      }
-    } else {
-      const { data: memberships, error: membershipError } = await supabase
-        .from('organization_members')
-        .select('organization_id')
-        .eq('user_id', userId);
-
-      if (membershipError) return null;
-      organizationIds = (memberships ?? [])
-        .map(row => row.organization_id)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0);
-      const { data: ownedOrgs, error: ownedOrgError } = await supabase
-        .from('organizations')
-        .select('id')
-        .eq('owner_id', userId);
-
-      if (!ownedOrgError) {
-        for (const row of ownedOrgs ?? []) {
-          if (typeof row.id === 'string' && row.id.length > 0) {
-            organizationIds.push(row.id);
-          }
-        }
-      }
-      organizationIds = Array.from(new Set(organizationIds));
-      if (organizationIds.length === 0) return null;
-    }
-
+    // `projects` is org-scoped (no user_id column). Resolve the user's orgs via
+    // organization_members first, then their most recent project in those orgs.
+    const { data: memberships } = await supabase
+      .from('organization_members')
+      .select('organization_id')
+      .eq('user_id', userId);
+    const orgIds = (memberships ?? []).map(m => m.organization_id);
+    if (orgIds.length === 0) return null;
     const { data } = await supabase
       .from('projects')
       .select('id')
-      .in('organization_id', organizationIds)
+      .in('organization_id', orgIds)
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-
     if (data?.id) {
-      projectIdCache.set(projectCacheKey(userId, organizationId), data.id);
+      projectIdCache.set(userId, data.id);
       return data.id;
     }
   } catch {
@@ -257,7 +178,7 @@ export async function getDefaultProjectId(): Promise<string | null> {
 
 /**
  * Initialize authentication. Called once at startup before MCP server starts.
- * Tries API key auth first, falls back to service role.
+ * Public MCP access requires an API key; legacy service-role auth is disabled.
  */
 export async function initializeAuth(): Promise<void> {
   // Try API key first
@@ -279,7 +200,11 @@ export async function initializeAuth(): Promise<void> {
           process.argv[2] ?? ''
         ));
 
-    // Validate the API key
+    // Always validate API keys remotely so revocation and scope changes are
+    // observed immediately. The disk cache is intentionally bypassed here:
+    // the normal revoke-key path only updates mcp-auth's database, so a cached
+    // result would leave a revoked snk_ key valid for up to 5 min in stdio mode.
+    // (Mirrors the fix applied to the HTTP path in token-verifier.ts.)
     const { validateApiKey } = await import('../auth/api-keys.js');
     const result = await validateApiKey(apiKey);
 
@@ -290,9 +215,6 @@ export async function initializeAuth(): Promise<void> {
         result.scopes && result.scopes.length > 0 ? result.scopes : ['mcp:read'];
       authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
-      authenticatedOrganizationId = result.organizationId || result.organization_id || null;
-      authenticatedProjectId = result.projectId || result.project_id || null;
-      authenticatedBrandProfileId = result.brandProfileId || result.brand_profile_id || null;
       if (!_quietAuth) {
         console.error(
           '[MCP] Authenticated via API key (prefix: ' +
@@ -321,7 +243,8 @@ export async function initializeAuth(): Promise<void> {
       // DO NOT fall back to service-role.
       if (result.retryable) {
         // Transient (network / 429 / 5xx, already retried with backoff) — the key
-        // is NOT necessarily invalid. Don't push the user to re-auth over a hiccup.
+        // is NOT necessarily invalid. Don't push the user to re-auth over a hiccup;
+        // a recent cached validation may well still be valid.
         throw new Error(
           'Temporary issue reaching the auth service — your session is likely still valid. ' +
             'Wait a moment and retry. If it persists, run `sn login`.'
@@ -334,28 +257,18 @@ export async function initializeAuth(): Promise<void> {
     }
   }
 
-  // Fall back to service role (legacy — DEPRECATED, only when NO API key was provided)
   if (getServiceKeyOrNull()) {
-    _authMode = 'service-role';
-    // Legacy mode is effectively full-access; keep tools usable.
-    authenticatedScopes = ['mcp:full'];
-    console.error('[MCP] Using service role auth (legacy mode).');
-    console.error(
-      '[MCP] ⚠ DEPRECATED: Service role keys grant full admin access to your database.'
-    );
-    console.error('[MCP]   Migrate to API key auth: npx @socialneuron/mcp-server setup');
-    console.error('[MCP]   Then remove SOCIALNEURON_SERVICE_KEY from your environment.');
-    if (!process.env.SOCIALNEURON_USER_ID) {
-      console.error(
-        '[MCP] Warning: SOCIALNEURON_USER_ID not set. Tools requiring a user will fail.'
-      );
-    }
-  } else {
     throw new Error(
-      '[MCP] Fatal: No authentication configured. Run: npx @socialneuron/mcp-server login\n' +
-        '[MCP] Requires a paid plan (Starter+). See: https://socialneuron.com/pricing'
+      '[MCP] Fatal: Legacy service-role auth is disabled for the public MCP package.\n' +
+        '[MCP] Remove SOCIALNEURON_SERVICE_KEY / SUPABASE_SERVICE_ROLE_KEY from this client and run:\n' +
+        '[MCP]   npx @socialneuron/mcp-server login'
     );
   }
+
+  throw new Error(
+    '[MCP] Fatal: No API key configured. Run: npx @socialneuron/mcp-server login\n' +
+      '[MCP] Requires a paid plan (Starter+). See: https://socialneuron.com/pricing'
+  );
 }
 
 export function getMcpRunId(): string {
@@ -374,7 +287,7 @@ export function getAuthenticatedExpiresAt(): string | null {
   return authenticatedExpiresAt;
 }
 
-export function getAuthMode(): 'api-key' | 'service-role' {
+export function getAuthMode(): 'api-key' | 'unauthenticated' {
   return _authMode;
 }
 
@@ -387,17 +300,11 @@ export function getAuthenticatedApiKey(): string | null {
  * Respects the DO_NOT_TRACK standard (https://consoledonottrack.com/).
  */
 export function isTelemetryDisabled(): boolean {
-  // Hard opt-out always wins (DO_NOT_TRACK standard + our own kill switch).
-  if (
+  return (
     process.env.DO_NOT_TRACK === '1' ||
     process.env.DO_NOT_TRACK === 'true' ||
     process.env.SOCIALNEURON_NO_TELEMETRY === '1'
-  ) {
-    return true;
-  }
-  // Off by default (README contract): disabled unless explicitly opted in.
-  // Gates BOTH PostHog (posthog.ts) and the activity_logs audit write.
-  return process.env.SOCIALNEURON_TELEMETRY !== '1';
+  );
 }
 
 /**
@@ -441,6 +348,9 @@ export async function logMcpToolInvocation(args: {
     // Never fail tool execution due to logging issues.
   }
 
-  // Fire-and-forget PostHog event (non-blocking)
-  captureToolEvent(args).catch(() => {});
+  // Fire-and-forget PostHog event (non-blocking). Dynamic import breaks the
+  // supabase <-> posthog static value cycle (same convention as the
+  // auth/api-keys dynamic import above); posthog.ts statically imports from
+  // this module, so this side must not import it statically.
+  import('./posthog.js').then(({ captureToolEvent }) => captureToolEvent(args)).catch(() => {});
 }

@@ -65,37 +65,10 @@ export class RateLimiter {
     this.tokens = Math.min(this.maxTokens, this.tokens + elapsed * this.refillRate);
     this.lastRefill = now;
   }
-
-  /** Timestamp (ms) of the last time this bucket was touched. Used for eviction. */
-  get lastAccess(): number {
-    return this.lastRefill;
-  }
 }
 
-// Singleton map keyed by category name (and `category:key` when partitioned).
-//
-// Unlike the fixed set of base categories, keyed buckets ('posting:<userId>',
-// etc.) grow unbounded as new users/tools appear. Mirror the per-IP bucket
-// eviction in http.ts: sweep buckets that have not been touched for a while on
-// an interval. A fully refilled bucket is behaviourally identical to a fresh
-// one, so dropping idle entries cannot change rate-limit decisions.
+// Singleton map keyed by category name
 const limiters = new Map<string, RateLimiter>();
-
-const LIMITER_STALE_MS = 5 * 60 * 1000; // evict buckets idle for >5 min
-const LIMITER_CLEANUP_INTERVAL_MS = 10 * 60 * 1000;
-
-/**
- * Remove rate-limit buckets that have been idle longer than `staleMs`.
- * Exported for tests; called automatically on an unref'd interval.
- */
-export function sweepStaleLimiters(staleMs: number = LIMITER_STALE_MS, now: number = Date.now()): void {
-  const cutoff = now - staleMs;
-  for (const [key, limiter] of limiters) {
-    if (limiter.lastAccess < cutoff) limiters.delete(key);
-  }
-}
-
-setInterval(sweepStaleLimiters, LIMITER_CLEANUP_INTERVAL_MS).unref();
 
 /**
  * Get (or create) the rate limiter for a given category.

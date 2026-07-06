@@ -11,10 +11,14 @@
  *   logout         - Remove stored credentials
  *   (no args)      - Start MCP server (normal mode)
  *
- * Authentication (resolved in order):
+ * Authentication:
  *   1. API key (stored via setup flow, validated against mcp-auth Edge Function)
- *   2. Service role key (legacy: SOCIALNEURON_SERVICE_KEY env var)
  */
+
+// Mark this process as stdio transport BEFORE any tool module loads.
+// `tools/media.ts` only allows local-file reads when this is set to 'stdio'
+// (the user runs this CLI on their own machine; reading their files is the point).
+process.env.MCP_TRANSPORT ??= 'stdio';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
@@ -143,7 +147,6 @@ Usage:
 
 Environment:
   SOCIALNEURON_API_KEY          API key (recommended — secure cloud mode)
-  SOCIALNEURON_SERVICE_KEY      Service role key (deprecated — full admin access)
   SOCIALNEURON_SUPABASE_URL     Supabase project URL (optional in cloud mode)
 
 Requires a paid plan (Starter+): https://socialneuron.com/pricing
@@ -239,7 +242,7 @@ registerAllTools(server, { skipApps: true });
 
 // ── Prompts & Resources ──────────────────────────────────────────────
 registerPrompts(server);
-registerResources(server, getAuthenticatedScopes);
+registerResources(server);
 
 // Graceful shutdown
 async function shutdown() {

@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { evaluateQuality } from '../lib/quality.js';
-import { logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
@@ -58,8 +57,6 @@ export function registerQualityTools(server: McpServer): void {
       custom_banned_terms,
       response_format,
     }) => {
-      const startedAt = Date.now();
-
       const result = evaluateQuality({
         caption,
         title,
@@ -68,14 +65,6 @@ export function registerQualityTools(server: McpServer): void {
         brandKeyword: brand_keyword,
         brandAvoidPatterns: brand_avoid_patterns,
         customBannedTerms: custom_banned_terms,
-      });
-
-      const durationMs = Date.now() - startedAt;
-      logMcpToolInvocation({
-        toolName: 'quality_check',
-        status: 'success',
-        durationMs,
-        details: { score: result.total, passed: result.passed },
       });
 
       if (response_format === 'json') {
@@ -135,8 +124,6 @@ export function registerQualityTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).default('text'),
     },
     async ({ plan, threshold, response_format }) => {
-      const startedAt = Date.now();
-
       const postsWithQuality = plan.posts.map(post => {
         const result = evaluateQuality({
           caption: post.caption,
@@ -168,14 +155,6 @@ export function registerQualityTools(server: McpServer): void {
         failed: plan.posts.length - passed,
         avg_score: avgScore,
       };
-
-      const durationMs = Date.now() - startedAt;
-      logMcpToolInvocation({
-        toolName: 'quality_check_plan',
-        status: 'success',
-        durationMs,
-        details: { postCount: plan.posts.length, passed },
-      });
 
       if (response_format === 'json') {
         return {

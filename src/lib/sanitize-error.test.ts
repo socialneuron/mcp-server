@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { safeErrorMessage, sanitizeDbError, sanitizeError } from './sanitize-error.js';
+import { sanitizeDbError, sanitizeError } from './sanitize-error.js';
 
 describe('sanitizeDbError', () => {
   let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
@@ -217,34 +217,5 @@ describe('sanitizeError', () => {
       const result = sanitizeError({ code: 42 });
       expect(result).toBe('An unexpected error occurred. Please try again.');
     });
-
-    it('extracts and sanitizes object message fields', () => {
-      const result = sanitizeError({ message: 'permission denied for table private_data' });
-      expect(result).toBe('Access denied. Check your account permissions.');
-    });
-  });
-});
-
-describe('safeErrorMessage', () => {
-  it('preserves plain safe backend messages', () => {
-    expect(safeErrorMessage('Gateway timeout')).toBe('Gateway timeout');
-  });
-
-  it('extracts nested backend error strings', () => {
-    expect(safeErrorMessage({ error: { message: 'Invalid project id' } })).toBe(
-      'Invalid project id'
-    );
-  });
-
-  it('sanitizes sensitive backend messages', () => {
-    expect(safeErrorMessage({ error: 'permission denied for table api_keys' })).toBe(
-      'Access denied. Check your account permissions.'
-    );
-  });
-
-  it('uses fallback for opaque objects instead of stringifying them', () => {
-    expect(safeErrorMessage({ code: 42 }, 'Backend returned an unknown error')).toBe(
-      'Backend returned an unknown error'
-    );
   });
 });

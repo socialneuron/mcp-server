@@ -1,29 +1,56 @@
 {
-  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "com.socialneuron/mcp-server",
-  "description": "75 MCP tools for end-to-end social media content lifecycle \u2014 create with 35+ AI models, distribute to YouTube/TikTok (Instagram pending review), track analytics, and auto-optimize. Includes 5 prompt templates and 4 resources.",
-  "repository": {
-    "url": "https://github.com/socialneuron/mcp-server",
-    "source": "github"
+  "name": "@socialneuron/mcp-server",
+  "display_name": "Social Neuron",
+  "description": "96 MCP tools for end-to-end social media content lifecycle. The only MCP server where performance analytics feed back into content generation. Create with 35+ AI models, distribute to X, Bluesky, and YouTube today (Instagram, TikTok, LinkedIn, Facebook, Threads rolling out), track analytics, and optimise automatically. Now ships with the Content Calendar MCP App for interactive drag-drop scheduling inside Claude. Includes 5 prompt templates and 4 resources.",
+  "version": "1.7.7",
+  "homepage": "https://socialneuron.com/for-developers",
+  "repository": "https://github.com/socialneuron/mcp-server",
+  "license": "MIT",
+  "icon": "https://socialneuron.com/icon-512.png",
+  "icons": [
+    { "src": "https://socialneuron.com/icon-512.png", "mimeType": "image/png", "sizes": ["512x512"], "theme": "light" },
+    { "src": "https://socialneuron.com/icon-192.png", "mimeType": "image/png", "sizes": ["192x192"], "theme": "light" },
+    { "src": "https://socialneuron.com/favicon.svg", "mimeType": "image/svg+xml", "sizes": ["any"] }
+  ],
+  "terms_of_service": "https://socialneuron.com/terms",
+  "privacy_policy": "https://socialneuron.com/privacy",
+  "author": {
+    "name": "Social Neuron",
+    "url": "https://socialneuron.com"
   },
-  "version": "1.7.13",
-  "packages": [
-    {
-      "registryType": "npm",
-      "identifier": "@socialneuron/mcp-server",
-      "version": "1.7.13",
-      "transport": {
-        "type": "stdio"
-      },
-      "environmentVariables": [
-        {
-          "description": "Your Social Neuron API key. Generate at https://socialneuron.com/settings/developer",
-          "isRequired": true,
-          "format": "string",
-          "isSecret": true,
-          "name": "SOCIALNEURON_API_KEY"
-        }
-      ]
+  "categories": ["social-media", "content-creation", "analytics", "marketing", "automation"],
+  "tools_count": 96,
+  "transport": ["stdio", "http"],
+  "http_endpoint": "https://mcp.socialneuron.com/mcp",
+  "install": {
+    "command": "npx",
+    "args": ["-y", "@socialneuron/mcp-server"]
+  },
+  "auth": {
+    "type": "oauth2_and_api_key",
+    "setup_url": "https://socialneuron.com/settings/developer",
+    "docs_url": "https://socialneuron.com/for-developers",
+    "oauth": {
+      "authorization_endpoint": "https://mcp.socialneuron.com/authorize",
+      "token_endpoint": "https://mcp.socialneuron.com/token",
+      "registration_endpoint": "https://mcp.socialneuron.com/register",
+      "metadata_url": "https://mcp.socialneuron.com/.well-known/oauth-authorization-server",
+      "scopes_supported": [
+        "mcp:full",
+        "mcp:read",
+        "mcp:write",
+        "mcp:distribute",
+        "mcp:analytics",
+        "mcp:comments",
+        "mcp:autopilot"
+      ],
+      "code_challenge_methods_supported": ["S256"]
     }
-  ]
+  },
+  "pricing": {
+    "has_free_tier": true,
+    "free_tier_note": "100 credits/mo (no MCP access). MCP requires Starter ($29/mo) or higher.",
+    "starting_price": "$29/mo",
+    "pricing_url": "https://socialneuron.com/pricing"
+  }
 }

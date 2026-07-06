@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { buildAnnotationsMap, toTitle } from './tool-annotations.js';
+import { buildAnnotationsMap, buildToolSecuritySchemes, toTitle } from './tool-annotations.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 
 describe('toTitle', () => {
@@ -162,5 +162,17 @@ describe('buildAnnotationsMap', () => {
         expect(ann.destructiveHint).toBe(false);
       }
     }
+  });
+});
+
+describe('buildToolSecuritySchemes', () => {
+  it('builds an OAuth security scheme from TOOL_SCOPES', () => {
+    expect(buildToolSecuritySchemes('schedule_post')).toEqual([
+      { type: 'oauth2', scopes: ['mcp:distribute'] },
+    ]);
+  });
+
+  it('returns no schemes for unknown tools', () => {
+    expect(buildToolSecuritySchemes('not_a_real_tool')).toEqual([]);
   });
 });

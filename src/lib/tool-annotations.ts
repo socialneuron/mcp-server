@@ -139,6 +139,16 @@ export interface ToolAnnotation {
   openWorldHint: boolean;
 }
 
+export interface ToolSecurityScheme {
+  type: 'oauth2';
+  scopes: string[];
+}
+
+export function buildToolSecuritySchemes(toolName: string): ToolSecurityScheme[] {
+  const scope = TOOL_SCOPES[toolName];
+  return scope ? [{ type: 'oauth2', scopes: [scope] }] : [];
+}
+
 /** Build the complete annotations map for all registered tools. */
 export function buildAnnotationsMap(): Map<string, ToolAnnotation> {
   const map = new Map<string, ToolAnnotation>();
@@ -207,10 +217,14 @@ export function applyAnnotations(server: McpServer): void {
           idempotentHint: ann.idempotentHint,
           openWorldHint: ann.openWorldHint,
         },
+        securitySchemes: buildToolSecuritySchemes(toolName),
       });
       applied++;
     }
   }
 
+  // MUST be console.error (stderr), NOT console.log. In stdio transport, process.stdout
+  // is the JSON-RPC channel the MCP client parses from process spawn; any stdout write
+  // here corrupts the stream (pydantic "Invalid JSON" / tools-list registers 0 tools).
   console.error(`[annotations] Applied annotations to ${applied}/${entries.length} tools`);
 }

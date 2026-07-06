@@ -82,17 +82,208 @@ const WEIGHTS = {
 // ---------------------------------------------------------------------------
 
 function norm(content: string): string {
-  return content.toLowerCase().replace(/[^a-z0-9\s]/g, ' ');
+  return content
+    .toLowerCase()
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
+// Tokenization symmetry (F3): normalize the TERM the same way as the content,
+// so hyphenated/punctuated banned terms ("next-gen", "best-in-class") match the
+// space-normalized content instead of silently slipping through.
 function findMatches(content: string, terms: string[]): string[] {
   const n = norm(content);
-  return terms.filter(t => n.includes(t.toLowerCase()));
+  return terms.filter(t => {
+    const nt = norm(t);
+    return nt.length > 0 && n.includes(nt);
+  });
 }
 
 function findMissing(content: string, terms: string[]): string[] {
   const n = norm(content);
-  return terms.filter(t => !n.includes(t.toLowerCase()));
+  return terms.filter(t => {
+    const nt = norm(t);
+    return nt.length > 0 && !n.includes(nt);
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Stored-shape → canonical resolver (Workstream A — the trust seam)
+//
+// brand_context holds ≥4 incompatible shapes in one jsonb column. The scorer
+// only ever read the canonical (voiceProfile + vocabularyRules) shape, so
+// flat-v26 and url_extract profiles scored as a fleet-wide no-op (F1/F2/F4).
+// resolveBrandProfile adapts ANY stored shape into the BrandProfileData the
+// scorer consumes, so the gate discriminates on every profile.
+//
+// NOTE: this logic is mirrored across 3 runtimes (lib/brandAdapters.ts FE/vitest,
+// this MCP bundle, _shared/brand/brandRuntime.ts EF). Keep them in sync — a parity
+// test guards the shared behaviour (see tests).
+// ---------------------------------------------------------------------------
+
+type RawRecord = Record<string, unknown>;
+
+/** Coerce arrays or comma/semicolon/newline-delimited strings into a clean string[]. */
+function asStringArray(v: unknown): string[] {
+  if (Array.isArray(v)) return v.map(x => String(x ?? '').trim()).filter(Boolean);
+  if (typeof v === 'string') {
+    return v
+      .split(/[,;\n]/)
+      .map(s => s.trim())
+      .filter(Boolean);
+  }
+  return [];
+}
+
+/**
+ * Pull atomic, substring-matchable banned terms out of prose avoidPatterns (F4).
+ * "Generic corporate buzzwords (e.g., 'synergy', 'leverage')" → ['synergy','leverage'].
+ * Short, already-atomic entries are kept; long prose with no quoted tokens is
+ * dropped (it is human/LLM guidance, not deterministically matchable).
+ */
+function extractAtomicTerms(entries: string[]): string[] {
+  const out: string[] = [];
+  for (const raw of entries) {
+    const e = (raw || '').trim();
+    if (!e) continue;
+    const quoted = e.match(/['"“”‘’]([^'"“”‘’]{2,40})['"“”‘’]/g);
+    if (quoted) {
+      for (const q of quoted) out.push(q.replace(/['"“”‘’]/g, '').trim());
+      continue;
+    }
+    // A1 guard: a >2-word phrase mentioning tone/voice/style/approach/language is
+    // human guidance ("overly formal tone"), not a substring-matchable banned term.
+    // Promoting it pollutes the backfilled vocabularyRules; drop it. Atomic terms keep.
+    const words = e.split(/\s+/);
+    const isGuidancePhrase =
+      words.length > 2 && /\b(tone|voice|style|approach|language)\b/i.test(e);
+    if (!e.includes('(') && words.length <= 3 && !isGuidancePhrase) out.push(e);
+  }
+  return Array.from(new Set(out.map(t => t.trim()).filter(Boolean)));
+}
+
+function hasField(obj: RawRecord, key: string): boolean {
+  return Object.prototype.hasOwnProperty.call(obj, key) && obj[key] != null;
+}
+
+/** Union two string arrays, preserving first-seen order and deduping. */
+function unionTerms(existing: string[], incoming: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const t of [...existing, ...incoming]) {
+    if (t && !seen.has(t)) {
+      seen.add(t);
+      out.push(t);
+    }
+  }
+  return out;
+}
+
+/**
+ * Reconcile C1 vocabulary that the brand-extract EF wrote on the raw `voice`
+ * object (`voice.preferredTerms` / `voice.bannedTerms`) into the canonical
+ * `vocabularyRules.preferredTerms` / `.bannedTerms` that every consumer reads.
+ *
+ * Without this the extracted terms are stranded: the EF emits them on `voice.*`
+ * but the scorer/generator/voice-summary/brandCompilers all read
+ * `vocabularyRules.*`. Union-merge so an explicitly-authored `vocabularyRules`
+ * is never clobbered; no-op when `voice` carries no terms. Returns a NEW object.
+ */
+function mergeVoiceVocabulary(resolved: BrandProfileData, raw: RawRecord): BrandProfileData {
+  const voice = raw.voice as RawRecord | undefined;
+  if (!voice || typeof voice !== 'object') return resolved;
+  const vp = asStringArray(voice.preferredTerms);
+  const vb = asStringArray(voice.bannedTerms);
+  if (!vp.length && !vb.length) return resolved;
+
+  const existing = (resolved.vocabularyRules ?? {}) as RawRecord;
+  return {
+    ...resolved,
+    vocabularyRules: {
+      preferredTerms: unionTerms(asStringArray(existing.preferredTerms), vp),
+      bannedTerms: unionTerms(asStringArray(existing.bannedTerms), vb),
+    },
+  };
+}
+
+/**
+ * Adapt a raw stored brand_context (any of: canonical / nested url_extract /
+ * flat v26 / C6 backfill stub) into the canonical BrandProfileData the scorer
+ * consumes. Never throws; an unrecognised shape yields a minimal {name}.
+ */
+export function resolveBrandProfile(raw: unknown): BrandProfileData {
+  if (!raw || typeof raw !== 'object') return {};
+  const r = raw as RawRecord;
+  const name = typeof r.name === 'string' ? r.name : undefined;
+
+  const voiceProfile = r.voiceProfile as RawRecord | undefined;
+  const vocabularyRules = r.vocabularyRules as RawRecord | undefined;
+
+  // 1. Canonical — has both voiceProfile and vocabularyRules. Trust + pass through.
+  if (voiceProfile && vocabularyRules) {
+    return mergeVoiceVocabulary(raw as BrandProfileData, r);
+  }
+
+  // 2. Nested url_extract — voiceProfile present, vocabularyRules absent.
+  //    Synthesize bannedTerms from prose avoidPatterns so the gate has something
+  //    to police even before extraction is re-run.
+  if (voiceProfile) {
+    return mergeVoiceVocabulary(
+      {
+        name,
+        voiceProfile: voiceProfile as unknown as BrandProfileData['voiceProfile'],
+        vocabularyRules: {
+          bannedTerms: extractAtomicTerms(asStringArray(voiceProfile.avoidPatterns)),
+          preferredTerms: asStringArray(voiceProfile.languagePatterns),
+        },
+        targetAudience: r.targetAudience as BrandProfileData['targetAudience'],
+        writingStyleRules: r.writingStyleRules as BrandProfileData['writingStyleRules'],
+      },
+      r
+    );
+  }
+
+  // 3. Flat v26 — voiceTone (string)/voiceTags/discouragedTerms at root.
+  const isFlat =
+    hasField(r, 'voiceTone') ||
+    hasField(r, 'voiceTags') ||
+    hasField(r, 'discouragedTerms') ||
+    hasField(r, 'preferredTerms');
+  if (isFlat) {
+    const ta = r.targetAudience as RawRecord | undefined;
+    const psy = ta?.psychographics as RawRecord | undefined;
+    const painPoints = ta ? asStringArray(psy?.painPoints ?? ta.painPoints) : [];
+    const interests = ta ? asStringArray(psy?.interests ?? ta.interests) : [];
+    return mergeVoiceVocabulary(
+      {
+        name,
+        voiceProfile: {
+          tone: [...asStringArray(r.voiceTags), ...asStringArray(r.voiceTone)],
+          style: asStringArray(r.voiceStyle),
+          languagePatterns: [],
+          avoidPatterns: [],
+        },
+        vocabularyRules: {
+          bannedTerms: asStringArray(r.discouragedTerms),
+          preferredTerms: asStringArray(r.preferredTerms),
+        },
+        targetAudience:
+          painPoints.length || interests.length
+            ? { psychographics: { painPoints, interests } }
+            : undefined,
+      },
+      r
+    );
+  }
+
+  // 4. C6 stub / unknown — minimal, never crash. A record with only vocabularyRules
+  //    (no voiceProfile, no flat markers) lands here; FE/EF spread the whole raw and
+  //    keep it, so MCP carries it through too to stay in projected-subset parity.
+  const stub: BrandProfileData = { name };
+  if (vocabularyRules)
+    stub.vocabularyRules = vocabularyRules as unknown as BrandProfileData['vocabularyRules'];
+  return mergeVoiceVocabulary(stub, r);
 }
 
 // ---------------------------------------------------------------------------
@@ -100,7 +291,7 @@ function findMissing(content: string, terms: string[]): string[] {
 // ---------------------------------------------------------------------------
 
 const FABRICATION_PATTERNS = [
-  { regex: /\b\d+[,.]?\d*\s*(%|percent)/gi, label: 'unverified percentage' },
+  { regex: /\b\d+(?:[,.]\d+)?\s*(?:%|percent\b)/gi, label: 'unverified percentage' },
   { regex: /\b(award[- ]?winning|best[- ]selling|#\s*1)\b/gi, label: 'unverified ranking' },
   {
     regex: /\b(guaranteed|proven to|studies show|scientifically proven)\b/gi,
@@ -350,13 +541,16 @@ export function computeBrandConsistency(
     };
   }
 
+  // Normalize whatever stored shape we were handed into canonical before scoring.
+  const resolved = resolveBrandProfile(profile);
+
   const dimensions = {
-    toneAlignment: scoreTone(content, profile),
-    vocabularyAdherence: scoreVocab(content, profile),
-    avoidCompliance: scoreAvoid(content, profile),
-    audienceRelevance: scoreAudience(content, profile),
-    brandMentions: scoreBrand(content, profile),
-    structuralPatterns: scoreStructure(content, profile),
+    toneAlignment: scoreTone(content, resolved),
+    vocabularyAdherence: scoreVocab(content, resolved),
+    avoidCompliance: scoreAvoid(content, resolved),
+    audienceRelevance: scoreAudience(content, resolved),
+    brandMentions: scoreBrand(content, resolved),
+    structuralPatterns: scoreStructure(content, resolved),
   };
 
   const overall = Math.round(
@@ -364,12 +558,12 @@ export function computeBrandConsistency(
   );
 
   const preferred = [
-    ...(profile.voiceProfile?.languagePatterns || []),
-    ...(profile.vocabularyRules?.preferredTerms || []),
+    ...(resolved.voiceProfile?.languagePatterns || []),
+    ...(resolved.vocabularyRules?.preferredTerms || []),
   ];
   const banned = [
-    ...(profile.voiceProfile?.avoidPatterns || []),
-    ...(profile.vocabularyRules?.bannedTerms || []),
+    ...(resolved.voiceProfile?.avoidPatterns || []),
+    ...(resolved.vocabularyRules?.bannedTerms || []),
   ];
   const fabrications = detectFabricationPatterns(content);
 

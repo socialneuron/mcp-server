@@ -2,67 +2,16 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId, getDefaultProjectId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { requestContext } from '../lib/request-context.js';
 import type { GenerateImageResponse } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
-
-// Budget accessors — mirror content.ts pattern for per-request context
-const MAX_CREDITS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN || 0));
-const MAX_ASSETS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_ASSETS_PER_RUN || 0));
-
-let _globalCreditsUsed = 0;
-let _globalAssetsGenerated = 0;
-
-function getCreditsUsed(): number {
-  const ctx = requestContext.getStore();
-  return ctx ? ctx.creditsUsed : _globalCreditsUsed;
-}
-function addCreditsUsed(amount: number): void {
-  const ctx = requestContext.getStore();
-  if (ctx) {
-    ctx.creditsUsed += amount;
-  } else {
-    _globalCreditsUsed += amount;
-  }
-}
-function getAssetsGenerated(): number {
-  const ctx = requestContext.getStore();
-  return ctx ? ctx.assetsGenerated : _globalAssetsGenerated;
-}
-function addAssetsGenerated(count: number): void {
-  const ctx = requestContext.getStore();
-  if (ctx) {
-    ctx.assetsGenerated += count;
-  } else {
-    _globalAssetsGenerated += count;
-  }
-}
-
-function checkCreditBudget(estimatedCost: number): { ok: true } | { ok: false; message: string } {
-  if (MAX_CREDITS_PER_RUN <= 0) return { ok: true };
-  const used = getCreditsUsed();
-  if (used + estimatedCost > MAX_CREDITS_PER_RUN) {
-    return {
-      ok: false,
-      message: `Credit budget exceeded: ${used} used + ${estimatedCost} estimated > ${MAX_CREDITS_PER_RUN} limit. Use a smaller slide count or cheaper image model.`,
-    };
-  }
-  return { ok: true };
-}
-
-function checkAssetBudget(): { ok: true } | { ok: false; message: string } {
-  if (MAX_ASSETS_PER_RUN <= 0) return { ok: true };
-  const gen = getAssetsGenerated();
-  if (gen >= MAX_ASSETS_PER_RUN) {
-    return {
-      ok: false,
-      message: `Asset limit reached: ${gen}/${MAX_ASSETS_PER_RUN} assets generated this run.`,
-    };
-  }
-  return { ok: true };
-}
+import {
+  addAssetsGenerated,
+  addCreditsUsed,
+  checkAssetBudget,
+  checkCreditBudget,
+} from '../lib/budget.js';
 
 const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
   midjourney: 20,
@@ -72,7 +21,7 @@ const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
   'flux-max': 50,
   'gpt4o-image': 40,
   imagen4: 35,
-  'imagen4-fast': 25,
+  'imagen4-fast': 35,
   seedream: 20,
 };
 
@@ -210,11 +159,52 @@ export function registerCarouselTools(server: McpServer): void {
         .describe(
           'Style suffix appended to every image prompt for visual consistency across slides. Example: "dark moody lighting, cinematic, 35mm film grain".'
         ),
+      hook: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'Explicit hook/opener for slide 1. Overrides any hook derived from topic. Keep under 15 words for strongest scroll-stop.'
+        ),
+      hook_family: z
+        .enum(['curiosity', 'authority', 'pain_point', 'contrarian', 'data_driven'])
+        .optional()
+        .describe(
+          'Hook family tag. Recorded on the carousel so downstream analytics + bandit learners can attribute engagement to hook pattern.'
+        ),
+      cta_text: z
+        .string()
+        .max(200)
+        .optional()
+        .describe('Explicit CTA copy for the final slide. If omitted, derived from topic.'),
+      cta_url: z
+        .string()
+        .url()
+        .optional()
+        .describe('URL promoted on the CTA slide. Defaults to the project landing page.'),
+      tone: z
+        .string()
+        .max(200)
+        .optional()
+        .describe(
+          'Voice/tone override. Composes with the brand profile voice when present. Example: "educational, confident, not arrogant".'
+        ),
+      constraints: z
+        .string()
+        .max(500)
+        .optional()
+        .describe(
+          'Content constraints applied at generation time. Example: "No fabricated statistics. Sentence case only. No ALL CAPS."'
+        ),
+      platform: z
+        .enum(['linkedin', 'instagram', 'tiktok', 'x'])
+        .optional()
+        .describe('Target platform. Affects tone conventions and slide-count guardrails.'),
       brand_id: z
         .string()
         .optional()
         .describe(
-          'Brand profile ID — overrides project_id when provided. Used to auto-inject brand colors, logo watermark, and visual mood.'
+          'Brand/project ID to pull visual context from (colors, logo, mood). Falls back to project_id, then default project.'
         ),
       project_id: z.string().optional().describe('Project ID to associate the carousel with.'),
       response_format: z
@@ -230,12 +220,18 @@ export function registerCarouselTools(server: McpServer): void {
       aspect_ratio,
       style,
       image_style_suffix,
+      hook,
+      hook_family,
+      cta_text,
+      cta_url,
+      tone,
+      constraints,
+      platform,
       brand_id,
       project_id,
       response_format,
     }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const templateId = template_id ?? 'hormozi-authority';
       const resolvedStyle =
         style ?? (templateId === 'hormozi-authority' ? 'hormozi' : 'professional');
@@ -256,26 +252,14 @@ export function registerCarouselTools(server: McpServer): void {
 
       const budgetCheck = checkCreditBudget(totalEstimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'create_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: budgetCheck.message, totalEstimatedCost },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
         };
       }
 
-      const assetBudget = checkAssetBudget();
+      const assetBudget = checkAssetBudget(slideCount);
       if (!assetBudget.ok) {
-        await logMcpToolInvocation({
-          toolName: 'create_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: assetBudget.message },
-        });
         return {
           content: [{ type: 'text' as const, text: assetBudget.message }],
           isError: true,
@@ -285,12 +269,6 @@ export function registerCarouselTools(server: McpServer): void {
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `create_carousel:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'create_carousel',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -318,18 +296,19 @@ export function registerCarouselTools(server: McpServer): void {
           aspectRatio: ratio,
           style: resolvedStyle,
           projectId: project_id,
+          hook,
+          hookFamily: hook_family,
+          ctaText: cta_text,
+          ctaUrl: cta_url,
+          tone,
+          constraints,
+          platform,
         },
         { timeoutMs: 60_000 }
       );
 
       if (carouselError || !carouselData?.carousel) {
         const errMsg = carouselError ?? 'No carousel data returned';
-        await logMcpToolInvocation({
-          toolName: 'create_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { phase: 'text_generation', error: errMsg },
-        });
         return {
           content: [{ type: 'text' as const, text: `Carousel text generation failed: ${errMsg}` }],
           isError: true,
@@ -337,6 +316,14 @@ export function registerCarouselTools(server: McpServer): void {
       }
 
       const carousel = carouselData.carousel;
+      const imageAssetBudget = checkAssetBudget(carousel.slides.length);
+      if (!imageAssetBudget.ok) {
+        return {
+          content: [{ type: 'text' as const, text: imageAssetBudget.message }],
+          isError: true,
+        };
+      }
+
       const textCredits = carousel.credits?.used ?? carouselTextCost;
       addCreditsUsed(textCredits);
 
@@ -398,21 +385,6 @@ export function registerCarouselTools(server: McpServer): void {
 
       const successfulJobs = imageJobs.filter(j => j.jobId !== null);
       const failedJobs = imageJobs.filter(j => j.jobId === null);
-
-      await logMcpToolInvocation({
-        toolName: 'create_carousel',
-        status: failedJobs.length === imageJobs.length ? 'error' : 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          carouselId: carousel.id,
-          templateId,
-          slideCount: carousel.slides.length,
-          imagesStarted: successfulJobs.length,
-          imagesFailed: failedJobs.length,
-          imageModel: image_model,
-          creditsUsed: getCreditsUsed(),
-        },
-      });
 
       // ── Build response ──
       if (format === 'json') {

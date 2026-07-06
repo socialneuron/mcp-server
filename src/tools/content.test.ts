@@ -3,6 +3,7 @@ import { createMockServer } from '../test-setup.js';
 import { registerContentTools } from './content.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetClient = vi.mocked(getSupabaseClient);
@@ -140,7 +141,7 @@ describe('content tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.jobId).toBe('vid-json-1');
       expect(parsed.data.model).toBe('veo3-fast');
       expect(parsed.data.estimatedTime).toBe(60);
@@ -279,7 +280,7 @@ describe('content tools', () => {
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.jobId).toBe('img-json-1');
       expect(parsed.data.model).toBe('midjourney');
       expect(result.isError).toBeUndefined();
@@ -471,80 +472,9 @@ describe('content tools', () => {
       const handler = server.getHandler('check_status')!;
       const result = await handler({ job_id: 'job-json', response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.id).toBe('job-abc');
       expect(parsed.data.status).toBe('completed');
-    });
-
-    it('surfaces billing fields reported by the backend', async () => {
-      const billedJob = {
-        ...completedJob,
-        status: 'failed',
-        error_message: 'Provider rejected prompt',
-        credits_cost: 10,
-        billing_status: 'refunded',
-        credits_reserved: 10,
-        credits_charged: 0,
-        credits_refunded: 10,
-        failure_reason: 'provider_rejected',
-      };
-      mockCallEdge.mockResolvedValueOnce({
-        data: { success: true, job: billedJob },
-        error: null,
-      });
-
-      const handler = server.getHandler('check_status')!;
-      const result = await handler({ job_id: 'job-billed' });
-      const text = result.content[0].text;
-      expect(text).toContain('Billing: status=refunded');
-      expect(text).toContain('reserved=10');
-      expect(text).toContain('charged=0');
-      expect(text).toContain('refunded=10');
-      expect(text).toContain('failure_reason=provider_rejected');
-    });
-
-    it('marks failed job billing as unreported when backend omits billing fields', async () => {
-      const failedJob = {
-        ...completedJob,
-        status: 'failed',
-        error_message: 'Provider timeout',
-        completed_at: '2026-02-10T12:01:30Z',
-      };
-      mockCallEdge.mockResolvedValueOnce({
-        data: { success: true, job: failedJob },
-        error: null,
-      });
-
-      const handler = server.getHandler('check_status')!;
-      const result = await handler({ job_id: 'job-failed-no-billing' });
-      expect(result.content[0].text).toContain('Billing status: not reported by backend');
-    });
-
-    it('includes billing summary in JSON envelope', async () => {
-      const billedJob = {
-        ...completedJob,
-        result_metadata: {
-          billing_status: 'charged',
-          credits_reserved: 10,
-          credits_charged: 10,
-          credits_refunded: 0,
-        },
-      };
-      mockCallEdge.mockResolvedValueOnce({
-        data: { success: true, job: billedJob },
-        error: null,
-      });
-
-      const handler = server.getHandler('check_status')!;
-      const result = await handler({ job_id: 'job-billing-json', response_format: 'json' });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.billing).toMatchObject({
-        billing_status: 'charged',
-        credits_reserved: 10,
-        credits_charged: 10,
-        credits_refunded: 0,
-        reported: true,
-      });
     });
 
     it('shows R2 Key label when result_url is an R2 key (not http)', async () => {
@@ -751,6 +681,40 @@ describe('content tools', () => {
         }),
         { timeoutMs: 60_000 }
       );
+    });
+  });
+
+  // -------------------------------------------------------------------------
+  // generate_voiceover (P1.4 — must send voiceId, NOT the friendly `voice` name)
+  // -------------------------------------------------------------------------
+  describe('generate_voiceover', () => {
+    it('maps the voice name to a real ElevenLabs voiceId and forwards speed', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { audioUrl: 'https://r2.example/audio.mp3', durationSeconds: 5 },
+        error: null,
+      });
+      const result = await server.getHandler('generate_voiceover')!({
+        text: 'Hello world',
+        voice: 'domi',
+        speed: 1.1,
+        response_format: 'text',
+      });
+      expect(result.isError).toBeFalsy();
+      const [fn, body] = mockCallEdge.mock.calls[0] as [string, Record<string, unknown>];
+      expect(fn).toBe('elevenlabs-tts');
+      expect(body.voiceId).toBe('AZnzlk1XvdvUeBnXmlld'); // domi — the EF requires voiceId
+      expect(body.voice).toBeUndefined(); // friendly name must NOT be sent (EF ignores it)
+      expect(body.speed).toBe(1.1);
+    });
+
+    it('defaults to the rachel voiceId when no voice is given', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { audioUrl: 'https://r2.example/a.mp3' },
+        error: null,
+      });
+      await server.getHandler('generate_voiceover')!({ text: 'Hi', response_format: 'text' });
+      const body = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+      expect(body.voiceId).toBe('21m00Tcm4TlvDq8ikWAM'); // rachel
     });
   });
 });

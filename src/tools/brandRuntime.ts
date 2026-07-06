@@ -14,7 +14,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
-import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { computeBrandConsistency } from '../lib/brandScoring.js';
 import { auditBrandColors, exportDesignTokens } from '../lib/colorAudit.js';
@@ -53,7 +52,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Error: ${safeErrorMessage(efError ?? result?.error, 'Failed to fetch brand profile')}`,
+              text: `Error: ${efError || result?.error || 'Failed to fetch brand profile'}`,
             },
           ],
           isError: true,
@@ -62,12 +61,27 @@ export function registerBrandRuntimeTools(server: McpServer): void {
 
       const data = result.profile as Record<string, any> | null;
 
-      if (!data?.profile_data) {
+      if (!data) {
         return {
           content: [
             {
               type: 'text' as const,
               text: 'No brand profile found for this project. Use extract_brand to create one.',
+            },
+          ],
+        };
+      }
+
+      if (!data.profile_data) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `Brand profile row exists for this project (version ${data.version ?? '?'}, ` +
+                `extraction_method: ${data.extraction_method ?? 'unknown'}) but profile_data is empty. ` +
+                `Run extract_brand with a URL to populate the 4-layer runtime, or save_brand_profile ` +
+                `with explicit profile_data if you're hand-authoring.`,
             },
           ],
         };
@@ -111,6 +125,7 @@ export function registerBrandRuntimeTools(server: McpServer): void {
 
       const envelope = asEnvelope(runtime);
       return {
+        structuredContent: envelope,
         content: [{ type: 'text' as const, text: JSON.stringify(envelope, null, 2) }],
       };
     }

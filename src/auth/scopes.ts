@@ -47,6 +47,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   get_budget_status: 'mcp:read',
   get_loop_summary: 'mcp:read',
   list_connected_accounts: 'mcp:read',
+  wait_for_connection: 'mcp:read',
   capture_screenshot: 'mcp:read',
   capture_app_page: 'mcp:read',
   list_compositions: 'mcp:read',
@@ -70,8 +71,13 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:read (media)
   get_media_url: 'mcp:read',
 
+  // F4 Hyperframes — HTML composition runtime
+  list_hyperframes_blocks: 'mcp:read',
+  render_hyperframes: 'mcp:write',
+
   // mcp:distribute
   schedule_post: 'mcp:distribute',
+  start_platform_connection: 'mcp:distribute',
 
   // mcp:analytics
   refresh_platform_analytics: 'mcp:analytics',
@@ -92,13 +98,15 @@ export const TOOL_SCOPES: Record<string, string> = {
   // Recipes
   list_recipes: 'mcp:read',
   get_recipe_details: 'mcp:read',
-  execute_recipe: 'mcp:autopilot',
+  execute_recipe: 'mcp:write',
   get_recipe_run_status: 'mcp:read',
 
   // mcp:read (content lifecycle — read-only tools)
   extract_url_content: 'mcp:read',
   quality_check: 'mcp:read',
   quality_check_plan: 'mcp:read',
+  visual_quality_check: 'mcp:read',
+  visual_gate_constraints: 'mcp:read',
   find_next_slots: 'mcp:read',
 
   // mcp:write (content lifecycle — generation tools)
@@ -117,6 +125,8 @@ export const TOOL_SCOPES: Record<string, string> = {
   get_mcp_usage: 'mcp:read',
   list_plan_approvals: 'mcp:read',
   search_tools: 'mcp:read',
+  search: 'mcp:read',
+  fetch: 'mcp:read',
 
   // mcp:read (pipeline readiness + status are read-only)
   check_pipeline_readiness: 'mcp:read',
@@ -129,6 +139,7 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:read (suggestions are read-only, no credit cost)
   suggest_next_content: 'mcp:read',
+  find_winning_content: 'mcp:read',
 
   // mcp:analytics (digest and anomalies are analytics-scoped)
   generate_performance_digest: 'mcp:analytics',
@@ -137,9 +148,29 @@ export const TOOL_SCOPES: Record<string, string> = {
   // mcp:read (Apps — entry tool for the Content Calendar MCP App; reads recent posts)
   open_content_calendar: 'mcp:read',
 
-  // platform connection deep-link flow
-  start_platform_connection: 'mcp:distribute',
-  wait_for_connection: 'mcp:read',
+  // mcp:write (Agentic harness — learning loop write-back)
+  write_agent_reflection: 'mcp:write',
+  record_outcome: 'mcp:write',
+
+  // mcp:read (Agentic harness — read-back; reads are cheaper → higher rate limit)
+  read_agent_reflection: 'mcp:read',
+
+  // mcp:write (Hermes integration — 2026-05-22)
+  save_draft_to_library: 'mcp:write',
+  record_voice_lesson: 'mcp:write',
+  record_observation: 'mcp:write',
+  record_intel_signal: 'mcp:write',
+  record_campaign_spend: 'mcp:write',
+  // mcp:read
+  get_active_campaigns: 'mcp:read',
+
+  // mcp:read / mcp:write (Skills — PR #4.4)
+  list_skills: 'mcp:read',
+  run_skill: 'mcp:write',
+
+  // mcp:read (Loop observability — growth-loop KPIs + bandit posteriors)
+  get_loop_pulse: 'mcp:read',
+  get_bandit_state: 'mcp:read',
 };
 
 /**

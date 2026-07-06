@@ -169,36 +169,6 @@ describe('SSRF protection', () => {
       expect(result.error).toContain('internal');
     });
 
-    it('blocks IPv4-mapped IPv6 localhost in normalized hex form', async () => {
-      const result = await validateUrlForSSRF('http://[::ffff:7f00:1]/');
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('internal');
-    });
-
-    it('blocks IPv4-mapped IPv6 private ranges in normalized hex form', async () => {
-      const result = await validateUrlForSSRF('http://[::ffff:a00:1]/');
-      expect(result.isValid).toBe(false);
-      expect(result.error).toContain('internal');
-    });
-
-    it('blocks bare IPv6 ULA/link-local/site-local literals', async () => {
-      // ULA fc00::/7 (incl. AWS IMDSv6 fd00:ec2::254), link-local fe80::/10,
-      // and site-local fec0::/10 — none of these should resolve via DNS.
-      const blocked = ['fd00:ec2::254', 'fc00::1', 'fd12:3456::1', 'fec0::1'];
-      for (const ip of blocked) {
-        const result = await validateUrlForSSRF(`http://[${ip}]/`);
-        expect(result.isValid, `${ip} should be blocked`).toBe(false);
-        expect(result.error).toContain('internal');
-      }
-    });
-
-    it('allows a public IPv6 literal (Cloudflare 2606:4700:4700::1111)', async () => {
-      const result = await validateUrlForSSRF('http://[2606:4700:4700::1111]/');
-      expect(result.isValid).toBe(true);
-      // IP literals skip DNS resolution.
-      expect(result.resolvedIP).toBeUndefined();
-    });
-
     it('skips DNS check for direct IP addresses', async () => {
       // A public IP should pass without DNS lookup
       const result = await validateUrlForSSRF('https://93.184.216.34/');

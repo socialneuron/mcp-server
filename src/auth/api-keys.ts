@@ -13,12 +13,6 @@ export interface ValidateApiKeyResult {
   scopes?: string[];
   email?: string;
   expiresAt?: string;
-  organizationId?: string;
-  organization_id?: string;
-  projectId?: string;
-  project_id?: string;
-  brandProfileId?: string;
-  brand_profile_id?: string;
   error?: string;
   /**
    * True when the failure was TRANSIENT (network blip, 429 rate-limit, 5xx) —
@@ -39,10 +33,7 @@ const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
  * expired / revoked → `retryable: false`). This stops a momentary connectivity
  * hiccup from looking like "your key died, re-login".
  */
-export async function validateApiKey(
-  apiKey: string,
-  _attempt = 0
-): Promise<ValidateApiKeyResult> {
+export async function validateApiKey(apiKey: string, _attempt = 0): Promise<ValidateApiKeyResult> {
   const supabaseUrl = getSupabaseUrl();
   try {
     // Supabase Edge Functions require an Authorization header even for "public" endpoints.

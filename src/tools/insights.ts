@@ -1,7 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { safeErrorMessage } from '../lib/sanitize-error.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { PerformanceInsight, BestPostingTime, ResponseEnvelope } from '../types/index.js';
 
@@ -90,7 +89,7 @@ export function registerInsightsTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to fetch performance insights: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to fetch performance insights: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,
@@ -106,19 +105,17 @@ export function registerInsightsTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({
+            insights: [],
+            days: lookbackDays,
+            insightType: insight_type ?? null,
+          });
           return {
+            structuredContent,
             content: [
               {
                 type: 'text' as const,
-                text: JSON.stringify(
-                  asEnvelope({
-                    insights: [],
-                    days: lookbackDays,
-                    insightType: insight_type ?? null,
-                  }),
-                  null,
-                  2
-                ),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
           };
@@ -134,21 +131,19 @@ export function registerInsightsTools(server: McpServer): void {
       }
 
       const insights = rows as PerformanceInsight[];
+      const structuredContent = asEnvelope({
+        insights,
+        days: lookbackDays,
+        insightType: insight_type ?? null,
+      });
 
       if (format === 'json') {
         return {
+          structuredContent,
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                asEnvelope({
-                  insights,
-                  days: lookbackDays,
-                  insightType: insight_type ?? null,
-                }),
-                null,
-                2
-              ),
+              text: JSON.stringify(structuredContent, null, 2),
             },
           ],
         };
@@ -178,6 +173,7 @@ export function registerInsightsTools(server: McpServer): void {
       }
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }
@@ -232,7 +228,7 @@ export function registerInsightsTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to analyze posting times: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to analyze posting times: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,

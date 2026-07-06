@@ -2,18 +2,15 @@ import { describe, it, expect, vi } from 'vitest';
 import { applyScopeEnforcement } from './register-tools.js';
 
 describe('applyScopeEnforcement', () => {
-  function parseFirstText(result: unknown): Record<string, unknown> {
-    const text = (result as { content: Array<{ text: string }> }).content[0].text;
-    return JSON.parse(text) as Record<string, unknown>;
-  }
-
   it('enforces scope checks for tool() and registerTool() handlers', async () => {
     const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
 
     const server = {
-      tool: vi.fn((name: string, _schema: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
-        handlers.set(name, handler);
-      }),
+      tool: vi.fn(
+        (name: string, _schema: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
+          handlers.set(name, handler);
+        }
+      ),
       registerTool: vi.fn(
         (name: string, _config: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
           handlers.set(name, handler);
@@ -31,69 +28,22 @@ describe('applyScopeEnforcement', () => {
     const toolResult = await handlers.get('fetch_trends')?.();
     const appResult = await handlers.get('open_content_calendar')?.();
 
-    expect(toolResult).toMatchObject({ isError: true, _meta: { error_type: 'permission_denied' } });
-    expect(appResult).toMatchObject({ isError: true, _meta: { error_type: 'permission_denied' } });
-  });
+    expect(toolResult).toMatchObject({ isError: true });
+    expect(appResult).toMatchObject({ isError: true });
 
-  it('returns structured permission_denied errors for scope mismatches', async () => {
-    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
-
-    const server = {
-      tool: vi.fn(
-        (name: string, _schema: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
-          handlers.set(name, handler);
-        }
-      ),
-    };
-
-    applyScopeEnforcement(server as never, () => ['mcp:read']);
-
-    server.tool('schedule_post', {}, async () => ({ content: [{ type: 'text', text: 'ok' }] }));
-
-    const result = await handlers.get('schedule_post')?.();
-    const payload = parseFirstText(result);
-
-    expect(result).toMatchObject({ isError: true });
-    expect(payload).toMatchObject({
-      ok: false,
-      error_type: 'permission_denied',
-      tool: 'schedule_post',
-      required_scope: 'mcp:distribute',
-      available_scopes: ['mcp:read'],
-      developer_url: 'https://socialneuron.com/settings/developer',
+    const error = JSON.parse((toolResult as any).content[0].text);
+    expect(error).toMatchObject({
+      error: 'permission_denied',
+      tool: 'fetch_trends',
+      required_scope: 'mcp:read',
+      available_scopes: ['mcp:distribute'],
     });
-    expect(payload.recover_with).toEqual(
-      expect.arrayContaining([expect.stringContaining('available_only=true')])
-    );
-  });
+    expect(error.recover_with.join(' ')).toContain('available_only=true');
 
-  it('returns structured configuration_error for tools without scope mappings', async () => {
-    const handlers = new Map<string, (...args: unknown[]) => Promise<unknown>>();
-
-    const server = {
-      tool: vi.fn(
-        (name: string, _schema: unknown, handler: (...args: unknown[]) => Promise<unknown>) => {
-          handlers.set(name, handler);
-        }
-      ),
-    };
-
-    applyScopeEnforcement(server as never, () => ['mcp:full']);
-
-    server.tool('unmapped_tool', {}, async () => ({ content: [{ type: 'text', text: 'ok' }] }));
-
-    const result = await handlers.get('unmapped_tool')?.();
-    const payload = parseFirstText(result);
-
-    expect(result).toMatchObject({ isError: true });
-    expect(payload).toMatchObject({
-      ok: false,
-      error_type: 'configuration_error',
-      tool: 'unmapped_tool',
-      available_scopes: ['mcp:full'],
-    });
-    expect(payload.recover_with).toEqual(
-      expect.arrayContaining([expect.stringContaining('server configuration issue')])
-    );
+    const challenge = (toolResult as any)._meta['mcp/www_authenticate'][0] as string;
+    expect(challenge).toContain('resource_metadata="');
+    expect(challenge).toContain('/.well-known/oauth-protected-resource"');
+    expect(challenge).toContain('error="insufficient_scope"');
+    expect(challenge).toContain('scope="mcp:read"');
   });
 });

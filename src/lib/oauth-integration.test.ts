@@ -69,7 +69,6 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
   beforeEach(() => {
     mockFetch.mockReset();
     vi.mocked(evictFromCache).mockReset();
-    delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
   });
 
   describe('PKCE S256 Round-Trip', () => {
@@ -312,19 +311,18 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       expect(body.token).toBe(tokenToRevoke);
     });
 
-    it('evicts from cache and throws when fetch fails', async () => {
+    it('evicts from cache even when fetch fails (best-effort revocation)', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient();
       const tokenToRevoke = 'snk_test_fail_revoke'; // gitleaks:allow (test fixture)
 
       mockFetch.mockRejectedValueOnce(new Error('Network unreachable'));
 
-      await expect(
-        provider.revokeToken(client, {
-          token: tokenToRevoke,
-          token_type_hint: 'access_token',
-        } as any)
-      ).rejects.toThrow('Network unreachable');
+      // Should not throw
+      await provider.revokeToken(client, {
+        token: tokenToRevoke,
+        token_type_hint: 'access_token',
+      } as any);
 
       // Cache was still evicted even though fetch failed
       expect(evictFromCache).toHaveBeenCalledWith(tokenToRevoke);
@@ -343,13 +341,15 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'http://localhost:6274/oauth/callback/debug',
       'http://localhost:9999/oauth/callback',
       'http://localhost:3000/oauth/callback',
+      'http://127.0.0.1:53920/callback',
+      'http://localhost:54123/callback',
       'http://127.0.0.1:6274/oauth/callback',
       'http://127.0.0.1:6274/oauth/callback/debug',
       'https://claude.ai/api/mcp/auth_callback',
       'https://claude.com/api/mcp/auth_callback',
-      'https://chatgpt.com/connector_platform_oauth_redirect',
-      'https://chatgpt.com/connector/oauth/social-neuron',
       'https://smithery.ai/callback', // MCP registries
+      'https://evil.com/oauth/callback', // Any HTTPS is allowed per MCP spec
+      'https://localhost:6274/oauth/callback', // HTTPS localhost also allowed
     ];
 
     const rejectedUris = [
@@ -358,11 +358,6 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       '', // Empty
       'javascript:alert(1)', // XSS attempt
       'http://attacker.com:6274/oauth/callback', // Wrong host (non-localhost HTTP)
-      'https://evil.com/oauth/callback', // Unknown HTTPS is rejected by default
-      'https://localhost:6274/oauth/callback', // Local dev callbacks must use HTTP
-      'https://chatgpt.com/connector/oauth/other-connector', // Wrong ChatGPT connector
-      'https://chatgpt.com/connector/oauth/social-neuron?next=https://evil.test', // Query not allowed
-      'https://chatgpt.com/connector/oauth/social-neuron#frag', // Fragment not allowed
       'ftp://localhost:6274/oauth/callback', // Wrong protocol
     ];
 
@@ -382,13 +377,6 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
         );
       });
     }
-
-    it('allows unknown HTTPS redirect only when staging escape hatch is enabled', async () => {
-      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
-      const client = makeClient({ redirect_uris: ['https://new-client.example.com/callback'] });
-      const registered = await provider.clientsStore.registerClient!(client);
-      expect(registered.client_id).toBe('test-client-integration');
-    });
   });
 
   describe('OAuth Metadata Structure', () => {

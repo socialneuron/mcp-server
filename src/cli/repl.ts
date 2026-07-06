@@ -105,7 +105,8 @@ export async function runRepl(): Promise<void> {
 
     // Parse as CLI command — override process.exit so it doesn't kill the REPL
     const originalExit = process.exit;
-    // Intentionally overriding process.exit in REPL mode; the cast keeps it typed.
+    // Intentionally overriding process.exit in REPL mode (cast keeps tsc happy
+    // across @types/node versions — the directive form breaks when it's unused).
     process.exit = ((_code?: number) => {
       // Swallow exit calls — REPL stays alive
     }) as typeof process.exit;

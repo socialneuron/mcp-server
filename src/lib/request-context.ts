@@ -8,14 +8,8 @@ import { AsyncLocalStorage } from 'node:async_hooks';
 interface RequestContext {
   userId: string;
   scopes: string[];
-  /** Authenticated bearer token for the current HTTP request, if gateway-compatible. */
-  token?: string;
-  /** Active organization selected by auth/account context, when supplied by the gateway. */
-  organizationId?: string | null;
-  /** Active project selected by auth/account context, when supplied by the gateway. */
-  projectId?: string | null;
-  /** Active brand profile selected by auth/account context, when supplied by the gateway. */
-  brandProfileId?: string | null;
+  /** The authenticated API key / OAuth token for this request (used by callEdgeFunction). */
+  token: string;
   /** Per-request credit tracking for HTTP mode budget isolation. */
   creditsUsed: number;
   /** Per-request asset count for HTTP mode budget isolation. */
@@ -32,18 +26,6 @@ export function getRequestScopes(): string[] | null {
   return requestContext.getStore()?.scopes ?? null;
 }
 
-export function getRequestBearerToken(): string | null {
+export function getRequestToken(): string | null {
   return requestContext.getStore()?.token ?? null;
-}
-
-export function getRequestOrganizationId(): string | null {
-  return requestContext.getStore()?.organizationId ?? null;
-}
-
-export function getRequestProjectId(): string | null {
-  return requestContext.getStore()?.projectId ?? null;
-}
-
-export function getRequestBrandProfileId(): string | null {
-  return requestContext.getStore()?.brandProfileId ?? null;
 }

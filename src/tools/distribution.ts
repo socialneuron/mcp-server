@@ -2,10 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { createHash } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { safeErrorMessage, sanitizeError } from '../lib/sanitize-error.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import type {
   SchedulePostResult,
@@ -50,6 +50,40 @@ const PLATFORM_CASE_MAP: Record<string, string> = {
   bluesky: 'Bluesky',
 };
 
+/**
+ * Whether the TikTok Content Posting API audit has been approved.
+ *
+ * Pre-audit, Direct Post (`video.publish` scope) is rate-limited to
+ * 5 users/24h with forced SELF_ONLY privacy — external SN users will
+ * silently fail. The MCP `schedule_post` tool auto-flips TikTok targets
+ * to `use_inbox: true` while this is false, mirroring the Composer's
+ * `defaultTikTokInboxMode()` helper in `constants/platform/capabilities.ts`.
+ *
+ * Flip to `true` AFTER TikTok audit approval lands. Audit submitted
+ * 2026-04-29; turnaround 4-6 weeks.
+ */
+const TIKTOK_AUDIT_APPROVED = false;
+
+/**
+ * Platforms that are NOT live for posting today. MCP `schedule_post`
+ * rejects these with a clear blocker message before invoking the EF.
+ *
+ * Mirror of the registry in `constants/platform/capabilities.ts`
+ * (PlatformCapability.posting.live === false). Update both files when
+ * platform availability changes:
+ *   - LinkedIn: deferred per Phase 0.A — no refresh_token at standard
+ *     tier (60-day reconnect cycle), Marketing Developer Platform
+ *     application required for Page posting.
+ *   - Pinterest: Coming Soon — no direct OAuth wired.
+ *   - Reddit: research-only via fetch-reddit-trends; no posting API.
+ *
+ * Threads + Instagram + Facebook are NOT in this set even though their
+ * `posting.live === false` in the registry — they're tester-mode while
+ * Meta App Review is pending. The schedule-post EF will reject for
+ * non-tester users at the connection layer.
+ */
+const MCP_NOT_LIVE_FOR_POSTING = new Set(['LinkedIn', 'Pinterest', 'Reddit']);
+
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
     _meta: {
@@ -84,13 +118,19 @@ async function rehostExternalUrl(
   mediaUrl: string,
   projectId: string | undefined
 ): Promise<{ signedUrl: string; r2Key: string } | { error: string }> {
-  if (isAlreadyR2Signed(mediaUrl)) {
-    return { signedUrl: mediaUrl, r2Key: '' };
-  }
-
+  // SSRF check FIRST — before the R2-signed short-circuit. An attacker can
+  // append ?X-Amz-Signature=anything to an internal URL
+  // (e.g. http://169.254.169.254/latest/meta-data/?X-Amz-Signature=x) and
+  // the isAlreadyR2Signed() check would let it through if we ran it first.
+  // Async DNS-resolving validator closes the DNS-rebinding gap — accepting
+  // a few hundred ms latency on the upload path is the right trade.
   const ssrf = await validateUrlForSSRF(mediaUrl);
   if (!ssrf.isValid) {
     return { error: ssrf.error ?? 'URL rejected by SSRF check' };
+  }
+
+  if (isAlreadyR2Signed(mediaUrl)) {
+    return { signedUrl: mediaUrl, r2Key: '' };
   }
 
   const { data, error } = await callEdgeFunction<{
@@ -99,11 +139,7 @@ async function rehostExternalUrl(
     key: string;
     size: number;
     contentType: string;
-  }>(
-    'upload-to-r2',
-    { url: ssrf.sanitizedUrl ?? mediaUrl, projectId },
-    { timeoutMs: 60_000 }
-  );
+  }>('upload-to-r2', { url: ssrf.sanitizedUrl ?? mediaUrl, projectId }, { timeoutMs: 60_000 });
 
   if (error || !data?.key || !data?.url) {
     return { error: error ?? 'upload-to-r2 returned no key' };
@@ -132,8 +168,6 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       media_urls: z
         .array(z.string())
-        .min(1)
-        .max(10)
         .optional()
         .describe(
           'Array of 2-10 image URLs for carousel posts. Same rehosting rules as media_url — ' +
@@ -148,8 +182,6 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       r2_keys: z
         .array(z.string())
-        .min(1)
-        .max(10)
         .optional()
         .describe(
           'Array of R2 object keys for carousel posts. Each is signed on demand. Alternative to media_urls.'
@@ -163,8 +195,6 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       job_ids: z
         .array(z.string())
-        .min(1)
-        .max(10)
         .optional()
         .describe(
           'Array of async job IDs for carousel posts. Each resolved to its R2 key. Alternative to media_urls/r2_keys.'
@@ -232,7 +262,35 @@ export function registerDistributionTools(server: McpServer): void {
               article_url: z.string().optional(),
             })
             .optional(),
-          twitter: z.object({}).passthrough().optional(),
+          twitter: z
+            .object({
+              paid_partnership: z
+                .boolean()
+                .optional()
+                .describe(
+                  'Set true for sponsored, affiliate, or branded campaign content. Forwarded to X as paid_partnership and persisted on posts.metadata.paid_partnership.'
+                ),
+              disclosure: z
+                .union([
+                  z.string(),
+                  z
+                    .object({
+                      label: z.string().optional(),
+                      text: z.string().optional(),
+                      source: z.string().optional(),
+                      required: z.boolean().optional(),
+                    })
+                    .passthrough(),
+                ])
+                .optional()
+                .describe(
+                  'Campaign disclosure metadata for X posts. String values become disclosure.text; object values persist to posts.metadata.disclosure.'
+                ),
+              disclosure_text: z.string().optional(),
+              disclosure_label: z.string().optional(),
+            })
+            .passthrough()
+            .optional(),
         })
         .optional()
         .describe(
@@ -291,6 +349,21 @@ export function registerDistributionTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe('If true, appends "Created with Social Neuron" to the caption. Default: false.'),
+      account_id: z
+        .string()
+        .optional()
+        .describe(
+          'Connected account ID to post from. Use list_connected_accounts to find the right ID. ' +
+            'Required when multiple accounts exist for the same platform.'
+        ),
+      account_ids: z
+        .record(z.string(), z.string())
+        .optional()
+        .describe(
+          'Per-platform account IDs when posting to multiple platforms. ' +
+            'Example: {"twitter": "abc123", "instagram": "def456"}. ' +
+            'Use list_connected_accounts to find IDs.'
+        ),
       auto_rehost: z
         .boolean()
         .optional()
@@ -298,6 +371,31 @@ export function registerDistributionTools(server: McpServer): void {
           'Whether to persist non-R2 media_url/media_urls into R2 before posting. ' +
             'Default: true. Set to false only if you know the source URL will outlive the ' +
             'scheduling window and every target platform supports URL ingest.'
+        ),
+      visual_gate_result: z
+        .object({ passed: z.boolean() })
+        .passthrough()
+        .optional()
+        .describe(
+          'Visual QA gate verdict from the carousel/image generation pipeline. ' +
+            'Required when mediaType is CAROUSEL_ALBUM, IMAGE, or VIDEO and ' +
+            'VISUAL_GATE_ENFORCE is enabled on the EF. Produce with visual_quality_check tool. ' +
+            'Must have passed=true for the gate to allow the publish.'
+        ),
+      origin: z
+        .enum(['human', 'hermes', 'user'])
+        .optional()
+        .describe(
+          "Originator lineage for the post. 'hermes' marks the post as scheduled by the Hermes " +
+            "autonomous agent — surfaces the Hermes badge + filter in Distribution. Default 'human'. " +
+            'Use only when calling from an autonomous workflow (cron, Slack bot, etc.).'
+        ),
+      hermes_run_id: z
+        .string()
+        .optional()
+        .describe(
+          "Hermes cron run identifier — e.g. 'cron_<id>_<timestamp>'. Persists to posts.hermes_run_id " +
+            "when origin='hermes'. Use for traceability between drafts and the cron that produced them."
         ),
     },
     async ({
@@ -318,9 +416,13 @@ export function registerDistributionTools(server: McpServer): void {
       job_id,
       job_ids,
       platform_metadata,
+      account_id,
+      account_ids,
+      visual_gate_result,
+      origin,
+      hermes_run_id,
     }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       if ((!caption || caption.trim().length === 0) && (!title || title.trim().length === 0)) {
         return {
           content: [{ type: 'text' as const, text: 'Either caption or title is required.' }],
@@ -330,12 +432,6 @@ export function registerDistributionTools(server: McpServer): void {
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `schedule_post:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -352,9 +448,11 @@ export function registerDistributionTools(server: McpServer): void {
       let resolvedMediaUrls = media_urls;
 
       const signR2Key = async (key: string): Promise<string | null> => {
+        // Strip r2:// prefix if present (job result_urls use this format)
+        const cleanKey = key.startsWith('r2://') ? key.slice(5) : key;
         const { data: signData } = await callEdgeFunction<{ signedUrl?: string; url?: string }>(
           'get-signed-url',
-          { key, operation: 'get' },
+          { r2Key: cleanKey, operation: 'get' },
           { timeoutMs: 10_000 }
         );
         return signData?.signedUrl ?? signData?.url ?? null;
@@ -443,8 +541,11 @@ export function registerDistributionTools(server: McpServer): void {
         // generators whose job_id result_url is a raw ephemeral URL rather
         // than a persisted R2 key. URLs already bearing X-Amz-Signature
         // (signed by our get-signed-url EF) are skipped.
+        // The R2-signed short-circuit lives inside rehostExternalUrl — do NOT
+        // gate on isAlreadyR2Signed() here, or a crafted ?X-Amz-Signature=x on
+        // an internal URL would skip the SSRF check too.
         const shouldRehost = auto_rehost !== false;
-        if (shouldRehost && resolvedMediaUrl && !isAlreadyR2Signed(resolvedMediaUrl)) {
+        if (shouldRehost && resolvedMediaUrl) {
           const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
           if ('error' in rehost) {
             return {
@@ -465,34 +566,30 @@ export function registerDistributionTools(server: McpServer): void {
         }
 
         if (shouldRehost && resolvedMediaUrls && resolvedMediaUrls.length > 0) {
-          const needsRehost = resolvedMediaUrls.map(u => !isAlreadyR2Signed(u));
-          if (needsRehost.some(Boolean)) {
-            const rehosted = await Promise.all(
-              resolvedMediaUrls.map((u, i) =>
-                needsRehost[i]
-                  ? rehostExternalUrl(u, project_id)
-                  : Promise.resolve({ signedUrl: u, r2Key: '' })
-              )
-            );
-            const failIdx = rehosted.findIndex(r => 'error' in r);
-            if (failIdx !== -1) {
-              const failed = rehosted[failIdx] as { error: string };
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text:
-                      `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
-                      `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
-                  },
-                ],
-                isError: true,
-              };
-            }
-            resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
-              r => r.signedUrl
-            );
+          // Always invoke rehostExternalUrl per slot — it short-circuits R2-signed
+          // URLs internally AFTER running validateUrlForSSRF, so a forged
+          // ?X-Amz-Signature=x on an internal URL cannot bypass SSRF.
+          const rehosted = await Promise.all(
+            resolvedMediaUrls.map(u => rehostExternalUrl(u, project_id))
+          );
+          const failIdx = rehosted.findIndex(r => 'error' in r);
+          if (failIdx !== -1) {
+            const failed = rehosted[failIdx] as { error: string };
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text:
+                    `Failed to persist media_urls[${failIdx}] into R2: ${failed.error}. ` +
+                    `Try upload_media first and pass r2_keys instead, or set auto_rehost=false.`,
+                },
+              ],
+              isError: true,
+            };
           }
+          resolvedMediaUrls = (rehosted as { signedUrl: string; r2Key: string }[]).map(
+            r => r.signedUrl
+          );
         }
       } catch (resolveErr) {
         return {
@@ -509,11 +606,137 @@ export function registerDistributionTools(server: McpServer): void {
       // Normalize platform names to DB convention (capitalized) before sending
       const normalizedPlatforms = platforms.map(p => PLATFORM_CASE_MAP[p.toLowerCase()] || p);
 
+      // Parity contract (Phase 0.C.3): reject not-live platforms before
+      // any EF call. Mirrors Composer's validatePostingRequest path so
+      // the AI agent gets a clear error instead of a downstream EF
+      // failure. Update MCP_NOT_LIVE_FOR_POSTING and the
+      // constants/platform/capabilities.ts registry together.
+      const blockedPlatforms = normalizedPlatforms.filter(p => MCP_NOT_LIVE_FOR_POSTING.has(p));
+      if (blockedPlatforms.length > 0) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Cannot post — these platforms are not live for posting yet: ${blockedPlatforms.join(', ')}. They are listed as Coming Soon in the Channels surface; remove them from the platforms array and retry.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // --- Pre-flight: validate connected accounts before posting ---
+      const { data: accountsData } = await callEdgeFunction<{
+        accounts?: Array<{
+          id: string;
+          platform: string;
+          username: string | null;
+          status: string;
+          expires_at: string | null;
+          has_refresh_token: boolean;
+        }>;
+      }>('mcp-data', { action: 'connected-accounts' }, { timeoutMs: 10_000 });
+
+      if (accountsData?.accounts) {
+        const accounts = accountsData.accounts;
+        const issues: string[] = [];
+
+        for (const platform of normalizedPlatforms) {
+          const platformAccounts = accounts.filter(
+            a => a.platform.toLowerCase() === platform.toLowerCase() && a.status === 'active'
+          );
+
+          if (platformAccounts.length === 0) {
+            issues.push(
+              `${platform}: not connected yet. This is a one-time browser setup on socialneuron.com — NOT another OAuth in Claude. ` +
+                `Call \`start_platform_connection\` with platform="${platform.toLowerCase()}" to get a deep link, ask the user to open it in their browser and approve on the platform, then call \`wait_for_connection\` before retrying schedule_post.`
+            );
+          } else if (
+            platformAccounts.length > 1 &&
+            !account_id &&
+            !account_ids?.[platform.toLowerCase()]
+          ) {
+            const accountList = platformAccounts
+              .map(
+                a =>
+                  `  - ${a.id} (${a.username || 'unnamed'}${a.has_refresh_token ? ', OAuth 2.0' : ', no refresh token'})`
+              )
+              .join('\n');
+            issues.push(
+              `${platform}: Multiple accounts found. Specify account_id or account_ids to choose:\n${accountList}`
+            );
+          } else if (platformAccounts.length === 1) {
+            const acct = platformAccounts[0];
+            if (
+              acct.expires_at &&
+              new Date(acct.expires_at) < new Date() &&
+              !acct.has_refresh_token
+            ) {
+              issues.push(
+                `${platform}: Account "${acct.username || acct.id}" has expired OAuth and no refresh token. Reconnect at socialneuron.com/settings/connections.`
+              );
+            }
+          }
+        }
+
+        if (issues.length > 0) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: `Cannot post — account issues found:\n\n${issues.join('\n\n')}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+      }
+
+      // Build connectedAccountIds map for the EF
+      let connectedAccountIds: Record<string, string> | undefined;
+      if (account_id) {
+        // Single account_id applies to all platforms
+        connectedAccountIds = {};
+        for (const p of normalizedPlatforms) {
+          connectedAccountIds[p] = account_id;
+        }
+      } else if (account_ids) {
+        // Per-platform mapping — normalize keys to DB convention
+        connectedAccountIds = {};
+        for (const [key, val] of Object.entries(account_ids)) {
+          const normalizedKey = PLATFORM_CASE_MAP[key.toLowerCase()] || key;
+          connectedAccountIds[normalizedKey] = val;
+        }
+      }
+
       // Optional viral attribution (opt-in only, default false)
       let finalCaption = caption;
       if (attribution && finalCaption) {
         finalCaption = `${finalCaption}\n\nCreated with Social Neuron`;
       }
+
+      // Auto-flip TikTok to inbox-mode pre-audit. Direct Post is rate-limited
+      // to 5 users/24h with forced SELF_ONLY privacy until TikTok audit
+      // approves — external users hit a hard cap. Composer applies the same
+      // default via defaultTikTokInboxMode(). User can override by setting
+      // platform_metadata.tiktok.use_inbox=false explicitly.
+      let normalizedPlatformMetadata = platform_metadata as
+        | Record<string, Record<string, unknown>>
+        | undefined;
+      const tiktokAutoInboxApplied = (() => {
+        if (TIKTOK_AUDIT_APPROVED) return false;
+        if (!normalizedPlatforms.includes('TikTok')) return false;
+        const tiktokMeta = normalizedPlatformMetadata?.tiktok;
+        // Caller already chose — respect their decision.
+        if (tiktokMeta && 'use_inbox' in tiktokMeta) return false;
+        normalizedPlatformMetadata = {
+          ...(normalizedPlatformMetadata ?? {}),
+          tiktok: {
+            ...(tiktokMeta ?? {}),
+            use_inbox: true,
+          },
+        };
+        return true;
+      })();
 
       const { data, error } = await callEdgeFunction<SchedulePostResult>(
         'schedule-post',
@@ -527,24 +750,25 @@ export function registerDistributionTools(server: McpServer): void {
           hashtags,
           scheduledAt: schedule_at,
           projectId: project_id,
-          ...(platform_metadata
+          ...(connectedAccountIds ? { connectedAccountIds } : {}),
+          ...(normalizedPlatformMetadata
             ? {
-                platformMetadata: convertPlatformMetadata(
-                  platform_metadata as Record<string, Record<string, unknown>>
-                ),
+                platformMetadata: convertPlatformMetadata(normalizedPlatformMetadata),
               }
             : {}),
+          // Forward visual gate verdict + source so the EF can enforce on media posts.
+          ...(visual_gate_result ? { visualGateResult: visual_gate_result } : {}),
+          visualGateSource: 'mcp',
+          // Originator lineage (Hermes integration, 2026-05-22). EF validates origin
+          // against the posts.origin CHECK constraint and persists hermesRunId when
+          // origin === 'hermes'.
+          ...(origin ? { origin } : {}),
+          ...(hermes_run_id ? { hermesRunId: hermes_run_id } : {}),
         },
         { timeoutMs: 30_000 }
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error, platformCount: platforms.length },
-        });
         return {
           content: [
             {
@@ -557,12 +781,6 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       if (!data) {
-        await logMcpToolInvocation({
-          toolName: 'schedule_post',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No response from schedule-post edge function' },
-        });
         return {
           content: [
             {
@@ -577,35 +795,33 @@ export function registerDistributionTools(server: McpServer): void {
       const lines: string[] = [
         data.success ? 'Post scheduled successfully.' : 'Post scheduling had errors.',
         `Scheduled for: ${data.scheduledAt}`,
-        '',
-        'Platform results:',
       ];
+      if (tiktokAutoInboxApplied) {
+        lines.push(
+          '',
+          'TikTok routed to inbox/draft mode (Direct Post is rate-limited to 5 users/24h until Content Posting API audit approves). The user must open the TikTok app to publish from drafts.'
+        );
+      }
+      lines.push('', 'Platform results:');
 
       for (const [platform, result] of Object.entries(data.results)) {
         if (result.success) {
           lines.push(`  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`);
         } else {
-          lines.push(`  ${platform}: FAILED - ${safeErrorMessage(result.error)}`);
+          lines.push(`  ${platform}: FAILED - ${result.error}`);
         }
       }
 
-      await logMcpToolInvocation({
-        toolName: 'schedule_post',
-        status: data.success ? 'success' : 'error',
-        durationMs: Date.now() - startedAt,
-        details: {
-          scheduledAt: data.scheduledAt,
-          platformCount: platforms.length,
-          successCount: Object.values(data.results).filter(r => r.success).length,
-        },
-      });
       if (format === 'json') {
+        const structuredContent = asEnvelope(data);
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(data), null, 2) }],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
           isError: !data.success,
         };
       }
       return {
+        structuredContent: asEnvelope(data),
         content: [{ type: 'text' as const, text: lines.join('\n') }],
         isError: !data.success,
       };
@@ -639,7 +855,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to list connected accounts: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to list connected accounts: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,
@@ -765,7 +981,7 @@ export function registerDistributionTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to list posts: ${safeErrorMessage(efError ?? result?.error)}`,
+              text: `Failed to list posts: ${efError || result?.error || 'Unknown error'}`,
             },
           ],
           isError: true,
@@ -776,10 +992,10 @@ export function registerDistributionTools(server: McpServer): void {
 
       if (rows.length === 0) {
         if (format === 'json') {
+          const structuredContent = asEnvelope({ posts: [] });
           return {
-            content: [
-              { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts: [] }), null, 2) },
-            ],
+            structuredContent,
+            content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
           };
         }
         return {
@@ -793,11 +1009,11 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       const posts = rows as PostRecord[];
+      const structuredContent = asEnvelope({ posts });
       if (format === 'json') {
         return {
-          content: [
-            { type: 'text' as const, text: JSON.stringify(asEnvelope({ posts }), null, 2) },
-          ],
+          structuredContent,
+          content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
         };
       }
 
@@ -831,6 +1047,7 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }
@@ -877,7 +1094,6 @@ export function registerDistributionTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).default('text'),
     },
     async ({ platforms, count, start_after, min_gap_hours, response_format }) => {
-      const startedAt = Date.now();
       try {
         const startDate = start_after ? new Date(start_after) : new Date();
         const endDate = new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
@@ -941,14 +1157,6 @@ export function registerDistributionTools(server: McpServer): void {
 
         const conflictsAvoided = candidates.filter(s => s.conflict).length;
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'find_next_slots',
-          status: 'success',
-          durationMs,
-          details: { platforms, count: slots.length },
-        });
-
         if (response_format === 'json') {
           return {
             content: [
@@ -981,14 +1189,7 @@ export function registerDistributionTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }], isError: false };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'find_next_slots',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Failed to find slots: ${message}` }],
           isError: true,
@@ -1000,7 +1201,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ── schedule_content_plan ───────────────────────────────────────────
   server.tool(
     'schedule_content_plan',
-    'Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. To schedule posts, set schedule_confirmed=true after explicit user approval.',
+    'Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode.',
     {
       plan: z
         .object({
@@ -1028,12 +1229,6 @@ export function registerDistributionTools(server: McpServer): void {
         .default(true)
         .describe('Auto-assign time slots for posts without schedule_at'),
       dry_run: z.boolean().default(false).describe('Preview without actually scheduling'),
-      schedule_confirmed: z
-        .boolean()
-        .default(false)
-        .describe(
-          'Required when dry_run=false. Set true only after explicit user confirmation to publish/schedule the content plan.'
-        ),
       response_format: z.enum(['text', 'json']).default('text'),
       enforce_quality: z
         .boolean()
@@ -1064,54 +1259,13 @@ export function registerDistributionTools(server: McpServer): void {
       plan_id,
       auto_slot,
       dry_run,
-      schedule_confirmed,
       response_format,
       enforce_quality,
       quality_threshold,
       batch_size,
       idempotency_seed,
     }) => {
-      const startedAt = Date.now();
       try {
-        if (!dry_run && !schedule_confirmed) {
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text:
-                  'Scheduling a content plan requires explicit confirmation. Re-run with ' +
-                  'schedule_confirmed=true after the user approves publishing, or set dry_run=true.',
-              },
-            ],
-            isError: true,
-          };
-        }
-
-        // schedule_content_plan fans out to one schedule_post per plan post,
-        // which itself touches a third-party social platform. Without a rate
-        // limit here a single agent call can bulk-schedule across every
-        // connected platform; share the `posting` bucket with schedule_post
-        // so the user-level budget is honoured.
-        const rateLimitUserId = await getDefaultUserId();
-        const rateLimit = checkRateLimit('posting', `schedule_content_plan:${rateLimitUserId}`);
-        if (!rateLimit.allowed) {
-          logMcpToolInvocation({
-            toolName: 'schedule_content_plan',
-            status: 'rate_limited',
-            durationMs: Date.now() - startedAt,
-            details: { retryAfter: rateLimit.retryAfter },
-          });
-          return {
-            content: [
-              {
-                type: 'text' as const,
-                text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
-              },
-            ],
-            isError: true,
-          };
-        }
-
         let workingPlan = plan;
         let effectivePlanId = plan_id;
         let effectiveProjectId: string | undefined;
@@ -1393,7 +1547,6 @@ export function registerDistributionTools(server: McpServer): void {
 
         if (dry_run) {
           const passed = qualitySummary.passed;
-          const durationMs = Date.now() - startedAt;
           if (effectivePlanId) {
             try {
               await callEdgeFunction('mcp-data', {
@@ -1405,18 +1558,6 @@ export function registerDistributionTools(server: McpServer): void {
               // Non-fatal in dry-run path
             }
           }
-          logMcpToolInvocation({
-            toolName: 'schedule_content_plan',
-            status: 'success',
-            durationMs,
-            details: {
-              dry_run: true,
-              plan_id: effectivePlanId,
-              posts: workingPlan.posts.length,
-              passed,
-              ...(approvalSummary ? { approvals: approvalSummary } : {}),
-            },
-          });
 
           if (response_format === 'json') {
             return {
@@ -1662,20 +1803,6 @@ export function registerDistributionTools(server: McpServer): void {
           }
         }
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'schedule_content_plan',
-          status: 'success',
-          durationMs,
-          details: {
-            plan_id: effectivePlanId,
-            posts: workingPlan.posts.length,
-            scheduled,
-            failed,
-            ...(approvalSummary ? { approvals: approvalSummary } : {}),
-          },
-        });
-
         if (response_format === 'json') {
           return {
             content: [
@@ -1717,14 +1844,7 @@ export function registerDistributionTools(server: McpServer): void {
           isError: failed > 0,
         };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'schedule_content_plan',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Batch scheduling failed: ${message}` }],
           isError: true,

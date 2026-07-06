@@ -7,15 +7,8 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { callEdgeFunction } from './lib/edge-function.js';
 import { MCP_VERSION } from './lib/version.js';
-import { getAuthenticatedScopes } from './lib/supabase.js';
-import { hasScope } from './auth/scopes.js';
 
-export function registerResources(
-  server: McpServer,
-  // Same resolver applyScopeEnforcement uses (getAuthenticatedScopes in stdio,
-  // per-request scopes in HTTP) so resource reads enforce scope like tools do.
-  scopeResolver: () => string[] = getAuthenticatedScopes
-): void {
+export function registerResources(server: McpServer): void {
   // ── 1. Brand Profile ────────────────────────────────────────────────
   server.resource(
     'brand-profile',
@@ -26,25 +19,6 @@ export function registerResources(
       mimeType: 'application/json',
     },
     async () => {
-      if (!hasScope(scopeResolver(), 'mcp:read')) {
-        return {
-          contents: [
-            {
-              uri: 'socialneuron://brand/profile',
-              mimeType: 'application/json',
-              text: JSON.stringify(
-                {
-                  _meta: { version: MCP_VERSION, status: 'forbidden' },
-                  error:
-                    "Permission denied: reading this resource requires the 'mcp:read' scope.",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
       try {
         const { data, error } = await callEdgeFunction<{
           success: boolean;
@@ -114,25 +88,6 @@ export function registerResources(
       mimeType: 'application/json',
     },
     async () => {
-      if (!hasScope(scopeResolver(), 'mcp:read')) {
-        return {
-          contents: [
-            {
-              uri: 'socialneuron://account/overview',
-              mimeType: 'application/json',
-              text: JSON.stringify(
-                {
-                  _meta: { version: MCP_VERSION, status: 'forbidden' },
-                  error:
-                    "Permission denied: reading this resource requires the 'mcp:read' scope.",
-                },
-                null,
-                2
-              ),
-            },
-          ],
-        };
-      }
       try {
         const { data, error } = await callEdgeFunction<{
           success: boolean;
@@ -212,30 +167,17 @@ export function registerResources(
           ],
           audio: ['Background music', 'Voiceover'],
         },
-        // Keep these in sync with tool input enums. Agents pass these IDs to tools.
         ai_models: {
-          text: ['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'],
+          text: ['Gemini 2.5 Flash', 'Gemini 2.5 Pro'],
           image: [
-            'midjourney',
-            'nano-banana',
-            'nano-banana-pro',
-            'flux-pro',
-            'flux-max',
-            'gpt4o-image',
-            'imagen4',
-            'imagen4-fast',
-            'seedream',
+            'Flux 1.1 Pro',
+            'DALL-E 3',
+            'Stable Diffusion XL',
+            'Ideogram',
+            'Recraft V3',
+            'Mystic V2',
           ],
-          video: [
-            'veo3-fast',
-            'veo3-quality',
-            'runway-aleph',
-            'sora2',
-            'sora2-pro',
-            'kling',
-            'kling-3',
-            'kling-3-pro',
-          ],
+          video: ['Veo 3', 'Sora 2', 'Runway Gen-4', 'Kling 2.0', 'Minimax', 'Wan 2.1'],
         },
         credit_costs: {
           text_generation: '1-3 credits',
@@ -248,20 +190,31 @@ export function registerResources(
           free: {
             price: '$0/mo',
             credits: 100,
-            mcp_access: false,
-            features: ['Basic content generation', 'No MCP access'],
+            mcp_access: 'None',
+            features: ['5 free tools', 'Basic content generation'],
           },
           starter: {
             price: '$19/mo',
             credits: 500,
-            mcp_access: false,
-            features: ['All free features', 'No MCP access'],
+            mcp_access: 'None',
+            features: [
+              'All free features',
+              'Storyboard HD export',
+              'Niche Intelligence',
+              '3 platforms',
+            ],
           },
           pro: {
             price: '$49/mo',
             credits: 1500,
-            mcp_access: 'Read + Analytics',
-            features: ['All Starter features', 'MCP read + analytics', 'Video generation'],
+            mcp_access: 'Read + Analytics + Write + Distribute',
+            features: [
+              'All Starter features',
+              'Closed-loop optimization',
+              'Full agent engine via MCP (generate, gate, publish)',
+              'All 10 platforms',
+              'MCP read + analytics + write + distribute',
+            ],
           },
           team: {
             price: '$99/mo',
@@ -269,16 +222,24 @@ export function registerResources(
             mcp_access: 'Full',
             features: [
               'All Pro features',
-              'Full MCP access (write, distribute, comments, autopilot)',
-              'Team collaboration (up to 10 members)',
-              '50 projects',
+              'Unlimited autopilot',
+              'Multi-stage approvals',
+              'Up to 3 team members',
+              'Full MCP + 5 keys',
             ],
           },
           agency: {
             price: '$249/mo',
             credits: 10000,
-            mcp_access: 'Full',
-            features: ['All Team features', 'Full MCP + REST API', '20 API keys', 'Priority support'],
+            mcp_access: 'Full + REST API',
+            features: [
+              'All Team features',
+              'Multi-brand autopilot',
+              '25 brands · 10 team members',
+              'REST API + 20 keys',
+              'White-label hint',
+              'Dedicated Slack · 4h SLA',
+            ],
           },
         },
       };
@@ -316,8 +277,7 @@ export function registerResources(
 1. Check your account: Read the \`socialneuron://account/overview\` resource
 2. Set up your brand: Use the \`setup_brand_voice\` prompt
 3. Generate content: Call \`generate_content\` with a topic
-4. Review first: Call \`quality_check\` and preview the final text/media
-5. Publish only after explicit user confirmation: call \`list_connected_accounts\` first, then \`schedule_post\`
+4. Review & publish: Call \`schedule_post\` to distribute
 
 ## Common Workflows
 
@@ -325,9 +285,7 @@ export function registerResources(
 1. \`generate_content\` → get topic suggestions
 2. \`generate_content\` → create the post
 3. \`quality_check\` → check quality (aim for 70+)
-4. \`list_connected_accounts\` → verify the target platform is connected
-5. Ask the user to approve the exact post, target platform, and schedule time
-6. \`schedule_post\` → distribute only after approval
+4. \`schedule_post\` → distribute to platforms
 
 ### Analyze Performance
 1. \`fetch_analytics\` → see overall metrics
@@ -337,16 +295,12 @@ export function registerResources(
 ### Repurpose Content
 1. Use the \`repurpose_content\` prompt with your source material
 2. Review each generated variation
-3. Save the batch with \`save_content_plan\` only after the user approves saving it
-4. Preview scheduling with \`schedule_content_plan\` using \`dry_run=true\`
-5. Publish with \`schedule_content_plan\` only after explicit approval by setting \`schedule_confirmed=true\`
+3. Schedule across platforms using \`save_content_plan\`
 
 ### Set Up Autopilot
 1. \`get_brand_profile\` → verify brand settings
-2. \`check_pipeline_readiness\` → verify credits, OAuth connections, and brand context
-3. Draft an inactive config with \`create_autopilot_config\` using \`is_active=false\`
-4. Activate or enable recurring automation only after explicit approval by setting \`activation_confirmed=true\`
-5. \`get_autopilot_status\` → confirm the config and next scheduled run
+2. \`update_autopilot_config\` → set schedule and preferences
+3. \`update_autopilot_config\` → start automated posting
 
 ## Credit Tips
 - Text generation: 1-3 credits

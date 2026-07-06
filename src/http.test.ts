@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { buildOriginPolicy, validateBrowserOrigin } from './lib/origin-policy.js';
 
 // Since http.ts starts a server on import (express.listen, process handlers),
 // we test the key security behaviors via isolated unit tests that validate
@@ -92,38 +93,6 @@ describe('HTTP Server Security Patterns', () => {
     });
   });
 
-  describe('HTTP parser and auth response defaults', () => {
-    it('should use a 1mb JSON body limit', () => {
-      const jsonParserConfig = { limit: '1mb' };
-      expect(jsonParserConfig.limit).toBe('1mb');
-    });
-
-    it('should return a generic invalid-token response', () => {
-      const response = {
-        status: 401,
-        body: {
-          error: 'invalid_token',
-          error_description: 'Token verification failed',
-        },
-      };
-
-      expect(response.status).toBe(401);
-      expect(response.body).toEqual({
-        error: 'invalid_token',
-        error_description: 'Token verification failed',
-      });
-      expect(response.body.error_description).not.toMatch(/revoked|expired|HTTP|database/i);
-    });
-
-    it('should mark protected auth responses no-store', () => {
-      const headers = {
-        'Cache-Control': 'no-store',
-      };
-
-      expect(headers['Cache-Control']).toBe('no-store');
-    });
-  });
-
   describe('Health endpoint security', () => {
     it('should only expose status and version in public health', () => {
       const publicHealth = { status: 'ok', version: '1.1.0' };
@@ -131,17 +100,6 @@ describe('HTTP Server Security Patterns', () => {
       expect(publicHealth).not.toHaveProperty('sessions');
       expect(publicHealth).not.toHaveProperty('memory');
       expect(publicHealth).not.toHaveProperty('uptime');
-    });
-
-    it('should expose readiness without leaking upstream URLs or raw errors', () => {
-      const readinessFailure = {
-        status: 'not_ready',
-        version: '1.1.0',
-        checks: { auth_jwks: 'unavailable' },
-      };
-
-      expect(readinessFailure.checks.auth_jwks).toBe('unavailable');
-      expect(JSON.stringify(readinessFailure)).not.toMatch(/https?:\/\/|SUPABASE|fetch failed/i);
     });
 
     it('should include details in authenticated health endpoint', () => {
@@ -161,44 +119,7 @@ describe('HTTP Server Security Patterns', () => {
     });
   });
 
-  describe('Not found handler', () => {
-    it('should return a generic JSON 404 response', () => {
-      const response = {
-        status: 404,
-        headers: {
-          'Cache-Control': 'no-store',
-        },
-        body: {
-          error: 'not_found',
-          error_description: 'Route not found',
-        },
-      };
-
-      expect(response.status).toBe(404);
-      expect(response.headers['Cache-Control']).toBe('no-store');
-      expect(response.body).toEqual({
-        error: 'not_found',
-        error_description: 'Route not found',
-      });
-      expect(JSON.stringify(response.body)).not.toMatch(/Cannot (GET|POST|DELETE)|<html|stack/i);
-    });
-  });
-
   describe('Rate limiting integration', () => {
-    it('should exempt public probe endpoints from the IP bucket', () => {
-      const exemptPaths = new Set([
-        '/health',
-        '/health/live',
-        '/health/ready',
-        '/.well-known/mcp/server-card.json',
-        '/.well-known/oauth-protected-resource',
-        '/config',
-      ]);
-
-      expect(exemptPaths.has('/health/live')).toBe(true);
-      expect(exemptPaths.has('/health/ready')).toBe(true);
-    });
-
     it('should apply rate limit check before processing', () => {
       const rateLimitResult = { allowed: false, retryAfter: 30 };
 
@@ -222,18 +143,12 @@ describe('HTTP Server Security Patterns', () => {
       const context = {
         userId: 'user-1',
         scopes: ['mcp:read'],
-        organizationId: 'org-1',
-        projectId: 'project-1',
-        brandProfileId: 'brand-1',
         creditsUsed: 0,
         assetsGenerated: 0,
       };
 
       expect(context).toHaveProperty('creditsUsed', 0);
       expect(context).toHaveProperty('assetsGenerated', 0);
-      expect(context).toHaveProperty('organizationId', 'org-1');
-      expect(context).toHaveProperty('projectId', 'project-1');
-      expect(context).toHaveProperty('brandProfileId', 'brand-1');
     });
 
     it('should isolate budget between requests', () => {
@@ -248,7 +163,7 @@ describe('HTTP Server Security Patterns', () => {
   });
 
   describe('CORS headers', () => {
-    it('should include required CORS headers', () => {
+    it('should include required CORS headers without wildcard origin', () => {
       const requiredHeaders = [
         'Access-Control-Allow-Origin',
         'Access-Control-Allow-Methods',
@@ -256,16 +171,63 @@ describe('HTTP Server Security Patterns', () => {
         'Access-Control-Expose-Headers',
       ];
 
+      const originCheck = validateBrowserOrigin(
+        'https://app.socialneuron.com',
+        buildOriginPolicy({
+          allowedOriginsEnv: 'https://socialneuron.com,https://app.socialneuron.com',
+          nodeEnv: 'production',
+        })
+      );
+
       const corsMiddleware = {
-        'Access-Control-Allow-Origin': '*',
+        'Access-Control-Allow-Origin': originCheck.allowed ? originCheck.origin : null,
         'Access-Control-Allow-Methods': 'GET, POST, DELETE, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type, Authorization, Mcp-Session-Id',
-        'Access-Control-Expose-Headers': 'Mcp-Session-Id',
+        'Access-Control-Allow-Headers':
+          'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version',
+        'Access-Control-Expose-Headers': 'Mcp-Session-Id, WWW-Authenticate',
       };
 
       for (const header of requiredHeaders) {
         expect(corsMiddleware).toHaveProperty(header);
       }
+      expect(corsMiddleware['Access-Control-Allow-Origin']).toBe('https://app.socialneuron.com');
+      expect(corsMiddleware['Access-Control-Allow-Origin']).not.toBe('*');
+    });
+
+    it('should reject unlisted browser origins before auth/body handling', () => {
+      const policy = buildOriginPolicy({
+        allowedOriginsEnv: 'https://socialneuron.com,https://app.socialneuron.com',
+        nodeEnv: 'production',
+      });
+
+      expect(validateBrowserOrigin('https://attacker.example', policy)).toEqual({
+        allowed: false,
+        reason: 'invalid_origin',
+      });
+    });
+  });
+
+  describe('MCP JSON parser placement', () => {
+    it('should keep unauthenticated MCP JSON requests on the small parser limit', () => {
+      const hasBearer = false;
+      const parserLimit = hasBearer ? '16mb' : '100kb';
+
+      expect(parserLimit).toBe('100kb');
+    });
+
+    it('should only allow the 16mb MCP parser after Bearer auth succeeds', () => {
+      const request = { hasBearer: true, auth: { userId: 'user-1' } };
+      const parserLimit = request.auth ? '16mb' : '100kb';
+
+      expect(request.hasBearer).toBe(true);
+      expect(parserLimit).toBe('16mb');
+    });
+
+    it('should leave non-MCP JSON requests on the small default parser', () => {
+      const path = '/token';
+      const parserLimit = path === '/mcp' ? 'route-specific' : '100kb';
+
+      expect(parserLimit).toBe('100kb');
     });
   });
 

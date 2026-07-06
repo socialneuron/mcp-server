@@ -3,6 +3,7 @@ import { createMockServer } from '../test-setup.js';
 import { registerAnalyticsTools } from './analytics.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultUserId } from '../lib/supabase.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
@@ -217,7 +218,7 @@ describe('analytics tools', () => {
       const result = await handler({ response_format: 'json' });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.postCount).toBe(1);
       expect(parsed.data.totalViews).toBe(100);
     });
@@ -318,7 +319,7 @@ describe('analytics tools', () => {
       const result = await handler({ response_format: 'json' });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.success).toBe(true);
       expect(parsed.data.postsProcessed).toBe(3);
       expect(parsed.data.queued).toBe(2);
