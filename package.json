@@ -102,7 +102,7 @@
     "vitest": "^3.2.6",
     "playwright": "1.61.0",
     "@remotion/bundler": "4.0.481",
-    "@remotion/renderer": "4.0.481"
+    "@remotion/renderer": "4.0.485"
   },
   "overrides": {
     "vite": "7.3.5",
