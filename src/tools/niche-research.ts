@@ -1,5 +1,5 @@
 /**
- * Niche research tool — surfaces QA-gated viral content from niche_winners view.
+ * Niche research tool — surfaces QA-gated viral content in the project's niche.
  *
  * Calls the mcp-data Edge Function action 'find-winning-content'. Returns
  * patterns + pre-compiled Stage-1+Stage-2 replication prompts that the caller
@@ -49,7 +49,7 @@ export function registerNicheResearchTools(server: McpServer): void {
     "Find QA-gated high-performing short-form videos in the project's niche. " +
       'Returns extracted hook patterns, content structures, and pre-compiled ' +
       'replication prompts you can use to generate new content on a different topic. ' +
-      'Backed by niche_winners view (qa_score >= 0.5 + replication_prompt populated).',
+      'Only QA-gated winners with a populated replication prompt are returned.',
     {
       project_id: z.string().uuid().optional().describe('Project ID (auto-detected if omitted)'),
       platform: z
@@ -75,7 +75,7 @@ export function registerNicheResearchTools(server: McpServer): void {
         .min(0)
         .max(1)
         .default(0.5)
-        .describe('Minimum QA score (0..1). Default 0.5 matches the niche_winners view floor.'),
+        .describe('Minimum QA score (0..1). Default 0.5.'),
       response_format: z.enum(['text', 'json']).optional(),
     },
     async ({ project_id, platform, days, limit, min_qa_score, response_format }) => {

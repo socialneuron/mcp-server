@@ -9,19 +9,12 @@
  * Architecture: `memory-bank/audits/2026-05-25_content-skills-architecture.md`
  * Competitive context: `memory-bank/audits/2026-05-25_higgsfield-competitive-research.md`
  *
- * PR #4.4 status (this file):
+ * Current status (this file):
  *   - `list_skills`: ✅ returns the live manifest.
  *   - `run_skill`: ⚠️ returns a structured run preview + UI URL. Actual
- *     execution flows through the in-app Studios hub today; PR #4.5
- *     wires this to the `runSkill()` orchestrator via a `run-skill`
- *     Edge Function so MCP callers can execute end-to-end.
- *
- * Why ship the preview now and not wait for full execution:
- *   Higgsfield uses MCP as a paid-tier funnel — Claude users install
- *   their MCP and discover their skills FROM Claude. SN needs the
- *   discovery surface live before the wedge widens. This tool ships
- *   discovery + structured pricing/timing transparency today and
- *   gracefully upgrades to in-process execution when PR #4.5 lands.
+ *     execution flows through the in-app Studios hub today; a future
+ *     release wires this to the `runSkill()` orchestrator via a
+ *     `run-skill` Edge Function so MCP callers can execute end-to-end.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
@@ -131,8 +124,8 @@ export function registerSkillsTools(server: McpServer): void {
   server.tool(
     'run_skill',
     'Run a Social Neuron workflow skill end-to-end (brand-locked content production). ' +
-      'PR #4.4 v1: returns a structured run preview with the exact step plan, credit cost, ' +
-      'and a deep-link to launch the run in the SN dashboard. PR #4.5 (next release) executes ' +
+      'Returns a structured run preview with the exact step plan, credit cost, ' +
+      'and a deep-link to launch the run in the SN dashboard. A future release executes ' +
       'in-process so you can stream step-by-step progress back to the user. Call list_skills ' +
       'first to discover available skill ids.',
     {
@@ -186,8 +179,8 @@ export function registerSkillsTools(server: McpServer): void {
         };
       }
 
-      // PR #4.4 v1: structured preview, not an executed run.
-      // The run-skill EF (PR #4.5) replaces this body with a real orchestrator call.
+      // Structured preview, not an executed run. A future release replaces
+      // this body with a real orchestrator call via the run-skill EF.
       const runUrl =
         'https://socialneuron.com/dashboard/creation?skill=' + encodeURIComponent(skill.id);
       const inputs = { topic, audience, hook, cta };
@@ -205,7 +198,7 @@ export function registerSkillsTools(server: McpServer): void {
                   inputs,
                   runUrl,
                   previewedAt,
-                  note: 'PR #4.4 v1 returns a preview. PR #4.5 will execute in-process via the run-skill EF.',
+                  note: 'This release returns a preview. A future release will execute in-process.',
                 }),
                 null,
                 2
@@ -235,7 +228,7 @@ export function registerSkillsTools(server: McpServer): void {
         '',
         `Launch in dashboard: ${runUrl}`,
         '',
-        '⚠️  PR #4.4 v1: preview only. End-to-end MCP execution arrives in the next release.',
+        '⚠️  Preview only. End-to-end MCP execution arrives in a future release.',
       ];
 
       return {

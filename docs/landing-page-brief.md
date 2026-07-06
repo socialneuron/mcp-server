@@ -171,7 +171,6 @@ See Pricing (socialneuron.com/pricing)
 | GitHub | https://github.com/socialneuron/mcp-server |
 | npm (MCP server) | https://www.npmjs.com/package/@socialneuron/mcp-server |
 | npm (SDK) | https://www.npmjs.com/package/@socialneuron/sdk |
-| OpenAPI Spec | https://mcp.socialneuron.com/v1/openapi.json |
 | Examples | https://github.com/socialneuron/mcp-server/tree/main/examples |
 | API Docs | https://socialneuron.com/docs/api |
 | SDK Docs | https://socialneuron.com/docs/sdk |
@@ -187,5 +186,4 @@ See Pricing (socialneuron.com/pricing)
 [![npm SDK](https://img.shields.io/npm/v/@socialneuron/sdk?label=sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![OpenAPI](https://img.shields.io/badge/OpenAPI-3.1-green.svg)](https://mcp.socialneuron.com/v1/openapi.json)
 ```

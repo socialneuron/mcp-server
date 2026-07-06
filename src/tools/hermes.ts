@@ -1,10 +1,10 @@
 /**
  * Hermes integration tools.
  *
- * Used by the Hermes autonomous agent (sn@72.60.23.153) to:
- *   - Persist drafts to ContentLibrary BEFORE founder approval.
+ * Used by the autonomous content agent to:
+ *   - Persist drafts to ContentLibrary BEFORE owner approval.
  *   - Record voice lessons learned from post performance.
- *   - Record run-level observations for the UnifiedAnalytics > Playbook tab.
+ *   - Record run-level observations for the analytics Playbook surface.
  *   - Record research/trend signals from watchers.
  *   - Log per-campaign spend.
  *   - Read currently-live campaigns to bias content drafts.
@@ -45,15 +45,15 @@ export function registerHermesTools(server: McpServer): void {
   // ──────────────────────────────────────────────────────────────────────
   server.tool(
     'save_draft_to_library',
-    'Save a draft post to the SN content library. Use when an autonomous agent (Hermes) ' +
-      'wants to persist a draft before the founder approves it. Lands in ContentLibrary with ' +
-      "status='draft', origin='hermes'. The draft can then be approved/edited in the SN UI.",
+    'Save a draft post to the SN content library. Use when an autonomous agent ' +
+      'wants to persist a draft for review before publishing. Lands in the content library with ' +
+      "status='draft'. The draft can then be approved/edited in the SN UI.",
     {
       platform: PLATFORM.describe('Target platform for the draft.'),
       copy: z.string().min(1).max(8000).describe('The draft post body.'),
       project_id: z.string().optional().describe('SN project UUID. Optional but recommended.'),
       media_url: z.string().url().optional().describe('Optional cover/media URL (R2 signed URL).'),
-      hermes_run_id: z.string().optional().describe('Hermes cron run id, for traceability.'),
+      hermes_run_id: z.string().optional().describe('Agent run id, for traceability.'),
       source_intel_ids: z
         .array(z.string())
         .optional()
@@ -169,16 +169,20 @@ export function registerHermesTools(server: McpServer): void {
   // ──────────────────────────────────────────────────────────────────────
   server.tool(
     'record_observation',
-    'Record an agent observation ("Hermes noticed X this week"). Surfaces in ' +
-      'UnifiedAnalytics > Playbook tab. Use for weekly reflection digests and ' +
+    'Record an agent observation (e.g. "topic X engagement up 23% this week"). Surfaces in ' +
+      'the analytics Playbook. Use for weekly reflection digests and ' +
       'mid-campaign pulse summaries.',
     {
-      summary: z.string().min(1).max(2000).describe('One-paragraph summary, founder-facing.'),
+      summary: z
+        .string()
+        .min(1)
+        .max(2000)
+        .describe('One-paragraph summary, shown to the account owner.'),
       deltas: z
         .record(z.string(), z.union([z.number(), z.string(), z.boolean()]))
         .optional()
         .describe('Optional structured key/value payload (e.g. {topic_x_er_pct: 23}).'),
-      run_id: z.string().optional().describe('Hermes cron run id for traceability.'),
+      run_id: z.string().optional().describe('Agent run id for traceability.'),
       response_format: z.enum(['text', 'json']).optional(),
     },
     async ({ summary, deltas, run_id, response_format }) => {
@@ -276,9 +280,8 @@ export function registerHermesTools(server: McpServer): void {
   // ──────────────────────────────────────────────────────────────────────
   server.tool(
     'record_campaign_spend',
-    'Log a campaign cost line. Use when Hermes incurs spend that should be attributed to ' +
-      'a campaign — drafts, renders, paid amp. Categories: hermes_drafts / carousel_renders / ' +
-      'analytics_pulls / paid_amplification / other. Read aggregate via get_active_campaigns.',
+    'Log a campaign cost line. Use when an autonomous agent incurs spend that should be attributed to ' +
+      'a campaign — drafts, renders, paid amp. Read aggregate via get_active_campaigns.',
     {
       campaign_id: z.string().min(1).max(200).describe('Campaign identifier (slug).'),
       category: z
@@ -335,7 +338,7 @@ export function registerHermesTools(server: McpServer): void {
   server.tool(
     'get_active_campaigns',
     'List currently-running campaigns with thesis, budget, hero format, and current spend. ' +
-      'Used by Hermes pitch skill to bias drafts toward active campaign themes.',
+      'Use to bias drafts toward active campaign themes.',
     {
       response_format: z.enum(['text', 'json']).optional(),
     },

@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 96 MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 85+ MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -92,7 +92,9 @@ Ask Claude things like:
 - "Check my analytics and suggest improvements"
 - "Set up autopilot to post 3 times per week"
 
-## Tool Categories (96 tools)
+## Tool Categories
+
+The hosted endpoint advertises **85 tools** (live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)); the npm stdio server adds 2 local screen-capture tools (87 discoverable). A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
@@ -217,7 +219,7 @@ socialneuron-mcp sn loop
 socialneuron-mcp sn credits
 
 # Agent-native CLI v2
-socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter all 96 tools
+socialneuron-mcp sn tools [--module ideation] [--scope mcp:write]  # List/filter available tools
 socialneuron-mcp sn info                                            # Version, auth, credits, tool count
 socialneuron-mcp sn plan list|view|approve                          # Content plan management
 socialneuron-mcp sn preset list|show|save|delete                    # Platform presets (6 built-in)

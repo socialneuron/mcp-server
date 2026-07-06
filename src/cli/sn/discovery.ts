@@ -24,6 +24,9 @@ export async function handleTools(args: SnArgs, asJson: boolean): Promise<void> 
     tools = getToolsByModule(module);
   }
 
+  // Internal operations tools are not part of the user-facing surface.
+  tools = tools.filter(t => !t.internal);
+
   if (asJson) {
     emitSnResult({ ok: true, command: 'tools', toolCount: tools.length, tools }, true);
     return;
@@ -63,7 +66,7 @@ export async function handleTools(args: SnArgs, asJson: boolean): Promise<void> 
 export async function handleInfo(args: SnArgs, asJson: boolean): Promise<void> {
   const info: Record<string, unknown> = {
     version: MCP_VERSION,
-    toolCount: TOOL_CATALOG.length,
+    toolCount: TOOL_CATALOG.filter(t => !t.internal).length,
     modules: getModules(),
   };
 

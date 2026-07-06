@@ -291,4 +291,3 @@ console.log('Credits remaining:', credits.data);
 - [REST API Guide](./rest-api.md) — curl examples for every endpoint
 - [CLI Guide](./cli-guide.md) — terminal commands for scripting
 - [Examples](../examples/) — runnable code examples
-- [OpenAPI Spec](https://mcp.socialneuron.com/v1/openapi.json) — full API specification

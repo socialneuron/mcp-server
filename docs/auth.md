@@ -8,7 +8,7 @@ The Social Neuron MCP Server supports three authentication modes:
 
 ## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
 
-This is the path most agent users take. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code for a bearer token. In the current public server package, that bearer token is still backed by the existing `snk_*` API-key exchange. A separate short-lived connector-token backend is planned but requires Supabase Edge Function and database changes outside this repo.
+This is the path most agent users take. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code (with PKCE) for a bearer token scoped to your plan tier.
 
 ```
 Claude.ai (or Desktop/Smithery/Glama)
@@ -17,16 +17,16 @@ Claude.ai (or Desktop/Smithery/Glama)
    ↓ (metadata: authorization_endpoint, token_endpoint, registration_endpoint, scopes_supported, logo_uri)
    ↓
    Dynamic Client Registration: POST /register
-   ↓ (server returns client_id + client_secret, stored in memory by this public server)
+   ↓ (server returns client_id + client_secret)
    ↓
    User opens consent page at socialneuron.com/mcp/authorize
    ↓ (user signs in if needed, approves the requested scopes)
    ↓
    Authorization code + PKCE code_verifier sent to /token
    ↓
-   Server exchanges via mcp-auth Edge Function → returns snk_live_* as access_token
+   Server completes the exchange and returns an access token
    ↓
-   Claude.ai stores the token; future tool calls send Authorization: Bearer snk_live_...
+   Claude.ai stores the token; future tool calls send it as Authorization: Bearer <token>
 ```
 
 ### Adding the connector in Claude.ai
@@ -36,31 +36,9 @@ Claude.ai (or Desktop/Smithery/Glama)
 3. Approve the OAuth consent prompt that opens. Scopes are derived from your **plan tier** — they are not chosen during connection.
 4. The connector tile renders the SN icon (served via OAuth metadata `logo_uri`).
 
-### Persistence and durability
+### Troubleshooting a broken connector
 
-Dynamic Client Registrations are in-memory in this public server package. Registrations do not survive a process restart unless the deployment is paired with a persistent client-store implementation outside this repo.
-
-If you see "Authorization with the MCP server failed" after a deploy, remove and re-add the connector to register a fresh `client_id`.
-
-### Connector-token backend work
-
-The current OAuth connector flow still returns an `snk_*` bearer token from `mcp-auth?action=exchange-key`. To make connector auth security-complete, the backend should add a separate connector-token class instead of returning long-lived API keys as OAuth access tokens.
-
-Required backend actions:
-- Issue connector access token: exchange an authorization code and PKCE verifier for a short-lived connector access token plus refresh token.
-- Validate connector token: return user id, client id, scopes, expiry, and revocation state without exposing token material.
-- Rotate refresh token: one-time refresh-token use that revokes the previous refresh token and issues a new pair.
-- Revoke connector token: revoke access and refresh tokens authoritatively, with audit metadata.
-
-Minimum stored fields:
-- Hashed token value with lookup prefix
-- User id
-- OAuth client id
-- Scopes
-- Expires at
-- Revoked at
-- Last used at
-- Created-by flow/source metadata
+If you see "Authorization with the MCP server failed" after a server deploy, remove and re-add the connector to register a fresh `client_id`. Further auth hardening is tracked internally; the flows documented on this page are the supported contract.
 
 ### Scopes and plan tier
 
@@ -68,9 +46,10 @@ OAuth users **cannot self-grant scopes** the way API-key users can. Scopes are d
 
 | Plan | Granted scopes |
 |---|---|
-| Starter | No MCP access — upgrade to Pro or higher |
-| Pro | `mcp:full` (all of the below) |
-| Team | `mcp:full` |
+| Free / Starter | No MCP access — upgrade to Pro or higher |
+| Trial (14 days) | `mcp:read`, `mcp:analytics`, `mcp:write`, `mcp:distribute` |
+| Pro | `mcp:read`, `mcp:analytics`, `mcp:write`, `mcp:distribute` |
+| Team / Agency | `mcp:full` (adds `mcp:comments`, `mcp:autopilot`) |
 
 If a tool returns `Permission denied: '<tool>' requires scope '<scope>'` and you are connected via OAuth, upgrade your plan — there is no key-regeneration step.
 

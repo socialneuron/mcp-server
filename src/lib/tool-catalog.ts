@@ -11,6 +11,10 @@ export type ToolEntry = {
   /** Tool is only registered on the stdio/local transport (e.g. needs Playwright);
    *  HTTP discovery + the server-card must NOT advertise it. */
   localOnly?: boolean;
+  /** Internal operations tool (agent back-office). Still registered and scope-gated at
+   *  runtime, but excluded from the public server-card, discovery search results, and
+   *  knowledge documents. */
+  internal?: boolean;
   /** Human goal this tool is meant to satisfy; used by search_tools for task-intent discovery. */
   task_intent?: string;
   /** Positive selection guidance for agents after a tool is discovered. */
@@ -427,7 +431,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'find_winning_content',
     description:
-      "Find QA-gated high-performing short-form videos in the project's niche. Returns extracted hook patterns, content structures, and pre-compiled replication prompts (backed by niche_winners view, qa_score >= 0.5).",
+      "Find QA-gated high-performing short-form videos in the project's niche. Returns extracted hook patterns, content structures, and pre-compiled replication prompts.",
     module: 'research',
     scope: 'mcp:read',
   },
@@ -596,16 +600,18 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'write_agent_reflection',
     description:
-      'Persist a verbal reflection for an agent loop. Provenance keys are restricted (Anti-Goodhart safety): only content_history_id, outcome_event_id, prm_score_ids, and handoff_ids are accepted.',
+      'Persist a verbal reflection for an agent loop. Provenance keys are restricted to an allowlist: only content_history_id, outcome_event_id, prm_score_ids, and handoff_ids are accepted.',
     module: 'harness',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'record_outcome',
     description:
-      'Record an outcome for a published decision event. Idempotent on (decision_event_id, horizon). Only horizon=24h triggers a content_bandits posterior update.',
+      'Record an outcome for a published decision event. Idempotent on (decision_event_id, horizon). Only horizon=24h triggers a learning-loop update.',
     module: 'harness',
     scope: 'mcp:write',
+    internal: true,
   },
 
   // agentic-harness — learning loop read-back
@@ -616,50 +622,55 @@ export const TOOL_CATALOG: ToolEntry[] = [
       'Only active reflections returned (superseded_by IS NULL). Optional generated_by_agent filter.',
     module: 'harness',
     scope: 'mcp:read',
+    internal: true,
   },
 
   // hermes — autonomous agent integration (closed-loop content)
   {
     name: 'save_draft_to_library',
     description:
-      'Save a draft post to the SN content library with origin=hermes. Used by Hermes to persist drafts before the founder approves them.',
+      'Save a draft post to the SN content library for review before publishing. Drafts land in the content library pending approval.',
     module: 'hermes',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'record_voice_lesson',
-    description:
-      'Persist a learned voice lesson to brand_profiles.brand_context.voiceProfile.voice_lessons via atomic RPC. Used by Hermes reflection cron.',
+    description: 'Persist a learned voice lesson to the brand voice profile.',
     module: 'hermes',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'record_observation',
     description:
-      'Record an agent observation (e.g. "topic X engagement up 23%") for the UnifiedAnalytics > Playbook surface.',
+      'Record an agent observation (e.g. "topic X engagement up 23%") for the analytics playbook.',
     module: 'hermes',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'record_intel_signal',
     description:
-      'Record a research/trend signal from Hermes watchers (news, HN, competitor, etc.) for Niche Intelligence. Dedupes by URL.',
+      'Record a research/trend signal (news, competitor, community sources) for niche intelligence. Dedupes by URL.',
     module: 'hermes',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'record_campaign_spend',
-    description:
-      'Log a campaign cost line (hermes_drafts, carousel_renders, analytics_pulls, paid_amplification, other). Ownership-checked.',
+    description: 'Log a campaign cost line item. Ownership-checked.',
     module: 'hermes',
     scope: 'mcp:write',
+    internal: true,
   },
   {
     name: 'get_active_campaigns',
     description:
-      'List currently-running campaigns with thesis, budget, hero format, and current spend. Used by Hermes pitch skill to bias drafts.',
+      'List currently-running campaigns with thesis, budget, hero format, and current spend.',
     module: 'hermes',
     scope: 'mcp:read',
+    internal: true,
   },
 
   // skills (workflow skills — multi-step brand-locked content pipelines)
@@ -673,23 +684,23 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'run_skill',
     description:
-      'Run a Social Neuron workflow skill end-to-end (brand-locked content production). PR #4.4 v1 returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
+      'Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
     module: 'skills',
     scope: 'mcp:write',
   },
 
-  // loop observability (growth-loop KPIs + Thompson Sampling bandit posteriors)
+  // loop observability (growth-loop KPIs + content learning state)
   {
     name: 'get_loop_pulse',
     description:
-      'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, bandit-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
+      'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, learning-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
     module: 'loop',
     scope: 'mcp:read',
   },
   {
     name: 'get_bandit_state',
     description:
-      'Read the current Thompson Sampling bandit posteriors for a project — top-K arms per (arm_type, platform) with Beta(alpha,beta) posterior mean and uncertainty. Use to reason about which hook family / format / timing slot the bandit currently prefers per platform.',
+      'Read the current content learning state for a project — top-K arms per (arm_type, platform) with expected performance and uncertainty. Use to reason about which hook family / format / timing slot currently performs best per platform.',
     module: 'loop',
     scope: 'mcp:read',
   },

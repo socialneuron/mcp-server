@@ -2,6 +2,21 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.15] - 2026-07-06
+
+### Changed
+
+- **Public tool surface tightened.** Internal service tools used by Social Neuron's own automation are still registered and scope-gated at runtime, but are no longer advertised on the hosted server card, HTTP discovery, `search_tools`, knowledge documents, or the CLI tool listing. The hosted endpoint now advertises 85 tools; the npm stdio server exposes 87 discoverable tools (including 2 local screen-capture tools).
+- **Tool descriptions cleaned up.** Internal project references and implementation jargon removed from tool descriptions across the catalog.
+- **`run_content_pipeline` scheduling guard restored.** Scheduling again requires `schedule_confirmed=true` after explicit user approval, cannot run with the quality stage skipped, caps generated posts to the requested plan size, drops posts targeting unrequested platforms, and counts scheduled posts against the credit budget. (This hardening was unintentionally dropped in the 1.7.14 source sync.)
+- **Metadata contract unified + CI-guarded.** `server.json` version/pricing/tool-count now match `package.json` and the canonical pricing (MCP requires Pro $49/mo or higher; free tier is 50 credits/mo with no MCP access). Added `mcpName` for MCP Registry ownership verification. New `npm run verify:metadata` gate (wired into CI and release) blocks stale counts, stale pricing, internal codenames, and dead endpoint links from re-entering the public surface.
+- **Docs corrected.** REST API docs (tool count, response `version` example, plan limits), troubleshooting boot log line (95/95), integration methods (stdio vs hosted tool split), and auth docs (plan-scope matrix; removed internal implementation notes). Removed links to the not-yet-deployed `/v1/openapi.json` endpoint.
+- **SDK release path hardened.** `packages/sdk` now ships a `package-lock.json`, the SDK release workflow uses `npm ci --ignore-scripts`, and Dependabot watches `/packages/sdk` and `/apps/content-calendar`.
+
+## [1.7.12–1.7.14] - 2026-06/07
+
+Released without changelog entries (see git history): OAuth connector flow + DCR, MCP Apps content calendar, trial-key scopes and post-trial degrade, funnel instrumentation, 96-tool catalog sync, dependency cooldown pins.
+
 ## [1.7.11] - 2026-05-15
 
 ### Changed

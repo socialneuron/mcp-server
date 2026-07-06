@@ -45,7 +45,7 @@ interface BanditResponse {
 /**
  * Bandit State MCP tools.
  *
- * Exposes Thompson Sampling content_bandits posteriors per
+ * Exposes the content learning state (per-arm performance estimates) per
  * (project_id, platform, arm_type). Lets brain skills reason about
  * "which hook family wins on TikTok right now" — the data was previously
  * write-only.
@@ -53,14 +53,13 @@ interface BanditResponse {
 export function registerBanditStateTools(server: McpServer): void {
   server.tool(
     'get_bandit_state',
-    'Read the current Thompson Sampling bandit posteriors for a project. Returns top-K arms ' +
-      'per (arm_type, platform) with Beta(alpha, beta) posterior mean and uncertainty. Use ' +
-      'this to reason about which hook family / format / timing slot the bandit currently ' +
-      'prefers on each platform before recommending next moves. SN real arm types: hook_family ' +
-      '(6 fallback families), length_bucket (xs/s/m/l/xl by platform), posting_time_bucket ' +
+    'Read the current content learning state for a project. Returns top-K arms ' +
+      'per (arm_type, platform) with expected performance and uncertainty. Use ' +
+      'this to reason about which hook family / format / timing slot currently ' +
+      'performs best on each platform before recommending next moves. Arm types: hook_family, ' +
+      'length_bucket (xs/s/m/l/xl by platform), posting_time_bucket ' +
       '(morning/midday/evening/late), content_format (video/carousel/image/caption/text/avatar/' +
-      'storyboard). Legacy/dead-taxonomy types also present: hook_type, format, timing_slot, ' +
-      'topic_cluster, caption_style, platform, story_type, emoji_type.',
+      'storyboard).',
     {
       project_id: z
         .string()
@@ -131,9 +130,7 @@ export function registerBanditStateTools(server: McpServer): void {
 
       if (error || !data) {
         return {
-          content: [
-            { type: 'text', text: `Failed to read bandit state: ${error || 'no data'}` },
-          ],
+          content: [{ type: 'text', text: `Failed to read bandit state: ${error || 'no data'}` }],
           isError: true,
         };
       }

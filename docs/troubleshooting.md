@@ -7,7 +7,7 @@ Common issues and fixes for `@socialneuron/mcp-server`. If none of these help, o
 ### The server doesn't appear in my MCP client
 1. Confirm the config points at the right command. The canonical stdio command is `npx -y @socialneuron/mcp-server` with your key in `SOCIALNEURON_API_KEY`.
 2. Fully **restart** the client after editing its MCP config (Claude Desktop/Cursor cache the server list at launch).
-3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 75/75 tools` **to stderr** and then waits on stdio.
+3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 95/95 tools` **to stderr** and then waits on stdio.
 
 ### `tools/list` returns 0 tools, or the client reports "Invalid JSON" / pydantic parse errors
 This was a stdout-corruption bug fixed in **1.7.13** — any log written to stdout corrupts the JSON-RPC channel. Upgrade:
