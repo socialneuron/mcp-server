@@ -7,6 +7,7 @@ import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
 import { logMcpToolInvocation } from './supabase.js';
 import { buildWwwAuthenticateHeader } from './www-authenticate.js';
+import { toolError } from './tool-error.js';
 // Scanner middleware (Task 1.14). Imports from the in-package mirror of the
 // repo-root TS SSOT (`lib/agent-harness/`). Mirror exists because mcp-server
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
@@ -101,15 +102,12 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       } catch {
         // never block on audit log failure
       }
-      return {
-        content: [
-          {
-            type: 'text' as const,
-            text: `harness:input_blocked patterns=${inputScan.flagged_patterns.join(',')}`,
-          },
+      return toolError('policy_block', 'Request blocked by the input safety policy.', {
+        details: { blocked_patterns: inputScan.flagged_patterns },
+        recover_with: [
+          'Remove instruction-like or unsafe phrasing from the input and retry.',
         ],
-        isError: true,
-      };
+      });
     }
 
     // 2. Execute the underlying handler.
@@ -231,26 +229,6 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
 }
 
 function scopeDeniedResult(name: string, requiredScope: string | undefined, userScopes: string[]) {
-  const error = requiredScope
-    ? {
-        error: 'permission_denied',
-        tool: name,
-        required_scope: requiredScope,
-        available_scopes: userScopes,
-        recover_with: [
-          'Call search_tools with available_only=true to find tools this key can use.',
-          'Use a read-only alternative if one is available for the task.',
-          'Regenerate the API key with the required scope or upgrade the plan tier.',
-        ],
-        developer_url: 'https://socialneuron.com/settings/developer',
-      }
-    : {
-        error: 'tool_scope_missing',
-        tool: name,
-        available_scopes: userScopes,
-        recover_with: ['Contact support; this tool is not mapped to a required scope.'],
-      };
-
   const challenge = requiredScope
     ? buildWwwAuthenticateHeader({
         issuerUrl: getChallengeIssuerUrl(),
@@ -260,11 +238,29 @@ function scopeDeniedResult(name: string, requiredScope: string | undefined, user
       })
     : undefined;
 
-  return {
-    content: [{ type: 'text' as const, text: JSON.stringify(error, null, 2) }],
-    ...(challenge ? { _meta: { 'mcp/www_authenticate': [challenge] } } : {}),
-    isError: true,
-  };
+  if (requiredScope) {
+    return toolError('permission_denied', `Tool ${name} requires scope ${requiredScope}.`, {
+      details: {
+        // Preserve the pre-#188 field names for existing clients that branch on them.
+        error: 'permission_denied',
+        tool: name,
+        required_scope: requiredScope,
+        available_scopes: userScopes,
+        developer_url: 'https://socialneuron.com/settings/developer',
+      },
+      recover_with: [
+        'Call search_tools with available_only=true to find tools this key can use.',
+        'Use a read-only alternative if one is available for the task.',
+        'Regenerate the API key with the required scope or upgrade the plan tier.',
+      ],
+      ...(challenge ? { meta: { 'mcp/www_authenticate': [challenge] } } : {}),
+    });
+  }
+
+  return toolError('server_error', `Tool ${name} is not mapped to a required scope.`, {
+    details: { error: 'tool_scope_missing', tool: name, available_scopes: userScopes },
+    recover_with: ['Contact support; this tool is not mapped to a required scope.'],
+  });
 }
 
 function getChallengeIssuerUrl(): string {

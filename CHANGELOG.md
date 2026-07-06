@@ -2,6 +2,18 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.7.16] - 2026-07-06
+
+### Fixed
+
+- **Structured tool errors (audit #188).** New `toolError()` helper attaches a machine-readable `error_type` (`policy_block` / `validation_error` / `permission_denied` / `billing_error` / `rate_limited` / `not_found` / `upstream_error` / `server_error`) in `structuredContent`, mirrored to the text block — matching the 2025-11-25 spec convention (SEP-1303) so clients can programmatically distinguish a policy block from a validation, permission, or billing error. Input-safety blocks and scope denials are the first adopters.
+- **Rate-limit category bug.** `getRateLimiter` resolved its config from the full `category:key` bucket string, so every per-user/per-tool call silently fell back to the loose 60/min `read` bucket — the intended `posting` (30/min) and `screenshot` (10/min) limits never applied. Config now resolves from the bare category; added `generation` (15/min) and `upload` (20/min) categories.
+- **Capabilities pricing table drift.** The `socialneuron://docs/capabilities` resource showed the Free tier at 100 credits (canonical monthly allocation is 50; 100 is the spending cap) and omitted the 14-day Trial tier. Corrected.
+
+### Changed
+
+- Removed unused `cors` and `express-rate-limit` dependencies.
+
 ## [1.7.15] - 2026-07-06
 
 ### Changed
