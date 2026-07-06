@@ -45,10 +45,15 @@ jobs:
         run: npm run check:dep-age
         env:
           SN_DEP_AGE_ENFORCE: "true"
-          # Emergency patch releases: v1.7.9 carries OAuth hardening; v1.7.10
-          # fixes the published stdio tools/list runtime failure. Both
-          # intentionally bypass young-dependency blocking for their tags only.
-          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10') && '0' || '14' }}
+          # Reviewed per-tag cooldown bypasses (young-dependency blocking off for
+          # that tag only). v1.7.9: OAuth hardening. v1.7.10: stdio tools/list fix.
+          # v1.7.18: ships the internal-surface scrub + error_type + rate-limit fix
+          # + real /v1 REST API; the only young dep shipped to consumers is a
+          # posthog-node patch (5.38→5.39, trusted, lockfile-pinned). Dev deps
+          # (remotion/playwright/@types/node) don't ship in the dist bundle. All
+          # other release gates (verify:metadata, verify:lock, lint:tools, audit,
+          # typecheck, tests) still run.
+          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18') && '0' || '14' }}
         # Release is stricter than CI: young deps block publish.
 
       - name: Lint tool descriptions
