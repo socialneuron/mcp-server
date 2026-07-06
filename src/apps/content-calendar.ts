@@ -8,20 +8,8 @@ import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { MCP_VERSION } from '../lib/version.js';
 
 const CALENDAR_URI = 'ui://content-calendar/mcp-app.html';
-const CALENDAR_METADATA_URI = 'socialneuron://apps/content-calendar/metadata';
-const CALENDAR_BUNDLE_RELATIVE_PATH = 'apps/content-calendar/dist/mcp-app.html';
-const CALENDAR_APP_RESOURCE_META = {
-  safety: {
-    content_kind: 'mcp_app_html_bundle',
-    model_readable: false,
-    large_resource: true,
-    handling:
-      'Render this MCP App HTML as an isolated UI resource. Do not inject the raw bundle into model context by default.',
-  },
-};
 
 interface RecentPost {
   id: string;
@@ -34,35 +22,23 @@ interface RecentPost {
   created_at: string;
 }
 
+const RecentPostOutputSchema = z.object({
+  id: z.string(),
+  platform: z.string(),
+  status: z.string(),
+  title: z.string().nullable(),
+  external_post_id: z.string().nullable(),
+  published_at: z.string().nullable(),
+  scheduled_at: z.string().nullable(),
+  created_at: z.string(),
+});
+
 function startOfCurrentWeekMonday(): string {
   const now = new Date();
   const day = now.getDay();
   const monday = new Date(now);
   monday.setUTCDate(now.getUTCDate() - day + (day === 0 ? -6 : 1));
   return monday.toISOString().split('T')[0];
-}
-
-async function getCalendarBundleMetadata(): Promise<Record<string, unknown>> {
-  const htmlPath = path.join(process.cwd(), CALENDAR_BUNDLE_RELATIVE_PATH);
-  try {
-    const stat = await fs.stat(htmlPath);
-    return {
-      built: true,
-      relative_path: CALENDAR_BUNDLE_RELATIVE_PATH,
-      bytes: stat.size,
-      large_resource: true,
-      model_readable: false,
-    };
-  } catch {
-    return {
-      built: false,
-      relative_path: CALENDAR_BUNDLE_RELATIVE_PATH,
-      bytes: null,
-      large_resource: true,
-      model_readable: false,
-      recovery: 'Run npm run build:app before deploying HTTP MCP App support.',
-    };
-  }
 }
 
 export function registerContentCalendarApp(server: McpServer): void {
@@ -77,7 +53,14 @@ export function registerContentCalendarApp(server: McpServer): void {
         start_date: z
           .string()
           .optional()
-          .describe('ISO date for the week start (YYYY-MM-DD); defaults to the current week\'s Monday.'),
+          .describe(
+            "ISO date for the week start (YYYY-MM-DD); defaults to the current week's Monday."
+          ),
+      },
+      outputSchema: {
+        start_date: z.string(),
+        posts: z.array(RecentPostOutputSchema),
+        scopes: z.array(z.string()),
       },
       _meta: {
         ui: {
@@ -118,61 +101,24 @@ export function registerContentCalendarApp(server: McpServer): void {
         };
       }
 
-      const posts = (result.posts ?? []).filter((p) => {
+      const posts = (result.posts ?? []).filter(p => {
         const ts = p.scheduled_at ?? p.published_at ?? p.created_at;
         if (!ts) return false;
         return ts.split('T')[0] >= fromDate;
       });
 
+      const structuredContent = {
+        start_date: fromDate,
+        posts,
+        scopes: userScopes,
+      };
+
       return {
+        structuredContent,
         content: [
           {
             type: 'text' as const,
-            text: JSON.stringify({ posts, scopes: userScopes }),
-          },
-        ],
-      };
-    }
-  );
-
-  server.registerResource(
-    'content-calendar-metadata',
-    CALENDAR_METADATA_URI,
-    {
-      mimeType: 'application/json',
-      description:
-        'Lightweight, model-readable metadata for the Content Calendar MCP App. Use this to inspect the app without loading the large HTML bundle.',
-    },
-    async () => {
-      const bundle = await getCalendarBundleMetadata();
-      return {
-        contents: [
-          {
-            uri: CALENDAR_METADATA_URI,
-            mimeType: 'application/json',
-            text: JSON.stringify(
-              {
-                _meta: {
-                  version: MCP_VERSION,
-                  timestamp: new Date().toISOString(),
-                },
-                app: {
-                  name: 'Content Calendar',
-                  tool: 'open_content_calendar',
-                  html_resource_uri: CALENDAR_URI,
-                  metadata_resource_uri: CALENDAR_METADATA_URI,
-                },
-                bundle,
-                safety: CALENDAR_APP_RESOURCE_META.safety,
-                host_guidance: [
-                  'Use this JSON resource for model-readable inspection and audits.',
-                  'Fetch the ui:// HTML bundle only when rendering the MCP App as an isolated UI.',
-                  'Do not place the raw HTML bundle in model context by default.',
-                ],
-              },
-              null,
-              2
-            ),
+            text: `Loaded ${posts.length} calendar post${posts.length === 1 ? '' : 's'} from ${fromDate}.`,
           },
         ],
       };
@@ -183,31 +129,18 @@ export function registerContentCalendarApp(server: McpServer): void {
     server,
     CALENDAR_URI,
     CALENDAR_URI,
-    {
-      mimeType: RESOURCE_MIME_TYPE,
-      description:
-        'Interactive Content Calendar MCP App HTML bundle. Hosts should render it as isolated UI and avoid feeding the raw HTML into model context.',
-      _meta: CALENDAR_APP_RESOURCE_META,
-    },
+    { mimeType: RESOURCE_MIME_TYPE },
     async () => {
       // process.cwd() resolves consistently across source mode (vitest, tsx)
-      // and bundled mode (`node dist/http.js` from the package root), because
-      // both start with cwd at the package root. The previous implementation
+      // and bundled mode (Railway runs `node dist/http.js` from mcp-server/),
+      // because both start with cwd = mcp-server/. The previous implementation
       // used `import.meta.url` + `../../`, which worked in source mode but
-      // resolved to the parent of the package after esbuild bundling
-      // collapsed src/apps/content-calendar.ts into dist/http.js.
-      const htmlPath = path.join(process.cwd(), CALENDAR_BUNDLE_RELATIVE_PATH);
+      // resolved to the parent of mcp-server/ after esbuild bundling.
+      const htmlPath = path.join(process.cwd(), 'apps/content-calendar/dist/mcp-app.html');
       try {
         const html = await fs.readFile(htmlPath, 'utf-8');
         return {
-          contents: [
-            {
-              uri: CALENDAR_URI,
-              mimeType: RESOURCE_MIME_TYPE,
-              text: html,
-              _meta: CALENDAR_APP_RESOURCE_META,
-            },
-          ],
+          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
         };
       } catch (err) {
         // Most likely cause: deploy was built with `npm run build` only and
@@ -223,14 +156,7 @@ export function registerContentCalendarApp(server: McpServer): void {
   <p style="color:#999;font-size:12px;">${(err as Error).message}</p>
 </body></html>`;
         return {
-          contents: [
-            {
-              uri: CALENDAR_URI,
-              mimeType: RESOURCE_MIME_TYPE,
-              text: errorHtml,
-              _meta: CALENDAR_APP_RESOURCE_META,
-            },
-          ],
+          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: errorHtml }],
         };
       }
     }

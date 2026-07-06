@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { logMcpToolInvocation } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope, ContentSuggestion } from '../types/index.js';
 
@@ -22,7 +21,6 @@ export function registerSuggestTools(server: McpServer): void {
     },
     async ({ project_id, count, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
 
       try {
         const { data: result, error: efError } = await callEdgeFunction<{
@@ -164,18 +162,6 @@ export function registerSuggestTools(server: McpServer): void {
           });
         }
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'suggest_next_content',
-          status: 'success',
-          durationMs,
-          details: {
-            suggestions: suggestions.length,
-            data_quality: dataQuality,
-            insights_count: insights.length,
-          },
-        });
-
         const resultPayload = {
           suggestions: suggestions.slice(0, count),
           data_quality: dataQuality,
@@ -208,14 +194,7 @@ export function registerSuggestTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'suggest_next_content',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Suggestion failed: ${message}` }],
           isError: true,

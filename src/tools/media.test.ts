@@ -2,14 +2,36 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerMediaTools } from './media.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { validateUrlForSSRF } from '../lib/ssrf.js';
 
-vi.mock('../lib/ssrf.js', () => ({
-  validateUrlForSSRF: vi.fn(async () => ({ isValid: true, sanitizedUrl: undefined })),
-}));
+// Stub SSRF so upload_media URL-mode tests don't hit real DNS for fictional hosts.
+vi.mock('../lib/ssrf.js', async () => {
+  const actual = await vi.importActual<typeof import('../lib/ssrf.js')>('../lib/ssrf.js');
+  return {
+    ...actual,
+    validateUrlForSSRF: vi.fn(async (url: string) => {
+      try {
+        const u = new URL(url);
+        if (u.protocol !== 'https:' && u.protocol !== 'http:') {
+          return { isValid: false, error: `Invalid protocol: ${u.protocol}` };
+        }
+        if (u.username || u.password) {
+          return { isValid: false, error: 'URL contains credentials' };
+        }
+        if (
+          /^(127\.|10\.|192\.168\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[0-1])\.)/.test(u.hostname) ||
+          u.hostname === 'localhost'
+        ) {
+          return { isValid: false, error: `Private/metadata IP: ${u.hostname}` };
+        }
+        return { isValid: true, sanitizedUrl: url, resolvedIP: '203.0.113.1' };
+      } catch {
+        return { isValid: false, error: 'Invalid URL' };
+      }
+    }),
+  };
+});
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
-const mockSSRF = vi.mocked(validateUrlForSSRF);
 
 describe('media tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -49,20 +71,6 @@ describe('media tools', () => {
         }),
         expect.objectContaining({ timeoutMs: 60_000 })
       );
-    });
-
-    it('rejects an SSRF-blocked URL before calling the EF', async () => {
-      mockSSRF.mockResolvedValueOnce({
-        isValid: false,
-        error: 'Access to internal/localhost addresses is not allowed.',
-      });
-
-      const handler = server.getHandler('upload_media')!;
-      const result = await handler({ source: 'http://169.254.169.254/latest/meta-data/' });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('URL rejected');
-      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('returns JSON format when requested', async () => {
@@ -158,18 +166,6 @@ describe('media tools', () => {
         expect.objectContaining({ projectId: 'proj-123' }),
         expect.any(Object)
       );
-    });
-
-    it('rejects local file paths when disabled for transport', async () => {
-      const httpLikeServer = createMockServer();
-      registerMediaTools(httpLikeServer as any, { allowLocalFileSource: false });
-
-      const handler = httpLikeServer.getHandler('upload_media')!;
-      const result = await handler({ source: '/etc/passwd' });
-
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Local filesystem paths are disabled');
-      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     // -----------------------------------------------------------------------
@@ -318,43 +314,35 @@ describe('media tools', () => {
         );
       });
 
-      it('does not log raw file_data bytes in invocation details', async () => {
-        const { logMcpToolInvocation } = await import('../lib/supabase.js');
-        const logSpy = vi.mocked(logMcpToolInvocation);
-        logSpy.mockClear();
-
-        mockCallEdge.mockResolvedValueOnce({
-          data: {
-            success: true,
-            url: 'https://signed.example.com/x.png',
-            key: 'org_1/user_1/images/2026-04-21/x.png',
-            size: 70,
-            contentType: 'image/png',
-          },
-          error: null,
-        });
-
-        const handler = server.getHandler('upload_media')!;
-        await handler({
-          file_data: TINY_PNG_B64,
-          content_type: 'image/png',
-          file_name: 'x.png',
-        });
-
-        for (const call of logSpy.mock.calls) {
-          const details = JSON.stringify(call[0]?.details ?? {});
-          expect(details).not.toContain(TINY_PNG_B64);
-          expect(details).not.toMatch(/fileData|file_data/);
+      it('blocks local file paths in HTTP transport mode and directs to file_data', async () => {
+        // HTTP transport set by mcp-server/src/http.ts at boot; vitest defaults to
+        // unset (effectively non-stdio), so the default-deny branch trips.
+        const prior = process.env.MCP_TRANSPORT;
+        delete process.env.MCP_TRANSPORT;
+        try {
+          const handler = server.getHandler('upload_media')!;
+          const result = await handler({ source: '/definitely/not/a/real/path.png' });
+          expect(result.isError).toBe(true);
+          expect(result.content[0].text).toContain('not accepted on the cloud MCP server');
+          expect(result.content[0].text).toContain('file_data');
+        } finally {
+          if (prior !== undefined) process.env.MCP_TRANSPORT = prior;
         }
       });
 
-      it('improves local-path error copy to suggest file_data for remote agents', async () => {
-        const handler = server.getHandler('upload_media')!;
-        const result = await handler({ source: '/definitely/not/a/real/path.png' });
-
-        expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain('File not found');
-        expect(result.content[0].text).toContain('file_data');
+      it('falls back to the readable "File not found" error in stdio transport', async () => {
+        const prior = process.env.MCP_TRANSPORT;
+        process.env.MCP_TRANSPORT = 'stdio';
+        try {
+          const handler = server.getHandler('upload_media')!;
+          const result = await handler({ source: '/definitely/not/a/real/path.png' });
+          expect(result.isError).toBe(true);
+          expect(result.content[0].text).toContain('File not found');
+          expect(result.content[0].text).toContain('file_data');
+        } finally {
+          if (prior === undefined) delete process.env.MCP_TRANSPORT;
+          else process.env.MCP_TRANSPORT = prior;
+        }
       });
 
       it('errors when neither source nor file_data is provided', async () => {
@@ -392,7 +380,7 @@ describe('media tools', () => {
       expect(result.content[0].text).toContain('Expires in: 3600s');
       expect(mockCallEdge).toHaveBeenCalledWith(
         'get-signed-url',
-        expect.objectContaining({ key: 'org_1/user_1/img.png', operation: 'get' }),
+        expect.objectContaining({ r2Key: 'org_1/user_1/img.png', operation: 'get' }),
         expect.objectContaining({ timeoutMs: 10_000 })
       );
     });

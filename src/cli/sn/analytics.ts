@@ -133,7 +133,6 @@ export async function handleLoop(args: SnArgs, asJson: boolean): Promise<void> {
       supabase
         .from('performance_insights')
         .select('id, insight_type, generated_at')
-        .eq('user_id', userId)
         .gte('generated_at', thirtyDaysAgo.toISOString())
         .gt('expires_at', new Date().toISOString())
         .limit(20),

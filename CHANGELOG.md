@@ -2,242 +2,73 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## [1.7.13] - 2026-05-29
+## [1.7.11] - 2026-05-15
 
 ### Changed
-- Corrected the MCP pricing surfaces (README tier table + the `socialneuron://docs/capabilities` resource that ships to every client) to the canonical tiers from socialneuron.com: Free $0/100/—, Starter $19/500/—, Pro $49/1,500/Read+Analytics, Team $99/3,500/Full, Agency $249/10,000/Full. Earlier tables advertised wrong prices/credits and stated MCP access starts at Starter — it starts at **Pro**.
-- Synced all version fields (`package.json`, `server.json` ×2, `MCP_VERSION`) to 1.7.13. The unreleased 1.7.11 had drifted from `server.json`/`MCP_VERSION` (still 1.7.10), so builds reported the wrong version to clients.
-- Marked Instagram as "pending platform approval" in `server.json` + README examples; live publish is YouTube + TikTok.
 
-### Fixed
-- `applyAnnotations` now logs to **stderr** (`console.error`) instead of stdout. A stray stdout write corrupted the JSON-RPC stream for stdio clients (pydantic "Invalid JSON"; `tools/list` registering 0 tools).
+- **Tier listing aligned to Phase 4b canonical pricing.** The `socialneuron://docs/capabilities` resource now exposes the live tier prices: Free $0/mo · Starter $19/mo · Pro $49/mo · Team $99/mo · Agency $249/mo. Versions 1.7.7 → 1.7.10 shipped the stale pre-Phase-4b values ($29/$79/$199 and no Agency tier) to every connected MCP client, including Claude Code / Claude Desktop / Cursor. Upgrading to 1.7.11 closes that gap.
+- **MCP access matrix corrected.** Free and Starter are now `mcp_access: 'None'` (string, not boolean), matching the canonical contract that MCP read+analytics starts at Pro and full MCP starts at Team. Previous bundle inconsistently used `false` (boolean) for free/starter and strings for the paid tiers.
+- **Agency tier added** with full MCP + REST API + 20 keys + multi-brand autopilot.
 
-### Documentation
-- Production-grade README + docs pass: clarified tool surfaces (**75 over stdio**, **92** on the hosted endpoint), added a Table of Contents, CI status badge, a Platform Status table, a [Troubleshooting](docs/troubleshooting.md) guide, and a full [Tool Reference](docs/tools-reference.md). The `tools.lock.json` now seals the runtime tool descriptions rather than the static catalog.
-- Synced version drift across `package-lock.json` and `.cursor-plugin/plugin.json` to 1.7.13; added `.editorconfig` + `.nvmrc`; enabled `publishConfig.provenance`.
+### Source
 
-## [1.7.10] - 2026-05-01
-
-### Fixed
-- Fixed stdio MCP `tools/list` runtime serialization by updating `execute_recipe.inputs` to use the Zod 4-compatible `z.record(z.string(), z.unknown())` form. The 1.7.9 package could start but failed tool listing with `Cannot read properties of undefined (reading '_zod')`.
-- Added a regression test that serializes the real registered stdio tool schemas through the MCP SDK JSON-schema conversion path.
-- Pinned `posthog-node` to `5.20.0` to keep public installs compatible with the advertised Node `>=20.0.0 <21.0.0 || >=22.0.0` engine range.
-- `MCP_VERSION` bumped to `1.7.10`.
-
-## [1.7.9] - 2026-05-01
-
-### Security
-- Hardened OAuth Dynamic Client Registration: production defaults now allow only known callback URIs plus localhost Claude development callbacks. Unknown HTTPS callbacks require `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` for staging/onboarding.
-- Made OAuth token revocation authoritative: backend revocation failures now surface as failures instead of silently succeeding after local cache eviction.
-- Reduced auth error detail returned to clients and added no-store cache headers on protected HTTP responses.
-- `MCP_VERSION` bumped to `1.7.9`.
-
-### Fixed
-- Corrected auth documentation: this public server package currently uses an in-memory Dynamic Client Registration store. The earlier 1.7.7 changelog entry overstated persistent DCR storage; persistent DCR storage and separate short-lived connector tokens require companion backend changes outside this repo.
-- Synced `server.json` registry manifest version fields to `1.7.9` so MCP registry metadata matches the published npm package.
-
-## [1.7.8] - 2026-04-25
-
-### Added
-- **Platform connection deep-link tools**: `start_platform_connection` mints a single-use deep link the user opens in their browser to complete platform OAuth (X/LinkedIn/IG/etc.) in their already-authenticated session; `wait_for_connection` polls until the connection becomes active or the timeout elapses. Closes the "agent can't trigger OAuth from the chat" gap.
-- **Scope mapping**: `start_platform_connection` is `mcp:distribute`; `wait_for_connection` is `mcp:read`.
-
-### Changed
-- `MCP_VERSION` bumped to `1.7.8` (live `mcp.socialneuron.com` continues at `1.7.7` until the next deploy carries this surface).
-- Tool count: **76** (sealed via `tools.lock.json`).
-
-## [1.7.7] - 2026-04-25
-
-### Added
-- **MCP Apps — Calendar (Day 1 read-only scaffold)**: First inline UI surface inside Claude Desktop / claude.ai using `@modelcontextprotocol/ext-apps`. The `open_content_calendar` tool renders a drag-drop calendar of scheduled posts. Backed by existing tools (`list_recent_posts`, `schedule_post`, `find_next_slots`) — no new server-side work required.
-- **Connector icon**: OAuth metadata `logo_uri` points at `https://socialneuron.com/logo-icon.svg`. Custom Connector tile in claude.ai now renders the SN brand mark.
-- **Persistent OAuth client store**: Dynamic Client Registrations are persisted to `public.mcp_oauth_clients` (Supabase). Survives Railway redeploys — claude.ai's saved `client_id` no longer becomes invalid each deploy. Falls back to in-memory mode if the table is unreachable.
-- **Scope-denied OAuth-aware message**: Permission-denied responses now branch the remediation hint between API-key users (regenerate at `/settings/developer`) and OAuth Custom Connector users (scope is plan-tier-gated). [PR #73]
-
-### Changed
-- `MCP_VERSION` bumped to `1.7.7`.
-- Tool count: **74** at this release; subsequent backports brought public surface to 76.
+Anchored by `memory-bank/audits/2026-05-13-pricing-consistency-audit.md` (PR #631). The same audit landed Phase 4b across `constants/pricing.ts`, `lib/currency.ts`, `data/answers.ts`, `pages/Pricing.tsx`, the docs-site llms.txt feeds, and the SEO comparison data — this release ships the corresponding MCP-protocol-level fix.
 
 ## [1.7.6] - 2026-04-22
 
-### Security
-- **Dependency cooldown re-armed**: `SN_DEP_AGE_ENFORCE` flipped back to `"true"` in `release.yml`. New dependency versions under 14 days old now block publish again. (Was temporarily warn-only in 1.7.5 while Trusted Publishing was being validated — that validation is complete.)
-
 ### Changed
-- `MCP_VERSION` bumped to `1.7.6`.
-- First release published via npm Trusted Publishing (OIDC) with full SLSA provenance attestation. No tokens involved in the publish path.
-- **Reproducible `tools.lock.json`**: removed the `generated_at` timestamp so the sealed manifest is byte-identical across builds of the same source. Per-tool sha256 hashes remain the actual integrity seal.
-- **MCP Registry manifest synced**: `server.json` version fields bumped from `1.7.0` → `1.7.6` so registry discovery reflects the real latest package.
-- **Cursor plugin manifest synced**: `.cursor-plugin/plugin.json` bumped from `1.6.0` → `1.7.6`, tool count corrected from 52 → 73, and the `author.email` field (which leaked a real address) replaced with `author.url`.
-- **Docs tool-count drift fixed**: `docs/rest-api.md`, `docs/cli-guide.md`, `docs/integration-methods.md`, `docs/landing-page-brief.md`, `examples/rest/08-tool-proxy.sh`, and `examples/mcp/prompts.md` all updated from stale `52 tools` references to the current `73 tools`. CHANGELOG history entries are left intact.
 
-### Fixed
-- **Flaky CLI e2e test**: `unified JSON envelope > all JSON outputs include schema_version "1"` was occasionally hitting the default 5000ms vitest timeout on machines with slower cold-start. Raised per-test timeout to 15000ms. (Root cause is 6 sequential CLI spawns; a future PR can share the warm process.)
+- `MCP_VERSION` bumped to `1.7.6`.
+- **`/.well-known/mcp/server-card.json` auto-derived from `TOOL_CATALOG`**: previously hardcoded to 16 tools; now reflects the live catalog (75 tools) so Smithery / marketplace discovery stays in sync with the source of truth.
+
+### Internal
+
+- Deduped the redundant `require('./lib/tool-catalog.js')` in the unauthenticated `tools/list` handler (single import per request).
 
 ## [1.7.5] - 2026-04-22
 
 ### Added
+
 - **`upload_media` base64 path**: new optional `file_data` + `file_name` params let Claude Desktop, Claude Web, and other remote agents upload bytes directly without a filesystem path. Content-type is validated against an allowlist, base64 charset is checked, and decoded size is capped at 10MB before the Edge Function call. `file_name` is `basename()`-sanitized.
 - **`schedule_post` auto-rehost**: any `media_url` / `media_urls` / `job_id` result URL that is not already R2-signed is automatically persisted into R2 via `upload-to-r2` before posting. Keeps scheduled posts alive past ephemeral-URL expiry (Replicate, OpenAI, DALL-E, kie.ai) and feeds byte-upload platforms (X, LinkedIn, YouTube, Bluesky). New optional `auto_rehost` parameter (default: true) opts out.
-- **`create_carousel` meta-tool** (from v1.7.4): Brand-aware carousel generation that composes `generate_image` with brand color/tone constraints and auto-exports to R2. Catalog now at **73 tools**.
-- **Brand runtime scoring**: `brandScoring.ts` + `colorAudit.ts` modules power multi-dimensional brand alignment checks used by the carousel meta-tool.
 
 ### Security
-- **npm Trusted Publishing (OIDC)**: Release workflow publishes to npm via OIDC — no long-lived `NPM_TOKEN` secret. Package ships with SLSA provenance.
-- **Production environment gate**: Release workflow requires manual approval of the `production` environment before publishing.
-- **Perimeter hardening (Sprint 1)**: Repo-level `.npmrc` pins registry, disables funding/audit noise in CI, and enforces `save-exact`. `CODEOWNERS` locks security-sensitive paths (workflows, `.npmrc`, `package.json`, `src/auth/`) to `@socialneuron/sn-maintainers`.
-- **Pre-push identity hook**: Blocks pushes from unexpected git identities; ships with a local allowlist.
-- **Lockfile-lint + dependency cooldown**: CI validates `package-lock.json` integrity. Release enforces a 14-day cooldown on new dependency versions (temporarily warn-only for this release during OIDC validation — re-enforced in 1.7.6).
-- **Sealed tools manifest (CVE-2025-6514 mitigation)**: `tools.lock.json` records a sha256 hash of every tool's `name`/`description`/`module`/`scope`. CI `lint:tools` blocks drift between source and manifest. Mitigates tool-poisoning attacks on MCP clients.
+
 - **SSRF guard on caller URLs**: every URL passed to auto-rehost is validated by `quickSSRFCheck` — rejects localhost, RFC1918 private ranges, link-local, cloud metadata endpoints (AWS/GCP/Azure), embedded credentials, and non-HTTP(S) protocols.
 - **Hono patched**: `hono` override bumped 4.12.12 → 4.12.14 to resolve GHSA-458j-xx4x-4375 (JSX attribute HTML injection, moderate).
-- Covers **11 Dependabot alerts** pinned via npm `overrides` (security patches for transitive deps).
 
 ### Changed
-- `MCP_VERSION` bumped to `1.7.5`.
-- Tool descriptions updated on `upload_media` and `schedule_post.media_url` to tell agents ephemeral URLs are safe to pass directly.
-- CI runners upgraded: `actions/checkout@v6`, `actions/setup-node@v6`.
-- Dependencies: `@supabase/supabase-js` 2.101 → 2.103, `posthog-node` 5.28 → 5.29.2, `hono` → 4.12.14, `@types/node` → 25.6, `typescript` → 6.0, `trufflehog` action → 3.94.2.
 
-### Fixed
-- Missing `sanitizeError` import on the presigned-PUT error branch of `upload_media`.
-- Release workflow: removed stale `registry-url` directive that blocked OIDC Trusted Publishing.
-- Release workflow: removed broken typecheck gate that blocked publish.
-
-## [1.7.3] - 2026-04-04
-
-### Security
-- **Full error sanitization**: `sanitizeError()` applied across all 15 catch blocks in 9 tool files + `http.ts` global error handler. No internal paths, table names, or stack traces leak to clients.
-- **R2 key masking**: R2 storage keys are masked in all text output to prevent path disclosure.
-
-### Added
-- **`upload_media` tool**: Upload local files or URLs to R2 storage for use in posts.
-- **`get_media_url` tool**: Generate signed URLs for R2-stored media.
-- **`schedule_post` enhancements**: Now accepts `r2_key`/`r2_keys`, `job_id`/`job_ids`, and typed `platform_metadata` — enables seamless generate-upload-post pipeline.
-- **`check_status` enhancements**: Returns `all_urls` for multi-output jobs, presigned PUT URL support.
-- **Brand consistency scoring**: New `brandScoring.ts` + `brandRuntime.ts` modules with multi-dimensional brand alignment scoring.
-
-### Fixed
-- Duplicate `sanitizeError` import removed.
-
-### Changed
-- `MCP_VERSION` bumped to `1.7.3`.
-- Removed `api/` directory (OpenAPI spec, router, tool-executor) — REST convenience routes consolidated into `http.ts`.
-- Removed `cli/sn/completions.ts`, `cli/sn/generate.ts`, `cli/sn/parse.ts` — CLI streamlined.
-- Removed `lib/tool-errors.ts` — error handling consolidated into `sanitizeError`.
+- Tool descriptions updated on `upload_media` (routing guide for path vs. base64 vs. URL) and `schedule_post.media_url` (explicit ephemeral-URL safety note).
 
 ## [1.7.0] - 2026-04-03
 
 ### Added
-- 12 new tools (52 → 64): brandRuntime (3), pipeline (4), suggest (1), digest (2), remotion (+1), autopilot (+1)
-- `/.well-known/mcp/server-card.json` endpoint for Smithery marketplace discovery
-- `/config` endpoint for cloud-mode connection info (replaces hardcoded credentials)
-- MCP tool safety annotations for Anthropic Connectors Directory
-- Response truncation (100K char limit)
+
+- **`/config` endpoint**: Returns server configuration (tools count, version, capabilities) without authentication
+- **Rate limit exemptions**: `/config`, `/health`, and `/.well-known/` paths bypass rate limiting
+- **All tools migrated to gateway**: 13 tool files moved from `getSupabaseClient()` to `callEdgeFunction('mcp-data', ...)` — tools now work in cloud mode (API key users)
+- **REST API layer**: Universal tool proxy (`POST /v1/tools/:name`), 15 convenience endpoints, OpenAPI 3.1 spec
+- **64 tools** (was 52): distribution, media, and configuration tools added
+- **mcp-data gateway**: 17 new actions added for cloud-mode tool execution
+
+### Fixed
+
+- **Smithery OAuth**: `/register` now allows all HTTPS redirect URIs per MCP spec (was Claude-only)
+- **Zod 4 compatibility**: Upgraded zod 3→4 for SDK v1.27 compatibility
+- **Express middleware**: Added express-rate-limit + cors as direct dependencies
 
 ### Security
-- Cloud config fetched at startup from `/config` endpoint (rotatable without npm republish)
-- Supabase anon key (public, RLS-gated) restored with documentation — service role key remains env-only
 
-### Dependencies
-- `@modelcontextprotocol/sdk` 1.27 → 1.29
-- `@supabase/supabase-js` 2.99 → 2.101
-- `jose` 6.2.1 → 6.2.2
+- 50kb body limit on all endpoints
+- `sanitizeError` on /mcp catch path
+- Email removed from auth chain
+- Generation rate limit 20/min
 
-## [1.6.1] - 2026-03-22
+### Internal
 
-### Security
-- **Explicit body size limit**: `express.json({ limit: '50kb' })` prevents DoS via oversized payloads.
-- **Error message sanitization**: MCP POST catch block now uses `sanitizeError()` — no more internal paths or table names in error responses.
-- **PII removal**: Removed `email` from API key validation chain (7 files). Key validation no longer exposes user email addresses.
-- **Generation rate limiting**: Added explicit `generation` category at 20 req/min (previously fell back to `read` at 60/min).
-- **npm provenance**: Added `--provenance` flag and `id-token: write` permission to release workflow for supply chain verification.
-- **Security comment**: Documented that Edge Functions must not trust `x-internal-worker-call` header without Bearer token verification.
-
-### Fixed
-- **hono prototype pollution**: Updated transitive dependency to fix GHSA-v8w9-8mx6-g223.
-- `npm audit` now reports 0 vulnerabilities.
-
-### Added
-- 18 examples (8 REST curl, 5 TypeScript SDK, 4 CLI, 1 MCP prompts).
-- TypeScript SDK package (`packages/sdk/`) with 9 resource classes.
-- CLI tab completion and content generation commands.
-- SDK documentation and release workflow.
-
-## [1.6.0] - 2026-03-21
-
-### Added
-- **REST API layer**: Universal tool proxy at `POST /v1/tools/:name` — call any of the 52 MCP tools via standard HTTP REST. No MCP client required.
-- **OpenAPI 3.1 spec**: Auto-generated from TOOL_CATALOG at `/openapi.json` — always in sync with tools.
-- **15 convenience endpoints**: Resource-oriented routes for common operations (`/v1/credits`, `/v1/content/generate`, `/v1/posts`, etc.).
-- **Express HTTP transport**: New `dist/http.js` entry point for running as a standalone REST API server.
-- **MCP Registry metadata**: `server.json` with mcpName, endpoints, env, and auth configuration for registry discovery.
-- **Cursor Directory manifest**: Plugin manifest for Cursor IDE integration.
-
-### Fixed
-- **TS2345**: Cast Express route param to string for strict TypeScript compatibility.
-- **npm publish 404**: Removed `--provenance` flag from release workflow (incompatible with scoped packages on granular tokens).
-
-### Changed
-- Dual transport support: MCP (stdio) and HTTP (Express) from a single codebase.
-- SECURITY.md updated with v1.6.x in supported versions.
-- `docs/auth.md` domain reference corrected (`www.socialneuron.com` → `socialneuron.com`).
-
-## [1.5.2] - 2026-03-20
-
-### Added
-- **Error recovery hints**: All 47 error paths now include actionable recovery guidance — agents know what to call next when something fails (e.g., "Call get_credit_balance to check remaining credits" or "Verify platform OAuth with list_connected_accounts").
-- Central `formatToolError()` helper with 9 error categories: rate limits, credits, OAuth, generation, not-found, access, SSRF, scheduling, and plan validation.
-- 18 new tests for error recovery formatting.
-
-## [1.5.1] - 2026-03-20
-
-### Added
-- **MCP tool annotations**: All 52 tools now declare `readOnlyHint`, `destructiveHint`, `idempotentHint`, and `openWorldHint` per MCP spec. Agents can now determine which tools are safe to call without confirmation.
-- **Complete parameter descriptions**: Added `.describe()` to all remaining parameters (248 total). Every parameter now has format examples, constraints, and usage guidance.
-
-### Changed
-- Updated test setup to support 5-argument `server.tool()` signature with annotations.
-
-## [1.5.0] - 2026-03-19
-
-### Changed
-- **LLM-optimized tool descriptions**: Rewrote 27 tool descriptions and enriched 15 parameters for agent comprehension. Every tool now answers "when to call", "what to pass", and "what comes next" — following Arcade ToolBench patterns (Tool Description, Constrained Input, Dependency Hint, Performance Hint).
-- **API key cache TTL**: Reduced from 60s to 10s to limit revocation exposure window.
-- **OAuth issuer URL**: Production metadata now derives from `MCP_SERVER_URL` instead of defaulting to localhost.
-- **SECURITY.md**: Updated supported versions, added scanner false-positive documentation.
-- **CLI setup URL**: Fixed `app.socialneuron.com` → `www.socialneuron.com`.
-
-### Dependencies
-- `@supabase/supabase-js` 2.98.0 → 2.99.2
-- `open` 10.0.0 → 11.0.0 (requires Node.js 20+)
-- `posthog-node` 5.28.1 → 5.28.3
-- `vitest` 3.2.4 → 4.1.0
-- `esbuild` 0.27.3 → 0.27.4
-- `@types/node` 25.4.0 → 25.5.0
-
-## [1.4.0] - 2026-03-13
-
-### Changed
-- **Telemetry is now opt-IN**: No data is sent unless `SOCIALNEURON_TELEMETRY=1` is explicitly set. Previously telemetry was opt-out.
-- **PostHog moved to optionalDependencies**: `posthog-node` is no longer a required runtime dependency. The package works fully without it installed. This reduces supply chain surface and resolves socket.dev security flags.
-- **Dynamic import**: PostHog is loaded via `import()` at runtime, silently skipped if unavailable.
-- `DO_NOT_TRACK=1` continues to override and disable telemetry in all cases.
-
-## [1.3.2] - 2026-03-13
-
-### Fixed
-- **TypeScript strict mode**: Added `@types/express`, fixed `AuthenticatedRequest` type to extend express `Request`, corrected `StreamableHTTPServerTransport` constructor usage
-- **Optional dependency stubs**: Added ambient declarations for `playwright`, `@remotion/bundler`, `@remotion/renderer` (dynamically imported, not required at runtime)
-- **Removed unused directive**: Cleaned up stale `@ts-expect-error` in REPL module
-- **Release CI**: Typecheck now passes in GitHub Actions release workflow
-
-## [1.3.1] - 2026-03-13
-
-### Fixed
-- **zod v4 compatibility**: Updated `zod` dependency from v3 to v4 to match `@modelcontextprotocol/sdk` peer requirement, fixing `ERR_PACKAGE_PATH_NOT_EXPORTED` crash on `npx` install
-- **Test domain**: Fixed test fixtures using deprecated `socialneuron.ai` domain (now `socialneuron.com`)
-- **CLI E2E timeout**: Increased envelope test timeout to avoid false failures
+- 64 tools, 900+ tests, ~375KB build
+- OpenAPI 3.1 spec auto-generated from tool schemas
 
 ## [1.3.0] - 2026-03-13
 

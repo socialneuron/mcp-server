@@ -19,7 +19,7 @@ vi.mock('jose', () => ({
 // Import after mocks are in place
 // ---------------------------------------------------------------------------
 
-import { createTokenVerifier, evictFromCache } from './token-verifier.js';
+import { createTokenVerifier } from './token-verifier.js';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -28,6 +28,7 @@ import { createTokenVerifier, evictFromCache } from './token-verifier.js';
 const SUPABASE_URL = 'https://test-project.supabase.co';
 const SUPABASE_ANON_KEY = 'test-anon-key';
 const VALIDATE_URL = `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-key-public`;
+const CONNECTOR_VALIDATE_URL = `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-connector-token`;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -136,6 +137,22 @@ describe('createTokenVerifier', () => {
       expect(result.clientId).toBe('supabase-oauth');
       fetchSpy.mockRestore();
     });
+
+    it('routes opaque connector tokens to connector-token verification', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-route',
+        clientId: 'chatgpt-client',
+        scopes: ['mcp:read'],
+        resource: 'https://mcp.socialneuron.com',
+      });
+
+      const result = await verifier.verifyAccessToken('sno_route_test_token');
+
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
+      expect(mockJwtVerify).not.toHaveBeenCalled();
+      expect(result.clientId).toBe('chatgpt-client');
+    });
   });
 
   // =========================================================================
@@ -165,32 +182,6 @@ describe('createTokenVerifier', () => {
 
       expect(result.extra).toEqual({ userId: 'user-sub-456' });
       expect(result.token).toBe('jwt-token');
-    });
-
-    it('ignores user metadata for JWT account context', async () => {
-      mockJwtVerify.mockResolvedValue(
-        jwtPayload({
-          sub: 'user-context-jwt',
-          app_metadata: {
-            organization_id: 'org-from-app',
-            project_id: 'project-from-app',
-            brand_profile_id: 'brand-from-app',
-          },
-          user_metadata: {
-            organizationId: 'org-from-user',
-            projectId: 'project-from-user',
-          },
-        })
-      );
-
-      const result = await verifier.verifyAccessToken('jwt-account-context');
-
-      expect(result.extra).toEqual({
-        userId: 'user-context-jwt',
-        organizationId: 'org-from-app',
-        projectId: 'project-from-app',
-        brandProfileId: 'brand-from-app',
-      });
     });
 
     it('defaults scopes to ["mcp:read"] when mcp_scopes missing', async () => {
@@ -229,30 +220,6 @@ describe('createTokenVerifier', () => {
       const result = await verifier.verifyAccessToken('jwt-with-scopes');
 
       expect(result.scopes).toEqual(['mcp:read', 'mcp:write', 'mcp:admin']);
-    });
-
-    it('extracts active account context from JWT app metadata keys', async () => {
-      mockJwtVerify.mockResolvedValue(
-        jwtPayload({
-          app_metadata: {
-            organization_id: 'org-from-app',
-            project_id: 'project-from-app',
-            brand_profile_id: 'brand-profile-from-app',
-          },
-          user_metadata: {
-            brand_profile_id: 'brand-profile-from-user',
-          },
-        })
-      );
-
-      const result = await verifier.verifyAccessToken('jwt-with-account-context');
-
-      expect(result.extra).toEqual({
-        userId: 'user-jwt-123',
-        organizationId: 'org-from-app',
-        projectId: 'project-from-app',
-        brandProfileId: 'brand-profile-from-app',
-      });
     });
 
     it('converts non-string scope values to strings', async () => {
@@ -359,28 +326,6 @@ describe('createTokenVerifier', () => {
       // expiresAt should be epoch seconds
       const expectedExp = Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000);
       expect(result.expiresAt).toBe(expectedExp);
-    });
-
-    it('returns active account context from API key validation metadata', async () => {
-      mockFetchResponse(200, {
-        valid: true,
-        userId: 'user-context',
-        scopes: ['mcp:read'],
-        email: 'owner@example.com',
-        organization_id: 'fd321f1e-6f02-4c7e-8699-02ba34a6a120',
-        project_id: 'cosmo-project-id',
-        brand_profile_id: 'cosmo-brand-profile-id',
-      });
-
-      const result = await verifier.verifyAccessToken('snk_live_context');
-
-      expect(result.extra).toEqual({
-        userId: 'user-context',
-        email: 'owner@example.com',
-        organizationId: 'fd321f1e-6f02-4c7e-8699-02ba34a6a120',
-        projectId: 'cosmo-project-id',
-        brandProfileId: 'cosmo-brand-profile-id',
-      });
     });
 
     it('defaults scopes to ["mcp:read"] when scopes missing from response', async () => {
@@ -514,46 +459,148 @@ describe('createTokenVerifier', () => {
       expect(options.signal).toBeDefined();
       expect(options.signal).toBeInstanceOf(AbortSignal);
     });
+
+    it('revalidates API keys on every request so revocation and scope changes take effect immediately', async () => {
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valid: true,
+            userId: 'user-api-revalidate',
+            scopes: ['mcp:full'],
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valid: false,
+            error: 'Key has been revoked',
+          }),
+        });
+
+      await expect(verifier.verifyAccessToken('snk_live_revalidate')).resolves.toMatchObject({
+        scopes: ['mcp:full'],
+      });
+      await expect(verifier.verifyAccessToken('snk_live_revalidate')).rejects.toThrow(
+        'Key has been revoked'
+      );
+      expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+    });
   });
 
   // =========================================================================
-  // API key validation cache (TTL + revocation eviction)
+  // Connector token path
   // =========================================================================
 
-  describe('API key validation cache', () => {
-    it('serves a repeat validation from cache without re-calling mcp-auth', async () => {
+  describe('connector token verification', () => {
+    it('calls mcp-auth connector-token validation with correct body', async () => {
       mockFetchResponse(200, {
         valid: true,
-        userId: 'user-cache-hit',
-        scopes: ['mcp:read'],
+        userId: 'user-connector-1',
+        clientId: 'client-connector-1',
+        scopes: ['mcp:read', 'mcp:write'],
+        resource: 'https://mcp.socialneuron.com',
       });
-      // Unique token so the module-level cache does not collide with other tests.
-      const token = 'snk_live_cache_hit_001';
 
-      const first = await verifier.verifyAccessToken(token);
-      const second = await verifier.verifyAccessToken(token);
+      await verifier.verifyAccessToken('sno_connector_test_1');
 
-      // Second call must NOT hit the Edge Function — this is what keeps the
-      // heartbeat from filling mcp-auth's brute-force window.
-      expect(globalThis.fetch).toHaveBeenCalledOnce();
-      expect(second).toEqual(first);
+      const fetchMock = vi.mocked(globalThis.fetch);
+      expect(fetchMock).toHaveBeenCalledOnce();
+
+      const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
+      expect(url).toBe(CONNECTOR_VALIDATE_URL);
+      expect(options.method).toBe('POST');
+      expect(JSON.parse(options.body as string)).toEqual({
+        access_token: 'sno_connector_test_1',
+        resource: 'https://mcp.socialneuron.com',
+      });
     });
 
-    it('re-validates after evictFromCache (revocation eviction)', async () => {
+    it('returns AuthInfo for a valid connector token', async () => {
       mockFetchResponse(200, {
         valid: true,
-        userId: 'user-cache-evict',
-        scopes: ['mcp:read'],
+        userId: 'user-connector-full',
+        clientId: 'chatgpt',
+        scopes: ['mcp:read', 'mcp:analytics'],
+        email: 'connector@socialneuron.ai',
+        expiresAt: '2027-06-15T00:00:00Z',
+        audience: ['https://mcp.socialneuron.com'],
       });
-      const token = 'snk_live_cache_evict_002';
 
-      await verifier.verifyAccessToken(token);
-      evictFromCache(token);
-      await verifier.verifyAccessToken(token);
+      const result = await verifier.verifyAccessToken('sno_connector_full');
 
-      // Eviction forces a fresh validation so a revoked key stops working
-      // on the replica that processed the revocation.
+      expect(result.token).toBe('sno_connector_full');
+      expect(result.clientId).toBe('chatgpt');
+      expect(result.scopes).toEqual(['mcp:read', 'mcp:analytics']);
+      expect(result.extra).toEqual({
+        userId: 'user-connector-full',
+        email: 'connector@socialneuron.ai',
+        resource: 'https://mcp.socialneuron.com',
+      });
+      expect(result.expiresAt).toBe(Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000));
+    });
+
+    it('does not serve cached connector AuthInfo after the token expires', async () => {
+      const nowSpy = vi.spyOn(Date, 'now').mockReturnValue(1_000_000);
+      globalThis.fetch = vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valid: true,
+            userId: 'user-connector-expiring',
+            clientId: 'chatgpt',
+            scopes: ['mcp:full'],
+            expiresAt: new Date(1_002_000).toISOString(),
+            resource: 'https://mcp.socialneuron.com',
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: async () => ({
+            valid: false,
+            error: 'Connector token expired',
+          }),
+        });
+
+      await expect(verifier.verifyAccessToken('sno_connector_expiring')).resolves.toMatchObject({
+        scopes: ['mcp:full'],
+      });
+
+      nowSpy.mockReturnValue(1_003_000);
+      await expect(verifier.verifyAccessToken('sno_connector_expiring')).rejects.toThrow(
+        'Connector token expired'
+      );
       expect(globalThis.fetch).toHaveBeenCalledTimes(2);
+      nowSpy.mockRestore();
+    });
+
+    it('rejects connector tokens minted for a different resource', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-wrong-audience',
+        resource: 'https://other.example.com',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_wrong_audience')).rejects.toThrow(
+        'Connector token audience/resource mismatch'
+      );
+    });
+
+    it('rejects connector tokens with no audience or resource', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-no-audience',
+      });
+
+      await expect(verifier.verifyAccessToken('sno_connector_no_audience')).rejects.toThrow(
+        'Connector token audience/resource mismatch'
+      );
     });
   });
 

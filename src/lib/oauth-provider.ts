@@ -11,12 +11,12 @@
  *   4. Claude calls /token with code_verifier → provider exchanges via mcp-auth EF
  *   5. Provider decrypts and returns snk_live_* as access_token
  *
- * Dynamic client registrations are stateless when a registration secret is
- * configured, so /register, /authorize, and /token can land on different
- * server instances behind a load balancer.
+ * Dynamic client registrations are persisted to public.mcp_oauth_clients
+ * (migration 20260425220000_mcp_oauth_clients.sql). Registrations survive
+ * Railway redeploys — previously the in-memory store wiped on every deploy
+ * and surfaced as auth failures until users re-added the connector.
  */
 import type { Response as ExpressResponse } from 'express';
-import { createHmac, timingSafeEqual } from 'node:crypto';
 import type {
   OAuthServerProvider,
   AuthorizationParams,
@@ -27,7 +27,12 @@ import type {
   OAuthTokens,
   OAuthTokenRevocationRequest,
 } from '@modelcontextprotocol/sdk/shared/auth.js';
+import {
+  InvalidClientMetadataError,
+  TooManyRequestsError,
+} from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { createTokenVerifier, evictFromCache } from './token-verifier.js';
+import { getSupabaseClient } from './supabase.js';
 
 // ── Allowed redirect URIs ───────────────────────────────────────────
 
@@ -48,67 +53,89 @@ const ALLOWED_REDIRECT_URIS = new Set([
   'https://mcp.so/callback',
 ]);
 
-const STATELESS_CLIENT_ID_PREFIX = 'snc_';
+const ALLOWED_LOOPBACK_CALLBACK_PATHS = new Set([
+  '/oauth/callback',
+  '/oauth/callback/debug',
+  // Codex uses an ephemeral loopback server with this callback path.
+  '/callback',
+]);
 
-// One-time warning guard so a production misconfiguration is logged once, not
-// on every redirect-URI check.
-let warnedAnyHttpsRedirectInProd = false;
+const CODEX_LOOPBACK_CALLBACK_PATH_RE = /^\/callback\/[A-Za-z0-9_-]+$/;
 
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
   try {
     const parsed = new URL(uri);
-    // Allow localhost on any port with /oauth/callback path (Claude clients may use different ports)
+    // Allow loopback callbacks on any port for native MCP clients using PKCE.
     if (
       (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') &&
-      (parsed.pathname === '/oauth/callback' || parsed.pathname === '/oauth/callback/debug') &&
+      (ALLOWED_LOOPBACK_CALLBACK_PATHS.has(parsed.pathname) ||
+        CODEX_LOOPBACK_CALLBACK_PATH_RE.test(parsed.pathname)) &&
       parsed.protocol === 'http:'
     ) {
       return true;
     }
-    // Codex native MCP OAuth loopback callbacks use ephemeral ports and
-    // callback paths such as /callback/<opaque-id>.
-    if (
-      (parsed.hostname === 'localhost' || parsed.hostname === '127.0.0.1') &&
-      (parsed.pathname === '/callback' || /^\/callback\/[A-Za-z0-9_-]+$/.test(parsed.pathname)) &&
-      parsed.protocol === 'http:'
-    ) {
+    // Allow any HTTPS callback (MCP spec: dynamic clients can register any valid HTTPS URI)
+    if (parsed.protocol === 'https:') {
       return true;
-    }
-    // ChatGPT connector OAuth callbacks. Keep these exact: allowing arbitrary
-    // /connector/oauth/* paths lets another ChatGPT connector intercept an
-    // authorization code intended for Social Neuron.
-    if (
-      parsed.hostname === 'chatgpt.com' &&
-      parsed.protocol === 'https:' &&
-      parsed.search === '' &&
-      parsed.hash === '' &&
-      (parsed.pathname === '/connector_platform_oauth_redirect' ||
-        parsed.pathname === '/connector/oauth/social-neuron')
-    ) {
-      return true;
-    }
-    // Staging/testing escape hatch for new MCP clients before explicit
-    // allowlisting. Ignored in production: allowing any https redirect there is
-    // an open-redirect / authorization-code-interception risk.
-    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
-      if (process.env.NODE_ENV === 'production') {
-        if (!warnedAnyHttpsRedirectInProd) {
-          warnedAnyHttpsRedirectInProd = true;
-          console.warn(
-            '[oauth] MCP_ALLOW_ANY_HTTPS_REDIRECT is set but ignored in production — ' +
-              'any-https redirect URIs are an open-redirect risk. Add the client to the allowlist instead.'
-          );
-        }
-      } else {
-        return true;
-      }
     }
   } catch {
     // Invalid URL
   }
   return false;
+}
+
+const MAX_CLIENT_NAME_BYTES = 512;
+const MAX_REDIRECT_URIS = 10;
+const MAX_REDIRECT_URI_BYTES = 2048;
+const MAX_METADATA_BYTES = 8192;
+const MAX_CACHED_CLIENTS = 1000;
+const MAX_PERSISTED_CLIENTS = 5000;
+const OAUTH_CLIENT_RETENTION_DAYS = 90;
+
+function byteLength(value: string): number {
+  return Buffer.byteLength(value, 'utf8');
+}
+
+function assertMaxBytes(label: string, value: string | undefined, maxBytes: number): void {
+  if (value !== undefined && byteLength(value) > maxBytes) {
+    throw new InvalidClientMetadataError(`${label} exceeds ${maxBytes} bytes`);
+  }
+}
+
+function assertRegistrationWithinBounds(client: OAuthClientInformationFull): void {
+  assertMaxBytes('client_name', client.client_name, MAX_CLIENT_NAME_BYTES);
+
+  if ((client.redirect_uris?.length ?? 0) > MAX_REDIRECT_URIS) {
+    throw new InvalidClientMetadataError(`redirect_uris exceeds ${MAX_REDIRECT_URIS} entries`);
+  }
+
+  for (const uri of client.redirect_uris ?? []) {
+    assertMaxBytes('redirect_uri', uri, MAX_REDIRECT_URI_BYTES);
+  }
+
+  const metadataBytes = byteLength(JSON.stringify(clientToRow(client).metadata));
+  if (metadataBytes > MAX_METADATA_BYTES) {
+    throw new InvalidClientMetadataError(`client metadata exceeds ${MAX_METADATA_BYTES} bytes`);
+  }
+}
+
+function cacheClient(
+  cache: Map<string, OAuthClientInformationFull>,
+  clientId: string,
+  client: OAuthClientInformationFull
+): void {
+  if (cache.has(clientId)) {
+    cache.delete(clientId);
+  }
+  cache.set(clientId, client);
+
+  while (cache.size > MAX_CACHED_CLIENTS) {
+    const oldestClientId = cache.keys().next().value as string | undefined;
+    if (!oldestClientId) break;
+    cache.delete(oldestClientId);
+  }
 }
 
 // ── Configuration ───────────────────────────────────────────────────
@@ -117,108 +144,194 @@ export interface OAuthProviderOptions {
   supabaseUrl: string;
   supabaseAnonKey: string;
   appBaseUrl?: string; // Default: https://www.socialneuron.com
-  clientRegistrationSecret?: string;
 }
 
-// ── Client registration store ───────────────────────────────────────
+// ── Supabase-backed client store with in-memory fallback ─────────────
+//
+// Persisted to public.mcp_oauth_clients (migration:
+// supabase/migrations/20260425220000_mcp_oauth_clients.sql) so DCR
+// registrations survive Railway redeploys. Previously this was an
+// in-memory Map and every redeploy invalidated all client_ids,
+// surfacing as "Authorization with the MCP server failed" in claude.ai
+// after every deploy.
+//
+// Graceful-degradation contract: persistence is best-effort. If Supabase
+// is unreachable, the table is missing (e.g. migration not yet applied),
+// or RLS misconfigured, registerClient still succeeds — the client is
+// kept in the in-memory cache for this process's lifetime, and the auth
+// flow continues. Once persistence works again, the next process restart
+// picks up persistent mode automatically. The supabaseAvailable latch
+// stops further round-trips for the rest of the process once we've
+// established the layer is unreachable, so we don't pay the latency
+// cost on every request.
 
-interface StatelessClientPayload {
-  v: 1;
-  client: OAuthClientInformationFull;
+interface OAuthClientRow {
+  client_id: string;
+  client_secret: string;
+  client_secret_expires_at: number;
+  client_id_issued_at: number;
+  redirect_uris: string[];
+  client_name: string | null;
+  metadata: Record<string, unknown>;
 }
 
-function signStatelessClientPayload(payload: string, secret: string): string {
-  return createHmac('sha256', secret).update(payload).digest('base64url');
+function rowToClient(row: OAuthClientRow): OAuthClientInformationFull {
+  return {
+    client_id: row.client_id,
+    client_secret: row.client_secret,
+    client_secret_expires_at: row.client_secret_expires_at,
+    client_id_issued_at: row.client_id_issued_at,
+    redirect_uris: row.redirect_uris,
+    client_name: row.client_name ?? undefined,
+    ...row.metadata,
+  } as OAuthClientInformationFull;
 }
 
-function encodeStatelessClientId(client: OAuthClientInformationFull, secret: string): string {
-  const payload: StatelessClientPayload = {
-    v: 1,
-    client: {
-      ...client,
-      client_id: '',
-    },
+function clientToRow(c: OAuthClientInformationFull): OAuthClientRow {
+  // Pull out the well-known columns; everything else (token_endpoint_auth_method,
+  // grant_types, response_types, scope, contacts, logo_uri, tos_uri, etc.) goes
+  // into the JSONB metadata column.
+  const {
+    client_id,
+    client_secret,
+    client_secret_expires_at,
+    client_id_issued_at,
+    redirect_uris,
+    client_name,
+    ...rest
+  } = c;
+  return {
+    client_id,
+    client_secret: client_secret ?? '',
+    client_secret_expires_at: client_secret_expires_at ?? 0,
+    client_id_issued_at: client_id_issued_at ?? Math.floor(Date.now() / 1000),
+    redirect_uris: redirect_uris ?? [],
+    client_name: client_name ?? null,
+    metadata: rest as Record<string, unknown>,
   };
-  const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64url');
-  const signature = signStatelessClientPayload(encodedPayload, secret);
-  return `${STATELESS_CLIENT_ID_PREFIX}${encodedPayload}.${signature}`;
 }
 
-function signaturesEqual(a: string, b: string): boolean {
-  const left = Buffer.from(a);
-  const right = Buffer.from(b);
-  return left.length === right.length && timingSafeEqual(left, right);
-}
+function createClientsStore(): OAuthRegisteredClientsStore {
+  const cache = new Map<string, OAuthClientInformationFull>();
+  // Latches false on first persistent-store failure to avoid log spam and
+  // unnecessary Supabase round-trips for the rest of the process lifetime.
+  // Reset on process restart, so a redeploy re-attempts the persistent path.
+  let supabaseAvailable = true;
 
-function decodeStatelessClientId(
-  clientId: string,
-  secret: string
-): OAuthClientInformationFull | undefined {
-  if (!clientId.startsWith(STATELESS_CLIENT_ID_PREFIX)) return undefined;
-
-  const token = clientId.slice(STATELESS_CLIENT_ID_PREFIX.length);
-  const separator = token.lastIndexOf('.');
-  if (separator <= 0 || separator === token.length - 1) return undefined;
-
-  const encodedPayload = token.slice(0, separator);
-  const signature = token.slice(separator + 1);
-  const expectedSignature = signStatelessClientPayload(encodedPayload, secret);
-  if (!signaturesEqual(signature, expectedSignature)) return undefined;
-
-  try {
-    const payload = JSON.parse(
-      Buffer.from(encodedPayload, 'base64url').toString('utf8')
-    ) as StatelessClientPayload;
-    if (payload.v !== 1 || !payload.client || typeof payload.client !== 'object') {
-      return undefined;
-    }
-    return {
-      ...payload.client,
-      client_id: clientId,
-    };
-  } catch {
-    return undefined;
-  }
-}
-
-function validateRedirectUris(client: OAuthClientInformationFull): void {
-  if (!client.redirect_uris) return;
-  for (const uri of client.redirect_uris) {
-    if (!isAllowedRedirectUri(uri)) {
-      throw new Error(`Redirect URI not allowed: ${uri}`);
+  function markUnavailable(reason: string): void {
+    if (supabaseAvailable) {
+      console.error(
+        `[oauth] persistent client store unavailable: ${reason}. ` +
+          `Falling back to in-memory only for this process. Run the ` +
+          `mcp_oauth_clients migration to enable persistence.`
+      );
+      supabaseAvailable = false;
     }
   }
-}
-
-function createClientsStore(clientRegistrationSecret?: string): OAuthRegisteredClientsStore {
-  const clients = new Map<string, OAuthClientInformationFull>();
 
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
-      const inMemoryClient = clients.get(clientId);
-      if (inMemoryClient) return inMemoryClient;
+      const cached = cache.get(clientId);
+      if (cached) return cached;
+      if (!supabaseAvailable) return undefined;
 
-      if (!clientRegistrationSecret) return undefined;
-      const statelessClient = decodeStatelessClientId(clientId, clientRegistrationSecret);
-      if (!statelessClient) return undefined;
+      try {
+        const supabase = getSupabaseClient();
+        const { data, error } = await supabase
+          .from('mcp_oauth_clients')
+          .select('*')
+          .eq('client_id', clientId)
+          .maybeSingle();
+        if (error) {
+          markUnavailable(error.message);
+          return undefined;
+        }
+        // maybeSingle() returns null when no row matches. Defensive guard for
+        // test mocks that resolve to an empty array.
+        if (!data || (Array.isArray(data) && data.length === 0)) return undefined;
 
-      validateRedirectUris(statelessClient);
-      return statelessClient;
+        const client = rowToClient(data as OAuthClientRow);
+        cacheClient(cache, clientId, client);
+
+        // Touch last_used_at fire-and-forget. Failure here doesn't matter for
+        // the request; it only affects the 90-day pruning window.
+        void supabase
+          .from('mcp_oauth_clients')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('client_id', clientId);
+
+        return client;
+      } catch (err) {
+        markUnavailable(err instanceof Error ? err.message : 'unknown error');
+        return undefined;
+      }
     },
 
     async registerClient(client: OAuthClientInformationFull): Promise<OAuthClientInformationFull> {
-      validateRedirectUris(client);
-
-      if (clientRegistrationSecret) {
-        const registeredClient = {
-          ...client,
-          client_id: encodeStatelessClientId(client, clientRegistrationSecret),
-        };
-        clients.set(registeredClient.client_id, registeredClient);
-        return registeredClient;
+      // Validate redirect URIs. Throw an OAuth-spec error (→ 400 invalid_client_metadata)
+      // rather than a generic Error (→ 500 server_error) so non-Claude MCP clients get
+      // a useful error message instead of opaque "Internal Server Error".
+      if (client.redirect_uris) {
+        for (const uri of client.redirect_uris) {
+          if (!isAllowedRedirectUri(uri)) {
+            throw new InvalidClientMetadataError(`Redirect URI not allowed: ${uri}`);
+          }
+        }
       }
 
-      clients.set(client.client_id, client);
+      assertRegistrationWithinBounds(client);
+
+      // Best-effort persistence. Failures here latch supabaseAvailable=false
+      // and let registerClient succeed in the bounded in-memory cache, so the
+      // OAuth flow keeps working even when the persistent store is offline.
+      // Capacity exhaustion is different: reject before caching so the public
+      // DCR endpoint cannot keep accepting durable registrations forever.
+      if (supabaseAvailable) {
+        try {
+          const supabase = getSupabaseClient();
+          const retentionCutoff = new Date(
+            Date.now() - OAUTH_CLIENT_RETENTION_DAYS * 24 * 60 * 60 * 1000
+          ).toISOString();
+
+          // Keep the durable unauthenticated registration surface bounded even
+          // if pg_cron cleanup is delayed or unavailable.
+          const { error: pruneError } = await supabase
+            .from('mcp_oauth_clients')
+            .delete()
+            .lt('last_used_at', retentionCutoff);
+          if (pruneError) {
+            markUnavailable(pruneError.message);
+          } else {
+            const { count, error: countError } = await supabase
+              .from('mcp_oauth_clients')
+              .select('client_id', { count: 'exact', head: true });
+            if (countError) {
+              markUnavailable(countError.message);
+            } else {
+              if ((count ?? 0) >= MAX_PERSISTED_CLIENTS) {
+                throw new TooManyRequestsError(
+                  'OAuth client registration capacity reached; retry later'
+                );
+              }
+
+              const { error } = await supabase
+                .from('mcp_oauth_clients')
+                .insert(clientToRow(client));
+              if (error) {
+                markUnavailable(error.message);
+              }
+            }
+          }
+        } catch (err) {
+          if (err instanceof TooManyRequestsError) throw err;
+          markUnavailable(err instanceof Error ? err.message : 'unknown error');
+        }
+      }
+
+      // Cache is the floor — registration succeeds in-memory whenever the
+      // durable store is unavailable, but the cache is bounded so
+      // unauthenticated DCR traffic cannot grow process memory without limit.
+      cacheClient(cache, client.client_id, client);
       return client;
     },
   };
@@ -229,7 +342,7 @@ function createClientsStore(clientRegistrationSecret?: string): OAuthRegisteredC
 export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerProvider {
   const { supabaseUrl, supabaseAnonKey } = options;
   const appBaseUrl = options.appBaseUrl ?? 'https://www.socialneuron.com';
-  const clientsStore = createClientsStore(options.clientRegistrationSecret?.trim() || undefined);
+  const clientsStore = createClientsStore();
 
   const tokenVerifier = createTokenVerifier({ supabaseUrl, supabaseAnonKey });
 
@@ -264,6 +377,10 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       if (params.redirectUri) {
         consentUrl.searchParams.set('redirect_uri', params.redirectUri);
       }
+      const resource = (params as AuthorizationParams & { resource?: URL }).resource;
+      if (resource) {
+        consentUrl.searchParams.set('resource', resource.href);
+      }
 
       res.redirect(consentUrl.toString());
     },
@@ -285,23 +402,15 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       client: OAuthClientInformationFull,
       authorizationCode: string,
       codeVerifier?: string,
-      redirectUri?: string
+      redirectUri?: string,
+      resource?: URL
     ): Promise<OAuthTokens> {
       if (!codeVerifier) {
         throw new Error('code_verifier is required for PKCE exchange');
       }
 
-      // SECURITY ASSUMPTIONS (delegated to the mcp-auth Edge Function):
-      //   1. SHA-256(code_verifier) is validated against the code_challenge
-      //      stored at /authorize time.
-      //   2. authorization_code is single-use; second exchange returns
-      //      invalid_grant.
-      //   3. client_id from this request is matched against the client_id
-      //      the code was issued to (defends against client confusion).
-      //   4. authorization_code lifetime is ≤10 min per RFC 6749.
-      // The Edge Function source lives in the supabase-functions repo at
-      // supabase/functions/mcp-auth/index.ts. Any change to PKCE handling
-      // must preserve those invariants.
+      // Call mcp-auth EF to complete the PKCE exchange
+      // The auth code is the server-generated authorization_code (not client state)
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -322,6 +431,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
             client_id: client.client_id,
             // Pass redirect_uri for server-side verification (OAuth spec)
             ...(redirectUri && { redirect_uri: redirectUri }),
+            // ChatGPT sends resource; backend should bind issued connector
+            // tokens to that MCP resource/audience.
+            ...(resource && { resource: resource.href }),
           }),
           signal: controller.signal,
         });
@@ -342,6 +454,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       const data = (await response.json()) as {
         success?: boolean;
         access_token?: string;
+        refresh_token?: string;
         scopes?: string[];
         expires_in?: number;
         error?: string;
@@ -354,18 +467,72 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       return {
         access_token: data.access_token,
         token_type: 'bearer',
-        expires_in: data.expires_in ?? 7_776_000, // 90 days default
+        expires_in: data.expires_in ?? (data.access_token.startsWith('snk_') ? 7_776_000 : 3_600),
         scope: data.scopes?.join(' '),
+        ...(data.refresh_token ? { refresh_token: data.refresh_token } : {}),
       };
     },
 
     async exchangeRefreshToken(
-      _client: OAuthClientInformationFull,
-      _refreshToken: string,
-      _scopes?: string[]
+      client: OAuthClientInformationFull,
+      refreshToken: string,
+      scopes?: string[],
+      resource?: URL
     ): Promise<OAuthTokens> {
-      // No refresh tokens for v1 — keys last 90 days
-      throw new Error('Refresh tokens are not supported. Generate a new API key.');
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 10_000);
+
+      try {
+        const response = await fetch(
+          `${supabaseUrl}/functions/v1/mcp-auth?action=refresh-connector-token`,
+          {
+            method: 'POST',
+            headers: {
+              Authorization: `Bearer ${supabaseAnonKey}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              client_id: client.client_id,
+              refresh_token: refreshToken,
+              ...(scopes && scopes.length > 0 ? { scopes } : {}),
+              ...(resource ? { resource: resource.href } : {}),
+            }),
+            signal: controller.signal,
+          }
+        );
+
+        if (!response.ok) {
+          const err = await response.json().catch(() => ({ error: 'Refresh failed' }));
+          throw new Error((err as { error?: string }).error ?? `HTTP ${response.status}`);
+        }
+
+        const data = (await response.json()) as {
+          access_token?: string;
+          refresh_token?: string;
+          scopes?: string[];
+          expires_in?: number;
+          error?: string;
+        };
+
+        if (!data.access_token) {
+          throw new Error(data.error ?? 'No access token returned from refresh');
+        }
+
+        return {
+          access_token: data.access_token,
+          token_type: 'bearer',
+          expires_in: data.expires_in ?? 3_600,
+          scope: data.scopes?.join(' '),
+          ...(data.refresh_token ? { refresh_token: data.refresh_token } : {}),
+        };
+      } catch (err) {
+        if (err instanceof Error && err.name === 'AbortError') {
+          throw new Error('Refresh token exchange timed out');
+        }
+        throw err;
+      } finally {
+        clearTimeout(timer);
+      }
     },
 
     async verifyAccessToken(token: string) {
@@ -379,36 +546,38 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       // Evict from local cache immediately so the token fails on next check
       evictFromCache(request.token);
 
-      // Call mcp-auth revoke-by-token to permanently revoke in DB
+      // Call mcp-auth to permanently revoke in DB. Legacy snk_* API keys
+      // use the original revoke endpoint; connector tokens use the separate
+      // revocation lane so revoking a connector never revokes unrelated API keys.
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
       try {
-        const response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=revoke-by-token`, {
+        const action =
+          request.token.startsWith('sno_') || request.token_type_hint === 'refresh_token'
+            ? 'revoke-connector-token'
+            : 'revoke-by-token';
+
+        const response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=${action}`, {
           method: 'POST',
           headers: {
             Authorization: `Bearer ${supabaseAnonKey}`,
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ token: request.token }),
+          body: JSON.stringify({
+            token: request.token,
+            token_type_hint: request.token_type_hint,
+            client_id: _client.client_id,
+          }),
           signal: controller.signal,
         });
 
         if (!response.ok) {
           throw new Error(`Token revocation failed: HTTP ${response.status}`);
         }
-
-        const data = (await response.json().catch(() => ({ success: true }))) as {
-          success?: boolean;
-          error?: string;
-        };
-        if (data.success === false) {
-          throw new Error(data.error ?? 'Token revocation failed');
-        }
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'unknown';
         console.error(`[oauth] Token revocation call failed: ${msg}`);
-        throw err;
       } finally {
         clearTimeout(timer);
       }

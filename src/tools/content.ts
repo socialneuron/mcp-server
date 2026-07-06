@@ -2,9 +2,8 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getSupabaseClient, getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getSupabaseClient, getDefaultUserId } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
-import { requestContext } from '../lib/request-context.js';
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
@@ -12,6 +11,14 @@ import type {
   ResponseEnvelope,
 } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
+
+import {
+  addAssetsGenerated,
+  addCreditsUsed,
+  checkAssetBudget,
+  checkCreditBudget,
+  getCurrentBudgetStatus,
+} from '../lib/budget.js';
 
 interface AsyncJob {
   id: string;
@@ -22,70 +29,12 @@ interface AsyncJob {
   result_url: string | null;
   error_message: string | null;
   credits_cost: number | null;
-  credits_reserved?: number | null;
-  credits_charged?: number | null;
-  credits_refunded?: number | null;
-  billing_status?: string | null;
-  failure_reason?: string | null;
   created_at: string;
   completed_at: string | null;
   result_metadata?: {
     all_urls?: string[];
     [key: string]: unknown;
   } | null;
-}
-
-const MAX_CREDITS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN || 0));
-const MAX_ASSETS_PER_RUN = Math.max(0, Number(process.env.SOCIALNEURON_MAX_ASSETS_PER_RUN || 0));
-
-// Stdio-mode globals (single-user process — one budget per process lifetime)
-let _globalCreditsUsed = 0;
-let _globalAssetsGenerated = 0;
-
-// Budget accessors: use per-request context in HTTP mode, globals in stdio mode
-function getCreditsUsed(): number {
-  const ctx = requestContext.getStore();
-  return ctx ? ctx.creditsUsed : _globalCreditsUsed;
-}
-function addCreditsUsed(amount: number): void {
-  const ctx = requestContext.getStore();
-  if (ctx) {
-    ctx.creditsUsed += amount;
-  } else {
-    _globalCreditsUsed += amount;
-  }
-}
-function getAssetsGenerated(): number {
-  const ctx = requestContext.getStore();
-  return ctx ? ctx.assetsGenerated : _globalAssetsGenerated;
-}
-function addAssetsGenerated(count: number): void {
-  const ctx = requestContext.getStore();
-  if (ctx) {
-    ctx.assetsGenerated += count;
-  } else {
-    _globalAssetsGenerated += count;
-  }
-}
-
-export function getCurrentBudgetStatus(): {
-  creditsUsedThisRun: number;
-  maxCreditsPerRun: number;
-  remaining: number | null;
-  assetsGeneratedThisRun: number;
-  maxAssetsPerRun: number;
-  remainingAssets: number | null;
-} {
-  const creditsUsed = getCreditsUsed();
-  const assetsGen = getAssetsGenerated();
-  return {
-    creditsUsedThisRun: creditsUsed,
-    maxCreditsPerRun: MAX_CREDITS_PER_RUN,
-    remaining: MAX_CREDITS_PER_RUN > 0 ? Math.max(0, MAX_CREDITS_PER_RUN - creditsUsed) : null,
-    assetsGeneratedThisRun: assetsGen,
-    maxAssetsPerRun: MAX_ASSETS_PER_RUN,
-    remainingAssets: MAX_ASSETS_PER_RUN > 0 ? Math.max(0, MAX_ASSETS_PER_RUN - assetsGen) : null,
-  };
 }
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -96,89 +45,6 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
     },
     data,
   };
-}
-
-function optionalNumber(value: unknown): number | null {
-  return typeof value === 'number' && Number.isFinite(value) ? value : null;
-}
-
-function optionalString(value: unknown): string | null {
-  return typeof value === 'string' && value.length > 0 ? value : null;
-}
-
-function firstNumber(...values: unknown[]): number | null {
-  for (const value of values) {
-    const parsed = optionalNumber(value);
-    if (parsed !== null) return parsed;
-  }
-  return null;
-}
-
-function firstString(...values: unknown[]): string | null {
-  for (const value of values) {
-    const parsed = optionalString(value);
-    if (parsed !== null) return parsed;
-  }
-  return null;
-}
-
-function getJobBillingSummary(job: AsyncJob): {
-  billing_status: string | null;
-  credits_reserved: number | null;
-  credits_charged: number | null;
-  credits_refunded: number | null;
-  failure_reason: string | null;
-  reported: boolean;
-} {
-  const meta = job.result_metadata ?? {};
-  const billing_status = firstString(
-    job.billing_status,
-    meta.billing_status,
-    meta.billingStatus
-  );
-  const credits_reserved = firstNumber(
-    job.credits_reserved,
-    meta.credits_reserved,
-    meta.creditsReserved
-  );
-  const credits_charged = firstNumber(job.credits_charged, meta.credits_charged, meta.creditsCharged);
-  const credits_refunded = firstNumber(
-    job.credits_refunded,
-    meta.credits_refunded,
-    meta.creditsRefunded
-  );
-  const failure_reason = firstString(job.failure_reason, meta.failure_reason, meta.failureReason);
-
-  return {
-    billing_status,
-    credits_reserved,
-    credits_charged,
-    credits_refunded,
-    failure_reason,
-    reported:
-      billing_status !== null ||
-      credits_reserved !== null ||
-      credits_charged !== null ||
-      credits_refunded !== null ||
-      failure_reason !== null,
-  };
-}
-
-function formatBillingSummary(job: AsyncJob): string | null {
-  const billing = getJobBillingSummary(job);
-  if (!billing.reported) {
-    return job.status === 'failed' ? 'Billing status: not reported by backend' : null;
-  }
-
-  const parts = [
-    billing.billing_status ? `status=${billing.billing_status}` : null,
-    billing.credits_reserved !== null ? `reserved=${billing.credits_reserved}` : null,
-    billing.credits_charged !== null ? `charged=${billing.credits_charged}` : null,
-    billing.credits_refunded !== null ? `refunded=${billing.credits_refunded}` : null,
-    billing.failure_reason ? `failure_reason=${billing.failure_reason}` : null,
-  ].filter(Boolean);
-
-  return `Billing: ${parts.join(', ')}`;
 }
 
 // PRC-003/PRC-009 fix: Synced with constants/pricing.ts (40% margin on premium video models)
@@ -201,41 +67,9 @@ const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
   'flux-max': 50,
   'gpt4o-image': 40,
   imagen4: 35,
-  'imagen4-fast': 25,
+  'imagen4-fast': 35,
   seedream: 20,
 };
-
-function checkCreditBudget(estimatedCost: number): { ok: true } | { ok: false; message: string } {
-  if (MAX_CREDITS_PER_RUN <= 0) {
-    return { ok: true };
-  }
-  const used = getCreditsUsed();
-  if (used + estimatedCost > MAX_CREDITS_PER_RUN) {
-    return {
-      ok: false,
-      message:
-        `Credit budget exceeded for this MCP run. ` +
-        `Used=${used}, next~=${estimatedCost}, limit=${MAX_CREDITS_PER_RUN}.`,
-    };
-  }
-  return { ok: true };
-}
-
-function checkAssetBudget(): { ok: true } | { ok: false; message: string } {
-  if (MAX_ASSETS_PER_RUN <= 0) {
-    return { ok: true };
-  }
-  const generated = getAssetsGenerated();
-  if (generated + 1 > MAX_ASSETS_PER_RUN) {
-    return {
-      ok: false,
-      message:
-        `Asset budget exceeded for this MCP run. ` +
-        `Generated=${generated}, next=1, limit=${MAX_ASSETS_PER_RUN}.`,
-    };
-  }
-  return { ok: true };
-}
 
 export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -311,20 +145,9 @@ export function registerContentTools(server: McpServer): void {
       response_format,
     }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
       if (!assetBudget.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: {
-            error: assetBudget.message,
-            assetsGenerated: getAssetsGenerated(),
-            MAX_ASSETS_PER_RUN,
-          },
-        });
         return {
           content: [{ type: 'text' as const, text: assetBudget.message }],
           isError: true,
@@ -333,17 +156,6 @@ export function registerContentTools(server: McpServer): void {
       const estimatedCost = VIDEO_CREDIT_ESTIMATES[model] ?? 120;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: {
-            error: budgetCheck.message,
-            estimatedCost,
-            creditsUsed: getCreditsUsed(),
-            MAX_CREDITS_PER_RUN,
-          },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
@@ -351,12 +163,6 @@ export function registerContentTools(server: McpServer): void {
       }
       const rateLimit = checkRateLimit('posting', `generate_video:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'generate_video',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -383,12 +189,6 @@ export function registerContentTools(server: McpServer): void {
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'generate_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [
             {
@@ -401,12 +201,6 @@ export function registerContentTools(server: McpServer): void {
       }
 
       if (!data?.taskId && !data?.asyncJobId) {
-        await logMcpToolInvocation({
-          toolName: 'generate_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No job ID returned' },
-        });
         return {
           content: [
             {
@@ -424,20 +218,6 @@ export function registerContentTools(server: McpServer): void {
       addCreditsUsed(Number.isFinite(charged) ? charged : estimatedCost);
       addAssetsGenerated(1);
 
-      await logMcpToolInvocation({
-        toolName: 'generate_video',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          model,
-          jobId,
-          creditsDeducted: data.creditsDeducted,
-          creditsUsed: getCreditsUsed(),
-          MAX_CREDITS_PER_RUN,
-          assetsGenerated: getAssetsGenerated(),
-          MAX_ASSETS_PER_RUN,
-        },
-      });
       if (format === 'json') {
         return {
           content: [
@@ -527,20 +307,9 @@ export function registerContentTools(server: McpServer): void {
     },
     async ({ prompt, model, aspect_ratio, image_url, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
       if (!assetBudget.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_image',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: {
-            error: assetBudget.message,
-            assetsGenerated: getAssetsGenerated(),
-            MAX_ASSETS_PER_RUN,
-          },
-        });
         return {
           content: [{ type: 'text' as const, text: assetBudget.message }],
           isError: true,
@@ -549,17 +318,6 @@ export function registerContentTools(server: McpServer): void {
       const estimatedCost = IMAGE_CREDIT_ESTIMATES[model] ?? 30;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_image',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: {
-            error: budgetCheck.message,
-            estimatedCost,
-            creditsUsed: getCreditsUsed(),
-            MAX_CREDITS_PER_RUN,
-          },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
@@ -567,12 +325,6 @@ export function registerContentTools(server: McpServer): void {
       }
       const rateLimit = checkRateLimit('posting', `generate_image:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'generate_image',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -596,12 +348,6 @@ export function registerContentTools(server: McpServer): void {
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'generate_image',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [
             {
@@ -614,12 +360,6 @@ export function registerContentTools(server: McpServer): void {
       }
 
       if (!data?.taskId && !data?.asyncJobId) {
-        await logMcpToolInvocation({
-          toolName: 'generate_image',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No job ID returned' },
-        });
         return {
           content: [
             {
@@ -635,20 +375,6 @@ export function registerContentTools(server: McpServer): void {
       addCreditsUsed(estimatedCost);
       addAssetsGenerated(1);
 
-      await logMcpToolInvocation({
-        toolName: 'generate_image',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          model,
-          jobId,
-          estimatedCost,
-          creditsUsed: getCreditsUsed(),
-          MAX_CREDITS_PER_RUN,
-          assetsGenerated: getAssetsGenerated(),
-          MAX_ASSETS_PER_RUN,
-        },
-      });
       if (format === 'json') {
         return {
           content: [
@@ -705,14 +431,7 @@ export function registerContentTools(server: McpServer): void {
     },
     async ({ job_id, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       if (!/^[a-zA-Z0-9_.:-]{1,160}$/.test(job_id)) {
-        await logMcpToolInvocation({
-          toolName: 'check_status',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Invalid job_id format' },
-        });
         return {
           content: [
             {
@@ -736,12 +455,6 @@ export function registerContentTools(server: McpServer): void {
       // Distinguish "not found" (expected) from real errors (network, auth, etc.)
       const isNotFoundError = jobLookupError && /not found/i.test(jobLookupError);
       if (jobLookupError && !isNotFoundError) {
-        await logMcpToolInvocation({
-          toolName: 'check_status',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: jobLookupError },
-        });
         return {
           content: [
             {
@@ -754,12 +467,6 @@ export function registerContentTools(server: McpServer): void {
       }
 
       if (!job) {
-        await logMcpToolInvocation({
-          toolName: 'check_status',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No job found', jobId: job_id },
-        });
         return {
           content: [
             {
@@ -795,12 +502,6 @@ export function registerContentTools(server: McpServer): void {
           lines.push(`Credits: ${job.credits_cost}`);
           lines.push(`Created: ${job.created_at}`);
 
-          await logMcpToolInvocation({
-            toolName: 'check_status',
-            status: 'success',
-            durationMs: Date.now() - startedAt,
-            details: { status: liveStatus.status, jobId: job.id },
-          });
           if (format === 'json') {
             return {
               content: [
@@ -861,26 +562,17 @@ export function registerContentTools(server: McpServer): void {
         lines.push(`Error: ${job.error_message}`);
       }
       lines.push(`Credits: ${job.credits_cost}`);
-      const billingLine = formatBillingSummary(job);
-      if (billingLine) lines.push(billingLine);
       lines.push(`Created: ${job.created_at}`);
       if (job.completed_at) {
         lines.push(`Completed: ${job.completed_at}`);
       }
 
-      await logMcpToolInvocation({
-        toolName: 'check_status',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { status: job.status, jobId: job.id },
-      });
       if (format === 'json') {
         // Include r2_key and all_urls in JSON envelope
         const enriched = {
           ...job,
           r2_key: job.result_url && !job.result_url.startsWith('http') ? job.result_url : null,
           all_urls: allUrls ?? null,
-          billing: getJobBillingSummary(job),
         };
         return {
           content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(enriched), null, 2) }],
@@ -953,7 +645,6 @@ export function registerContentTools(server: McpServer): void {
       response_format,
     }) => {
       const format = response_format ?? 'json';
-      const startedAt = Date.now();
 
       const isShortForm = ['tiktok', 'instagram-reels', 'youtube-shorts'].includes(platform);
       const duration = target_duration ?? (isShortForm ? 30 : 60);
@@ -1022,12 +713,6 @@ Return ONLY valid JSON in this exact format:
       const estimatedCost = 10;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'create_storyboard',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: budgetCheck.message },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
@@ -1046,12 +731,6 @@ Return ONLY valid JSON in this exact format:
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'create_storyboard',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Storyboard generation failed: ${error}` }],
           isError: true,
@@ -1060,13 +739,6 @@ Return ONLY valid JSON in this exact format:
 
       const rawContent = data?.content ?? '';
       addCreditsUsed(estimatedCost);
-
-      await logMcpToolInvocation({
-        toolName: 'create_storyboard',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: { platform, scenes, duration, creditsUsed: getCreditsUsed() },
-      });
 
       if (format === 'json') {
         // Try to parse and re-serialize for clean JSON
@@ -1108,23 +780,14 @@ Return ONLY valid JSON in this exact format:
     {
       text: z.string().max(5000).describe('The script/text to convert to speech.'),
       voice: z
-        .enum([
-          'rachel',
-          'drew',
-          'clyde',
-          'paul',
-          'domi',
-          'dave',
-          'fin',
-          'sarah',
-          'antoni',
-          'thomas',
-          'charlie',
-        ])
+        // Only voices with an in-repo verified ElevenLabs ID are offered. The other
+        // 9 enum names previously shipped had NO backing ID anywhere, so every call
+        // 100%-failed at the EF's `voiceId is required` gate. Add a name here only
+        // once its ID is verified against the live ElevenLabs library.
+        .enum(['rachel', 'domi'])
         .optional()
         .describe(
-          'Voice selection. rachel=warm female, drew=confident male, ' +
-            'paul=authoritative male, sarah=friendly female. Defaults to rachel.'
+          'Voice selection. rachel=warm female, domi=confident female. Defaults to rachel.'
         ),
       speed: z
         .number()
@@ -1139,18 +802,11 @@ Return ONLY valid JSON in this exact format:
     },
     async ({ text, voice, speed, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
 
       const estimatedCost = 15;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_voiceover',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: budgetCheck.message },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
@@ -1159,12 +815,6 @@ Return ONLY valid JSON in this exact format:
 
       const rateLimit = checkRateLimit('posting', `generate_voiceover:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'generate_voiceover',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -1176,6 +826,12 @@ Return ONLY valid JSON in this exact format:
         };
       }
 
+      // Mirror of services/blog/voiceoverService.ts (canonical) — mcp-server can't
+      // import services/. The EF requires `voiceId`, not the friendly `voice` name.
+      const ELEVENLABS_VOICE_IDS: Record<string, string> = {
+        rachel: '21m00Tcm4TlvDq8ikWAM',
+        domi: 'AZnzlk1XvdvUeBnXmlld',
+      };
       const { data, error } = await callEdgeFunction<{
         audioUrl: string;
         durationSeconds?: number;
@@ -1183,19 +839,13 @@ Return ONLY valid JSON in this exact format:
         'elevenlabs-tts',
         {
           text,
-          voice: voice ?? 'rachel',
+          voiceId: ELEVENLABS_VOICE_IDS[voice ?? 'rachel'],
           speed: speed ?? 1.0,
         },
         { timeoutMs: 60_000 }
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'generate_voiceover',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Voiceover generation failed: ${error}` }],
           isError: true,
@@ -1203,12 +853,6 @@ Return ONLY valid JSON in this exact format:
       }
 
       if (!data?.audioUrl) {
-        await logMcpToolInvocation({
-          toolName: 'generate_voiceover',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No audio URL returned' },
-        });
         return {
           content: [
             { type: 'text' as const, text: 'Voiceover generation failed: no audio URL returned.' },
@@ -1218,17 +862,6 @@ Return ONLY valid JSON in this exact format:
       }
 
       addCreditsUsed(estimatedCost);
-
-      await logMcpToolInvocation({
-        toolName: 'generate_voiceover',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          voice: voice ?? 'rachel',
-          durationSeconds: data.durationSeconds,
-          creditsUsed: getCreditsUsed(),
-        },
-      });
 
       if (format === 'json') {
         return {
@@ -1316,6 +949,35 @@ Return ONLY valid JSON in this exact format:
           'Visual style. hormozi: black bg, bold white text, gold accents. ' +
             'Default: hormozi (when using hormozi-authority template).'
         ),
+      hook: z
+        .string()
+        .max(300)
+        .optional()
+        .describe(
+          'Explicit hook/opener for slide 1. Overrides any hook derived from topic. Keep under 15 words.'
+        ),
+      hook_family: z
+        .enum(['curiosity', 'authority', 'pain_point', 'contrarian', 'data_driven'])
+        .optional()
+        .describe(
+          'Hook family tag. Persisted with the carousel so bandit learners can attribute engagement to hook pattern.'
+        ),
+      cta_text: z.string().max(200).optional().describe('Explicit CTA copy for the final slide.'),
+      cta_url: z.string().url().optional().describe('URL promoted on the CTA slide.'),
+      tone: z
+        .string()
+        .max(200)
+        .optional()
+        .describe('Voice/tone override. Composes with brand profile voice.'),
+      constraints: z
+        .string()
+        .max(500)
+        .optional()
+        .describe('Content constraints. Example: "No fabricated statistics. Sentence case only."'),
+      platform: z
+        .enum(['linkedin', 'instagram', 'tiktok', 'x'])
+        .optional()
+        .describe('Target platform. Affects tone and format guardrails.'),
       project_id: z.string().optional().describe('Project ID to associate the carousel with.'),
       response_format: z
         .enum(['text', 'json'])
@@ -1328,11 +990,17 @@ Return ONLY valid JSON in this exact format:
       slide_count,
       aspect_ratio,
       style,
+      hook,
+      hook_family,
+      cta_text,
+      cta_url,
+      tone,
+      constraints,
+      platform,
       project_id,
       response_format,
     }) => {
       const format = response_format ?? 'json';
-      const startedAt = Date.now();
 
       const templateId = template_id ?? 'hormozi-authority';
       const resolvedStyle =
@@ -1343,12 +1011,6 @@ Return ONLY valid JSON in this exact format:
       const estimatedCost = 10 + slideCount * 2;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        await logMcpToolInvocation({
-          toolName: 'generate_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: budgetCheck.message },
-        });
         return {
           content: [{ type: 'text' as const, text: budgetCheck.message }],
           isError: true,
@@ -1358,12 +1020,6 @@ Return ONLY valid JSON in this exact format:
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('posting', `generate_carousel:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'generate_carousel',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -1397,17 +1053,18 @@ Return ONLY valid JSON in this exact format:
           aspectRatio: ratio,
           style: resolvedStyle,
           projectId: project_id,
+          hook,
+          hookFamily: hook_family,
+          ctaText: cta_text,
+          ctaUrl: cta_url,
+          tone,
+          constraints,
+          platform,
         },
         { timeoutMs: 60_000 }
       );
 
       if (error) {
-        await logMcpToolInvocation({
-          toolName: 'generate_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error },
-        });
         return {
           content: [{ type: 'text' as const, text: `Carousel generation failed: ${error}` }],
           isError: true,
@@ -1415,12 +1072,6 @@ Return ONLY valid JSON in this exact format:
       }
 
       if (!data?.carousel) {
-        await logMcpToolInvocation({
-          toolName: 'generate_carousel',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'No carousel data returned' },
-        });
         return {
           content: [{ type: 'text' as const, text: 'Carousel generation returned no data.' }],
           isError: true,
@@ -1429,18 +1080,6 @@ Return ONLY valid JSON in this exact format:
 
       const creditsUsed = data.carousel.credits?.used ?? estimatedCost;
       addCreditsUsed(creditsUsed);
-
-      await logMcpToolInvocation({
-        toolName: 'generate_carousel',
-        status: 'success',
-        durationMs: Date.now() - startedAt,
-        details: {
-          templateId,
-          slideCount: data.carousel.slides.length,
-          style: resolvedStyle,
-          creditsUsed: getCreditsUsed(),
-        },
-      });
 
       if (format === 'json') {
         return {

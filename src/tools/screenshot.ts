@@ -14,9 +14,7 @@ import { mkdir } from 'node:fs/promises';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { policyBlockedResult } from '../lib/policy-block.js';
-import { assertPathWithin } from '../lib/safe-path.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 
 export function registerScreenshotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -66,7 +64,6 @@ export function registerScreenshotTools(server: McpServer): void {
         ),
     },
     async ({ page: pageName, viewport, theme, selector, wait_ms }) => {
-      const startedAt = Date.now();
       let rateLimitKey = 'anonymous';
       try {
         rateLimitKey = await getDefaultUserId();
@@ -75,12 +72,6 @@ export function registerScreenshotTools(server: McpServer): void {
       }
       const rateLimit = checkRateLimit('screenshot', `capture_app_page:${rateLimitKey}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'capture_app_page',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -97,12 +88,6 @@ export function registerScreenshotTools(server: McpServer): void {
       const route = APP_PAGES[pageName];
 
       if (!route) {
-        await logMcpToolInvocation({
-          toolName: 'capture_app_page',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Unknown page', pageName },
-        });
         return {
           content: [
             {
@@ -147,12 +132,6 @@ export function registerScreenshotTools(server: McpServer): void {
         await browserPage.context().close();
 
         const relativePath = relative(resolve('.'), outputPath);
-        await logMcpToolInvocation({
-          toolName: 'capture_app_page',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: { pageName, viewport: vp, theme: theme ?? 'light' },
-        });
         return {
           content: [
             {
@@ -170,12 +149,6 @@ export function registerScreenshotTools(server: McpServer): void {
       } catch (err) {
         await closeBrowser();
         const message = sanitizeError(err);
-        await logMcpToolInvocation({
-          toolName: 'capture_app_page',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: message, pageName },
-        });
         return {
           content: [
             {
@@ -221,7 +194,6 @@ export function registerScreenshotTools(server: McpServer): void {
         .describe('Extra milliseconds to wait after page load before capturing. Defaults to 1000.'),
     },
     async ({ url, viewport, selector, output_path, wait_ms }) => {
-      const startedAt = Date.now();
       let rateLimitKey = 'anonymous';
       try {
         rateLimitKey = await getDefaultUserId();
@@ -230,12 +202,6 @@ export function registerScreenshotTools(server: McpServer): void {
       }
       const rateLimit = checkRateLimit('screenshot', `capture_screenshot:${rateLimitKey}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'capture_screenshot',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -252,18 +218,15 @@ export function registerScreenshotTools(server: McpServer): void {
       // SSRF protection: validate the URL before navigating
       const ssrfResult = await validateUrlForSSRF(url);
       if (!ssrfResult.isValid) {
-        await logMcpToolInvocation({
-          toolName: 'capture_screenshot',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: { error_type: 'policy_block', policy: 'ssrf', reason: ssrfResult.error },
-        });
-        return policyBlockedResult({
-          toolName: 'capture_screenshot',
-          policy: 'ssrf',
-          inputKind: 'url',
-          reason: ssrfResult.error,
-        });
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `URL blocked by SSRF protection: ${ssrfResult.error}`,
+            },
+          ],
+          isError: true,
+        };
       }
 
       // DNS pinning: replace hostname with resolved IP to prevent DNS rebinding
@@ -298,28 +261,17 @@ export function registerScreenshotTools(server: McpServer): void {
         }
 
         const screenshotDir = resolve('public/assets/screenshots');
-        await mkdir(screenshotDir, { recursive: true });
         let outputPath: string;
         if (output_path) {
-          // Canonicalize both sides (following symlinks) before comparing.
-          // The previous substring check on resolve() was bypassable when an
-          // intermediate component of `output_path` was a symlink pointing
-          // outside the screenshot dir.
-          try {
-            outputPath = await assertPathWithin(output_path, screenshotDir);
-          } catch (err) {
+          // Path traversal protection: resolved path must be inside screenshotDir
+          outputPath = resolve(output_path);
+          if (!outputPath.startsWith(screenshotDir + '/') && outputPath !== screenshotDir) {
             await browserPage.context().close();
-            await logMcpToolInvocation({
-              toolName: 'capture_screenshot',
-              status: 'error',
-              durationMs: Date.now() - startedAt,
-              details: { error: 'Invalid output_path' },
-            });
             return {
               content: [
                 {
                   type: 'text' as const,
-                  text: `Invalid output_path: ${sanitizeError(err)}. Path must resolve inside public/assets/screenshots/.`,
+                  text: `Invalid output_path: must be inside public/assets/screenshots/. Path traversal is not allowed.`,
                 },
               ],
               isError: true,
@@ -347,12 +299,6 @@ export function registerScreenshotTools(server: McpServer): void {
         await browserPage.context().close();
 
         const relativePath = relative(resolve('.'), outputPath);
-        await logMcpToolInvocation({
-          toolName: 'capture_screenshot',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: { url: ssrfResult.sanitizedUrl, viewport: vp },
-        });
         return {
           content: [
             {
@@ -369,12 +315,6 @@ export function registerScreenshotTools(server: McpServer): void {
       } catch (err) {
         await closeBrowser();
         const message = sanitizeError(err);
-        await logMcpToolInvocation({
-          toolName: 'capture_screenshot',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: message, url },
-        });
         return {
           content: [
             {

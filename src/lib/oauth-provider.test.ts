@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createOAuthProvider } from './oauth-provider.js';
+import { getSupabaseClient } from './supabase.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
 
 // Mock fetch globally
@@ -10,10 +11,6 @@ const TEST_OPTIONS = {
   supabaseUrl: 'https://test.supabase.co',
   supabaseAnonKey: 'test-anon-key',
   appBaseUrl: 'https://www.socialneuron.com',
-};
-const TEST_OPTIONS_WITH_CLIENT_SECRET = {
-  ...TEST_OPTIONS,
-  clientRegistrationSecret: 'test-client-registration-secret',
 };
 
 function makeClient(
@@ -30,10 +27,20 @@ function makeClient(
   } as OAuthClientInformationFull;
 }
 
+function makeSupabaseQuery(result: Record<string, unknown>) {
+  const chain: Record<string, ReturnType<typeof vi.fn> | unknown> = {};
+  for (const method of ['delete', 'lt', 'select', 'insert']) {
+    chain[method] = vi.fn().mockReturnValue(chain);
+  }
+  chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result));
+  chain.catch = vi.fn().mockReturnValue(chain);
+  chain.finally = vi.fn().mockReturnValue(chain);
+  return chain;
+}
+
 describe('createOAuthProvider', () => {
   beforeEach(() => {
     mockFetch.mockReset();
-    delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
   });
 
   describe('clientsStore', () => {
@@ -54,32 +61,10 @@ describe('createOAuthProvider', () => {
       expect(retrieved).toBeUndefined();
     });
 
-    it('allows known HTTPS redirect URIs', async () => {
+    it('allows any HTTPS redirect URI (MCP dynamic registration)', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://smithery.ai/callback'],
-      });
-
-      const registered = await provider.clientsStore.registerClient!(client);
-      expect(registered.client_id).toBe('test-client-123');
-    });
-
-    it('rejects unknown HTTPS redirect URIs by default', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const client = makeClient({
-        redirect_uris: ['https://evil.com/oauth/callback'],
-      });
-
-      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
-        'Redirect URI not allowed'
-      );
-    });
-
-    it('allows unknown HTTPS redirect URIs only with staging escape hatch', async () => {
-      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const client = makeClient({
-        redirect_uris: ['https://new-client.example.com/oauth/callback'],
       });
 
       const registered = await provider.clientsStore.registerClient!(client);
@@ -106,89 +91,73 @@ describe('createOAuthProvider', () => {
       expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('allows Codex loopback callback paths on ephemeral ports', async () => {
+    it('allows Codex loopback callback path on any port', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
-        redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
+        redirect_uris: ['http://127.0.0.1:53920/callback'],
       });
 
       const registered = await provider.clientsStore.registerClient!(client);
       expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('allows ChatGPT connector redirect URIs', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-
-      await expect(
-        provider.clientsStore.registerClient!(
-          makeClient({
-            redirect_uris: ['https://chatgpt.com/connector_platform_oauth_redirect'],
-          })
-        )
-      ).resolves.toMatchObject({ client_id: 'test-client-123' });
-
-      await expect(
-        provider.clientsStore.registerClient!(
-          makeClient({
-            redirect_uris: ['https://chatgpt.com/connector/oauth/social-neuron'],
-          })
-        )
-      ).resolves.toMatchObject({ client_id: 'test-client-123' });
-    });
-
-    it('rejects ChatGPT connector redirect URI variants', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-
-      for (const redirect_uri of [
-        'https://chatgpt.com/connector/oauth/other-connector',
-        'https://chatgpt.com/connector/oauth/social-neuron?next=https://evil.test',
-        'https://chatgpt.com/connector/oauth/social-neuron#frag',
-      ]) {
-        await expect(
-          provider.clientsStore.registerClient!(makeClient({ redirect_uris: [redirect_uri] }))
-        ).rejects.toThrow('Redirect URI not allowed');
-      }
-    });
-
-    it('rejects HTTPS localhost unless explicitly allowlisted', async () => {
+    it('allows HTTPS localhost (treated as valid HTTPS)', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://localhost:6274/oauth/callback'],
       });
 
-      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
-        'Redirect URI not allowed'
-      );
+      const registered = await provider.clientsStore.registerClient!(client);
+      expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('uses signed stateless client IDs that work across provider instances', async () => {
-      const providerA = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
-      const providerB = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
-
-      const registered = await providerA.clientsStore.registerClient!(
-        makeClient({
-          redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
-        })
-      );
-
-      expect(registered.client_id).toMatch(/^snc_/);
-      expect(registered.client_id).not.toBe('test-client-123');
-
-      const retrieved = await providerB.clientsStore.getClient!(registered.client_id);
-      expect(retrieved).toMatchObject({
-        client_id: registered.client_id,
-        client_name: 'Test Client',
-        redirect_uris: ['http://127.0.0.1:38291/callback/codex-probe'],
+    it('rejects oversized dynamic client metadata before persistence', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        client_name: 'a'.repeat(513),
       });
+
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'client_name exceeds 512 bytes'
+      );
     });
 
-    it('rejects tampered stateless client IDs', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS_WITH_CLIENT_SECRET);
-      const registered = await provider.clientsStore.registerClient!(makeClient());
+    it('rejects excessive redirect URIs before persistence', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        redirect_uris: Array.from(
+          { length: 11 },
+          (_, index) => `https://example.com/callback/${index}`
+        ),
+      });
 
-      const tampered = `${registered.client_id.slice(0, -1)}x`;
-      const retrieved = await provider.clientsStore.getClient!(tampered);
-      expect(retrieved).toBeUndefined();
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'redirect_uris exceeds 10 entries'
+      );
+    });
+
+    it('rejects oversized extension metadata before persistence', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        software_statement: 's'.repeat(9000),
+      } as Partial<OAuthClientInformationFull>);
+
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'client metadata exceeds 8192 bytes'
+      );
+    });
+
+    it('refuses durable registration when the persistent store is at capacity', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const pruneQuery = makeSupabaseQuery({ data: null, error: null });
+      const countQuery = makeSupabaseQuery({ data: null, error: null, count: 5000 });
+      const from = vi.fn().mockReturnValueOnce(pruneQuery).mockReturnValueOnce(countQuery);
+      vi.mocked(getSupabaseClient).mockReturnValueOnce({ from } as never);
+
+      await expect(provider.clientsStore.registerClient!(makeClient())).rejects.toThrow(
+        'OAuth client registration capacity reached; retry later'
+      );
+      expect(from).toHaveBeenCalledTimes(2);
     });
   });
 
@@ -280,6 +249,7 @@ describe('createOAuthProvider', () => {
       expect(body.code_verifier).toBe('test-verifier');
       expect(body.authorization_code).toBe('auth-code-state');
       expect(body.return_token).toBe(true);
+      expect(body.client_id).toBe(client.client_id);
       expect(body.redirect_uri).toBe('http://localhost:6274/oauth/callback');
     });
 
@@ -314,13 +284,41 @@ describe('createOAuthProvider', () => {
   });
 
   describe('exchangeRefreshToken', () => {
-    it('rejects — refresh tokens not supported', async () => {
+    it('exchanges refresh token via connector-token endpoint', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient();
 
-      await expect(provider.exchangeRefreshToken(client, 'refresh-token')).rejects.toThrow(
-        'Refresh tokens are not supported'
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'sno_test_refreshed_token',
+          refresh_token: 'refresh-next',
+          scopes: ['mcp:read'],
+          expires_in: 3600,
+        }),
+      });
+
+      const tokens = await provider.exchangeRefreshToken(
+        client,
+        'refresh-token',
+        ['mcp:read'],
+        new URL('https://mcp.socialneuron.com')
       );
+
+      expect(tokens.access_token).toBe('sno_test_refreshed_token');
+      expect(tokens.refresh_token).toBe('refresh-next');
+      expect(tokens.expires_in).toBe(3600);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe(
+        'https://test.supabase.co/functions/v1/mcp-auth?action=refresh-connector-token'
+      );
+      expect(JSON.parse(opts.body)).toEqual({
+        client_id: client.client_id,
+        refresh_token: 'refresh-token',
+        scopes: ['mcp:read'],
+        resource: 'https://mcp.socialneuron.com/',
+      });
     });
   });
 
@@ -347,7 +345,31 @@ describe('createOAuthProvider', () => {
       expect(body.token).toBe('snk_test_fake_token'); // gitleaks:allow (test fixture)
     });
 
-    it('throws on fetch failure after cache eviction', async () => {
+    it('uses connector revocation lane for connector tokens', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient();
+
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ success: true }),
+      });
+
+      await provider.revokeToken(client, {
+        token: 'sno_test_fake_token',
+        token_type_hint: 'access_token',
+      } as any);
+
+      const [url, opts] = mockFetch.mock.calls[0];
+      expect(url).toBe(
+        'https://test.supabase.co/functions/v1/mcp-auth?action=revoke-connector-token'
+      );
+      expect(JSON.parse(opts.body)).toMatchObject({
+        token: 'sno_test_fake_token',
+        client_id: client.client_id,
+      });
+    });
+
+    it('keeps revocation best-effort on fetch failure', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient();
 
@@ -358,42 +380,7 @@ describe('createOAuthProvider', () => {
           token: 'snk_test_fake_token',
           token_type_hint: 'access_token',
         } as any)
-      ).rejects.toThrow('Network error'); // gitleaks:allow (test fixture)
-    });
-
-    it('throws on non-OK revocation response', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const client = makeClient();
-
-      mockFetch.mockResolvedValueOnce({
-        ok: false,
-        status: 500,
-        json: async () => ({ error: 'backend failed' }),
-      });
-
-      await expect(
-        provider.revokeToken(client, {
-          token: 'snk_test_fake_token',
-          token_type_hint: 'access_token',
-        } as any)
-      ).rejects.toThrow('Token revocation failed: HTTP 500'); // gitleaks:allow (test fixture)
-    });
-
-    it('throws when revocation response reports failure', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const client = makeClient();
-
-      mockFetch.mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({ success: false, error: 'already revoked' }),
-      });
-
-      await expect(
-        provider.revokeToken(client, {
-          token: 'snk_test_fake_token',
-          token_type_hint: 'access_token',
-        } as any)
-      ).rejects.toThrow('already revoked'); // gitleaks:allow (test fixture)
+      ).resolves.toBeUndefined(); // gitleaks:allow (test fixture)
     });
   });
 

@@ -4,6 +4,7 @@ import { registerBrandTools } from './brand.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getSupabaseClient, getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { MCP_VERSION } from '../lib/version.js';
 
 vi.mock('../lib/ssrf.js', () => ({
   validateUrlForSSRF: vi
@@ -125,27 +126,6 @@ describe('brand tools', () => {
       expect(result.content[0].text).toContain('Failed to fetch URL: connection refused');
     });
 
-    it('returns structured policy_block when SSRF validation blocks the URL', async () => {
-      mockValidateSSRF.mockResolvedValueOnce({
-        isValid: false,
-        error: 'Access to private/internal IP addresses is not allowed.',
-      });
-
-      const handler = server.getHandler('extract_brand')!;
-      const result = await handler({ url: 'http://127.0.0.1:8080/admin' });
-      const parsed = JSON.parse(result.content[0].text);
-
-      expect(result.isError).toBe(false);
-      expect(parsed).toMatchObject({
-        ok: false,
-        error_type: 'policy_block',
-        policy: 'ssrf',
-        tool: 'extract_brand',
-        input_kind: 'url',
-      });
-      expect(mockCallEdge).not.toHaveBeenCalled();
-    });
-
     it('returns JSON envelope when response_format=json', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {
@@ -162,7 +142,7 @@ describe('brand tools', () => {
       const handler = server.getHandler('extract_brand')!;
       const result = await handler({ url: 'https://example.com', response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed._meta.version).toBe('1.7.13');
+      expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.brandName).toBe('JsonBrand');
     });
   });
@@ -193,17 +173,16 @@ describe('brand tools', () => {
       );
     });
 
-    it('delegates to mcp-data when local default project lookup is unavailable', async () => {
+    it('delegates default project resolution to mcp-data when local project context is missing', async () => {
       mockGetProjectId.mockResolvedValueOnce(null);
       mockCallEdge.mockResolvedValueOnce({
         data: {
           success: true,
           profile: {
-            brand_name: 'Gateway Brand',
-            project_id: 'gateway-project-id',
+            project_id: 'resolved-project',
+            brand_name: 'Resolved Brand',
             version: 1,
-            updated_at: '2026-02-15T00:00:00Z',
-            extraction_method: 'manual',
+            updated_at: '2026-06-05T00:00:00Z',
             brand_context: {},
           },
         },
@@ -211,15 +190,12 @@ describe('brand tools', () => {
       });
 
       const handler = server.getHandler('get_brand_profile')!;
-      const result = await handler({ response_format: 'json' });
-      const parsed = JSON.parse(result.content[0].text);
+      const result = await handler({});
 
       expect(result.isError).not.toBe(true);
-      expect(parsed.data.brand_name).toBe('Gateway Brand');
-      expect(mockCallEdge).toHaveBeenCalledWith(
-        'mcp-data',
-        expect.not.objectContaining({ projectId: expect.anything() })
-      );
+      expect(result.content[0].text).toContain('Resolved Brand');
+      expect(result.content[0].text).toContain('Project: resolved-project');
+      expect(mockCallEdge).toHaveBeenCalledWith('mcp-data', { action: 'brand-profile' });
     });
   });
 

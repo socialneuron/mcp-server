@@ -2,7 +2,6 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { logMcpToolInvocation } from '../lib/supabase.js';
 import {
   detectAnomalies,
   type Sensitivity,
@@ -50,7 +49,6 @@ export function registerDigestTools(server: McpServer): void {
     },
     async ({ project_id, period, include_recommendations, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
 
       try {
         const { data: result, error: efError } = await callEdgeFunction<{
@@ -250,14 +248,6 @@ export function registerDigestTools(server: McpServer): void {
           },
         };
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'generate_performance_digest',
-          status: 'success',
-          durationMs,
-          details: { period, posts: totalPosts, views: totalViews },
-        });
-
         if (format === 'json') {
           return {
             content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(digest), null, 2) }],
@@ -305,14 +295,7 @@ export function registerDigestTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'generate_performance_digest',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Digest failed: ${message}` }],
           isError: true,
@@ -340,7 +323,6 @@ export function registerDigestTools(server: McpServer): void {
     },
     async ({ project_id, days, sensitivity, platforms, response_format }) => {
       const format = response_format ?? 'text';
-      const startedAt = Date.now();
 
       try {
         const { data: result, error: efError } = await callEdgeFunction<{
@@ -385,14 +367,6 @@ export function registerDigestTools(server: McpServer): void {
           sensitivity as Sensitivity
         );
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'detect_anomalies',
-          status: 'success',
-          durationMs,
-          details: { days, sensitivity, anomalies_found: anomalies.length },
-        });
-
         const summary =
           anomalies.length === 0
             ? `No significant anomalies detected in the last ${days} days.`
@@ -431,14 +405,7 @@ export function registerDigestTools(server: McpServer): void {
 
         return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'detect_anomalies',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Anomaly detection failed: ${message}` }],
           isError: true,

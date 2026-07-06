@@ -13,26 +13,35 @@
  *   /.well-known/oauth-authorization-server — OAuth AS metadata
  */
 
+// Mark this process as the cloud HTTP transport BEFORE any tool module loads —
+// `tools/media.ts` reads this to refuse local-file `readFile()` calls. This
+// process has access to env secrets (SUPABASE_SERVICE_ROLE_KEY, OAuth keys),
+// k8s service-account tokens, etc.; any `readFile(attackerSrc)` is a critical
+// disclosure path.
+process.env.MCP_TRANSPORT = 'http';
+
 import express from 'express';
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import {
   mcpAuthRouter,
-  getOAuthProtectedResourceMetadataUrl,
+  createOAuthMetadata,
 } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
-import { PROMPT_SERVER_CARD_ENTRIES, registerPrompts } from './prompts.js';
+import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { requestContext, getRequestScopes } from './lib/request-context.js';
-import { hasScope } from './auth/scopes.js';
 import { createTokenVerifier } from './lib/token-verifier.js';
 import { createOAuthProvider } from './lib/oauth-provider.js';
 import { checkRateLimit } from './lib/rate-limit.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
-import { getHttpRuntimeTools } from './lib/tool-catalog.js';
+import { buildWwwAuthenticateHeader } from './lib/www-authenticate.js';
+import { TOOL_CATALOG } from './lib/tool-catalog.js';
+import { buildDiscoveryCatalog } from './lib/discovery-catalog.js';
+import { buildOriginPolicy, validateBrowserOrigin } from './lib/origin-policy.js';
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -42,6 +51,11 @@ const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL ?? `http://localhost:${PORT}/mcp`;
 const APP_BASE_URL = process.env.APP_BASE_URL ?? 'https://www.socialneuron.com';
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
+const ORIGIN_POLICY = buildOriginPolicy({
+  allowedOriginsEnv: process.env.ALLOWED_ORIGINS,
+  configuredUrls: [APP_BASE_URL, MCP_SERVER_URL],
+  nodeEnv: NODE_ENV,
+});
 
 // Derive OAUTH_ISSUER_URL: prefer explicit env var, then extract from MCP_SERVER_URL,
 // fall back to APP_BASE_URL, never use localhost in production
@@ -82,15 +96,6 @@ function deriveOAuthIssuerUrl(): string {
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
-// Absolute URL of the protected-resource-metadata (PRM) document, advertised on
-// 401s via WWW-Authenticate so clients can auto-start OAuth. mcpAuthRouter is
-// mounted with only `issuerUrl`, so the SDK serves PRM for that issuer URL;
-// using the SDK's own helper to derive the advertised URL guarantees it matches
-// the served path byte-for-byte, even if OAUTH_ISSUER_URL ever carries a path.
-const PROTECTED_RESOURCE_METADATA_URL = getOAuthProtectedResourceMetadataUrl(
-  new URL(OAUTH_ISSUER_URL)
-);
-
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
   process.exit(1);
@@ -103,10 +108,6 @@ if (SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length < 100) {
       'Edge function calls may fail. Check your environment variables.'
   );
 }
-const OAUTH_CLIENT_REGISTRATION_SECRET =
-  process.env.OAUTH_CLIENT_REGISTRATION_SECRET ??
-  process.env.MCP_OAUTH_CLIENT_REGISTRATION_SECRET ??
-  SUPABASE_SERVICE_ROLE_KEY;
 
 // ── Crash handlers ───────────────────────────────────────────────────
 
@@ -139,29 +140,12 @@ interface SessionEntry {
   transport: StreamableHTTPServerTransport;
   server: McpServer;
   lastActivity: number;
-  /** Hard ceiling — sessions are torn down at this point regardless of
-   *  activity, so a slow-read SSE consumer cannot pin a slot forever. */
-  expiresAt: number;
   userId: string;
 }
 
 const sessions = new Map<string, SessionEntry>();
 
-const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes (idle)
-const SESSION_HARD_TTL_DEFAULT_MS = 4 * 60 * 60 * 1000; // 4h
-function parseSessionHardTtl(): number {
-  const raw = process.env.SESSION_HARD_TTL_MS;
-  if (raw === undefined || raw === '') return SESSION_HARD_TTL_DEFAULT_MS;
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed <= 0) {
-    console.warn(
-      `[MCP HTTP] Invalid SESSION_HARD_TTL_MS=${raw}; falling back to ${SESSION_HARD_TTL_DEFAULT_MS}ms.`
-    );
-    return SESSION_HARD_TTL_DEFAULT_MS;
-  }
-  return parsed;
-}
-const SESSION_HARD_TTL_MS = parseSessionHardTtl();
+const SESSION_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
 
 function countUserSessions(userId: string): number {
   let count = 0;
@@ -171,20 +155,16 @@ function countUserSessions(userId: string): number {
   return count;
 }
 
-// Clean up stale sessions every 5 minutes. Two reasons to evict: idle
-// past SESSION_TIMEOUT_MS, or alive past the absolute SESSION_HARD_TTL_MS.
+// Clean up stale sessions every 5 minutes
 const cleanupInterval = setInterval(
   () => {
     const now = Date.now();
     for (const [sessionId, entry] of sessions) {
-      const idle = now - entry.lastActivity > SESSION_TIMEOUT_MS;
-      const expired = now >= entry.expiresAt;
-      if (idle || expired) {
+      if (now - entry.lastActivity > SESSION_TIMEOUT_MS) {
         entry.transport.close();
         entry.server.close();
         sessions.delete(sessionId);
-        const reason = expired ? 'expired (hard TTL)' : 'idle';
-        console.log(`[MCP HTTP] Cleaned up ${reason} session: ${sessionId}`);
+        console.log(`[MCP HTTP] Cleaned up stale session: ${sessionId}`);
       }
     }
   },
@@ -195,23 +175,17 @@ const cleanupInterval = setInterval(
 
 const app = express();
 app.disable('x-powered-by');
-app.use(express.json({ limit: '1mb' }));
 
-// Trust upstream proxy hops for req.ip / X-Forwarded-For. Defaults to "1"
-// (Railway's single proxy hop). Set TRUST_PROXY=0 when running without a
-// trusted reverse proxy in front, otherwise X-Forwarded-For becomes
-// attacker-controlled and the per-IP rate limit below can be trivially
-// rotated past. Accepts an integer hop count or any value Express
-// supports ('loopback', 'linklocal', CIDR, …).
-const trustProxyEnv = process.env.TRUST_PROXY ?? '1';
-if (trustProxyEnv !== '0' && trustProxyEnv.toLowerCase() !== 'false') {
-  const trustProxy = /^\d+$/.test(trustProxyEnv) ? Number(trustProxyEnv) : trustProxyEnv;
-  app.set('trust proxy', trustProxy);
-}
+const defaultJsonParser = express.json({ limit: '100kb' });
+const authenticatedMcpJsonParser = express.json({ limit: '16mb' });
+const unauthenticatedMcpJsonParser = express.json({ limit: '100kb' });
+
+// Trust Railway's proxy
+app.set('trust proxy', 1);
 
 // ── Per-IP rate limiting ────────────────────────────────────────────
 // Prevents burst abuse before auth is even checked. 60 req/min per IP.
-// Health endpoints are exempt so Railway/Kubernetes probes aren't throttled.
+// Health endpoint is exempt so Railway health checks aren't throttled.
 
 const ipBuckets = new Map<string, { tokens: number; lastRefill: number }>();
 const IP_RATE_MAX = 60;
@@ -226,16 +200,21 @@ setInterval(() => {
 }, IP_RATE_CLEANUP_INTERVAL).unref();
 
 app.use((req, res, next) => {
-  // Exempt health checks
+  // Exempt health + OAuth discovery endpoints. An MCP client hitting a 401 on
+  // /mcp first probes the resource-server metadata, then the authorization-
+  // server metadata (RFC 8414) before any auth is established — both must be
+  // reachable without getting throttled, or OAuth discovery silently fails.
   if (
     req.path === '/health' ||
-    req.path === '/health/live' ||
-    req.path === '/health/ready' ||
-    req.path === '/.well-known/mcp/server-card.json' ||
     req.path === '/.well-known/oauth-protected-resource' ||
+    req.path === '/.well-known/oauth-authorization-server' ||
     req.path === '/config'
   )
     return next();
+  // server-card.json is no longer exempt — Smithery/Connectors Directory
+  // probe it once per discovery, well under the 60 req/min IP cap, but
+  // a hostile bot enumerating tool-name surface could hammer it for free
+  // without the limiter (audit H-1).
 
   const ip = req.ip ?? req.socket.remoteAddress ?? 'unknown';
   const now = Date.now();
@@ -267,36 +246,54 @@ app.use((req, res, next) => {
 });
 
 // ── Security headers ────────────────────────────────────────────────
-// ── Security headers ────────────────────────────────────────────────
 app.use((_req, res, next) => {
   res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains');
   res.setHeader('X-Content-Type-Options', 'nosniff');
-  // Defense-in-depth: this is a JSON API so any browser embedding it as
-  // an iframe or chasing referrers represents misuse. CSP locks down all
-  // active content; frame-ancestors blocks clickjacking even if an
-  // error page accidentally returns HTML in the future.
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Referrer-Policy', 'no-referrer');
-  res.setHeader('Content-Security-Policy', "default-src 'none'; frame-ancestors 'none'");
   next();
 });
 
 // ── CORS ─────────────────────────────────────────────────────────────
-// Wildcard is intentional: MCP servers are designed to be called by
-// diverse clients (Claude Desktop, Claude Code, custom integrations).
-// All requests still require a valid Bearer token, so CORS is not the
-// security boundary here.
+// Browser-originated MCP requests must validate Origin to prevent DNS rebinding.
+// Non-browser MCP clients commonly omit Origin and are allowed through; they
+// still need normal OAuth/Bearer authentication for protected operations.
+app.use((req, res, next) => {
+  const originCheck = validateBrowserOrigin(req.headers.origin, ORIGIN_POLICY);
+  if (!originCheck.allowed) {
+    res.status(403).json({
+      error: 'invalid_origin',
+      error_description: 'Request Origin is not allowed.',
+    });
+    return;
+  }
 
-app.use((_req, res, next) => {
-  res.setHeader('Access-Control-Allow-Origin', '*');
+  if (originCheck.origin) {
+    res.setHeader('Access-Control-Allow-Origin', originCheck.origin);
+    res.setHeader('Vary', 'Origin');
+  }
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Mcp-Session-Id');
+  // MCP-Protocol-Version is sent by browser MCP clients per the SDK — CORS
+  // must allow it or preflight fails and the client never reaches /mcp.
+  // WWW-Authenticate is exposed so browser JS can read the challenge from
+  // 401 responses and drive OAuth discovery.
+  res.setHeader(
+    'Access-Control-Allow-Headers',
+    'Content-Type, Authorization, Mcp-Session-Id, MCP-Protocol-Version'
+  );
   res.setHeader('Access-Control-Expose-Headers', 'Mcp-Session-Id, WWW-Authenticate');
-  if (_req.method === 'OPTIONS') {
+  if (req.method === 'OPTIONS') {
     res.status(204).end();
     return;
   }
   next();
+});
+
+// ── JSON body parsing (non-MCP) ─────────────────────────────────────
+// Keep the general parser at Express/body-parser's small default-equivalent
+// limit. /mcp gets its own parser after cheap pre-parse IP limiting and, for
+// large uploads, after Bearer-token authentication.
+app.use((req, res, next) => {
+  if (req.path === '/mcp') return next();
+  defaultJsonParser(req, res, next);
 });
 
 // ── OAuth 2.0 auth router (Anthropic Connectors Directory) ──────────
@@ -305,22 +302,69 @@ const oauthProvider = createOAuthProvider({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
   appBaseUrl: APP_BASE_URL,
-  clientRegistrationSecret: OAUTH_CLIENT_REGISTRATION_SECRET,
+});
+
+const SCOPES_SUPPORTED = [
+  'mcp:full',
+  'mcp:read',
+  'mcp:write',
+  'mcp:distribute',
+  'mcp:analytics',
+  'mcp:comments',
+  'mcp:autopilot',
+];
+
+// Override OAuth Authorization Server Metadata so the response carries logo_uri.
+// Claude Desktop / claude.ai use this to render the connector icon during the
+// OAuth grant flow. The SDK's mcpAuthRouter doesn't expose logo_uri as a config
+// option (RFC 8414 doesn't define it; this is a Claude-side extension), so we
+// shadow the well-known route with createOAuthMetadata + an extra field.
+// MUST be registered BEFORE app.use(authRouter) so Express matches this first.
+app.get('/.well-known/oauth-authorization-server', (_req, res) => {
+  const metadata = createOAuthMetadata({
+    provider: oauthProvider,
+    issuerUrl: new URL(OAUTH_ISSUER_URL),
+    serviceDocumentationUrl: new URL('https://socialneuron.com/for-developers'),
+    scopesSupported: SCOPES_SUPPORTED,
+  });
+  res.json({
+    ...metadata,
+    // Use the 180×180 PNG (square, ~22KB) instead of the 1024×768 Fabric.js
+    // SVG. The SVG had two render-blockers in claude.ai connector tiles:
+    // (1) non-square 4:3 aspect ratio, and (2) `xmlns:ns0=` namespace-prefixed
+    // elements from the Fabric.js export that some SVG parsers drop. PNG is
+    // universally rendered and matches the tile's expected aspect ratio.
+    logo_uri: 'https://socialneuron.com/logo-icon.png',
+  });
 });
 
 const authRouter = mcpAuthRouter({
   provider: oauthProvider,
   issuerUrl: new URL(OAUTH_ISSUER_URL),
   serviceDocumentationUrl: new URL('https://socialneuron.com/for-developers'),
-  scopesSupported: [
-    'mcp:full',
-    'mcp:read',
-    'mcp:write',
-    'mcp:distribute',
-    'mcp:analytics',
-    'mcp:comments',
-    'mcp:autopilot',
-  ],
+  scopesSupported: SCOPES_SUPPORTED,
+});
+
+function normalizeOAuthResourceParam(value: unknown): string | undefined {
+  const values = Array.isArray(value) ? value : [value];
+  const strings = values.filter(
+    (item): item is string => typeof item === 'string' && item.length > 0
+  );
+  const issuer = OAUTH_ISSUER_URL.replace(/\/$/, '');
+  return strings.find(item => item.replace(/\/$/, '') === issuer) ?? strings[0];
+}
+
+app.use((req, _res, next) => {
+  if ((req.path === '/authorize' || req.path === '/token') && Array.isArray(req.query.resource)) {
+    const normalized = normalizeOAuthResourceParam(req.query.resource);
+    if (normalized) {
+      const normalizedUrl = new URL(req.originalUrl, OAUTH_ISSUER_URL);
+      normalizedUrl.searchParams.delete('resource');
+      normalizedUrl.searchParams.set('resource', normalized);
+      req.url = `${normalizedUrl.pathname}${normalizedUrl.search}`;
+    }
+  }
+  next();
 });
 
 // Wrap auth router with error logging (SDK swallows errors silently)
@@ -341,14 +385,7 @@ interface AuthenticatedRequest extends express.Request {
     scopes: string[];
     clientId: string;
     token: string;
-    organizationId?: string | null;
-    projectId?: string | null;
-    brandProfileId?: string | null;
   };
-}
-
-function setNoStore(res: express.Response): void {
-  res.setHeader('Cache-Control', 'no-store');
 }
 
 async function authenticateRequest(
@@ -358,17 +395,12 @@ async function authenticateRequest(
 ): Promise<void> {
   const authHeader = req.headers.authorization;
   if (!authHeader?.startsWith('Bearer ')) {
-    setNoStore(res);
-    // Advertise the protected-resource-metadata URL per MCP auth spec
-    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
-    res.setHeader(
-      'WWW-Authenticate',
-      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
-    );
-    res.status(401).json({
-      error: 'unauthorized',
-      error_description: 'Bearer token required',
-    });
+    // RFC 6750 §3: when the request lacks any authentication information the
+    // server SHOULD NOT include `error` / `error_description`. The
+    // WWW-Authenticate header carries the challenge; the body stays empty so
+    // strict clients don't trip on a conflicting JSON error payload.
+    res.setHeader('WWW-Authenticate', buildWwwAuthenticateHeader({ issuerUrl: OAUTH_ISSUER_URL }));
+    res.status(401).end();
     return;
   }
 
@@ -377,11 +409,7 @@ async function authenticateRequest(
   try {
     const authInfo = await tokenVerifier.verifyAccessToken(token);
 
-    // Allow URL param scope override (downgrade only, never upgrade).
-    // Reject — rather than silently fall back to full scopes — when the
-    // requested set has no overlap with the token's scopes. Previous
-    // behaviour turned a typo like `?scope=read` (missing prefix) into a
-    // silent grant of every scope the token already had.
+    // Allow URL param scope override (downgrade only, never upgrade)
     let scopes = authInfo.scopes;
     const scopeParam = req.query.scope as string | undefined;
     if (scopeParam) {
@@ -389,19 +417,9 @@ async function authenticateRequest(
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      // Hierarchy-aware: a requested child scope (e.g. mcp:read) is a valid
-      // downgrade of a parent the token holds (e.g. mcp:full); literal
-      // .includes() rejected every such downgrade with 400 invalid_scope.
-      const intersection = requestedScopes.filter(s => hasScope(authInfo.scopes, s));
-      if (intersection.length === 0) {
-        setNoStore(res);
-        res.status(400).json({
-          error: 'invalid_scope',
-          error_description: 'Requested scope is not a subset of the token scopes.',
-        });
-        return;
-      }
-      scopes = intersection;
+      // Only keep scopes the token already has (intersection = downgrade only)
+      scopes = requestedScopes.filter(s => authInfo.scopes.includes(s));
+      if (scopes.length === 0) scopes = authInfo.scopes; // fallback if none match
     }
 
     req.auth = {
@@ -409,41 +427,52 @@ async function authenticateRequest(
       scopes,
       clientId: authInfo.clientId,
       token: authInfo.token,
-      organizationId: (authInfo.extra?.organizationId as string | undefined) ?? null,
-      projectId: (authInfo.extra?.projectId as string | undefined) ?? null,
-      brandProfileId: (authInfo.extra?.brandProfileId as string | undefined) ?? null,
     };
     next();
   } catch (err) {
-    const message = err instanceof Error ? sanitizeError(err) : 'Token verification failed';
-    console.error(`[MCP HTTP] Token verification failed: ${message}`);
-    setNoStore(res);
-    // Advertise the protected-resource-metadata URL per MCP auth spec
-    // (2025-06-18+) so clients can auto-discover the AS and start OAuth.
+    const message = err instanceof Error ? err.message : 'Token verification failed';
     res.setHeader(
       'WWW-Authenticate',
-      `Bearer error="invalid_token", resource_metadata="${PROTECTED_RESOURCE_METADATA_URL}"`
+      buildWwwAuthenticateHeader({
+        issuerUrl: OAUTH_ISSUER_URL,
+        error: 'invalid_token',
+        errorDescription: message,
+      })
     );
     res.status(401).json({
       error: 'invalid_token',
-      error_description: 'Token verification failed',
+      error_description: message,
     });
   }
 }
+
+// ── MCP JSON body parsing ───────────────────────────────────────────
+// Authenticate Bearer-token MCP POSTs before allowing the 16mb JSON parser
+// needed for inline upload_media base64. Unauthenticated discovery still works,
+// but stays on the small 100kb parser so attackers cannot force pre-auth 16mb
+// buffering/parsing by omitting or forging credentials.
+app.use('/mcp', (req: AuthenticatedRequest, res, next) => {
+  if (req.method !== 'POST') return next();
+  if (!req.headers.authorization?.startsWith('Bearer ')) return next();
+  authenticateRequest(req, res, next);
+});
+
+app.use('/mcp', (req: AuthenticatedRequest, res, next) => {
+  if (req.method !== 'POST') return next();
+  const parser = req.auth ? authenticatedMcpJsonParser : unauthenticatedMcpJsonParser;
+  parser(req, res, next);
+});
 
 // ── Smithery Static Server Card ──────────────────────────────────────
 // Bypasses Smithery's automatic scanning (which fails on OAuth-required servers)
 // See: https://smithery.ai/docs/build/publish#server-scanning
 //
-// Tools are derived from getHttpRuntimeTools() — the catalog minus stdio-only
-// screenshot tools (skipped over HTTP) plus HTTP-only MCP App tools — so the card
-// matches what a client can actually call over this transport. Input schemas are
-// intentionally omitted — clients that need full schemas call the standard MCP
-// `tools/list` RPC. The server-card is discovery metadata, not a runtime
-// validation contract.
+// Tools are auto-derived from TOOL_CATALOG (single source of truth, sealed via
+// tools.lock.json). Input schemas are intentionally omitted — clients that need
+// full schemas call the standard MCP `tools/list` RPC. The server-card is
+// discovery metadata, not a runtime validation contract.
 
 app.get('/.well-known/mcp/server-card.json', (_req, res) => {
-  const httpTools = getHttpRuntimeTools();
   res.json({
     serverInfo: {
       name: 'socialneuron',
@@ -453,14 +482,35 @@ app.get('/.well-known/mcp/server-card.json', (_req, res) => {
       required: true,
       schemes: ['oauth2'],
     },
-    toolCount: httpTools.length,
-    tools: httpTools.map(t => ({
+    toolCount: TOOL_CATALOG.filter(t => !t.localOnly).length,
+    tools: TOOL_CATALOG.filter(t => !t.localOnly).map(t => ({
       name: t.name,
       description: t.description,
       module: t.module,
       scope: t.scope,
     })),
-    prompts: PROMPT_SERVER_CARD_ENTRIES,
+    prompts: [
+      {
+        name: 'create_weekly_content_plan',
+        description: 'Generate a full week of social media content with structured plan.',
+      },
+      {
+        name: 'analyze_top_content',
+        description: 'Analyze best-performing posts to identify patterns and replicate success.',
+      },
+      {
+        name: 'repurpose_content',
+        description: 'Transform one piece of content into 8-10 pieces across platforms.',
+      },
+      {
+        name: 'setup_brand_voice',
+        description: 'Define or refine brand voice profile for consistent content.',
+      },
+      {
+        name: 'run_content_audit',
+        description: 'Audit recent content performance with prioritized action plan.',
+      },
+    ],
     resources: [
       {
         uri: 'socialneuron://brand/profile',
@@ -500,62 +550,14 @@ app.get('/config', (_req, res) => {
   });
 });
 
-// ── Health checks ────────────────────────────────────────────────────
+// ── Health check ─────────────────────────────────────────────────────
 
-const READINESS_CACHE_MS = 10_000;
-let readinessCache: { checkedAt: number; ok: boolean } | null = null;
-
-async function checkReadiness(): Promise<{ ok: boolean }> {
-  const now = Date.now();
-  if (readinessCache && now - readinessCache.checkedAt < READINESS_CACHE_MS) {
-    return { ok: readinessCache.ok };
-  }
-
-  let ok = false;
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 2_000);
-  timer.unref();
-
-  try {
-    const response = await fetch(`${SUPABASE_URL}/auth/v1/.well-known/jwks.json`, {
-      method: 'HEAD',
-      signal: controller.signal,
-    });
-    ok = response.ok;
-  } catch {
-    ok = false;
-  } finally {
-    clearTimeout(timer);
-  }
-
-  readinessCache = { checkedAt: now, ok };
-  return { ok };
-}
-
-function sendLiveness(res: express.Response): void {
+app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: MCP_VERSION });
-}
-
-app.get('/health', (_req, res) => sendLiveness(res));
-app.get('/health/live', (_req, res) => sendLiveness(res));
-
-app.get('/health/ready', async (_req, res) => {
-  const { ok } = await checkReadiness();
-  if (ok) {
-    res.json({ status: 'ready', version: MCP_VERSION });
-    return;
-  }
-
-  res.status(503).json({
-    status: 'not_ready',
-    version: MCP_VERSION,
-    checks: { auth_jwks: 'unavailable' },
-  });
 });
 
 // Authenticated health details — memory, sessions, uptime
 app.get('/health/details', authenticateRequest, (_req: AuthenticatedRequest, res) => {
-  setNoStore(res);
   res.json({
     status: 'ok',
     version: MCP_VERSION,
@@ -570,11 +572,74 @@ app.get('/health/details', authenticateRequest, (_req: AuthenticatedRequest, res
 
 // ── MCP Routes ───────────────────────────────────────────────────────
 
-// POST /mcp — Initialize session or send JSON-RPC request
-app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
+// Discovery catalog cache — built ONCE from the same SDK serialization the
+// authenticated tools/list uses (registerAllTools → SDK tools/list handler), so
+// UNAUTHENTICATED discovery advertises real per-tool input schemas.
+//
+// Why this matters: connectors like claude.ai / Cowork run tools/list at
+// discovery time and CACHE that catalog — they never re-fetch with the bearer
+// token. A schemaless discovery list (inputSchema.properties = {}) makes every
+// array/number/object argument untransportable: the harness stringifies it,
+// then server-side Zod rejects it ("expected array, received string"). That
+// silently disabled ~50 tools (schedule_post, run_content_pipeline,
+// execute_recipe, plan_content_week, save_brand_profile, generate_carousel, …).
+// Name-matched to TOOL_CATALOG with a {} fallback so the advertised tool SET is
+// unchanged — we only add schemas.
+// Discovery: UNAUTHENTICATED tools/list returns the static catalog WITH real
+// per-tool input schemas (no session, no next(), no fake userId). AUTHENTICATED
+// tools/list falls through to the SDK transport (identical schemas, plus a real
+// session). Security review: 2026-04-17 (session exhaustion DoS + userId leak fixed).
+app.post('/mcp', (req: express.Request, res: express.Response, next: express.NextFunction) => {
+  const body = req.body as { jsonrpc?: string; method?: string; id?: unknown } | undefined;
+  if (body?.jsonrpc !== '2.0') return next();
+
+  // initialize and notifications/initialized: pass through to the authenticated
+  // handler so a real MCP session is created with the SDK transport. Clients
+  // with valid auth (OAuth, API key) get a proper session + session ID.
+
+  if (body.method === 'tools/list') {
+    const hasBearer = req.headers.authorization?.startsWith('Bearer ');
+    // Authenticated → let the SDK transport answer tools/list with rich schemas.
+    if (hasBearer) {
+      next();
+      return;
+    }
+    // Unauthenticated discovery → static catalog WITH real input schemas.
+    buildDiscoveryCatalog()
+      .then(tools => {
+        res.json({ jsonrpc: '2.0', id: body.id ?? null, result: { tools } });
+      })
+      .catch(() => {
+        // Last-resort fallback: names-only (never throw out of discovery).
+        res.json({
+          jsonrpc: '2.0',
+          id: body.id ?? null,
+          result: {
+            tools: TOOL_CATALOG.map(t => ({
+              name: t.name,
+              description: t.description,
+              inputSchema: { type: 'object' as const, properties: {} },
+            })),
+          },
+        });
+      });
+    return;
+  }
+
+  // All other methods require full auth. Bearer-token POSTs were already
+  // authenticated before the /mcp JSON parser so large bodies are not parsed
+  // until credentials are validated.
+  if ((req as AuthenticatedRequest).auth) {
+    next();
+    return;
+  }
+  authenticateRequest(req as AuthenticatedRequest, res, next);
+});
+
+// POST /mcp — Authenticated session handler (tools/call, notifications, etc.)
+app.post('/mcp', async (req: AuthenticatedRequest, res) => {
   const auth = req.auth!;
   const existingSessionId = req.headers['mcp-session-id'] as string | undefined;
-  setNoStore(res);
 
   // Per-user rate limiting
   const rl = checkRateLimit('read', auth.userId);
@@ -601,19 +666,6 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
         return;
       }
 
-      // Mirror the GET-path hard-TTL check so POST traffic cannot keep
-      // an expired session alive until the 5-minute cleanup loop runs.
-      if (Date.now() >= entry.expiresAt) {
-        entry.transport.close();
-        entry.server.close();
-        sessions.delete(existingSessionId);
-        res.status(440).json({
-          error: 'session_expired',
-          error_description: 'Session hard TTL exceeded.',
-        });
-        return;
-      }
-
       entry.lastActivity = Date.now();
 
       // Run in request context for per-user isolation
@@ -622,9 +674,6 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
           userId: auth.userId,
           scopes: auth.scopes,
           token: auth.token,
-          organizationId: auth.organizationId,
-          projectId: auth.projectId,
-          brandProfileId: auth.brandProfileId,
           creditsUsed: 0,
           assetsGenerated: 0,
         },
@@ -658,19 +707,17 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
     // Apply scope enforcement using per-request scopes
     applyScopeEnforcement(server, () => getRequestScopes() ?? auth.scopes);
-    registerAllTools(server, { skipScreenshots: true, skipLocalMediaPaths: true });
+    registerAllTools(server, { skipScreenshots: true });
     registerPrompts(server);
-    registerResources(server, () => getRequestScopes() ?? auth.scopes);
+    registerResources(server);
 
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId: string) => {
-        const now = Date.now();
         sessions.set(sessionId, {
           transport,
           server,
-          lastActivity: now,
-          expiresAt: now + SESSION_HARD_TTL_MS,
+          lastActivity: Date.now(),
           userId: auth.userId,
         });
       },
@@ -691,9 +738,6 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
         userId: auth.userId,
         scopes: auth.scopes,
         token: auth.token,
-        organizationId: auth.organizationId,
-        projectId: auth.projectId,
-        brandProfileId: auth.brandProfileId,
         creditsUsed: 0,
         assetsGenerated: 0,
       },
@@ -712,7 +756,6 @@ app.post('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => 
 
 // GET /mcp — SSE streaming for existing sessions
 app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
-  setNoStore(res);
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !sessions.has(sessionId)) {
     res.status(400).json({ error: 'Invalid or missing session ID' });
@@ -724,27 +767,17 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
     res.status(403).json({ error: 'Session belongs to another user' });
     return;
   }
-  if (Date.now() >= entry.expiresAt) {
-    entry.transport.close();
-    entry.server.close();
-    sessions.delete(sessionId);
-    res.status(440).json({ error: 'session_expired', error_description: 'Session hard TTL exceeded.' });
-    return;
-  }
   entry.lastActivity = Date.now();
 
   // SSE headers for Cloudflare proxy compatibility
   res.setHeader('X-Accel-Buffering', 'no');
-  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('Cache-Control', 'no-cache');
 
   await requestContext.run(
     {
       userId: req.auth!.userId,
       scopes: req.auth!.scopes,
       token: req.auth!.token,
-      organizationId: req.auth!.organizationId,
-      projectId: req.auth!.projectId,
-      brandProfileId: req.auth!.brandProfileId,
       creditsUsed: 0,
       assetsGenerated: 0,
     },
@@ -754,7 +787,6 @@ app.get('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
 
 // DELETE /mcp — Session teardown
 app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) => {
-  setNoStore(res);
   const sessionId = req.headers['mcp-session-id'] as string | undefined;
   if (!sessionId || !sessions.has(sessionId)) {
     res.status(400).json({ error: 'Invalid or missing session ID' });
@@ -773,23 +805,22 @@ app.delete('/mcp', authenticateRequest, async (req: AuthenticatedRequest, res) =
   res.status(200).json({ status: 'session_closed' });
 });
 
-// ── Not found handler ───────────────────────────────────────────────
-app.use((_req, res) => {
-  setNoStore(res);
-  res.status(404).json({
-    error: 'not_found',
-    error_description: 'Route not found',
-  });
-});
-
 // ── Global error handler (catches errors SDK swallows) ──────────────
 app.use((err: Error, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
-  // Never log raw .stack — absolute container paths and framework
-  // internals can leak to centralised log sinks.
-  console.error(`[MCP HTTP] Unhandled Express error: ${sanitizeError(err)}`);
-  if (!res.headersSent) {
-    res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
+  console.error('[MCP HTTP] Unhandled Express error:', err.stack || err.message || err);
+  if (res.headersSent) return;
+  // body-parser raises a 413 (entity.too.large) when the JSON body exceeds the
+  // configured limit — surface it as 413, not a generic 500.
+  const e = err as Error & { status?: number; statusCode?: number; type?: string };
+  const status = e.status ?? e.statusCode;
+  if (status === 413 || e.type === 'entity.too.large') {
+    res.status(413).json({
+      error: 'payload_too_large',
+      error_description: 'Request body exceeds the allowed JSON limit.',
+    });
+    return;
   }
+  res.status(500).json({ error: 'internal_error', error_description: sanitizeError(err) });
 });
 
 // ── Start server ─────────────────────────────────────────────────────

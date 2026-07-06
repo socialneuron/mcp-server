@@ -2,8 +2,10 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { safeErrorMessage, sanitizeError } from '../lib/sanitize-error.js';
-import { logMcpToolInvocation, getDefaultProjectId } from '../lib/supabase.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
+import { getDefaultProjectId } from '../lib/supabase.js';
+import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { extractUrlContent } from '../lib/urlExtraction.js';
 import type {
   ContentPlan,
   ContentPlanPost,
@@ -32,10 +34,6 @@ function addDaysToIsoDate(dateStr: string, days: number): string {
   const d = new Date(dateStr + 'T00:00:00');
   d.setDate(d.getDate() + days);
   return d.toISOString().split('T')[0];
-}
-
-function isYouTubeUrl(url: string): boolean {
-  return /youtube\.com\/watch|youtu\.be\/|youtube\.com\/@/.test(url);
 }
 
 function formatPlanAsText(plan: ContentPlan): string {
@@ -131,7 +129,6 @@ export function registerPlanningTools(server: McpServer): void {
       project_id,
       response_format,
     }) => {
-      const startedAt = Date.now();
       const planId = randomUUID();
       const resolvedStartDate = start_date ?? tomorrowIsoDate();
       const endDate = addDaysToIsoDate(resolvedStartDate, days - 1);
@@ -145,20 +142,24 @@ export function registerPlanningTools(server: McpServer): void {
         let sourceContext = '';
         if (source_url) {
           try {
-            const fnName = isYouTubeUrl(source_url) ? 'scrape-youtube' : 'fetch-url-content';
-            const { data } = await callEdgeFunction<Record<string, unknown>>(
-              fnName,
-              { url: source_url },
-              { timeoutMs: 30_000 }
-            );
-            if (data) {
-              const parts = [
-                data.title ? String(data.title) : '',
-                data.description ? String(data.description) : '',
-                data.transcript ? String(data.transcript).slice(0, 2000) : '',
-                data.content ? String(data.content).slice(0, 2000) : '',
-              ].filter(Boolean);
-              sourceContext = parts.join('\n\n');
+            const ssrf = await validateUrlForSSRF(source_url);
+            if (ssrf.isValid) {
+              // Shared extraction contract (lib/urlExtraction.ts) — same path
+              // extract_url_content uses. Previously this sent the wrong request
+              // shape and read the wrong response keys against a {success,data}
+              // envelope → silently empty source context.
+              const { content } = await extractUrlContent(source_url);
+              if (content) {
+                const parts = [
+                  content.title,
+                  content.description,
+                  content.transcript ? content.transcript.slice(0, 2000) : '',
+                  content.features?.length ? `Features:\n${content.features.join('\n')}` : '',
+                  content.benefits?.length ? `Benefits:\n${content.benefits.join('\n')}` : '',
+                  content.usp ?? '',
+                ].filter(Boolean);
+                sourceContext = parts.join('\n\n');
+              }
             }
           } catch {
             // Non-fatal — continue without source context
@@ -293,13 +294,6 @@ export function registerPlanningTools(server: McpServer): void {
         );
 
         if (aiError || !aiData) {
-          const durationMs = Date.now() - startedAt;
-          logMcpToolInvocation({
-            toolName: 'plan_content_week',
-            status: 'error',
-            durationMs,
-            details: { topic, error: aiError },
-          });
           return {
             content: [
               {
@@ -316,13 +310,6 @@ export function registerPlanningTools(server: McpServer): void {
         const postsArray = extractJsonArray(rawText);
 
         if (!postsArray) {
-          const durationMs = Date.now() - startedAt;
-          logMcpToolInvocation({
-            toolName: 'plan_content_week',
-            status: 'error',
-            durationMs,
-            details: { topic, error: 'could not parse AI response' },
-          });
           return {
             content: [
               {
@@ -413,14 +400,7 @@ export function registerPlanningTools(server: McpServer): void {
               throw new Error(persistError);
             }
           } catch (persistErr) {
-            const durationMs = Date.now() - startedAt;
             const message = sanitizeError(persistErr);
-            logMcpToolInvocation({
-              toolName: 'plan_content_week',
-              status: 'error',
-              durationMs,
-              details: { topic, error: `plan persistence failed: ${message}` },
-            });
             return {
               content: [{ type: 'text' as const, text: `Plan persistence failed: ${message}` }],
               isError: true,
@@ -428,34 +408,22 @@ export function registerPlanningTools(server: McpServer): void {
           }
         }
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'plan_content_week',
-          status: 'success',
-          durationMs,
-          details: { topic, platforms, posts: posts.length, days },
-        });
-
+        const structuredContent = asEnvelope(plan);
         if (response_format === 'json') {
           return {
-            content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(plan), null, 2) }],
+            structuredContent,
+            content: [{ type: 'text' as const, text: JSON.stringify(structuredContent, null, 2) }],
             isError: false,
           };
         }
 
         return {
+          structuredContent,
           content: [{ type: 'text' as const, text: formatPlanAsText(plan) }],
           isError: false,
         };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'plan_content_week',
-          status: 'error',
-          durationMs,
-          details: { topic, error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Plan generation failed: ${message}` }],
           isError: true,
@@ -479,7 +447,6 @@ export function registerPlanningTools(server: McpServer): void {
       response_format: z.enum(['text', 'json']).default('json'),
     },
     async ({ plan, project_id, status, response_format }) => {
-      const startedAt = Date.now();
       try {
         const normalizedStatus = status ?? 'draft';
         const resolvedProjectId =
@@ -527,14 +494,6 @@ export function registerPlanningTools(server: McpServer): void {
           throw new Error(error);
         }
 
-        const durationMs = Date.now() - startedAt;
-        logMcpToolInvocation({
-          toolName: 'save_content_plan',
-          status: 'success',
-          durationMs,
-          details: { plan_id: planId, project_id: resolvedProjectId, status: normalizedStatus },
-        });
-
         const result = {
           plan_id: planId,
           project_id: resolvedProjectId,
@@ -555,14 +514,7 @@ export function registerPlanningTools(server: McpServer): void {
           isError: false,
         };
       } catch (err) {
-        const durationMs = Date.now() - startedAt;
         const message = sanitizeError(err);
-        logMcpToolInvocation({
-          toolName: 'save_content_plan',
-          status: 'error',
-          durationMs,
-          details: { error: message },
-        });
         return {
           content: [{ type: 'text' as const, text: `Failed to save content plan: ${message}` }],
           isError: true,
@@ -762,7 +714,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: safeErrorMessage(result?.error, `Plan ${plan_id} not found or has no posts.`),
+              text: result?.error ?? `Plan ${plan_id} not found or has no posts.`,
             },
           ],
           isError: true,

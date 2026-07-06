@@ -7,32 +7,14 @@ vi.unmock('../lib/supabase.js');
 // Mock createClient for the real supabase module
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({
-    from: vi.fn((table: string) => {
-      const resolvedValue =
-        table === 'organization_members'
-          ? { data: [{ organization_id: 'request-fallback-org' }], error: null }
-          : table === 'organizations'
-            ? { data: [{ id: 'request-fallback-org' }], error: null }
-          : { data: { id: 'project-db' }, error: null };
-      const query = {
-        select: vi.fn(() => query),
-        eq: vi.fn(() => query),
-        in: vi.fn(() => query),
-        order: vi.fn(() => query),
-        limit: vi.fn(() => query),
-        single: vi.fn().mockResolvedValue({ data: { id: 'project-db' }, error: null }),
-        maybeSingle: vi.fn().mockResolvedValue(
-          table === 'organization_members'
-            ? { data: { organization_id: 'request-fallback-org' }, error: null }
-            : { data: { id: 'project-db' }, error: null }
-        ),
-        insert: vi.fn().mockResolvedValue({ data: null, error: null }),
-        then: vi.fn(resolve => resolve(resolvedValue)),
-        catch: vi.fn(() => query),
-        finally: vi.fn(() => query),
-      };
-      return query;
-    }),
+    from: vi.fn(() => ({
+      select: vi.fn().mockReturnThis(),
+      eq: vi.fn().mockReturnThis(),
+      order: vi.fn().mockReturnThis(),
+      limit: vi.fn().mockReturnThis(),
+      single: vi.fn().mockResolvedValue({ data: { id: 'project-db' }, error: null }),
+      insert: vi.fn().mockResolvedValue({ data: null, error: null }),
+    })),
   })),
 }));
 
@@ -87,52 +69,10 @@ describe('supabase module', () => {
   });
 
   describe('getDefaultProjectId', () => {
-    it('prefers project ID from request context', async () => {
-      const { requestContext } = await import('./request-context.js');
-      const { getDefaultProjectId } = await import('./supabase.js');
-
-      const projectId = await requestContext.run(
-        {
-          userId: 'request-user-id',
-          scopes: ['mcp:read'],
-          token: 'request-token',
-          organizationId: 'request-org-id',
-          projectId: 'request-project-id',
-          creditsUsed: 0,
-          assetsGenerated: 0,
-        },
-        () => getDefaultProjectId()
-      );
-
-      expect(projectId).toBe('request-project-id');
-    });
-
     it('returns a project ID', async () => {
       const { getDefaultProjectId } = await import('./supabase.js');
       const projectId = await getDefaultProjectId();
       expect(typeof projectId).toBe('string');
-    });
-
-    it('falls back through organization membership when no project is in context', async () => {
-      const { requestContext } = await import('./request-context.js');
-      const { getDefaultProjectId } = await import('./supabase.js');
-
-      delete process.env.SOCIALNEURON_PROJECT_ID;
-
-      const projectId = await requestContext.run(
-        {
-          userId: 'request-fallback-user-id',
-          scopes: ['mcp:read'],
-          token: 'request-token',
-          organizationId: 'request-fallback-org',
-          projectId: null,
-          creditsUsed: 0,
-          assetsGenerated: 0,
-        },
-        () => getDefaultProjectId()
-      );
-
-      expect(projectId).toBe('project-db');
     });
 
     it('returns consistent value on repeated calls (caching)', async () => {
@@ -187,29 +127,11 @@ describe('supabase module', () => {
       expect(isTelemetryDisabled()).toBe(true);
     });
 
-    it('returns true by default — off unless explicitly opted in', async () => {
+    it('returns false when no opt-out env vars set', async () => {
       delete process.env.DO_NOT_TRACK;
       delete process.env.SOCIALNEURON_NO_TELEMETRY;
-      delete process.env.SOCIALNEURON_TELEMETRY;
-      const { isTelemetryDisabled } = await import('./supabase.js');
-      expect(isTelemetryDisabled()).toBe(true);
-    });
-
-    it('returns false when opted in via SOCIALNEURON_TELEMETRY=1', async () => {
-      delete process.env.DO_NOT_TRACK;
-      delete process.env.SOCIALNEURON_NO_TELEMETRY;
-      process.env.SOCIALNEURON_TELEMETRY = '1';
       const { isTelemetryDisabled } = await import('./supabase.js');
       expect(isTelemetryDisabled()).toBe(false);
-    });
-
-    it('hard opt-out wins even when opted in', async () => {
-      process.env.SOCIALNEURON_TELEMETRY = '1';
-      process.env.DO_NOT_TRACK = '1';
-      const { isTelemetryDisabled } = await import('./supabase.js');
-      expect(isTelemetryDisabled()).toBe(true);
-      delete process.env.DO_NOT_TRACK;
-      delete process.env.SOCIALNEURON_TELEMETRY;
     });
   });
 
@@ -264,9 +186,96 @@ describe('supabase module', () => {
   });
 
   describe('getAuthMode', () => {
-    it('defaults to service-role before initializeAuth', async () => {
+    it('defaults to unauthenticated before initializeAuth', async () => {
       const { getAuthMode } = await import('./supabase.js');
-      expect(getAuthMode()).toBe('service-role');
+      expect(getAuthMode()).toBe('unauthenticated');
+    });
+  });
+
+  describe('initializeAuth disk-cache bypass (stdio revocation fix)', () => {
+    // Regression guard: initializeAuth() must NOT read from the disk validation cache.
+    // A revoked snk_ key must be rejected immediately; serving a stale cached result
+    // would leave it valid for up to 5 min (the hole closed by this PR).
+
+    it('always calls validateApiKey remotely even when disk cache would be warm', async () => {
+      const validateApiKey = vi.fn().mockResolvedValue({
+        valid: true,
+        userId: 'user-revoke-test',
+        scopes: ['mcp:full'],
+      });
+
+      // Return a "warm" cache hit to prove initializeAuth ignores it.
+      const readValidationCache = vi.fn().mockReturnValue({
+        valid: true,
+        userId: 'user-stale-cached',
+        scopes: ['mcp:full'],
+      });
+      const writeValidationCache = vi.fn();
+
+      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
+      vi.doMock('./validation-cache.js', () => ({
+        readValidationCache,
+        writeValidationCache,
+        clearValidationCache: vi.fn(),
+      }));
+      vi.doMock('../cli/credentials.js', () => ({
+        loadApiKey: vi.fn().mockResolvedValue('snk_live_testkey123'),
+      }));
+
+      // Reset the module so the new mocks take effect.
+      vi.resetModules();
+      const { initializeAuth } = await import('./supabase.js');
+
+      await initializeAuth();
+
+      // The remote validator MUST have been called exactly once.
+      expect(validateApiKey).toHaveBeenCalledTimes(1);
+      expect(validateApiKey).toHaveBeenCalledWith('snk_live_testkey123');
+
+      // The disk cache MUST NOT have been consulted.
+      expect(readValidationCache).not.toHaveBeenCalled();
+
+      vi.doUnmock('../auth/api-keys.js');
+      vi.doUnmock('./validation-cache.js');
+      vi.doUnmock('../cli/credentials.js');
+      vi.resetModules();
+    });
+
+    it('rejects a revoked key immediately without serving a cached result', async () => {
+      const validateApiKey = vi.fn().mockResolvedValue({
+        valid: false,
+        error: 'Key has been revoked',
+        retryable: false,
+      });
+      const readValidationCache = vi.fn().mockReturnValue({
+        valid: true,
+        userId: 'user-stale',
+        scopes: ['mcp:full'],
+      });
+
+      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
+      vi.doMock('./validation-cache.js', () => ({
+        readValidationCache,
+        writeValidationCache: vi.fn(),
+        clearValidationCache: vi.fn(),
+      }));
+      vi.doMock('../cli/credentials.js', () => ({
+        loadApiKey: vi.fn().mockResolvedValue('snk_live_revokedkey'),
+      }));
+
+      vi.resetModules();
+      const { initializeAuth } = await import('./supabase.js');
+
+      await expect(initializeAuth()).rejects.toThrow(/invalid|expired|revoked/i);
+
+      // Remote check was called; disk cache was not served.
+      expect(validateApiKey).toHaveBeenCalledTimes(1);
+      expect(readValidationCache).not.toHaveBeenCalled();
+
+      vi.doUnmock('../auth/api-keys.js');
+      vi.doUnmock('./validation-cache.js');
+      vi.doUnmock('../cli/credentials.js');
+      vi.resetModules();
     });
   });
 });

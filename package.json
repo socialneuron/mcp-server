@@ -1,6 +1,6 @@
 {
   "name": "@socialneuron/mcp-server",
-  "version": "1.7.13",
+  "version": "1.7.14",
   "description": "Official MCP server, REST API & CLI for Social Neuron \u2014 create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
@@ -96,8 +96,11 @@
     "@types/express": "5.0.6",
     "@types/node": "^26.1.0",
     "esbuild": "^0.28.1",
-    "typescript": "^6.0.2",
-    "vitest": "^3.2.6"
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.6",
+    "playwright": "^1.59.1",
+    "@remotion/bundler": "^4.0.290",
+    "@remotion/renderer": "^4.0.290"
   },
   "overrides": {
     "vite": "7.3.5",
@@ -108,5 +111,13 @@
   },
   "engines": {
     "node": ">=20.0.0 <21.0.0 || >=22.0.0"
+  },
+  "peerDependencies": {
+    "playwright": "^1.59.1"
+  },
+  "peerDependenciesMeta": {
+    "playwright": {
+      "optional": true
+    }
   }
 }

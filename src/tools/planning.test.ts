@@ -6,6 +6,12 @@ import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 
 vi.mock('../lib/edge-function.js');
 vi.mock('../lib/supabase.js');
+vi.mock('../lib/ssrf.js', () => ({
+  validateUrlForSSRF: vi.fn(async (url: string) => ({
+    isValid: true,
+    sanitizedUrl: url,
+  })),
+}));
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
@@ -92,6 +98,49 @@ describe('planning tools', () => {
     expect(envelope.data.plan_id).toBeTruthy();
     expect(envelope.data.insights_applied?.has_historical_data).toBe(true);
     expect(envelope.data.context_used?.loop_summary?.loopHealth).toBe('good');
+  });
+
+  it('plan_content_week extracts a YouTube source_url with the correct EF contract', async () => {
+    // Regression: planning previously sent { url } to scrape-youtube and read
+    // top-level data.title/transcript → silent empty source context. It now uses
+    // the shared lib/urlExtraction helper ({ action, videoUrl } + envelope unwrap).
+    mockCallEdge.mockImplementation(((fn: string, body: Record<string, unknown>) => {
+      if (fn === 'scrape-youtube' && body.action === 'transcript') {
+        return Promise.resolve({
+          data: { success: true, data: { segments: [{ text: 'hello world' }] } },
+          error: null,
+        });
+      }
+      if (fn === 'scrape-youtube' && body.action === 'metadata') {
+        return Promise.resolve({ data: { success: true, data: { title: 'Vid' } }, error: null });
+      }
+      if (fn === 'social-neuron-ai') {
+        return Promise.resolve({ data: { text: JSON.stringify(MOCK_POSTS) }, error: null });
+      }
+      // brand-profile / ideation-context / loop-summary / save-content-plan
+      return Promise.resolve({ data: { success: true, plan_id: 'plan-1' }, error: null });
+    }) as never);
+
+    const handler = server.getHandler('plan_content_week')!;
+    const result = await handler({
+      source_url: 'https://youtube.com/watch?v=abc123',
+      platforms: ['linkedin'],
+      posts_per_day: 1,
+      days: 1,
+      response_format: 'json',
+    });
+
+    expect(result.isError).toBe(false);
+    const ytCalls = mockCallEdge.mock.calls.filter(c => c[0] === 'scrape-youtube');
+    expect(ytCalls.length).toBeGreaterThan(0);
+    // The fix: action/videoUrl contract — NOT the old { url } shape.
+    expect(
+      ytCalls.every(c => {
+        const b = c[1] as Record<string, unknown>;
+        return 'action' in b && 'videoUrl' in b && !('url' in b);
+      })
+    ).toBe(true);
+    expect(ytCalls.some(c => (c[1] as Record<string, unknown>).action === 'transcript')).toBe(true);
   });
 
   it('save_content_plan persists a provided plan payload', async () => {

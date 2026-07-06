@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { resolve } from 'node:path';
 import { mkdir } from 'node:fs/promises';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId, logMcpToolInvocation } from '../lib/supabase.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 
@@ -190,16 +190,9 @@ export function registerRemotionTools(server: McpServer): void {
         ),
     },
     async ({ composition_id, output_format, props }) => {
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('screenshot', `render_demo_video:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'render_demo_video',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -214,12 +207,6 @@ export function registerRemotionTools(server: McpServer): void {
       // Validate composition ID
       const comp = COMPOSITIONS.find(c => c.id === composition_id);
       if (!comp) {
-        await logMcpToolInvocation({
-          toolName: 'render_demo_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Unknown composition', compositionId: composition_id },
-        });
         return {
           content: [
             {
@@ -239,12 +226,6 @@ export function registerRemotionTools(server: McpServer): void {
         try {
           inputProps = JSON.parse(props);
         } catch {
-          await logMcpToolInvocation({
-            toolName: 'render_demo_video',
-            status: 'error',
-            durationMs: Date.now() - startedAt,
-            details: { error: 'Invalid props JSON', compositionId: composition_id },
-          });
           return {
             content: [
               {
@@ -296,12 +277,6 @@ export function registerRemotionTools(server: McpServer): void {
 
         const durationSec = (composition.durationInFrames / composition.fps).toFixed(1);
 
-        await logMcpToolInvocation({
-          toolName: 'render_demo_video',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: { compositionId: composition_id, format },
-        });
         return {
           content: [
             {
@@ -319,12 +294,6 @@ export function registerRemotionTools(server: McpServer): void {
         };
       } catch (err) {
         const message = sanitizeError(err);
-        await logMcpToolInvocation({
-          toolName: 'render_demo_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: message, compositionId: composition_id, format },
-        });
         return {
           content: [
             {
@@ -368,16 +337,9 @@ export function registerRemotionTools(server: McpServer): void {
         .describe('Output aspect ratio. Defaults to "9:16" (vertical).'),
     },
     async ({ composition_id, input_props, aspect_ratio }) => {
-      const startedAt = Date.now();
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('generation', `render_template:${userId}`);
       if (!rateLimit.allowed) {
-        await logMcpToolInvocation({
-          toolName: 'render_template_video',
-          status: 'rate_limited',
-          durationMs: Date.now() - startedAt,
-          details: { retryAfter: rateLimit.retryAfter },
-        });
         return {
           content: [
             {
@@ -392,12 +354,6 @@ export function registerRemotionTools(server: McpServer): void {
       // Validate composition ID
       const comp = COMPOSITIONS.find(c => c.id === composition_id);
       if (!comp) {
-        await logMcpToolInvocation({
-          toolName: 'render_template_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Unknown composition', compositionId: composition_id },
-        });
         return {
           content: [
             {
@@ -414,12 +370,6 @@ export function registerRemotionTools(server: McpServer): void {
       try {
         inputProps = JSON.parse(input_props);
       } catch {
-        await logMcpToolInvocation({
-          toolName: 'render_template_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: 'Invalid input_props JSON' },
-        });
         return {
           content: [{ type: 'text' as const, text: `Invalid JSON in input_props.` }],
           isError: true,
@@ -450,17 +400,6 @@ export function registerRemotionTools(server: McpServer): void {
           throw new Error(error || data?.error || 'Failed to create render job');
         }
 
-        await logMcpToolInvocation({
-          toolName: 'render_template_video',
-          status: 'success',
-          durationMs: Date.now() - startedAt,
-          details: {
-            compositionId: composition_id,
-            jobId: data.jobId,
-            creditsCharged: data.creditsCharged,
-          },
-        });
-
         return {
           content: [
             {
@@ -482,12 +421,6 @@ export function registerRemotionTools(server: McpServer): void {
         };
       } catch (err) {
         const message = sanitizeError(err);
-        await logMcpToolInvocation({
-          toolName: 'render_template_video',
-          status: 'error',
-          durationMs: Date.now() - startedAt,
-          details: { error: message, compositionId: composition_id },
-        });
         return {
           content: [
             {

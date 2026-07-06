@@ -155,6 +155,7 @@ export interface IdeationContext {
 }
 
 export interface ResponseEnvelope<T> {
+  [key: string]: unknown;
   _meta: {
     version: string;
     timestamp: string;
