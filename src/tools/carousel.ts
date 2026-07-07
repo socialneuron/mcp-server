@@ -170,7 +170,7 @@ export function registerCarouselTools(server: McpServer): void {
         .enum(['curiosity', 'authority', 'pain_point', 'contrarian', 'data_driven'])
         .optional()
         .describe(
-          'Hook family tag. Recorded on the carousel so downstream analytics + bandit learners can attribute engagement to hook pattern.'
+          'Hook family tag. Recorded on the carousel so downstream analytics can attribute engagement to hook pattern.'
         ),
       cta_text: z
         .string()

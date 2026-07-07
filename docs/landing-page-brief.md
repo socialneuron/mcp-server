@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "92 AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
+**Subheadline:** "80+ public AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
@@ -155,7 +155,7 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 92 |
+| MCP tools | 83 hosted public / 84 stdio public |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |

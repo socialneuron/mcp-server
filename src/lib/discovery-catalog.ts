@@ -25,6 +25,12 @@ export type DiscoveryTool = {
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
 };
 
+const PUBLIC_SCHEMA_OMIT_PROPERTIES: Record<string, string[]> = {
+  // Internal lineage fields are accepted by the runtime for Social Neuron's own
+  // automation, but should not be advertised in public MCP/OpenAPI discovery.
+  schedule_post: ['origin', 'hermes_run_id'],
+};
+
 let cached: Promise<DiscoveryTool[]> | null = null;
 
 /** Build (once, memoized) the discovery catalog enriched with real input schemas. */
@@ -94,6 +100,31 @@ async function computeDiscoveryCatalog(): Promise<DiscoveryTool[]> {
   return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).map(t => ({
     name: t.name,
     description: t.description,
-    inputSchema: schemaByName.get(t.name) ?? { type: 'object' as const, properties: {} },
+    inputSchema: sanitizePublicInputSchema(
+      t.name,
+      schemaByName.get(t.name) ?? { type: 'object' as const, properties: {} }
+    ),
   }));
+}
+
+function sanitizePublicInputSchema(
+  toolName: string,
+  schema: DiscoveryTool['inputSchema']
+): DiscoveryTool['inputSchema'] {
+  const omit = PUBLIC_SCHEMA_OMIT_PROPERTIES[toolName];
+  if (!omit?.length) return schema;
+
+  const omitted = new Set(omit);
+  const properties = Object.fromEntries(
+    Object.entries(schema.properties ?? {}).filter(([name]) => !omitted.has(name))
+  );
+  const required = schema.required?.filter(name => !omitted.has(name));
+  const schemaWithoutRequired = { ...schema };
+  delete schemaWithoutRequired.required;
+
+  return {
+    ...schemaWithoutRequired,
+    properties,
+    ...(required?.length ? { required } : {}),
+  };
 }

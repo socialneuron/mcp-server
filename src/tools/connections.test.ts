@@ -68,6 +68,58 @@ describe('connection tools', () => {
       expect(parsed.next_step).toContain('wait_for_connection');
     });
 
+    it('passes project_id when minting a brand-scoped connection link', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          nonce: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          platform: 'Twitter',
+          expires_at: '2026-04-25T20:00:00.000Z',
+          deep_link: 'https://www.socialneuron.com/settings/connections?start=twitter&t=xxx',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('start_platform_connection')!;
+      const result = await handler({ platform: 'twitter', project_id: 'vpn-project' });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Brand/project: vpn-project');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'mint-connection-nonce',
+          platform: 'twitter',
+          projectId: 'vpn-project',
+          project_id: 'vpn-project',
+        }),
+        expect.objectContaining({ timeoutMs: 10_000 })
+      );
+    });
+
+    it('returns project_id in JSON connection link output', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          nonce: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
+          platform: 'Twitter',
+          expires_at: '2026-04-25T20:00:00.000Z',
+          deep_link: 'https://www.socialneuron.com/settings/connections?start=twitter&t=xxx',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('start_platform_connection')!;
+      const result = await handler({
+        platform: 'twitter',
+        project_id: 'vpn-project',
+        response_format: 'json',
+      });
+      const parsed = JSON.parse(result.content[0].text);
+
+      expect(parsed.project_id).toBe('vpn-project');
+    });
+
     it('surfaces EF errors cleanly', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: null,
@@ -169,6 +221,47 @@ describe('connection tools', () => {
       expect(parsed.platform).toBe('YouTube');
       expect(parsed.account_id).toBe('acc-2');
       expect(parsed.attempts).toBe(1);
+    });
+
+    it('passes project_id while polling for a brand-scoped account', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: 'acc-brand',
+              platform: 'Twitter',
+              status: 'active',
+              effective_status: 'active',
+              username: 'thevpnmatrix',
+              project_id: 'vpn-project',
+              created_at: '2026-04-25T19:55:00.000Z',
+              expires_at: null,
+              has_refresh_token: true,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('wait_for_connection')!;
+      const result = await handler({
+        platform: 'twitter',
+        project_id: 'vpn-project',
+        poll_interval_s: 2,
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('Brand/project: vpn-project');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'connected-accounts',
+          projectId: 'vpn-project',
+          project_id: 'vpn-project',
+        }),
+        expect.objectContaining({ timeoutMs: 10_000 })
+      );
     });
 
     it('treats inactive accounts as not yet connected', async () => {

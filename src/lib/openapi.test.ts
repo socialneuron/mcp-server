@@ -36,6 +36,8 @@ describe('buildOpenApiDocument', () => {
     }
     // Spot-check a known internal tool is absent.
     expect(doc.paths['/tools/write_agent_reflection']).toBeUndefined();
+    expect(doc.paths['/tools/get_loop_pulse']).toBeUndefined();
+    expect(doc.paths['/tools/get_bandit_state']).toBeUndefined();
   });
 
   it('carries the required scope on each operation', async () => {

@@ -735,10 +735,11 @@ app.post(
 // execute_recipe, plan_content_week, save_brand_profile, generate_carousel, …).
 // Name-matched to TOOL_CATALOG with a {} fallback so the advertised tool SET is
 // unchanged — we only add schemas.
-// Discovery: UNAUTHENTICATED tools/list returns the static catalog WITH real
-// per-tool input schemas (no session, no next(), no fake userId). AUTHENTICATED
-// tools/list falls through to the SDK transport (identical schemas, plus a real
-// session). Security review: 2026-04-17 (session exhaustion DoS + userId leak fixed).
+// Discovery: tools/list returns the public static catalog WITH real per-tool
+// input schemas (no session, no next(), no fake userId). This applies to both
+// unauthenticated discovery probes and authenticated clients so internal tools
+// registered for Social Neuron automation never leak into cached client catalogs.
+// Security review: 2026-04-17 (session exhaustion DoS + userId leak fixed).
 app.post(
   "/mcp",
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -751,13 +752,7 @@ app.post(
     // with valid auth (OAuth, API key) get a proper session + session ID.
 
     if (body.method === "tools/list") {
-      const hasBearer = req.headers.authorization?.startsWith("Bearer ");
-      // Authenticated → let the SDK transport answer tools/list with rich schemas.
-      if (hasBearer) {
-        next();
-        return;
-      }
-      // Unauthenticated discovery → static catalog WITH real input schemas.
+      // Public discovery → static catalog WITH real input schemas.
       buildDiscoveryCatalog()
         .then((tools) => {
           res.json({ jsonrpc: "2.0", id: body.id ?? null, result: { tools } });
@@ -768,11 +763,13 @@ app.post(
             jsonrpc: "2.0",
             id: body.id ?? null,
             result: {
-              tools: TOOL_CATALOG.map((t) => ({
-                name: t.name,
-                description: t.description,
-                inputSchema: { type: "object" as const, properties: {} },
-              })),
+              tools: TOOL_CATALOG.filter((t) => !t.localOnly && !t.internal).map(
+                (t) => ({
+                  name: t.name,
+                  description: t.description,
+                  inputSchema: { type: "object" as const, properties: {} },
+                }),
+              ),
             },
           });
         });
