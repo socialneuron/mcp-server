@@ -94,6 +94,32 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+function accountEffectiveStatus(account: ConnectedAccount): string {
+  return account.effective_status || account.status;
+}
+
+function isUsableAccount(account: ConnectedAccount): boolean {
+  const status = accountEffectiveStatus(account);
+  return status === "active" || status === "expires_soon";
+}
+
+function formatAccountChoice(account: ConnectedAccount): string {
+  const name = account.username ? `@${account.username}` : "unnamed";
+  const project = account.project_id ? `project_id=${account.project_id}` : "project_id=unassigned";
+  const refresh = account.has_refresh_token ? "OAuth 2.0 refresh" : "no refresh token";
+  return `${account.id} (${name}, ${project}, ${accountEffectiveStatus(account)}, ${refresh})`;
+}
+
+function requestedAccountIdForPlatform(
+  accountId: string | undefined,
+  accountIds: Record<string, string> | undefined,
+  platform: string,
+): string | undefined {
+  if (accountId) return accountId;
+  if (!accountIds) return undefined;
+  return accountIds[platform] || accountIds[platform.toLowerCase()];
+}
+
 /**
  * A URL is "already persisted" if it carries an S3/R2 signature — those are
  * produced by our own get-signed-url EF and point at R2. Rehosting them
@@ -356,7 +382,9 @@ export function registerDistributionTools(server: McpServer): void {
       project_id: z
         .string()
         .optional()
-        .describe("Social Neuron project ID to associate this post with."),
+        .describe(
+          "Social Neuron brand/project ID to associate this post with. Provide this when the account has multiple brands so brand voice and connected account routing stay scoped to the right brand.",
+        ),
       response_format: z
         .enum(["text", "json"])
         .optional()
@@ -372,15 +400,15 @@ export function registerDistributionTools(server: McpServer): void {
         .optional()
         .describe(
           "Connected account ID to post from. Use list_connected_accounts to find the right ID. " +
-            "Required when multiple accounts exist for the same platform.",
+            "Required when multiple accounts exist for the same platform. If project_id is provided, the account must belong to that project or be unassigned.",
         ),
       account_ids: z
         .record(z.string(), z.string())
         .optional()
         .describe(
           "Per-platform account IDs when posting to multiple platforms. " +
-            'Example: {"twitter": "abc123", "instagram": "def456"}. ' +
-            "Use list_connected_accounts to find IDs.",
+          'Example: {"twitter": "abc123", "instagram": "def456"}. ' +
+            "Use list_connected_accounts with the same project_id to find IDs.",
         ),
       auto_rehost: z
         .boolean()
@@ -666,15 +694,15 @@ export function registerDistributionTools(server: McpServer): void {
 
       // --- Pre-flight: validate connected accounts before posting ---
       const { data: accountsData } = await callEdgeFunction<{
-        accounts?: Array<{
-          id: string;
-          platform: string;
-          username: string | null;
-          status: string;
-          expires_at: string | null;
-          has_refresh_token: boolean;
-        }>;
-      }>("mcp-data", { action: "connected-accounts" }, { timeoutMs: 10_000 });
+        accounts?: ConnectedAccount[];
+      }>(
+        "mcp-data",
+        {
+          action: "connected-accounts",
+          ...(project_id ? { projectId: project_id, project_id } : {}),
+        },
+        { timeoutMs: 10_000 },
+      );
 
       if (accountsData?.accounts) {
         const accounts = accountsData.accounts;
@@ -684,24 +712,48 @@ export function registerDistributionTools(server: McpServer): void {
           const platformAccounts = accounts.filter(
             (a) =>
               a.platform.toLowerCase() === platform.toLowerCase() &&
-              a.status === "active",
+              isUsableAccount(a),
           );
+          const requestedAccountId = requestedAccountIdForPlatform(
+            account_id,
+            account_ids,
+            platform,
+          );
+
+          if (requestedAccountId) {
+            const selected = accounts.find((a) => a.id === requestedAccountId);
+            if (!selected) {
+              issues.push(
+                `${platform}: Account "${requestedAccountId}" is not available${project_id ? ` for project_id ${project_id}` : ""}. Call \`list_connected_accounts\`${project_id ? " with the same project_id" : ""} and choose one of the returned IDs.`,
+              );
+            } else if (selected.platform.toLowerCase() !== platform.toLowerCase()) {
+              issues.push(
+                `${platform}: Account "${requestedAccountId}" belongs to ${selected.platform}, not ${platform}.`,
+              );
+            } else if (!isUsableAccount(selected)) {
+              issues.push(
+                `${platform}: Account "${selected.username || selected.id}" is ${accountEffectiveStatus(selected)}. Reconnect at socialneuron.com/settings/connections.`,
+              );
+            } else if (
+              project_id &&
+              selected.project_id &&
+              selected.project_id !== project_id
+            ) {
+              issues.push(
+                `${platform}: Account "${selected.username || selected.id}" is bound to project_id ${selected.project_id}, not ${project_id}. Use the selected brand's account or reconnect/assign it in Settings > Integrations.`,
+              );
+            }
+            continue;
+          }
 
           if (platformAccounts.length === 0) {
             issues.push(
               `${platform}: not connected yet. This is a one-time browser setup on socialneuron.com — NOT another OAuth in Claude. ` +
-                `Call \`start_platform_connection\` with platform="${platform.toLowerCase()}" to get a deep link, ask the user to open it in their browser and approve on the platform, then call \`wait_for_connection\` before retrying schedule_post.`,
+                `Call \`start_platform_connection\` with platform="${platform.toLowerCase()}"${project_id ? ` and project_id="${project_id}"` : ""} to get a deep link, ask the user to open it in their browser and approve on the platform, then call \`wait_for_connection\` before retrying schedule_post.`,
             );
-          } else if (
-            platformAccounts.length > 1 &&
-            !account_id &&
-            !account_ids?.[platform.toLowerCase()]
-          ) {
+          } else if (platformAccounts.length > 1) {
             const accountList = platformAccounts
-              .map(
-                (a) =>
-                  `  - ${a.id} (${a.username || "unnamed"}${a.has_refresh_token ? ", OAuth 2.0" : ", no refresh token"})`,
-              )
+              .map((a) => `  - ${formatAccountChoice(a)}`)
               .join("\n");
             issues.push(
               `${platform}: Multiple accounts found. Specify account_id or account_ids to choose:\n${accountList}`,
@@ -887,14 +939,24 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "list_connected_accounts",
-    "Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. If a platform is missing or expired, the user needs to reconnect at socialneuron.com/settings/connections.",
+    "Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. Pass project_id to list the accounts for a specific brand/project, then pass the returned account id as account_id/account_ids when posting. If a platform is missing or expired, the user needs to reconnect at socialneuron.com/settings/connections.",
     {
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          "Brand/project ID to scope connected accounts. Use the same project_id when calling schedule_post.",
+        ),
+      include_all: z
+        .boolean()
+        .optional()
+        .describe("If true, include expired or inactive accounts as well as usable accounts."),
       response_format: z
         .enum(["text", "json"])
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
-    async ({ response_format }) => {
+    async ({ project_id, include_all, response_format }) => {
       const format = response_format ?? "text";
 
       // Route through mcp-data EF (works with API key via gateway)
@@ -902,7 +964,11 @@ export function registerDistributionTools(server: McpServer): void {
         success: boolean;
         accounts: ConnectedAccount[];
         error?: string;
-      }>("mcp-data", { action: "connected-accounts" });
+      }>("mcp-data", {
+        action: "connected-accounts",
+        ...(project_id ? { projectId: project_id, project_id } : {}),
+        ...(include_all ? { includeAll: true } : {}),
+      });
 
       if (efError || !result?.success) {
         return {
@@ -941,13 +1007,20 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      const lines: string[] = [`${accounts.length} connected account(s):`, ""];
+      const lines: string[] = [
+        `${accounts.length} connected account(s)${project_id ? ` for project ${project_id}` : ""}:`,
+        "",
+      ];
 
       for (const account of accounts as ConnectedAccount[]) {
         const name = account.username || "(unnamed)";
         const platformLower = account.platform.toLowerCase();
+        const project = account.project_id
+          ? `project_id=${account.project_id}`
+          : "project_id=unassigned";
+        const status = accountEffectiveStatus(account);
         lines.push(
-          `  ${platformLower}: ${name} (connected ${account.created_at.split("T")[0]})`,
+          `  ${platformLower}: ${name} | id=${account.id} | ${project} | status=${status} (connected ${account.created_at.split("T")[0]})`,
         );
       }
 

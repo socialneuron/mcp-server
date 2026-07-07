@@ -38,10 +38,20 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     // Internal operations tools stay runtime-registered but undiscoverable.
     expect(tools.map(t => t.name)).not.toContain('write_agent_reflection');
     expect(tools.map(t => t.name)).not.toContain('save_draft_to_library');
+    expect(tools.map(t => t.name)).not.toContain('get_loop_pulse');
+    expect(tools.map(t => t.name)).not.toContain('get_bandit_state');
     for (const t of tools) {
       expect(t.inputSchema.type, `${t.name} inputSchema.type`).toBe('object');
       expect(t.inputSchema.properties, `${t.name} inputSchema.properties`).toBeTypeOf('object');
     }
+  });
+
+  it('omits internal-only input fields from public tool schemas', async () => {
+    const tools = await buildDiscoveryCatalog();
+    const schedulePost = tools.find(t => t.name === 'schedule_post');
+    expect(schedulePost).toBeDefined();
+    expect(schedulePost!.inputSchema.properties).not.toHaveProperty('origin');
+    expect(schedulePost!.inputSchema.properties).not.toHaveProperty('hermes_run_id');
   });
 
   it('memoizes the catalog (same instance until reset)', async () => {

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
- * Generate docs/tools-reference.md from the RUNTIME tool registry — the exact
- * 75 tools (and their model-facing descriptions) a stdio client receives.
+ * Generate docs/tools-reference.md from the public stdio tool registry — the
+ * runtime tools a stdio client receives, minus internal operations tools.
  * Reproducible: re-run `npm run build:docs` after any tool change.
  */
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
@@ -29,13 +29,15 @@ try {
   const entry = join(tmp, 'entry.mjs');
   writeFileSync(
     entry,
-    `import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n` +
+      `import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';\n` +
       `import { registerAllTools } from ${JSON.stringify(resolve(ROOT, 'src/lib/register-tools.ts'))};\n` +
       `import { TOOL_SCOPES } from ${JSON.stringify(resolve(ROOT, 'src/auth/scopes.ts'))};\n` +
+      `import { TOOL_CATALOG } from ${JSON.stringify(resolve(ROOT, 'src/lib/tool-catalog.ts'))};\n` +
       `const s = new McpServer({ name: 'tools-ref', version: '0' });\n` +
       `registerAllTools(s, { skipApps: true });\n` +
+      `const publicToolNames = new Set(TOOL_CATALOG.filter(t => !t.internal).map(t => t.name));\n` +
       `const out = {};\n` +
-      `for (const [n, t] of Object.entries(s._registeredTools ?? {})) out[n] = { description: String(t?.description ?? ''), scope: TOOL_SCOPES[n] ?? 'mcp:read' };\n` +
+      `for (const [n, t] of Object.entries(s._registeredTools ?? {})) if (publicToolNames.has(n)) out[n] = { description: String(t?.description ?? ''), scope: TOOL_SCOPES[n] ?? 'mcp:read' };\n` +
       `export const RUNTIME_TOOLS = out;\n`
   );
   const bundled = join(tmp, 'entry.bundle.mjs');
@@ -49,7 +51,7 @@ const total = Object.keys(runtime).length;
 const lines = [
   '# Tool Reference',
   '',
-  `The \`@socialneuron/mcp-server\` npm package registers **${total} tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [\`mcp.socialneuron.com\`](https://mcp.socialneuron.com) exposes additional tools — query [\`/.well-known/mcp/server-card.json\`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.`,
+  `The \`@socialneuron/mcp-server\` npm package registers **${total} public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [\`mcp.socialneuron.com\`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [\`/.well-known/mcp/server-card.json\`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.`,
   '',
   '> Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.',
   '',

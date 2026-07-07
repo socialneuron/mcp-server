@@ -13,10 +13,14 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 ### Fixed
 
 - Scrubbed an internal codename from `schedule_post`'s param descriptions (exposed via the new unauthenticated OpenAPI). Added a regression guard.
+- Tightened `schedule_post` account selection so platform account IDs are validated against the requested `project_id`, platform, and usable connection status before a post is scheduled. `list_connected_accounts`, `start_platform_connection`, and `wait_for_connection` now carry project context so agents can distinguish brands such as The VPN Matrix from Social Neuron.
+- Hid internal loop-observability tools from public HTTP discovery, server-card, OpenAPI, REST, and `search_tools`, while keeping them registered for internal automation.
+- Removed private lineage fields from public `schedule_post` discovery/OpenAPI schemas while preserving runtime compatibility for internal callers.
 
 ### Changed
 
 - `docs/rest-api.md` updated to the real response shape (MCP result on success, `error_type` on error) and re-links the live OpenAPI spec.
+- PR CI now enforces the dependency cooldown gate with `SN_DEP_AGE_ENFORCE=true` when package manifests, lockfiles, SDK package files, content-calendar package files, or the release workflow change.
 
 ## [1.7.16] - 2026-07-06
 
@@ -34,7 +38,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Changed
 
-- **Public tool surface tightened.** Internal service tools used by Social Neuron's own automation are still registered and scope-gated at runtime, but are no longer advertised on the hosted server card, HTTP discovery, `search_tools`, knowledge documents, or the CLI tool listing. The hosted endpoint now advertises 85 tools; the npm stdio server exposes 87 discoverable tools (including 2 local screen-capture tools).
+- **Public tool surface tightened.** Internal service tools used by Social Neuron's own automation are still registered and scope-gated at runtime, but are no longer advertised on the hosted server card, HTTP discovery, `search_tools`, knowledge documents, or the CLI tool listing.
 - **Tool descriptions cleaned up.** Internal project references and implementation jargon removed from tool descriptions across the catalog.
 - **`run_content_pipeline` scheduling guard restored.** Scheduling again requires `schedule_confirmed=true` after explicit user approval, cannot run with the quality stage skipped, caps generated posts to the requested plan size, drops posts targeting unrequested platforms, and counts scheduled posts against the credit budget. (This hardening was unintentionally dropped in the 1.7.14 source sync.)
 - **Metadata contract unified + CI-guarded.** `server.json` version/pricing/tool-count now match `package.json` and the canonical pricing (MCP requires Pro $49/mo or higher; free tier is 50 credits/mo with no MCP access). Added `mcpName` for MCP Registry ownership verification. New `npm run verify:metadata` gate (wired into CI and release) blocks stale counts, stale pricing, internal codenames, and dead endpoint links from re-entering the public surface.

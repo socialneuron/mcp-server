@@ -960,7 +960,7 @@ Return ONLY valid JSON in this exact format:
         .enum(['curiosity', 'authority', 'pain_point', 'contrarian', 'data_driven'])
         .optional()
         .describe(
-          'Hook family tag. Persisted with the carousel so bandit learners can attribute engagement to hook pattern.'
+          'Hook family tag. Persisted with the carousel so downstream analytics can attribute engagement to hook pattern.'
         ),
       cta_text: z.string().max(200).optional().describe('Explicit CTA copy for the final slide.'),
       cta_url: z.string().url().optional().describe('URL promoted on the CTA slide.'),
