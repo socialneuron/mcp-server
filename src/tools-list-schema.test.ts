@@ -3,11 +3,10 @@
  * to short-circuit EVERY tools/list (even authenticated) with empty
  * inputSchema.properties, so no client ever received per-tool input schemas.
  *
- * http.ts now falls through to the SDK transport for authenticated requests.
- * This test asserts the SDK path (the one authenticated clients now reach via
- * registerAllTools) emits FULL input schemas — i.e. the fix is meaningful.
- * It exercises the same SDK serialization the StreamableHTTP transport uses,
- * without needing a live HTTP server or bearer token.
+ * http.ts now serves a filtered discovery catalog built from the SDK transport's
+ * serialized tool schemas. This test asserts that SDK serialization still emits
+ * FULL input schemas, so the filtered catalog has real schemas to copy without
+ * needing a live HTTP server or bearer token.
  */
 import { describe, it, expect } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -35,7 +34,7 @@ async function sdkToolsList(): Promise<ToolListResult> {
   return listHandler({ method: 'tools/list', params: {} }, {});
 }
 
-describe('tools/list schema (P1.6 — authenticated SDK path emits rich schemas)', () => {
+describe('tools/list schema (P1.6 — SDK serialization emits rich schemas)', () => {
   it('fetch_analytics advertises its real input parameters (not an empty object)', async () => {
     const out = await sdkToolsList();
     const tool = out.tools.find(t => t.name === 'fetch_analytics');

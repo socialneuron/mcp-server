@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 85+ MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 80+ public MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -13,7 +13,7 @@
 npx -y @socialneuron/mcp-server login --device
 ```
 
-This opens your browser to authorize access. Requires a paid Social Neuron plan (Starter or above). See [pricing](https://socialneuron.com/pricing).
+This opens your browser to authorize access. Requires a Social Neuron Pro plan or higher. See [pricing](https://socialneuron.com/pricing).
 
 ### 2. Add to Claude Code
 
@@ -94,7 +94,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-The hosted endpoint advertises **85 tools** (live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)); the npm stdio server adds 2 local screen-capture tools (87 discoverable). A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
+The hosted endpoint advertises **83 public tools** (live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)); the npm stdio server exposes **84 public tools**, including 2 local screen-capture tools. A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
@@ -166,15 +166,15 @@ Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file 
 
 ## Pricing
 
-MCP access requires a paid plan:
+MCP/API access requires a Pro plan or higher:
 
-| Plan | Price | Credits/mo | MCP Access |
+| Plan | Price | Credits/mo | MCP/API Access |
 |------|-------|-----------|------------|
 | Free | $0 | 50 | — |
 | Starter | $19/mo | 500 | — |
-| Pro | $49/mo | 1,500 | Read + Analytics + Write + Distribute |
-| Team | $99/mo | 3,500 | Full + 5 keys |
-| Agency | $249/mo | 10,000 | Full + 20 keys + REST API |
+| Pro | $49/mo | 1,500 | MCP/API: Read + Analytics + Write + Distribute |
+| Team | $99/mo | 3,500 | Full MCP/API + 5 keys |
+| Agency | $249/mo | 10,000 | Full MCP/API + 20 keys |
 
 Sign up at [socialneuron.com/pricing](https://socialneuron.com/pricing).
 

@@ -125,6 +125,51 @@ describe('distribution tools', () => {
       );
     });
 
+    it('scopes account preflight by project_id and rejects account IDs outside that brand', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          accounts: [
+            {
+              id: 'vpn-twitter',
+              platform: 'Twitter',
+              status: 'active',
+              effective_status: 'active',
+              username: 'thevpnmatrix',
+              created_at: '2026-06-01T00:00:00Z',
+              project_id: 'vpn-project',
+              expires_at: null,
+              has_refresh_token: true,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('schedule_post')!;
+      const result = await handler({
+        media_url: 'https://example.com/post.png',
+        caption: 'VPN Matrix post',
+        platforms: ['twitter'],
+        project_id: 'vpn-project',
+        account_id: 'social-neuron-twitter',
+        auto_rehost: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('social-neuron-twitter');
+      expect(result.content[0].text).toContain('project_id vpn-project');
+      expect(mockCallEdge).toHaveBeenCalledTimes(1);
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'connected-accounts',
+          projectId: 'vpn-project',
+          project_id: 'vpn-project',
+        }),
+        expect.any(Object)
+      );
+    });
+
     it('returns formatted success text with platform results', async () => {
       mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube', 'TikTok']));
       mockCallEdge.mockResolvedValueOnce({
@@ -612,6 +657,45 @@ describe('distribution tools', () => {
       expect(text).toContain('2 connected account(s)');
       expect(text).toContain('youtube: mychannel');
       expect(text).toContain('tiktok: tikuser');
+    });
+
+    it('passes project_id and includes account routing fields in text output', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: 'vpn-x',
+              platform: 'Twitter',
+              status: 'active',
+              effective_status: 'active',
+              username: 'thevpnmatrix',
+              created_at: '2026-06-01T00:00:00Z',
+              project_id: 'vpn-project',
+              expires_at: null,
+              has_refresh_token: true,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('list_connected_accounts')!;
+      const result = await handler({ project_id: 'vpn-project' });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'connected-accounts',
+          projectId: 'vpn-project',
+          project_id: 'vpn-project',
+        })
+      );
+      const text = result.content[0].text;
+      expect(text).toContain('1 connected account(s) for project vpn-project');
+      expect(text).toContain('twitter: thevpnmatrix');
+      expect(text).toContain('id=vpn-x');
+      expect(text).toContain('project_id=vpn-project');
     });
 
     it('returns "No connected accounts" message when empty', async () => {

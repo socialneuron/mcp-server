@@ -696,6 +696,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
       'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, learning-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
     module: 'loop',
     scope: 'mcp:read',
+    internal: true,
   },
   {
     name: 'get_bandit_state',
@@ -703,6 +704,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
       'Read the current content learning state for a project — top-K arms per (arm_type, platform) with expected performance and uncertainty. Use to reason about which hook family / format / timing slot currently performs best per platform.',
     module: 'loop',
     scope: 'mcp:read',
+    internal: true,
   },
 ];
 

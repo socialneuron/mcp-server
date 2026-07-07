@@ -67,6 +67,17 @@ describe('search_tools', () => {
     expect(parsed.toolCount).toBeGreaterThanOrEqual(2);
   });
 
+  it('does not expose internal loop observability tools', async () => {
+    const result = await server.getHandler('search_tools')!({ query: 'bandit', detail: 'full' });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).not.toContain(
+      'get_bandit_state'
+    );
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).not.toContain(
+      'get_loop_pulse'
+    );
+  });
+
   it('filters to available tools when available_only is true', async () => {
     const result = await requestContext.run(
       {

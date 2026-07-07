@@ -22,8 +22,10 @@ interface ConnectedAccountRow {
   id: string;
   platform: string;
   status: string;
+  effective_status?: string;
   username: string | null;
   created_at: string;
+  project_id?: string | null;
   expires_at: string | null;
   has_refresh_token: boolean;
 }
@@ -33,7 +35,15 @@ function findActiveAccount(
   platform: Platform
 ): ConnectedAccountRow | null {
   const target = platform.toLowerCase();
-  return accounts.find(a => a.platform.toLowerCase() === target && a.status === 'active') ?? null;
+  return (
+    accounts.find(a => {
+      const effectiveStatus = a.effective_status || a.status;
+      return (
+        a.platform.toLowerCase() === target &&
+        (effectiveStatus === 'active' || effectiveStatus === 'expires_soon')
+      );
+    }) ?? null
+  );
 }
 
 export function registerConnectionTools(server: McpServer): void {
@@ -55,12 +65,18 @@ export function registerConnectionTools(server: McpServer): void {
       platform: z
         .enum(PLATFORM_ENUM)
         .describe('Platform to connect. Lower-case: instagram, tiktok, youtube, etc.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Brand/project ID to bind the new social account to. Use this when connecting a brand-specific account.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Response format. Default: text.'),
     },
-    async ({ platform, response_format }) => {
+    async ({ platform, project_id, response_format }) => {
       const format = response_format ?? 'text';
 
       const rl = checkRateLimit('read', `start_platform_connection:${platform}`);
@@ -83,7 +99,15 @@ export function registerConnectionTools(server: McpServer): void {
         expires_at: string;
         deep_link: string;
         error?: string;
-      }>('mcp-data', { action: 'mint-connection-nonce', platform }, { timeoutMs: 10_000 });
+      }>(
+        'mcp-data',
+        {
+          action: 'mint-connection-nonce',
+          platform,
+          ...(project_id ? { projectId: project_id, project_id } : {}),
+        },
+        { timeoutMs: 10_000 }
+      );
 
       if (error || !data?.success || !data.deep_link) {
         const errMsg = error ?? data?.error ?? 'Unknown error';
@@ -106,6 +130,7 @@ export function registerConnectionTools(server: McpServer): void {
               text: JSON.stringify(
                 {
                   platform: data.platform,
+                  project_id: project_id ?? null,
                   deep_link: data.deep_link,
                   expires_at: data.expires_at,
                   next_step:
@@ -126,6 +151,7 @@ export function registerConnectionTools(server: McpServer): void {
             type: 'text' as const,
             text: [
               `${data.platform} connection ready.`,
+              ...(project_id ? [`Brand/project: ${project_id}`] : []),
               '',
               'Ask the user to open this link in a browser and click "Connect" on the platform:',
               `  ${data.deep_link}`,
@@ -153,6 +179,12 @@ export function registerConnectionTools(server: McpServer): void {
       'with status=active, or when the timeout elapses. Default timeout 120s, max 600s.',
     {
       platform: z.enum(PLATFORM_ENUM).describe('Platform to wait for.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Brand/project ID to scope the connection poll. Use the same project_id passed to start_platform_connection.'
+        ),
       timeout_s: z
         .number()
         .min(5)
@@ -170,7 +202,7 @@ export function registerConnectionTools(server: McpServer): void {
         .optional()
         .describe('Response format. Default: text.'),
     },
-    async ({ platform, timeout_s, poll_interval_s, response_format }) => {
+    async ({ platform, project_id, timeout_s, poll_interval_s, response_format }) => {
       const format = response_format ?? 'text';
       const startedAt = Date.now();
       const timeoutMs = (timeout_s ?? 120) * 1000;
@@ -197,7 +229,14 @@ export function registerConnectionTools(server: McpServer): void {
           success: boolean;
           accounts: ConnectedAccountRow[];
           error?: string;
-        }>('mcp-data', { action: 'connected-accounts' }, { timeoutMs: 10_000 });
+        }>(
+          'mcp-data',
+          {
+            action: 'connected-accounts',
+            ...(project_id ? { projectId: project_id, project_id } : {}),
+          },
+          { timeoutMs: 10_000 }
+        );
 
         if (!error && data?.success) {
           const found = findActiveAccount(data.accounts ?? [], platform);
@@ -211,6 +250,7 @@ export function registerConnectionTools(server: McpServer): void {
                       {
                         connected: true,
                         platform: found.platform,
+                        project_id: found.project_id ?? project_id ?? null,
                         account_id: found.id,
                         username: found.username,
                         connected_at: found.created_at,
@@ -231,6 +271,9 @@ export function registerConnectionTools(server: McpServer): void {
                   type: 'text' as const,
                   text: [
                     `${found.platform} is connected.`,
+                    ...(found.project_id || project_id
+                      ? [`Brand/project: ${found.project_id ?? project_id}`]
+                      : []),
                     `Account: ${found.username || '(unnamed)'} (id=${found.id})`,
                     `Detected after ${attempts} poll(s) in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`,
                     'Ready to call `schedule_post`.',
@@ -263,6 +306,7 @@ export function registerConnectionTools(server: McpServer): void {
                 {
                   connected: false,
                   platform,
+                  project_id: project_id ?? null,
                   attempts,
                   timed_out: true,
                   message,

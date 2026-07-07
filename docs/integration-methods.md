@@ -1,6 +1,6 @@
 # Integration Methods
 
-Social Neuron provides 4 ways to integrate. All share the same auth system, scopes, rate limits, and credit pool. The npm package exposes **87 discoverable tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises **85** — see the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+Social Neuron provides 4 ways to integrate. All share the same auth system, scopes, rate limits, and credit pool. The npm package exposes **84 public tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises **83 public tools** — see the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
 
 ## Comparison
 
@@ -103,7 +103,7 @@ const content = await sn.content.generate({ prompt: '...', platform: 'instagram'
 
 ## Shared Architecture
 
-All 4 methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio) are thin layers on top. Tool counts differ by surface: 75 tools over stdio (npm package), 92 tools on the hosted product.
+All 4 methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio) are thin layers on top. Tool counts differ by surface: 84 public tools over stdio (npm package, including local screenshot helpers) and 83 public tools on the hosted product.
 
 ```
          MCP Client ──→ JSON-RPC ──┐

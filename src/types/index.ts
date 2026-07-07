@@ -173,8 +173,13 @@ export interface ConnectedAccount {
   id: string;
   platform: string;
   status: string;
+  effective_status?: string;
   username: string | null;
   created_at: string;
+  updated_at?: string | null;
+  expires_at?: string | null;
+  has_refresh_token?: boolean;
+  project_id?: string | null;
 }
 
 export interface AnalyticsSummary {
