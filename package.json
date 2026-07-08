@@ -94,7 +94,7 @@
   },
   "devDependencies": {
     "@remotion/bundler": "4.0.485",
-    "@remotion/renderer": "4.0.485",
+    "@remotion/renderer": "4.0.486",
     "@types/express": "5.0.6",
     "@types/node": "26.1.0",
     "esbuild": "^0.28.1",
