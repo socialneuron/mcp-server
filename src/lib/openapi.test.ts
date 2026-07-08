@@ -1,5 +1,10 @@
 import { describe, it, expect, beforeEach } from 'vitest';
-import { buildOpenApiDocument, publicRestToolCount, __resetOpenApiCache } from './openapi.js';
+import {
+  buildOpenApiDocument,
+  publicRestToolCount,
+  __resetOpenApiCache,
+  normalizeOpenApiServerUrl,
+} from './openapi.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 
@@ -12,6 +17,18 @@ describe('buildOpenApiDocument', () => {
     expect(doc.info.title).toBe('Social Neuron REST API');
     expect(doc.servers[0].url).toMatch(/\/v1$/);
     expect(doc.components.securitySchemes.bearerAuth.scheme).toBe('bearer');
+  });
+
+  it('derives REST /v1 from the MCP endpoint env value used in production', () => {
+    expect(normalizeOpenApiServerUrl('https://mcp.socialneuron.com/mcp')).toBe(
+      'https://mcp.socialneuron.com/v1'
+    );
+    expect(normalizeOpenApiServerUrl('https://mcp.socialneuron.com/mcp/')).toBe(
+      'https://mcp.socialneuron.com/v1'
+    );
+    expect(normalizeOpenApiServerUrl('https://mcp.socialneuron.com')).toBe(
+      'https://mcp.socialneuron.com/v1'
+    );
   });
 
   it('emits exactly one POST /tools/{name} per public tool', async () => {
