@@ -15,9 +15,14 @@ import { TOOL_CATALOG } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 import { MCP_VERSION } from './version.js';
 
-const SERVER_URL = process.env.MCP_SERVER_URL
-  ? `${process.env.MCP_SERVER_URL.replace(/\/$/, '')}/v1`
-  : 'https://mcp.socialneuron.com/v1';
+export function normalizeOpenApiServerUrl(configuredUrl?: string): string {
+  const base = (configuredUrl || 'https://mcp.socialneuron.com')
+    .replace(/\/$/, '')
+    .replace(/\/mcp$/, '');
+  return `${base}/v1`;
+}
+
+const SERVER_URL = normalizeOpenApiServerUrl(process.env.MCP_SERVER_URL);
 
 const TOOL_ERROR_SCHEMA = {
   type: 'object',
