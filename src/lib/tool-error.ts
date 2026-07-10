@@ -99,3 +99,45 @@ export function isToolError(value: unknown): value is ToolErrorResult {
       ?.error?.error_type === 'string'
   );
 }
+
+/** Every stable error code, for classifying arbitrary error results. */
+const KNOWN_ERROR_TYPES: ReadonlySet<string> = new Set<ToolErrorCode>([
+  'policy_block',
+  'validation_error',
+  'permission_denied',
+  'billing_error',
+  'rate_limited',
+  'not_found',
+  'upstream_error',
+  'server_error',
+]);
+
+/**
+ * Best-effort classification of an error result into a stable `error_type`.
+ * Reads `structuredContent.error` first, then the mirrored text JSON that
+ * `toolError` writes (structuredContent is stripped by the SDK for tools without
+ * an outputSchema), then detects the SDK's own input-validation errors. Falls
+ * back to 'server_error'. Used for tool telemetry so failures are diagnosable.
+ */
+export function classifyToolError(result: {
+  content?: Array<{ type: string; text?: string }>;
+  structuredContent?: { error?: { error_type?: string } };
+}): ToolErrorCode {
+  const structured = result.structuredContent?.error?.error_type;
+  if (structured && KNOWN_ERROR_TYPES.has(structured)) return structured as ToolErrorCode;
+
+  const text = result.content?.find(c => c.type === 'text')?.text ?? '';
+  try {
+    const parsed = JSON.parse(text) as { error_type?: string };
+    if (parsed.error_type && KNOWN_ERROR_TYPES.has(parsed.error_type)) {
+      return parsed.error_type as ToolErrorCode;
+    }
+  } catch {
+    // Text block isn't JSON — fall through to pattern detection.
+  }
+
+  if (/-32602|Input validation error|Invalid arguments/i.test(text)) {
+    return 'validation_error';
+  }
+  return 'server_error';
+}

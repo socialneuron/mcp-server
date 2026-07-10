@@ -7,7 +7,7 @@ import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
 import { logMcpToolInvocation } from './supabase.js';
 import { buildWwwAuthenticateHeader } from './www-authenticate.js';
-import { toolError } from './tool-error.js';
+import { toolError, classifyToolError } from './tool-error.js';
 // Scanner middleware (Task 1.14). Imports from the in-package mirror of the
 // repo-root TS SSOT (`lib/agent-harness/`). Mirror exists because mcp-server
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
@@ -194,7 +194,12 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
             toolName: name,
             status,
             durationMs: Date.now() - startedAt,
-            details: { source: 'wrapper' },
+            details: {
+              source: 'wrapper',
+              // Classify failures so the tool-error rate is diagnosable
+              // (validation vs permission vs billing vs upstream vs server).
+              ...(status === 'error' ? { error_type: classifyToolError(result) } : {}),
+            },
           });
           return truncateResponse(result);
         } catch (err) {
@@ -204,6 +209,8 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
             durationMs: Date.now() - startedAt,
             details: {
               source: 'wrapper',
+              // A thrown exception escaped the handler — an unclassified fault.
+              error_type: 'server_error',
               exception: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
             },
           });
