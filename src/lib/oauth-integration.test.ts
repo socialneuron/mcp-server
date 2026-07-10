@@ -348,8 +348,6 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'https://claude.ai/api/mcp/auth_callback',
       'https://claude.com/api/mcp/auth_callback',
       'https://smithery.ai/callback', // MCP registries
-      'https://evil.com/oauth/callback', // Any HTTPS is allowed per MCP spec
-      'https://localhost:6274/oauth/callback', // HTTPS localhost also allowed
     ];
 
     const rejectedUris = [
@@ -358,6 +356,8 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       '', // Empty
       'javascript:alert(1)', // XSS attempt
       'http://attacker.com:6274/oauth/callback', // Wrong host (non-localhost HTTP)
+      'https://evil.com/oauth/callback', // Arbitrary HTTPS origins are not allowed in production
+      'https://localhost:6274/oauth/callback', // HTTPS localhost must be explicitly allowlisted
       'ftp://localhost:6274/oauth/callback', // Wrong protocol
     ];
 
@@ -368,6 +368,57 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
         expect(registered.client_id).toBe('test-client-integration');
       });
     }
+
+    it('allows arbitrary HTTPS only with the non-production escape hatch', async () => {
+      const originalAllowAny = process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
+      process.env.NODE_ENV = 'development';
+      try {
+        const client = makeClient({
+          redirect_uris: ['https://staging.example/oauth/callback'],
+        });
+        const registered = await provider.clientsStore.registerClient!(client);
+        expect(registered.client_id).toBe('test-client-integration');
+      } finally {
+        if (originalAllowAny === undefined) {
+          delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+        } else {
+          process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = originalAllowAny;
+        }
+        if (originalNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = originalNodeEnv;
+        }
+      }
+    });
+
+    it('rejects arbitrary HTTPS when escape hatch is set in production', async () => {
+      const originalAllowAny = process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+      const originalNodeEnv = process.env.NODE_ENV;
+      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
+      process.env.NODE_ENV = 'production';
+      try {
+        const client = makeClient({
+          redirect_uris: ['https://staging.example/oauth/callback'],
+        });
+        await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+          'Redirect URI not allowed'
+        );
+      } finally {
+        if (originalAllowAny === undefined) {
+          delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+        } else {
+          process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = originalAllowAny;
+        }
+        if (originalNodeEnv === undefined) {
+          delete process.env.NODE_ENV;
+        } else {
+          process.env.NODE_ENV = originalNodeEnv;
+        }
+      }
+    });
 
     for (const uri of rejectedUris) {
       it(`rejects: ${uri || '(empty string)'}`, async () => {

@@ -62,6 +62,13 @@ const ALLOWED_LOOPBACK_CALLBACK_PATHS = new Set([
 
 const CODEX_LOOPBACK_CALLBACK_PATH_RE = /^\/callback\/[A-Za-z0-9_-]+$/;
 
+function allowsAnyHttpsRedirect(): boolean {
+  return (
+    process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' &&
+    process.env.NODE_ENV !== 'production'
+  );
+}
+
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
@@ -76,8 +83,9 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Allow any HTTPS callback (MCP spec: dynamic clients can register any valid HTTPS URI)
-    if (parsed.protocol === 'https:') {
+    // Development/staging escape hatch only. In production, arbitrary HTTPS
+    // redirects would let attackers register clients that intercept OAuth codes.
+    if (parsed.protocol === 'https:' && allowsAnyHttpsRedirect()) {
       return true;
     }
   } catch {
