@@ -85,6 +85,9 @@ jobs:
             exit 1
           fi
 
+      - name: Prepare publish artifacts
+        run: npm run prepublishOnly
+
       - name: Publish
         # Prefer npm Trusted Publishing (OIDC). npm CLI uses OIDC in eligible
         # GitHub environments before falling back to traditional token auth.
@@ -101,4 +104,4 @@ jobs:
           if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
             printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
           fi
-          npm publish --access public --provenance
+          npm publish --ignore-scripts --access public --provenance
