@@ -702,6 +702,7 @@ app.post(
           token: auth.token,
           creditsUsed: 0,
           assetsGenerated: 0,
+          surface: "rest",
         },
         () => invokeToolRest(name, args),
       );
