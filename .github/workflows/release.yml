@@ -45,15 +45,14 @@ jobs:
         run: npm run check:dep-age
         env:
           SN_DEP_AGE_ENFORCE: "true"
-          # Reviewed per-tag cooldown bypasses (young-dependency blocking off for
-          # that tag only). v1.7.9: OAuth hardening. v1.7.10: stdio tools/list fix.
-          # v1.7.18: ships the internal-surface scrub + error_type + rate-limit fix
-          # + real /v1 REST API; the only young dep shipped to consumers is a
-          # posthog-node patch (5.38→5.39, trusted, lockfile-pinned). Dev deps
-          # (remotion/playwright/@types/node) don't ship in the dist bundle. All
-          # other release gates (verify:metadata, verify:lock, lint:tools, audit,
-          # typecheck, tests) still run.
-          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18') && '0' || '14' }}
+          # Enforce the full 14-day cooldown on EVERY release. Historically this
+          # carried per-tag "0" bypasses (v1.7.9/1.7.10/1.7.18); those releases
+          # are cut, so the lingering bypass is removed to fail closed. If a
+          # future release genuinely needs a reviewed young-dependency bypass,
+          # set this to "0" deliberately in that release's PR and revert it after
+          # — never leave it in, and never set it to an empty string
+          # (check-dep-age.mjs coerces blank → 0, which silently disables the gate).
+          SN_DEP_MIN_AGE_DAYS: "14"
         # Release is stricter than CI: young deps block publish.
 
       - name: Lint tool descriptions
