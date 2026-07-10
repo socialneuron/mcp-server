@@ -61,7 +61,7 @@ describe('createOAuthProvider', () => {
       expect(retrieved).toBeUndefined();
     });
 
-    it('allows any HTTPS redirect URI (MCP dynamic registration)', async () => {
+    it('allows allowlisted HTTPS redirect URIs (e.g. smithery.ai)', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://smithery.ai/callback'],
@@ -69,6 +69,42 @@ describe('createOAuthProvider', () => {
 
       const registered = await provider.clientsStore.registerClient!(client);
       expect(registered.client_id).toBe('test-client-123');
+    });
+
+    it('rejects arbitrary (non-allowlisted) HTTPS redirect URIs', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const client = makeClient({
+        redirect_uris: ['https://attacker.example.com/oauth/callback'],
+      });
+
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'Redirect URI not allowed'
+      );
+    });
+
+    it('allows exact ChatGPT connector callbacks', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      for (const uri of [
+        'https://chatgpt.com/connector_platform_oauth_redirect',
+        'https://chatgpt.com/connector/oauth/social-neuron',
+      ]) {
+        const registered = await provider.clientsStore.registerClient!(
+          makeClient({ redirect_uris: [uri] })
+        );
+        expect(registered.client_id).toBe('test-client-123');
+      }
+    });
+
+    it('rejects ChatGPT callbacks with an unexpected path or query string', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      for (const uri of [
+        'https://chatgpt.com/connector/oauth/attacker',
+        'https://chatgpt.com/connector_platform_oauth_redirect?next=https://evil.example',
+      ]) {
+        await expect(
+          provider.clientsStore.registerClient!(makeClient({ redirect_uris: [uri] }))
+        ).rejects.toThrow('Redirect URI not allowed');
+      }
     });
 
     it('allows Claude.ai redirect URIs', async () => {
@@ -101,14 +137,15 @@ describe('createOAuthProvider', () => {
       expect(registered.client_id).toBe('test-client-123');
     });
 
-    it('allows HTTPS localhost (treated as valid HTTPS)', async () => {
+    it('rejects HTTPS localhost (not an allowlisted or http-loopback callback)', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const client = makeClient({
         redirect_uris: ['https://localhost:6274/oauth/callback'],
       });
 
-      const registered = await provider.clientsStore.registerClient!(client);
-      expect(registered.client_id).toBe('test-client-123');
+      await expect(provider.clientsStore.registerClient!(client)).rejects.toThrow(
+        'Redirect URI not allowed'
+      );
     });
 
     it('rejects oversized dynamic client metadata before persistence', async () => {
@@ -124,10 +161,12 @@ describe('createOAuthProvider', () => {
 
     it('rejects excessive redirect URIs before persistence', async () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
+      // Use valid http-loopback callbacks (distinct ports) so each URI passes the
+      // per-URI allowlist check and the registration fails on the count bound.
       const client = makeClient({
         redirect_uris: Array.from(
           { length: 11 },
-          (_, index) => `https://example.com/callback/${index}`
+          (_, index) => `http://localhost:${10000 + index}/oauth/callback`
         ),
       });
 

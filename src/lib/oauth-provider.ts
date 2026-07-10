@@ -62,6 +62,10 @@ const ALLOWED_LOOPBACK_CALLBACK_PATHS = new Set([
 
 const CODEX_LOOPBACK_CALLBACK_PATH_RE = /^\/callback\/[A-Za-z0-9_-]+$/;
 
+// Warn at most once if the staging escape hatch is mistakenly left enabled in
+// production (where it is deliberately ignored — see isAllowedRedirectUri).
+let warnedAnyHttpsRedirectInProd = false;
+
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
@@ -76,9 +80,36 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Allow any HTTPS callback (MCP spec: dynamic clients can register any valid HTTPS URI)
-    if (parsed.protocol === 'https:') {
+    // ChatGPT connector OAuth callbacks. Keep these exact: allowing arbitrary
+    // /connector/oauth/* paths would let another ChatGPT connector intercept an
+    // authorization code intended for Social Neuron.
+    if (
+      parsed.hostname === 'chatgpt.com' &&
+      parsed.protocol === 'https:' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
+      (parsed.pathname === '/connector_platform_oauth_redirect' ||
+        parsed.pathname === '/connector/oauth/social-neuron')
+    ) {
       return true;
+    }
+    // Staging/testing escape hatch for new MCP clients before explicit
+    // allowlisting. Ignored in production: accepting any https redirect there is
+    // an open-redirect / authorization-code-interception risk (a malicious DCR
+    // client could register an attacker-controlled https redirect_uri and, after
+    // a user approves, receive the authorization code).
+    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
+      if (process.env.NODE_ENV === 'production') {
+        if (!warnedAnyHttpsRedirectInProd) {
+          warnedAnyHttpsRedirectInProd = true;
+          console.warn(
+            '[oauth] MCP_ALLOW_ANY_HTTPS_REDIRECT is set but ignored in production — ' +
+              'any-https redirect URIs are an open-redirect risk. Add the client to the allowlist instead.'
+          );
+        }
+      } else {
+        return true;
+      }
     }
   } catch {
     // Invalid URL
