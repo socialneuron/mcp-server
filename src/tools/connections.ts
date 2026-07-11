@@ -2,6 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { getDefaultUserId } from '../lib/supabase.js';
 
 const PLATFORM_ENUM = [
   'youtube',
@@ -46,6 +47,11 @@ function findActiveAccount(
   );
 }
 
+// Cap concurrent in-flight `wait_for_connection` long-polls per user (see the
+// handler below). Keyed by user ID; the entry is removed when the count hits 0.
+const MAX_CONCURRENT_WAITS_PER_USER = 3;
+const inFlightWaitsByUser = new Map<string, number>();
+
 export function registerConnectionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   // start_platform_connection — mint a single-use deep link the user clicks
@@ -79,7 +85,8 @@ export function registerConnectionTools(server: McpServer): void {
     async ({ platform, project_id, response_format }) => {
       const format = response_format ?? 'text';
 
-      const rl = checkRateLimit('read', `start_platform_connection:${platform}`);
+      const userId = await getDefaultUserId();
+      const rl = checkRateLimit('read', `start_platform_connection:${userId}`);
       if (!rl.allowed) {
         return {
           content: [
@@ -209,7 +216,8 @@ export function registerConnectionTools(server: McpServer): void {
       const intervalMs = (poll_interval_s ?? 5) * 1000;
       const deadline = startedAt + timeoutMs;
 
-      const rl = checkRateLimit('read', `wait_for_connection:${platform}`);
+      const userId = await getDefaultUserId();
+      const rl = checkRateLimit('read', `wait_for_connection:${userId}`);
       if (!rl.allowed) {
         return {
           content: [
@@ -222,108 +230,138 @@ export function registerConnectionTools(server: McpServer): void {
         };
       }
 
-      let attempts = 0;
-      while (Date.now() < deadline) {
-        attempts++;
-        const { data, error } = await callEdgeFunction<{
-          success: boolean;
-          accounts: ConnectedAccountRow[];
-          error?: string;
-        }>(
-          'mcp-data',
-          {
-            action: 'connected-accounts',
-            ...(project_id ? { projectId: project_id, project_id } : {}),
-          },
-          { timeoutMs: 10_000 }
-        );
-
-        if (!error && data?.success) {
-          const found = findActiveAccount(data.accounts ?? [], platform);
-          if (found) {
-            if (format === 'json') {
-              return {
-                content: [
-                  {
-                    type: 'text' as const,
-                    text: JSON.stringify(
-                      {
-                        connected: true,
-                        platform: found.platform,
-                        project_id: found.project_id ?? project_id ?? null,
-                        account_id: found.id,
-                        username: found.username,
-                        connected_at: found.created_at,
-                        attempts,
-                      },
-                      null,
-                      2
-                    ),
-                  },
-                ],
-                isError: false,
-              };
-            }
-
-            return {
-              content: [
-                {
-                  type: 'text' as const,
-                  text: [
-                    `${found.platform} is connected.`,
-                    ...(found.project_id || project_id
-                      ? [`Brand/project: ${found.project_id ?? project_id}`]
-                      : []),
-                    `Account: ${found.username || '(unnamed)'} (id=${found.id})`,
-                    `Detected after ${attempts} poll(s) in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`,
-                    'Ready to call `schedule_post`.',
-                  ].join('\n'),
-                },
-              ],
-              isError: false,
-            };
-          }
-        }
-
-        // Wait before next poll, but never sleep past the deadline.
-        const remaining = deadline - Date.now();
-        if (remaining <= 0) break;
-        await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, remaining)));
-      }
-
-      const message =
-        `${platform} did not connect within ${timeout_s ?? 120}s (${attempts} polls). ` +
-        'The user may not have completed the browser OAuth yet, or the link expired. ' +
-        'Mint a new link with `start_platform_connection` and try again, or have the user ' +
-        'go directly to socialneuron.com/settings/connections.';
-
-      if (format === 'json') {
+      // Bound how many long-polls a single user can hold open at once. Each wait
+      // keeps a request open for up to timeout_s and calls the backend on every
+      // poll, so without this cap one authenticated user could open many
+      // concurrent waits and amplify one accepted call into a flood of backend
+      // connected-accounts calls.
+      const activeWaits = inFlightWaitsByUser.get(userId) ?? 0;
+      if (activeWaits >= MAX_CONCURRENT_WAITS_PER_USER) {
         return {
           content: [
             {
               type: 'text' as const,
-              text: JSON.stringify(
-                {
-                  connected: false,
-                  platform,
-                  project_id: project_id ?? null,
-                  attempts,
-                  timed_out: true,
-                  message,
-                },
-                null,
-                2
-              ),
+              text:
+                `Too many concurrent \`wait_for_connection\` calls (max ${MAX_CONCURRENT_WAITS_PER_USER}). ` +
+                'Let an existing wait finish, or poll `list_connected_accounts` instead.',
             },
           ],
           isError: true,
         };
       }
+      inFlightWaitsByUser.set(userId, activeWaits + 1);
 
-      return {
-        content: [{ type: 'text' as const, text: message }],
-        isError: true,
-      };
+      try {
+        let attempts = 0;
+        while (Date.now() < deadline) {
+          attempts++;
+          const { data, error } = await callEdgeFunction<{
+            success: boolean;
+            accounts: ConnectedAccountRow[];
+            error?: string;
+          }>(
+            'mcp-data',
+            {
+              action: 'connected-accounts',
+              ...(project_id ? { projectId: project_id, project_id } : {}),
+            },
+            { timeoutMs: 10_000 }
+          );
+
+          if (!error && data?.success) {
+            const found = findActiveAccount(data.accounts ?? [], platform);
+            if (found) {
+              if (format === 'json') {
+                return {
+                  content: [
+                    {
+                      type: 'text' as const,
+                      text: JSON.stringify(
+                        {
+                          connected: true,
+                          platform: found.platform,
+                          project_id: found.project_id ?? project_id ?? null,
+                          account_id: found.id,
+                          username: found.username,
+                          connected_at: found.created_at,
+                          attempts,
+                        },
+                        null,
+                        2
+                      ),
+                    },
+                  ],
+                  isError: false,
+                };
+              }
+
+              return {
+                content: [
+                  {
+                    type: 'text' as const,
+                    text: [
+                      `${found.platform} is connected.`,
+                      ...(found.project_id || project_id
+                        ? [`Brand/project: ${found.project_id ?? project_id}`]
+                        : []),
+                      `Account: ${found.username || '(unnamed)'} (id=${found.id})`,
+                      `Detected after ${attempts} poll(s) in ${((Date.now() - startedAt) / 1000).toFixed(1)}s.`,
+                      'Ready to call `schedule_post`.',
+                    ].join('\n'),
+                  },
+                ],
+                isError: false,
+              };
+            }
+          }
+
+          // Wait before next poll, but never sleep past the deadline.
+          const remaining = deadline - Date.now();
+          if (remaining <= 0) break;
+          await new Promise(resolve => setTimeout(resolve, Math.min(intervalMs, remaining)));
+        }
+
+        const message =
+          `${platform} did not connect within ${timeout_s ?? 120}s (${attempts} polls). ` +
+          'The user may not have completed the browser OAuth yet, or the link expired. ' +
+          'Mint a new link with `start_platform_connection` and try again, or have the user ' +
+          'go directly to socialneuron.com/settings/connections.';
+
+        if (format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify(
+                  {
+                    connected: false,
+                    platform,
+                    project_id: project_id ?? null,
+                    attempts,
+                    timed_out: true,
+                    message,
+                  },
+                  null,
+                  2
+                ),
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        return {
+          content: [{ type: 'text' as const, text: message }],
+          isError: true,
+        };
+      } finally {
+        const remainingWaits = (inFlightWaitsByUser.get(userId) ?? 1) - 1;
+        if (remainingWaits <= 0) {
+          inFlightWaitsByUser.delete(userId);
+        } else {
+          inFlightWaitsByUser.set(userId, remainingWaits);
+        }
+      }
     }
   );
 }

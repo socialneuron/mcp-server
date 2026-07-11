@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { toolError, isToolError, type ToolErrorCode } from './tool-error.js';
+import { toolError, isToolError, classifyToolError, type ToolErrorCode } from './tool-error.js';
 
 describe('toolError', () => {
   it('returns an MCP isError result with a machine-readable error_type', () => {
@@ -77,5 +77,38 @@ describe('isToolError', () => {
     expect(isToolError({ content: [], isError: false })).toBe(false);
     expect(isToolError(null)).toBe(false);
     expect(isToolError('nope')).toBe(false);
+  });
+});
+
+describe('classifyToolError', () => {
+  it('reads error_type from structuredContent', () => {
+    expect(classifyToolError(toolError('permission_denied', 'nope'))).toBe('permission_denied');
+    expect(classifyToolError(toolError('billing_error', 'no credits'))).toBe('billing_error');
+  });
+
+  it('falls back to the mirrored text JSON when structuredContent is absent', () => {
+    const textOnly = {
+      isError: true as const,
+      content: [{ type: 'text', text: JSON.stringify({ error_type: 'not_found', message: 'gone' }) }],
+    };
+    expect(classifyToolError(textOnly)).toBe('not_found');
+  });
+
+  it('detects SDK input-validation errors from the text', () => {
+    expect(
+      classifyToolError({ content: [{ type: 'text', text: 'MCP error -32602: Invalid arguments' }] })
+    ).toBe('validation_error');
+  });
+
+  it('falls back to server_error for unclassified failures', () => {
+    expect(classifyToolError({ content: [{ type: 'text', text: 'something broke' }] })).toBe(
+      'server_error'
+    );
+    expect(classifyToolError({})).toBe('server_error');
+  });
+
+  it('ignores an unknown error_type and falls through', () => {
+    const bogus = { structuredContent: { error: { error_type: 'totally_made_up' } } };
+    expect(classifyToolError(bogus)).toBe('server_error');
   });
 });

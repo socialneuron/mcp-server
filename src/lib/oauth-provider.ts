@@ -62,6 +62,10 @@ const ALLOWED_LOOPBACK_CALLBACK_PATHS = new Set([
 
 const CODEX_LOOPBACK_CALLBACK_PATH_RE = /^\/callback\/[A-Za-z0-9_-]+$/;
 
+// Warn at most once if the staging escape hatch is mistakenly left enabled in
+// production (where it is deliberately ignored — see isAllowedRedirectUri).
+let warnedAnyHttpsRedirectInProd = false;
+
 function isAllowedRedirectUri(uri: string): boolean {
   // Exact match against allowlist
   if (ALLOWED_REDIRECT_URIS.has(uri)) return true;
@@ -76,14 +80,45 @@ function isAllowedRedirectUri(uri: string): boolean {
     ) {
       return true;
     }
-    // Allow any HTTPS callback (MCP spec: dynamic clients can register any valid HTTPS URI)
-    if (parsed.protocol === 'https:') {
+    // ChatGPT connector OAuth callbacks. Keep these exact: allowing arbitrary
+    // /connector/oauth/* paths would let another ChatGPT connector intercept an
+    // authorization code intended for Social Neuron.
+    if (
+      parsed.hostname === 'chatgpt.com' &&
+      parsed.protocol === 'https:' &&
+      parsed.search === '' &&
+      parsed.hash === '' &&
+      (parsed.pathname === '/connector_platform_oauth_redirect' ||
+        parsed.pathname === '/connector/oauth/social-neuron')
+    ) {
       return true;
+    }
+    // Staging/testing escape hatch for new MCP clients before explicit
+    // allowlisting. Ignored in production: accepting any https redirect there is
+    // an open-redirect / authorization-code-interception risk (a malicious DCR
+    // client could register an attacker-controlled https redirect_uri and, after
+    // a user approves, receive the authorization code).
+    if (process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT === 'true' && parsed.protocol === 'https:') {
+      if (process.env.NODE_ENV === 'production') {
+        if (!warnedAnyHttpsRedirectInProd) {
+          warnedAnyHttpsRedirectInProd = true;
+          console.warn(
+            '[oauth] MCP_ALLOW_ANY_HTTPS_REDIRECT is set but ignored in production — ' +
+              'any-https redirect URIs are an open-redirect risk. Add the client to the allowlist instead.'
+          );
+        }
+      } else {
+        return true;
+      }
     }
   } catch {
     // Invalid URL
   }
   return false;
+}
+
+function hasAllowedRedirectUris(client: OAuthClientInformationFull): boolean {
+  return (client.redirect_uris ?? []).every(isAllowedRedirectUri);
 }
 
 const MAX_CLIENT_NAME_BYTES = 512;
@@ -232,7 +267,15 @@ function createClientsStore(): OAuthRegisteredClientsStore {
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
       const cached = cache.get(clientId);
-      if (cached) return cached;
+      if (cached) {
+        // Re-check cached clients so a registration created under the
+        // non-production escape hatch cannot survive a switch to production.
+        if (!hasAllowedRedirectUris(cached)) {
+          cache.delete(clientId);
+          return undefined;
+        }
+        return cached;
+      }
       if (!supabaseAvailable) return undefined;
 
       try {
@@ -251,6 +294,23 @@ function createClientsStore(): OAuthRegisteredClientsStore {
         if (!data || (Array.isArray(data) && data.length === 0)) return undefined;
 
         const client = rowToClient(data as OAuthClientRow);
+
+        // Registrations created before redirect allowlisting was introduced may
+        // contain arbitrary HTTPS callbacks. Fail closed on every durable read
+        // and remove the obsolete row so it cannot receive authorization codes.
+        if (!hasAllowedRedirectUris(client)) {
+          const { error: deleteError } = await supabase
+            .from('mcp_oauth_clients')
+            .delete()
+            .eq('client_id', clientId);
+          if (deleteError) {
+            console.error(
+              `[oauth] failed to remove client with disallowed redirect URI: ${deleteError.message}`
+            );
+          }
+          return undefined;
+        }
+
         cacheClient(cache, clientId, client);
 
         // Touch last_used_at fire-and-forget. Failure here doesn't matter for

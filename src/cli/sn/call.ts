@@ -81,6 +81,7 @@ export async function handleCall(args: SnArgs, asJson: boolean): Promise<void> {
       token: apiKey,
       creditsUsed: 0,
       assetsGenerated: 0,
+      surface: 'cli',
     },
     () => invokeToolRest(toolName, toolArgs)
   );

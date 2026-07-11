@@ -317,7 +317,11 @@ app.use((req, res, next) => {
 // limit. /mcp gets its own parser after cheap pre-parse IP limiting and, for
 // large uploads, after Bearer-token authentication.
 app.use((req, res, next) => {
-  if (req.path === "/mcp") return next();
+  // /mcp and the REST tool-invoke route (/v1/tools/:name) mount their own 16 MB
+  // parser *after* Bearer-token auth, so skip the 100 KB default for them —
+  // otherwise large tool inputs (e.g. upload_media base64 up to 10 MB) are
+  // rejected with 413 before authentication and the route parser ever run.
+  if (req.path === "/mcp" || req.path.startsWith("/v1/tools/")) return next();
   defaultJsonParser(req, res, next);
 });
 
@@ -698,6 +702,7 @@ app.post(
           token: auth.token,
           creditsUsed: 0,
           assetsGenerated: 0,
+          surface: "rest",
         },
         () => invokeToolRest(name, args),
       );
