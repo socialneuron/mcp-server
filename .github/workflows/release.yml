@@ -38,6 +38,12 @@ jobs:
             exit 1
           fi
 
+      # .npmrc disables lifecycle hooks, so build:sn will not trigger
+      # prebuild:sn. Run the version writer explicitly before any verification
+      # or packaging step to keep the published runtime version in sync.
+      - name: Synchronize runtime version
+        run: node scripts/write-version.mjs
+
       - name: Lint package-lock.json
         run: npm run lint:lockfile
 
