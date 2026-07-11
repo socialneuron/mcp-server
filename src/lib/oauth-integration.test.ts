@@ -348,8 +348,8 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'https://claude.ai/api/mcp/auth_callback',
       'https://claude.com/api/mcp/auth_callback',
       'https://smithery.ai/callback', // MCP registries
-      'https://evil.com/oauth/callback', // Any HTTPS is allowed per MCP spec
-      'https://localhost:6274/oauth/callback', // HTTPS localhost also allowed
+      'https://chatgpt.com/connector_platform_oauth_redirect', // ChatGPT connector (exact)
+      'https://chatgpt.com/connector/oauth/social-neuron', // ChatGPT connector (exact)
     ];
 
     const rejectedUris = [
@@ -359,6 +359,9 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       'javascript:alert(1)', // XSS attempt
       'http://attacker.com:6274/oauth/callback', // Wrong host (non-localhost HTTP)
       'ftp://localhost:6274/oauth/callback', // Wrong protocol
+      'https://evil.com/oauth/callback', // Arbitrary HTTPS is NOT allowed (open-redirect / code interception)
+      'https://localhost:6274/oauth/callback', // HTTPS localhost: not allowlisted, not an http loopback
+      'https://chatgpt.com/connector/oauth/attacker', // ChatGPT with an unlisted path
     ];
 
     for (const uri of allowedUris) {

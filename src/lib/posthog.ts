@@ -8,6 +8,7 @@
 import { createHash } from 'node:crypto';
 import { PostHog } from 'posthog-node';
 import { isTelemetryDisabled, getDefaultUserId } from './supabase.js';
+import { resolveSurface } from './request-context.js';
 
 // Hash userId before sending to PostHog to avoid PII leakage.
 // Uses a static salt so the same user produces the same distinctId across sessions.
@@ -53,6 +54,9 @@ export async function captureToolEvent(args: {
       tool_name: args.toolName,
       duration_ms: args.durationMs,
       ...args.details,
+      // Which surface invoked the tool: mcp-stdio | mcp-http | rest | cli.
+      // Authoritative over any details.surface (there are no such callers today).
+      surface: resolveSurface(),
     },
   });
 }
