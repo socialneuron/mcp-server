@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createOAuthProvider } from './oauth-provider.js';
 import { getSupabaseClient } from './supabase.js';
 import type { OAuthClientInformationFull } from '@modelcontextprotocol/sdk/shared/auth.js';
@@ -29,7 +29,7 @@ function makeClient(
 
 function makeSupabaseQuery(result: Record<string, unknown>) {
   const chain: Record<string, ReturnType<typeof vi.fn> | unknown> = {};
-  for (const method of ['delete', 'lt', 'select', 'insert']) {
+  for (const method of ['delete', 'lt', 'select', 'insert', 'update', 'eq', 'maybeSingle']) {
     chain[method] = vi.fn().mockReturnValue(chain);
   }
   chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result));
@@ -39,8 +39,24 @@ function makeSupabaseQuery(result: Record<string, unknown>) {
 }
 
 describe('createOAuthProvider', () => {
+  const originalAllowAnyHttpsRedirect = process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+  const originalNodeEnv = process.env.NODE_ENV;
+
   beforeEach(() => {
     mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    if (originalAllowAnyHttpsRedirect === undefined) {
+      delete process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT;
+    } else {
+      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = originalAllowAnyHttpsRedirect;
+    }
+    if (originalNodeEnv === undefined) {
+      delete process.env.NODE_ENV;
+    } else {
+      process.env.NODE_ENV = originalNodeEnv;
+    }
   });
 
   describe('clientsStore', () => {
@@ -59,6 +75,41 @@ describe('createOAuthProvider', () => {
       const provider = createOAuthProvider(TEST_OPTIONS);
       const retrieved = await provider.clientsStore.getClient!('nonexistent');
       expect(retrieved).toBeUndefined();
+    });
+
+    it('rejects and deletes a persisted client with a disallowed redirect URI', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const selectQuery = makeSupabaseQuery({
+        data: {
+          client_id: 'legacy-client',
+          client_secret: '',
+          client_secret_expires_at: 0,
+          client_id_issued_at: 1,
+          redirect_uris: ['https://attacker.example.com/oauth/callback'],
+          client_name: 'Legacy Client',
+          metadata: {},
+        },
+        error: null,
+      });
+      const deleteQuery = makeSupabaseQuery({ data: null, error: null });
+      const from = vi.fn().mockReturnValueOnce(selectQuery).mockReturnValueOnce(deleteQuery);
+      vi.mocked(getSupabaseClient).mockReturnValueOnce({ from } as never);
+
+      await expect(provider.clientsStore.getClient!('legacy-client')).resolves.toBeUndefined();
+      expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
+      expect(deleteQuery.eq).toHaveBeenCalledWith('client_id', 'legacy-client');
+    });
+
+    it('revalidates cached clients when the environment becomes production', async () => {
+      process.env.MCP_ALLOW_ANY_HTTPS_REDIRECT = 'true';
+      process.env.NODE_ENV = 'development';
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      await provider.clientsStore.registerClient!(
+        makeClient({ redirect_uris: ['https://staging.example/oauth/callback'] })
+      );
+
+      process.env.NODE_ENV = 'production';
+      await expect(provider.clientsStore.getClient!('test-client-123')).resolves.toBeUndefined();
     });
 
     it('allows allowlisted HTTPS redirect URIs (e.g. smithery.ai)', async () => {

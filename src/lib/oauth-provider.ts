@@ -117,6 +117,10 @@ function isAllowedRedirectUri(uri: string): boolean {
   return false;
 }
 
+function hasAllowedRedirectUris(client: OAuthClientInformationFull): boolean {
+  return (client.redirect_uris ?? []).every(isAllowedRedirectUri);
+}
+
 const MAX_CLIENT_NAME_BYTES = 512;
 const MAX_REDIRECT_URIS = 10;
 const MAX_REDIRECT_URI_BYTES = 2048;
@@ -263,7 +267,15 @@ function createClientsStore(): OAuthRegisteredClientsStore {
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
       const cached = cache.get(clientId);
-      if (cached) return cached;
+      if (cached) {
+        // Re-check cached clients so a registration created under the
+        // non-production escape hatch cannot survive a switch to production.
+        if (!hasAllowedRedirectUris(cached)) {
+          cache.delete(clientId);
+          return undefined;
+        }
+        return cached;
+      }
       if (!supabaseAvailable) return undefined;
 
       try {
@@ -282,6 +294,23 @@ function createClientsStore(): OAuthRegisteredClientsStore {
         if (!data || (Array.isArray(data) && data.length === 0)) return undefined;
 
         const client = rowToClient(data as OAuthClientRow);
+
+        // Registrations created before redirect allowlisting was introduced may
+        // contain arbitrary HTTPS callbacks. Fail closed on every durable read
+        // and remove the obsolete row so it cannot receive authorization codes.
+        if (!hasAllowedRedirectUris(client)) {
+          const { error: deleteError } = await supabase
+            .from('mcp_oauth_clients')
+            .delete()
+            .eq('client_id', clientId);
+          if (deleteError) {
+            console.error(
+              `[oauth] failed to remove client with disallowed redirect URI: ${deleteError.message}`
+            );
+          }
+          return undefined;
+        }
+
         cacheClient(cache, clientId, client);
 
         // Touch last_used_at fire-and-forget. Failure here doesn't matter for
