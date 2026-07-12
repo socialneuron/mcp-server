@@ -750,13 +750,12 @@ app.post(
   (req: express.Request, res: express.Response, next: express.NextFunction) => {
     const body = req.body as
       { jsonrpc?: string; method?: string; id?: unknown } | undefined;
-    if (body?.jsonrpc !== "2.0") return next();
 
     // initialize and notifications/initialized: pass through to the authenticated
     // handler so a real MCP session is created with the SDK transport. Clients
     // with valid auth (OAuth, API key) get a proper session + session ID.
 
-    if (body.method === "tools/list") {
+    if (body?.jsonrpc === "2.0" && body.method === "tools/list") {
       // Public discovery → static catalog WITH real input schemas.
       buildDiscoveryCatalog()
         .then((tools) => {
@@ -781,9 +780,12 @@ app.post(
       return;
     }
 
-    // All other methods require full auth. Bearer-token POSTs were already
-    // authenticated before the /mcp JSON parser so large bodies are not parsed
-    // until credentials are validated.
+    // Everything else — including non-JSON-RPC bodies (batch arrays, malformed
+    // probes) — requires full auth before reaching the session handler, which
+    // dereferences req.auth. Unauthenticated junk gets a 401 challenge, not a
+    // TypeError→500. Bearer-token POSTs were already authenticated before the
+    // /mcp JSON parser so large bodies are not parsed until credentials are
+    // validated.
     if ((req as AuthenticatedRequest).auth) {
       next();
       return;
