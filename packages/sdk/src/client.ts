@@ -160,27 +160,27 @@ class ContentResource {
   constructor(private http: HttpClient) {}
 
   generate(params: GenerateContentParams) {
-    return this.http.post<unknown>("/content/generate", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/generate", params as unknown as Record<string, unknown>);
   }
 
   generateVideo(params: GenerateVideoParams) {
-    return this.http.post<unknown>("/content/video", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/video", params as unknown as Record<string, unknown>);
   }
 
   generateImage(params: GenerateImageParams) {
-    return this.http.post<unknown>("/content/image", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/image", params as unknown as Record<string, unknown>);
   }
 
   generateCarousel(params: GenerateCarouselParams) {
-    return this.http.post<unknown>("/content/carousel", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/carousel", params as unknown as Record<string, unknown>);
   }
 
   generateVoiceover(params: GenerateVoiceoverParams) {
-    return this.http.post<unknown>("/content/voiceover", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/voiceover", params as unknown as Record<string, unknown>);
   }
 
   adapt(params: AdaptContentParams) {
-    return this.http.post<unknown>("/content/adapt", params as Record<string, unknown>);
+    return this.http.post<unknown>("/content/adapt", params as unknown as Record<string, unknown>);
   }
 
   trends(params?: FetchTrendsParams) {
@@ -192,7 +192,7 @@ class PostsResource {
   constructor(private http: HttpClient) {}
 
   schedule(params: SchedulePostParams) {
-    return this.http.post<unknown>("/posts", params as Record<string, unknown>);
+    return this.http.post<unknown>("/posts", params as unknown as Record<string, unknown>);
   }
 
   list(params?: ListPostsParams) {
@@ -240,11 +240,11 @@ class BrandResource {
   }
 
   save(params: SaveBrandParams) {
-    return this.http.put<unknown>("/brand", params as Record<string, unknown>);
+    return this.http.put<unknown>("/brand", params as unknown as Record<string, unknown>);
   }
 
   extract(params: ExtractBrandParams) {
-    return this.http.post<unknown>("/brand/extract", params as Record<string, unknown>);
+    return this.http.post<unknown>("/brand/extract", params as unknown as Record<string, unknown>);
   }
 }
 
@@ -252,7 +252,7 @@ class PlansResource {
   constructor(private http: HttpClient) {}
 
   create(params: CreatePlanParams) {
-    return this.http.post<unknown>("/plans", params as Record<string, unknown>);
+    return this.http.post<unknown>("/plans", params as unknown as Record<string, unknown>);
   }
 
   list(params?: ListPlansParams) {
@@ -264,15 +264,15 @@ class PlansResource {
   }
 
   update(id: string, params: UpdatePlanParams) {
-    return this.http.put<unknown>(`/plans/${encodeURIComponent(id)}`, params as Record<string, unknown>);
+    return this.http.put<unknown>(`/plans/${encodeURIComponent(id)}`, params as unknown as Record<string, unknown>);
   }
 
   schedule(id: string, params?: SchedulePlanParams) {
-    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/schedule`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/schedule`, params as unknown as Record<string, unknown>);
   }
 
   approve(id: string, params?: ApprovePlanParams) {
-    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/approve`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/plans/${encodeURIComponent(id)}/approve`, params as unknown as Record<string, unknown>);
   }
 
   approvals(params?: { plan_id?: string; status?: string; limit?: number }) {
@@ -288,15 +288,15 @@ class CommentsResource {
   }
 
   post(params: PostCommentParams) {
-    return this.http.post<unknown>("/comments", params as Record<string, unknown>);
+    return this.http.post<unknown>("/comments", params as unknown as Record<string, unknown>);
   }
 
   reply(commentId: string, params: ReplyCommentParams) {
-    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/reply`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/reply`, params as unknown as Record<string, unknown>);
   }
 
   moderate(commentId: string, params: ModerateCommentParams) {
-    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/moderate`, params as Record<string, unknown>);
+    return this.http.post<unknown>(`/comments/${encodeURIComponent(commentId)}/moderate`, params as unknown as Record<string, unknown>);
   }
 
   delete(commentId: string) {
