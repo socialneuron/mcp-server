@@ -1,21 +1,33 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from 'vitest';
 
-// Unmock ssrf since the global test-setup does not mock it directly,
-// but we want to be explicit and also mock the DNS module it imports.
-vi.mock('node:dns', () => ({
-  promises: {
-    Resolver: vi.fn(() => ({
-      resolve4: vi.fn(async () => ['93.184.216.34']),
-      resolve6: vi.fn(async () => []),
-    })),
-  },
-}));
-
+import { promises as dnsPromises } from 'node:dns';
 import { quickSSRFCheck, validateUrlForSSRF } from './ssrf.js';
+
+// Stub DNS by swapping the Resolver property on the shared node:dns promises
+// object rather than vi.mock('node:dns', ...): vitest 4's module runner no
+// longer applies module mocks to builtins imported by SOURCE modules (only
+// the test file's own imports), which silently bypassed the factory mock and
+// let real DNS resolution run. Property patching works under vitest 3 and 4.
+const dnsState = { ips: ['93.184.216.34'] as string[] };
+const RealResolver = dnsPromises.Resolver;
+beforeAll(() => {
+  (dnsPromises as { Resolver: unknown }).Resolver = class {
+    async resolve4() {
+      return dnsState.ips;
+    }
+    async resolve6() {
+      return [] as string[];
+    }
+  };
+});
+afterAll(() => {
+  (dnsPromises as { Resolver: unknown }).Resolver = RealResolver;
+});
 
 describe('SSRF protection', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dnsState.ips = ['93.184.216.34'];
   });
 
   // =========================================================================
@@ -115,14 +127,7 @@ describe('SSRF protection', () => {
     });
 
     it('blocks when DNS resolves to private IP', async () => {
-      const dns = await import('node:dns');
-      vi.mocked(dns.promises.Resolver).mockImplementationOnce(
-        () =>
-          ({
-            resolve4: vi.fn(async () => ['10.0.0.1']),
-            resolve6: vi.fn(async () => []),
-          }) as any
-      );
+      dnsState.ips = ['10.0.0.1'];
 
       const result = await validateUrlForSSRF('https://internal.corp.com/api');
       expect(result.isValid).toBe(false);
@@ -130,14 +135,7 @@ describe('SSRF protection', () => {
     });
 
     it('blocks when DNS resolution fails (fail-closed)', async () => {
-      const dns = await import('node:dns');
-      vi.mocked(dns.promises.Resolver).mockImplementationOnce(
-        () =>
-          ({
-            resolve4: vi.fn(async () => []),
-            resolve6: vi.fn(async () => []),
-          }) as any
-      );
+      dnsState.ips = [];
 
       const result = await validateUrlForSSRF('https://nonexistent-host.invalid/');
       expect(result.isValid).toBe(false);
