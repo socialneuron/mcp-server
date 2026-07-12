@@ -42,6 +42,9 @@ jobs:
       - name: Build
         run: npm run build
 
+      - name: Prepare publish artifacts
+        run: npm run prepublishOnly
+
       - name: Verify pack contents
         run: |
           npm pack --dry-run 2>&1 | tee pack-output.txt
@@ -51,6 +54,6 @@ jobs:
           fi
 
       - name: Publish
-        run: npm publish --provenance --access public
+        run: npm publish --ignore-scripts --provenance --access public
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
