@@ -22,23 +22,36 @@ import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const pkgPath = resolve(__dirname, '..', 'package.json');
-const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+const repoRoot = resolve(__dirname, '..');
+
+// Every dependency surface in the repo, not just the root manifest. The
+// 2026-07-12 typescript@7.0.2 incident (4 days old, 20 fresh native binaries,
+// merged via a packages/sdk Dependabot bump) got through because only the
+// root manifest was checked. Keep this list in sync with the dep-surface
+// regex in .github/workflows/ci.yml.
+const SURFACES = ['.', 'packages/sdk', 'apps/content-calendar'];
 
 // Resolve the EXACT installed version from the lockfile, not the package.json
 // range floor. A range like ^1.2.3 can resolve to a freshly-published 1.2.9
 // patch; checking only the floor's age would let a same-range malicious patch
 // bypass the cooldown entirely (this is what supply-chain attacks exploit).
-const lockPath = resolve(__dirname, '..', 'package-lock.json');
-let lockPackages = {};
-try {
-  lockPackages = JSON.parse(readFileSync(lockPath, 'utf8')).packages ?? {};
-} catch {
-  console.warn('⚠️  Could not read package-lock.json — falling back to range floor (less safe).');
+function loadSurface(dir) {
+  const base = resolve(repoRoot, dir);
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(resolve(base, 'package.json'), 'utf8'));
+  } catch {
+    return null; // surface without a manifest — nothing to check
+  }
+  let lockPackages = {};
+  try {
+    lockPackages = JSON.parse(readFileSync(resolve(base, 'package-lock.json'), 'utf8')).packages ?? {};
+  } catch {
+    console.warn(`⚠️  Could not read ${dir}/package-lock.json — falling back to range floor (less safe).`);
+  }
+  return { dir, pkg, lockPackages };
 }
-function resolvedVersion(name) {
-  return lockPackages[`node_modules/${name}`]?.version;
-}
+const surfaces = SURFACES.map(loadSurface).filter(Boolean);
 
 const MIN_AGE_DAYS = Number(process.env.SN_DEP_MIN_AGE_DAYS ?? 14);
 const MIN_AGE_MS = MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
@@ -56,10 +69,17 @@ const EXEMPT_PREFIXES = new Set([
   '@socialneuron/',
 ]);
 
-const deps = {
-  ...(pkg.dependencies ?? {}),
-  ...(pkg.devDependencies ?? {}),
-};
+// name → { versionRange, resolved } deduped across surfaces; a dep appearing
+// in several manifests is checked once per distinct resolved version.
+const deps = new Map();
+for (const { dir, pkg, lockPackages } of surfaces) {
+  const manifest = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  for (const [name, versionRange] of Object.entries(manifest)) {
+    const resolved = lockPackages[`node_modules/${name}`]?.version;
+    const key = `${name}@@${resolved ?? versionRange}`;
+    if (!deps.has(key)) deps.set(key, { name, versionRange, resolved, dir });
+  }
+}
 
 const failures = [];
 const checked = [];
@@ -77,11 +97,11 @@ function stripRangeChars(version) {
   return String(version).replace(/^[\^~>=<\s]+/, '').split(/[\s|,]/)[0];
 }
 
-for (const [name, versionRange] of Object.entries(deps)) {
+for (const { name, versionRange, resolved, dir } of deps.values()) {
   if (isExempt(name)) continue;
 
   // Prefer the locked/installed version; fall back to range floor only if absent.
-  const version = resolvedVersion(name) ?? stripRangeChars(versionRange);
+  const version = resolved ?? stripRangeChars(versionRange);
   if (!version || !/^\d/.test(version)) {
     // Skip non-version specs (git urls, file: deps, etc.) — .npmrc blocks these anyway
     continue;
@@ -104,7 +124,7 @@ for (const [name, versionRange] of Object.entries(deps)) {
     const ageDays = (ageMs / (24 * 60 * 60 * 1000)).toFixed(1);
     checked.push(`${name}@${version} (${ageDays}d)`);
     if (ageMs < MIN_AGE_MS) {
-      failures.push(`${name}@${version} — published ${ageDays} days ago (< ${MIN_AGE_DAYS} day cooldown) on ${publishedAt}`);
+      failures.push(`${name}@${version} [${dir}] — published ${ageDays} days ago (< ${MIN_AGE_DAYS} day cooldown) on ${publishedAt}`);
     }
   } catch (err) {
     console.warn(`⚠️  Error checking ${name}: ${err.message}`);
