@@ -16,7 +16,10 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAllTools } from './register-tools.js';
-import { TOOL_CATALOG } from './tool-catalog.js';
+import {
+  publicToolsForProfile,
+  type ToolProfile,
+} from './tool-profile.js';
 import { MCP_VERSION } from './version.js';
 
 export type DiscoveryTool = {
@@ -31,26 +34,29 @@ const PUBLIC_SCHEMA_OMIT_PROPERTIES: Record<string, string[]> = {
   schedule_post: ['origin', 'hermes_run_id'],
 };
 
-let cached: Promise<DiscoveryTool[]> | null = null;
+const cached = new Map<ToolProfile, Promise<DiscoveryTool[]>>();
 
 /** Build (once, memoized) the discovery catalog enriched with real input schemas. */
-export function buildDiscoveryCatalog(): Promise<DiscoveryTool[]> {
-  if (!cached) cached = computeDiscoveryCatalog();
-  return cached;
+export function buildDiscoveryCatalog(profile: ToolProfile = 'full'): Promise<DiscoveryTool[]> {
+  const existing = cached.get(profile);
+  if (existing) return existing;
+  const catalog = computeDiscoveryCatalog(profile);
+  cached.set(profile, catalog);
+  return catalog;
 }
 
 /** Test-only: clear the memoized catalog so a fresh build can be exercised. */
 export function __resetDiscoveryCatalogCache(): void {
-  cached = null;
+  cached.clear();
 }
 
-async function computeDiscoveryCatalog(): Promise<DiscoveryTool[]> {
+async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryTool[]> {
   const schemaByName = new Map<string, DiscoveryTool['inputSchema']>();
   try {
     // Throwaway server — mirrors the HTTP-mode registration (skipScreenshots:true,
     // as http.ts does for the live transport). No user context, no session.
     const probe = new McpServer({ name: 'discovery-probe', version: MCP_VERSION });
-    registerAllTools(probe, { skipScreenshots: true });
+    registerAllTools(probe, { skipScreenshots: true, toolProfile: profile });
     const handlers = (
       probe as unknown as {
         server: {
@@ -97,7 +103,7 @@ async function computeDiscoveryCatalog(): Promise<DiscoveryTool[]> {
   // localOnly tools (e.g. screenshots needing Playwright) aren't registered on
   // the HTTP transport — don't advertise them in HTTP discovery. Internal
   // operations tools are registered but likewise not advertised.
-  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).map(t => ({
+  return publicToolsForProfile(profile).map(t => ({
     name: t.name,
     description: t.description,
     inputSchema: sanitizePublicInputSchema(

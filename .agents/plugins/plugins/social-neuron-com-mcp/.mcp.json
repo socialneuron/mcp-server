@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "socialneuron-http": {
+      "type": "http",
+      "url": "https://mcp.socialneuron.com/mcp",
+      "note": "Social Neuron remote MCP server. OAuth is requested on first use; permissions and usage limits come from the authenticated Social Neuron account."
+    }
+  }
+}

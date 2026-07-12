@@ -1,13 +1,13 @@
 # Integration Methods
 
-Social Neuron provides 4 ways to integrate. All share the same auth system, scopes, rate limits, and credit pool. The npm package exposes **84 public tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises **83 public tools** — see the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live count.
+Social Neuron provides four runtime integration methods. Plugins and skills package those runtimes for easier discovery and safer agent use; they are not separate backends. All surfaces must share the same auth system, scopes, rate limits, credit pool, and audit trail. The npm package exposes **84 public tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises its current public surface through the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json).
 
 ## Comparison
 
 | Feature | MCP | REST API | CLI | SDK |
 |---------|-----|----------|-----|-----|
 | **Best for** | AI agents | Any HTTP client | Terminal, CI/CD | TypeScript apps |
-| **Auth** | API key | Bearer token | API key | API key |
+| **Auth** | OAuth (remote) or API key (local) | Bearer API key | API key | API key |
 | **Response** | SSE streaming | JSON | Text / JSON | Async/await |
 | **Setup** | 1 command | 1 curl | 1 command | npm install |
 | **Languages** | Any MCP client | Any language | Bash/shell | TypeScript |
@@ -19,8 +19,8 @@ Social Neuron provides 4 ways to integrate. All share the same auth system, scop
 
 ```bash
 # HTTP transport (recommended — no local process)
-claude mcp add --transport http socialneuron https://mcp.socialneuron.com/mcp \
-  --header "Authorization: Bearer $SOCIALNEURON_API_KEY"
+claude mcp add --transport http socialneuron https://mcp.socialneuron.com/mcp
+# The client follows the server's OAuth discovery flow on first connection.
 
 # Local process (alternative)
 npx -y @socialneuron/mcp-server login --device
@@ -35,15 +35,18 @@ Then just ask: "Generate 5 content ideas about sustainable fashion"
 
 ```bash
 # Check credits
-curl -H "Authorization: Bearer snk_live_..." \
-  https://mcp.socialneuron.com/v1/credits
+curl -X POST \
+  -H "Authorization: Bearer snk_live_..." \
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  https://mcp.socialneuron.com/v1/tools/get_credit_balance
 
 # Generate content
 curl -X POST \
   -H "Authorization: Bearer snk_live_..." \
   -H "Content-Type: application/json" \
   -d '{"topic": "AI trends", "platforms": ["linkedin"]}' \
-  https://mcp.socialneuron.com/v1/content/generate
+  https://mcp.socialneuron.com/v1/tools/generate_content
 
 # Execute any tool by name
 curl -X POST \
@@ -92,6 +95,14 @@ const credits = await sn.account.credits();
 const content = await sn.content.generate({ prompt: '...', platform: 'instagram' });
 ```
 
+## Plugins and skills (distribution)
+
+A Codex plugin is an installable bundle containing the MCP connection metadata, listing information, assets, and one or more skills. It points to the existing MCP server; it does not duplicate Social Neuron business logic.
+
+A skill is concise agent guidance: when to use Social Neuron, which workflow to follow, and where approval boundaries apply. Skills should discover the live MCP catalogue rather than copy a tool count or hard-code every tool name.
+
+The repo-local Codex plugin is under `.agents/plugins/plugins/social-neuron-com-mcp`. The public cross-agent skills repository should follow the same approval and authorization rules while using the packaging convention of each host.
+
 ## Decision Guide
 
 - **Building an AI agent?** Use MCP
@@ -100,15 +111,17 @@ const content = await sn.content.generate({ prompt: '...', platform: 'instagram'
 - **Building a TypeScript app?** Use REST API (SDK in preview)
 - **Integrating with Zapier or Make.com?** Use REST API
 - **Need type safety?** Wait for SDK or use OpenAPI codegen
+- **Installing in ChatGPT/Codex?** Use the plugin, which connects the MCP and supplies the skill
+- **Teaching another agent host?** Install/adapt the skill, then connect the same OAuth MCP endpoint
 
 ## Shared Architecture
 
-All 4 methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio) are thin layers on top. Tool counts differ by surface: 84 public tools over stdio (npm package, including local screenshot helpers) and 83 public tools on the hosted product.
+All four runtime methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio, and SDK-over-REST) are thin layers on top. Plugins and skills sit above MCP as packaging and operating guidance.
 
 ```
-         MCP Client ──→ JSON-RPC ──┐
-                                   │
-REST Client ──→ HTTP REST ──→ Tool Executor ──→ Edge Functions / Supabase
-                                   │
-         CLI ──→ stdio ────────────┘
+Plugin + skill ──→ MCP Client ──→ JSON-RPC ──┐
+                                              │
+SDK ──→ REST Client ──→ HTTP JSON ──→ Tool Executor ──→ Edge Functions / Supabase
+                                              │
+                    CLI ──→ commands/stdio ───┘
 ```

@@ -1,0 +1,13 @@
+interface:
+  display_name: "Social Neuron"
+  short_description: "Plan and manage social content with agents"
+  default_prompt: "Use $social-neuron to turn this campaign brief into a reviewable content plan."
+dependencies:
+  tools:
+    - type: "mcp"
+      value: "socialneuron-http"
+      description: "Social Neuron OAuth-protected remote MCP server"
+      transport: "streamable_http"
+      url: "https://mcp.socialneuron.com/mcp"
+policy:
+  allow_implicit_invocation: true

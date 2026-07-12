@@ -1,6 +1,6 @@
 # @socialneuron/sdk
 
-> **Preview — not yet published to npm.** This package is under active development and not available on the npm registry. APIs documented here may change before the first stable release. For production use today, use the [REST API](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) directly.
+> **Preview — not yet published to npm.** This package is under active development and not available on the npm registry. Its resource-style client still needs to be reconciled with the production generic `/v1/tools/{name}` proxy and pass live route-contract tests before publication. APIs documented here may change. For production use today, use the [REST API](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) directly.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
