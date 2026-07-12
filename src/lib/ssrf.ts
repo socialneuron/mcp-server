@@ -13,6 +13,8 @@
  * - URLs with embedded credentials
  */
 
+import { promises as dnsPromises } from 'node:dns';
+
 // Private and reserved IP ranges that should be blocked
 const BLOCKED_IP_PATTERNS: RegExp[] = [
   // IPv4 localhost/loopback
@@ -142,8 +144,7 @@ export async function validateUrlForSSRF(urlString: string): Promise<SSRFValidat
     let resolvedIP: string | undefined;
     if (!isIPAddress(hostname)) {
       try {
-        const dns = await import('node:dns');
-        const resolver = new dns.promises.Resolver();
+        const resolver = new dnsPromises.Resolver();
 
         // Resolve both A and AAAA records to cover IPv4 and IPv6
         const resolvedIPs: string[] = [];
