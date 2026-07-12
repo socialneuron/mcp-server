@@ -15,8 +15,16 @@
  *
  * Override the cooldown via env var SN_DEP_MIN_AGE_DAYS (e.g. for emergency
  * security bumps where you have manually verified a fresh patch).
+ *
+ * Ratchet semantics: when SN_DEP_AGE_BASELINE_REF is set (CI sets it to the
+ * PR base), a violation is ENFORCED only if the resolved version differs from
+ * that ref's lockfile — i.e. the change under review introduced it.
+ * Violations already on the baseline are reported as warnings; they age out
+ * on their own and must not red unrelated PRs (that normalizes red-CI merges,
+ * which is how the 2026-07-12 typescript@7.0.2 violation got through).
  */
 
+import { execFileSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +61,28 @@ function loadSurface(dir) {
 }
 const surfaces = SURFACES.map(loadSurface).filter(Boolean);
 
+// Baseline lockfile state for ratchet mode (see header). Missing ref, missing
+// file, or no git at all → no baseline → every violation is enforced.
+const BASELINE_REF = process.env.SN_DEP_AGE_BASELINE_REF ?? '';
+const baselineLocks = new Map(); // dir → lockfile packages at BASELINE_REF (or null)
+function baselineVersion(dir, name) {
+  if (!BASELINE_REF) return undefined;
+  if (!baselineLocks.has(dir)) {
+    const path = dir === '.' ? 'package-lock.json' : `${dir}/package-lock.json`;
+    try {
+      const raw = execFileSync('git', ['show', `${BASELINE_REF}:${path}`], {
+        cwd: repoRoot,
+        encoding: 'utf8',
+        stdio: ['ignore', 'pipe', 'ignore'],
+      });
+      baselineLocks.set(dir, JSON.parse(raw).packages ?? {});
+    } catch {
+      baselineLocks.set(dir, null);
+    }
+  }
+  return baselineLocks.get(dir)?.[`node_modules/${name}`]?.version;
+}
+
 const MIN_AGE_DAYS = Number(process.env.SN_DEP_MIN_AGE_DAYS ?? 14);
 const MIN_AGE_MS = MIN_AGE_DAYS * 24 * 60 * 60 * 1000;
 
@@ -82,6 +112,7 @@ for (const { dir, pkg, lockPackages } of surfaces) {
 }
 
 const failures = [];
+const preexisting = [];
 const checked = [];
 
 function isExempt(name) {
@@ -124,7 +155,14 @@ for (const { name, versionRange, resolved, dir } of deps.values()) {
     const ageDays = (ageMs / (24 * 60 * 60 * 1000)).toFixed(1);
     checked.push(`${name}@${version} (${ageDays}d)`);
     if (ageMs < MIN_AGE_MS) {
-      failures.push(`${name}@${version} [${dir}] — published ${ageDays} days ago (< ${MIN_AGE_DAYS} day cooldown) on ${publishedAt}`);
+      const line = `${name}@${version} [${dir}] — published ${ageDays} days ago (< ${MIN_AGE_DAYS} day cooldown) on ${publishedAt}`;
+      // Ratchet: pre-existing on the baseline → warn-only; introduced/changed
+      // by the diff under review → enforced.
+      if (BASELINE_REF && baselineVersion(dir, name) === version) {
+        preexisting.push(line);
+      } else {
+        failures.push(line);
+      }
     }
   } catch (err) {
     console.warn(`⚠️  Error checking ${name}: ${err.message}`);
@@ -132,6 +170,11 @@ for (const { name, versionRange, resolved, dir } of deps.values()) {
 }
 
 console.log(`Checked ${checked.length} deps against ${MIN_AGE_DAYS}-day cooldown.`);
+
+if (preexisting.length > 0) {
+  console.warn(`\n⚠️  Pre-existing cooldown violations on ${BASELINE_REF} (warn-only, age out on their own):`);
+  for (const f of preexisting) console.warn(`   - ${f}`);
+}
 
 if (failures.length > 0) {
   const label = ENFORCE ? '❌' : '⚠️';

@@ -50,6 +50,9 @@ jobs:
         run: npm run check:dep-age
         env:
           SN_DEP_AGE_ENFORCE: "true"
+          # Ratchet: only violations INTRODUCED by this diff fail the build;
+          # violations already on the baseline are warn-only (they age out).
+          SN_DEP_AGE_BASELINE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^' }}
 
       - name: Dependency cooldown (warn-only)
         if: steps.dep-surface.outputs.enforce != 'true'
