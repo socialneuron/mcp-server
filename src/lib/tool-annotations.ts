@@ -50,7 +50,9 @@ const SCOPE_DEFAULTS: Record<string, AnnotationHints> = {
   },
   'mcp:write': {
     readOnlyHint: false,
-    destructiveHint: true,
+    // Most write tools create additive drafts/assets. Per MCP semantics,
+    // destructiveHint is reserved for overwrite/delete/irreversible behavior.
+    destructiveHint: false,
     idempotentHint: false,
     openWorldHint: false,
   },
@@ -68,13 +70,13 @@ const SCOPE_DEFAULTS: Record<string, AnnotationHints> = {
   },
   'mcp:comments': {
     readOnlyHint: false,
-    destructiveHint: true,
+    destructiveHint: false,
     idempotentHint: false,
     openWorldHint: true,
   },
   'mcp:autopilot': {
     readOnlyHint: false,
-    destructiveHint: true,
+    destructiveHint: false,
     idempotentHint: false,
     openWorldHint: false,
   },
@@ -83,9 +85,18 @@ const SCOPE_DEFAULTS: Record<string, AnnotationHints> = {
 // ── Per-tool overrides (only tools that differ from their scope default) ──
 
 const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
-  // Destructive tools
+  // Destructive or overwrite tools
   delete_comment: { destructiveHint: true },
   moderate_comment: { destructiveHint: true },
+  save_brand_profile: { destructiveHint: true, idempotentHint: true },
+  update_platform_voice: { destructiveHint: true, idempotentHint: true },
+  update_content_plan: { destructiveHint: true, idempotentHint: true },
+  respond_plan_approval: { destructiveHint: true, idempotentHint: true },
+  update_autopilot_config: { destructiveHint: true, idempotentHint: true },
+  run_content_pipeline: { destructiveHint: true, openWorldHint: true },
+  auto_approve_plan: { destructiveHint: true, idempotentHint: true },
+  execute_recipe: { destructiveHint: true, openWorldHint: true },
+  run_skill: { destructiveHint: true },
 
   // Read-only tools in non-read scopes (must also clear destructiveHint from scope default)
   list_comments: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
@@ -99,15 +110,12 @@ const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   refresh_platform_analytics: { readOnlyHint: false, idempotentHint: true },
 
   // Write tools that are idempotent
-  save_brand_profile: { idempotentHint: true },
-  update_platform_voice: { idempotentHint: true },
-  update_autopilot_config: { idempotentHint: true },
-  update_content_plan: { idempotentHint: true },
-  respond_plan_approval: { idempotentHint: true },
-
   // Distribution is open-world (publishes to external platforms)
   schedule_post: { openWorldHint: true },
   schedule_content_plan: { openWorldHint: true },
+  // This only creates a short-lived OAuth deep link; it does not connect the
+  // external account until the user completes the browser flow.
+  start_platform_connection: { destructiveHint: false },
 
   // Extraction reads external URLs
   extract_url_content: { openWorldHint: true },
@@ -118,9 +126,6 @@ const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   get_pipeline_status: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 
   // Pipeline: orchestration tools (non-idempotent, may schedule externally)
-  run_content_pipeline: { openWorldHint: true },
-  auto_approve_plan: { idempotentHint: true },
-
   // Suggest: read-only
   suggest_next_content: { readOnlyHint: true, destructiveHint: false, idempotentHint: true },
 

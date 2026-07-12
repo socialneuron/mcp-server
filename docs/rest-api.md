@@ -33,7 +33,9 @@ curl -H "Authorization: Bearer $SN_API_KEY" \
 
 ```bash
 curl -H "Authorization: Bearer $SN_API_KEY" \
-  https://mcp.socialneuron.com/v1/credits
+  -H "Content-Type: application/json" \
+  -d '{}' \
+  https://mcp.socialneuron.com/v1/tools/get_credit_balance
 ```
 
 ### 3. Generate content
@@ -43,14 +45,17 @@ curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"topic": "sustainable fashion trends", "platforms": ["instagram", "tiktok"]}' \
-  https://mcp.socialneuron.com/v1/content/generate
+  https://mcp.socialneuron.com/v1/tools/generate_content
 ```
 
 ### 4. Check job status
 
 ```bash
-curl -H "Authorization: Bearer $SN_API_KEY" \
-  https://mcp.socialneuron.com/v1/content/status/job_abc123
+curl -X POST \
+  -H "Authorization: Bearer $SN_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"job_id": "job_abc123"}' \
+  https://mcp.socialneuron.com/v1/tools/check_status
 ```
 
 ### 5. Schedule a post
@@ -60,7 +65,7 @@ curl -X POST \
   -H "Authorization: Bearer $SN_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"media_url": "https://...", "caption": "Check this out!", "platforms": ["instagram"], "schedule_at": "<ISO-8601 timestamp>"}' \
-  https://mcp.socialneuron.com/v1/distribution/schedule
+  https://mcp.socialneuron.com/v1/tools/schedule_post
 ```
 
 ## Endpoints
@@ -83,65 +88,9 @@ curl -X POST \
   https://mcp.socialneuron.com/v1/tools/get_credit_balance
 ```
 
-### Convenience Endpoints
+### Route contract
 
-These are thin wrappers over the tool proxy for common operations.
-
-#### Credits
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| GET | `/v1/credits` | `get_credit_balance` | `mcp:read` |
-| GET | `/v1/credits/budget` | `get_budget_status` | `mcp:read` |
-
-#### Brand
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| GET | `/v1/brand` | `get_brand_profile` | `mcp:read` |
-
-#### Analytics
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| GET | `/v1/analytics` | `fetch_analytics` | `mcp:read` |
-| GET | `/v1/analytics/insights` | `get_performance_insights` | `mcp:read` |
-| GET | `/v1/analytics/best-times` | `get_best_posting_times` | `mcp:read` |
-
-#### Content
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| POST | `/v1/content/generate` | `generate_content` | `mcp:write` |
-| POST | `/v1/content/adapt` | `adapt_content` | `mcp:write` |
-| POST | `/v1/content/video` | `generate_video` | `mcp:write` |
-| POST | `/v1/content/image` | `generate_image` | `mcp:write` |
-| GET | `/v1/content/status/{jobId}` | `check_status` | `mcp:read` |
-
-#### Distribution
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| POST | `/v1/distribution/schedule` | `schedule_post` | `mcp:distribute` |
-
-#### Posts & Accounts
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| GET | `/v1/posts` | `list_recent_posts` | `mcp:read` |
-| GET | `/v1/accounts` | `list_connected_accounts` | `mcp:read` |
-
-#### Loop
-
-| Method | Path | Tool | Scope |
-|--------|------|------|-------|
-| GET | `/v1/loop` | `get_loop_summary` | `mcp:read` |
-
-### Discovery
-
-| Method | Path | Auth | Description |
-|--------|------|------|-------------|
-| GET | `/v1/` | Required | API info and endpoint directory |
+The currently deployed REST contract is the generic tool proxy above. Resource-style convenience routes such as `/v1/credits` or `/v1/content/generate` are not deployed; use `/v1/tools/{name}` and the live OpenAPI document. This keeps REST behavior aligned with the MCP tool catalogue.
 
 ## Machine-readable spec
 

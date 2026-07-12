@@ -5,6 +5,20 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    groups:
+      remotion:
+        patterns:
+          - "@remotion/*"
+        update-types:
+          - patch
+          - minor
+    ignore:
+      # The repo still supports Node 20. @supabase/supabase-js >=2.110 requires
+      # Node 22; remove this ignore only in the same PR that migrates engines,
+      # CI, docs, deployment runtime, and release notes to Node 22.
+      - dependency-name: "@supabase/supabase-js"
+        versions:
+          - ">=2.110.0"
   - package-ecosystem: npm
     directory: /packages/sdk
     schedule:

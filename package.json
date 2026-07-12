@@ -62,6 +62,7 @@
   "scripts": {
     "lint:lockfile": "node scripts/lint-lockfile.mjs package-lock.json",
     "check:dep-age": "node scripts/check-dep-age.mjs",
+    "verify:deps": "node scripts/verify-dependency-contracts.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",
     "build:stdio": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --banner:js='#!/usr/bin/env node' --packages=external && chmod +x dist/index.js",
     "prebuild:sn": "node scripts/write-version.mjs",
@@ -75,12 +76,13 @@
     "start:stdio": "node dist/index.js",
     "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
     "dev": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --sourcemap --banner:js='#!/usr/bin/env node' --packages=external --watch",
-    "test": "vitest run",
+    "test": "mkdir -p .tmp-vitest && npm run build:stdio && vitest run --reporter=default --reporter=json --outputFile=.tmp-vitest/results.json && node scripts/verify-vitest-report.mjs .tmp-vitest/results.json",
     "test:watch": "vitest",
     "clean": "rm -rf dist/",
     "prepublishOnly": "npm run clean && npm run build:all && npm test",
     "build:docs": "node scripts/build-tools-reference.mjs",
-    "verify:metadata": "node scripts/verify-metadata.mjs"
+    "verify:metadata": "node scripts/verify-metadata.mjs",
+    "verify:metadata:live": "node scripts/verify-metadata.mjs --live"
   },
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.4",

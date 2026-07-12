@@ -22,5 +22,12 @@ docs/ROADMAP.md
 .claude/
 
 # Local agent tooling (not part of the npm package)
-.agents/
-plugins/
+.agents/*
+!.agents/plugins/
+.agents/plugins/*
+!.agents/plugins/marketplace.json
+!.agents/plugins/plugins/
+.agents/plugins/plugins/*
+!.agents/plugins/plugins/social-neuron-com-mcp/
+!.agents/plugins/plugins/social-neuron-com-mcp/**
+/plugins/

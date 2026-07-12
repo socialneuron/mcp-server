@@ -50,8 +50,12 @@ import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { MCP_VERSION } from "./lib/version.js";
 import { sanitizeError } from "./lib/sanitize-error.js";
 import { buildWwwAuthenticateHeader } from "./lib/www-authenticate.js";
-import { TOOL_CATALOG } from "./lib/tool-catalog.js";
 import { buildDiscoveryCatalog } from "./lib/discovery-catalog.js";
+import {
+  publicToolsForProfile,
+  resolveToolProfile,
+} from "./lib/tool-profile.js";
+import { buildProtectedResourceMetadata } from "./lib/protected-resource-metadata.js";
 import {
   buildOriginPolicy,
   validateBrowserOrigin,
@@ -66,6 +70,7 @@ const MCP_SERVER_URL =
   process.env.MCP_SERVER_URL ?? `http://localhost:${PORT}/mcp`;
 const APP_BASE_URL = process.env.APP_BASE_URL ?? "https://www.socialneuron.com";
 const NODE_ENV = process.env.NODE_ENV ?? "development";
+const TOOL_PROFILE = resolveToolProfile(process.env.MCP_TOOL_PROFILE);
 const ORIGIN_POLICY = buildOriginPolicy({
   allowedOriginsEnv: process.env.ALLOWED_ORIGINS,
   configuredUrls: [APP_BASE_URL, MCP_SERVER_URL],
@@ -343,6 +348,20 @@ const SCOPES_SUPPORTED = [
   "mcp:autopilot",
 ];
 
+// RFC 9728 metadata must identify the exact MCP resource URL, including /mcp.
+// The SDK default currently emits the issuer origin, which Claude rejects when
+// it differs from the connector URL entered during submission.
+app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+  res.json(
+    buildProtectedResourceMetadata({
+      resourceUrl: MCP_SERVER_URL,
+      authorizationServerUrl: OAUTH_ISSUER_URL,
+      scopesSupported: SCOPES_SUPPORTED,
+      documentationUrl: "https://socialneuron.com/for-developers",
+    }),
+  );
+});
+
 // Override OAuth Authorization Server Metadata so the response carries logo_uri.
 // Claude Desktop / claude.ai use this to render the connector icon during the
 // OAuth grant flow. The SDK's mcpAuthRouter doesn't expose logo_uri as a config
@@ -513,6 +532,7 @@ app.use("/mcp", (req: AuthenticatedRequest, res, next) => {
 // discovery metadata, not a runtime validation contract.
 
 app.get("/.well-known/mcp/server-card.json", (_req, res) => {
+  const publicTools = publicToolsForProfile(TOOL_PROFILE);
   res.json({
     serverInfo: {
       name: "socialneuron",
@@ -522,8 +542,9 @@ app.get("/.well-known/mcp/server-card.json", (_req, res) => {
       required: true,
       schemes: ["oauth2"],
     },
-    toolCount: TOOL_CATALOG.filter((t) => !t.localOnly && !t.internal).length,
-    tools: TOOL_CATALOG.filter((t) => !t.localOnly && !t.internal).map((t) => ({
+    toolProfile: TOOL_PROFILE,
+    toolCount: publicTools.length,
+    tools: publicTools.map((t) => ({
       name: t.name,
       description: t.description,
       module: t.module,
@@ -644,8 +665,7 @@ app.get("/v1/openapi.json", async (_req, res) => {
 // List the tools this key can call (scope-filtered).
 app.get("/v1/tools", authenticateRequest, (req: AuthenticatedRequest, res) => {
   const scopes = req.auth!.scopes;
-  const tools = TOOL_CATALOG.filter((t) => !t.localOnly && !t.internal).map(
-    (t) => {
+  const tools = publicToolsForProfile(TOOL_PROFILE).map((t) => {
       const scope = TOOL_SCOPES[t.name];
       return {
         name: t.name,
@@ -671,6 +691,16 @@ app.post(
     // Only the public REST surface is reachable here — internal/localOnly tools
     // are 404, not 403, so their existence isn't confirmed.
     if (!restToolNames().has(name)) {
+      res.status(404).json({
+        error: {
+          error_type: "not_found",
+          message: `No REST tool named '${name}'.`,
+        },
+      });
+      return;
+    }
+
+    if (!publicToolsForProfile(TOOL_PROFILE).some((tool) => tool.name === name)) {
       res.status(404).json({
         error: {
           error_type: "not_found",
@@ -757,7 +787,7 @@ app.post(
 
     if (body?.jsonrpc === "2.0" && body.method === "tools/list") {
       // Public discovery → static catalog WITH real input schemas.
-      buildDiscoveryCatalog()
+      buildDiscoveryCatalog(TOOL_PROFILE)
         .then((tools) => {
           res.json({ jsonrpc: "2.0", id: body.id ?? null, result: { tools } });
         })
@@ -767,7 +797,7 @@ app.post(
             jsonrpc: "2.0",
             id: body.id ?? null,
             result: {
-              tools: TOOL_CATALOG.filter((t) => !t.localOnly && !t.internal).map(
+              tools: publicToolsForProfile(TOOL_PROFILE).map(
                 (t) => ({
                   name: t.name,
                   description: t.description,
@@ -865,7 +895,10 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
 
     // Apply scope enforcement using per-request scopes
     applyScopeEnforcement(server, () => getRequestScopes() ?? auth.scopes);
-    registerAllTools(server, { skipScreenshots: true });
+    registerAllTools(server, {
+      skipScreenshots: true,
+      toolProfile: TOOL_PROFILE,
+    });
     registerPrompts(server);
     registerResources(server);
 
@@ -1013,6 +1046,7 @@ const httpServer = app.listen(PORT, "0.0.0.0", () => {
   );
   console.log(`[MCP HTTP] Health: http://localhost:${PORT}/health`);
   console.log(`[MCP HTTP] MCP endpoint: ${MCP_SERVER_URL}`);
+  console.log(`[MCP HTTP] Tool profile: ${TOOL_PROFILE}`);
   console.log(`[MCP HTTP] Environment: ${NODE_ENV}`);
 });
 

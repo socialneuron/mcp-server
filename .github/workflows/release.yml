@@ -47,6 +47,9 @@ jobs:
       - name: Lint package-lock.json
         run: npm run lint:lockfile
 
+      - name: Verify dependency contracts
+        run: npm run verify:deps
+
       - name: Dependency cooldown (enforced on release)
         run: npm run check:dep-age
         env:

@@ -1,0 +1,20 @@
+{
+  "name": "social-neuron-local",
+  "interface": {
+    "displayName": "Social Neuron Local"
+  },
+  "plugins": [
+    {
+      "name": "social-neuron-com-mcp",
+      "source": {
+        "source": "local",
+        "path": "./plugins/social-neuron-com-mcp"
+      },
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      },
+      "category": "Productivity"
+    }
+  ]
+}
