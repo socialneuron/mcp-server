@@ -53,7 +53,7 @@
     "prepublishOnly": "npm run clean && npm run build"
   },
   "devDependencies": {
-    "typescript": "^7.0.2"
+    "typescript": "^5.9.3"
   },
   "engines": {
     "node": ">=20.0.0"

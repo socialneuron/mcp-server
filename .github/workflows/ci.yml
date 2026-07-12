@@ -39,7 +39,7 @@ jobs:
             changed="$(git diff --name-only HEAD^ HEAD || true)"
           fi
 
-          if printf '%s\n' "$changed" | grep -E '^(package(-lock)?\.json|packages/sdk/|apps/content-calendar/package(-lock)?\.json|\.github/workflows/release\.yml)$'; then
+          if printf '%s\n' "$changed" | grep -E '^(package(-lock)?\.json|packages/sdk/package(-lock)?\.json|apps/content-calendar/package(-lock)?\.json|\.github/workflows/release(-sdk)?\.yml)$'; then
             echo "enforce=true" >> "$GITHUB_OUTPUT"
           else
             echo "enforce=false" >> "$GITHUB_OUTPUT"
@@ -50,6 +50,9 @@ jobs:
         run: npm run check:dep-age
         env:
           SN_DEP_AGE_ENFORCE: "true"
+          # Ratchet: only violations INTRODUCED by this diff fail the build;
+          # violations already on the baseline are warn-only (they age out).
+          SN_DEP_AGE_BASELINE_REF: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || 'HEAD^' }}
 
       - name: Dependency cooldown (warn-only)
         if: steps.dep-surface.outputs.enforce != 'true'
@@ -75,6 +78,16 @@ jobs:
 
       - name: Build
         run: npm run build:all
+
+      # packages/sdk is a separate npm-published workspace with its own
+      # lockfile; root typecheck/test/build never touch it, so exercise it
+      # explicitly (2026-07-12: a TS major bump merged with zero CI coverage).
+      - name: SDK typecheck + build
+        working-directory: packages/sdk
+        run: |
+          npm ci --ignore-scripts
+          npx tsc --noEmit
+          npm run build
 
       - name: Verify pack contents
         run: |
