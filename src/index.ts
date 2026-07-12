@@ -18,7 +18,11 @@
 // Mark this process as stdio transport BEFORE any tool module loads.
 // `tools/media.ts` only allows local-file reads when this is set to 'stdio'
 // (the user runs this CLI on their own machine; reading their files is the point).
-process.env.MCP_TRANSPORT ??= 'stdio';
+// Force-set (not ??=): this entrypoint IS the stdio server. An inherited
+// MCP_TRANSPORT from the environment (leftover shell export, copied env
+// file) must not change transport-gated behavior like the media.ts
+// local-file rule. http.ts force-sets 'http' the same way.
+process.env.MCP_TRANSPORT = 'stdio';
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
