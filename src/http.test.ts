@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
 import { buildOriginPolicy, validateBrowserOrigin } from './lib/origin-policy.js';
 
 // Since http.ts starts a server on import (express.listen, process handlers),
@@ -204,6 +206,29 @@ describe('HTTP Server Security Patterns', () => {
         allowed: false,
         reason: 'invalid_origin',
       });
+    });
+  });
+
+  describe('POST /mcp discovery middleware auth gate (source guard)', () => {
+    // The discovery middleware previously short-circuited non-JSON-RPC bodies
+    // with `return next()`, skipping authenticateRequest entirely. The
+    // authenticated session handler then dereferenced req.auth!.userId ->
+    // unhandled TypeError -> 500 for any unauthenticated scanner POST.
+    // Non-JSON-RPC bodies must fall through to the SAME auth gate as other
+    // methods (401 challenge when unauthenticated; batch-array bodies from
+    // authenticated clients keep working).
+    const httpSource = readFileSync(
+      fileURLToPath(new URL('./http.ts', import.meta.url)),
+      'utf8'
+    );
+
+    it('must not bypass auth for non-JSON-RPC bodies', () => {
+      expect(httpSource).not.toMatch(/jsonrpc\s*!==\s*"2\.0"\)\s*return next\(\)/);
+    });
+
+    it('gates non-tools/list traffic behind authenticateRequest inside the discovery middleware', () => {
+      expect(httpSource).toContain('authenticateRequest(req as AuthenticatedRequest, res, next)');
+      expect(httpSource).toContain('body?.jsonrpc === "2.0" && body.method === "tools/list"');
     });
   });
 
