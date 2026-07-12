@@ -78,10 +78,10 @@ describe('buildAnnotationsMap', () => {
     expect(ann.destructiveHint).toBe(false);
   });
 
-  it('marks mcp:write tools as readOnlyHint=false and destructiveHint=true', () => {
+  it('marks additive mcp:write tools as writable but not destructive by default', () => {
     const ann = annotations.get('generate_content')!;
     expect(ann.readOnlyHint).toBe(false);
-    expect(ann.destructiveHint).toBe(true);
+    expect(ann.destructiveHint).toBe(false);
   });
 
   it('marks mcp:distribute tools as openWorldHint=true and destructiveHint=true', () => {
@@ -90,13 +90,12 @@ describe('buildAnnotationsMap', () => {
     expect(ann.destructiveHint).toBe(true);
   });
 
-  it('marks mcp:comments tools as destructiveHint=true by default', () => {
-    // post_comment is a mcp:comments tool that writes
+  it('marks additive comment tools as non-destructive by default', () => {
     const ann = annotations.get('post_comment')!;
-    expect(ann.destructiveHint).toBe(true);
+    expect(ann.destructiveHint).toBe(false);
   });
 
-  it('marks mcp:autopilot tools as destructiveHint=true by default', () => {
+  it('marks autopilot updates as destructive overrides', () => {
     const ann = annotations.get('update_autopilot_config')!;
     expect(ann.destructiveHint).toBe(true);
   });
@@ -138,6 +137,13 @@ describe('buildAnnotationsMap', () => {
   it('marks save_brand_profile as idempotent', () => {
     const ann = annotations.get('save_brand_profile')!;
     expect(ann.idempotentHint).toBe(true);
+    expect(ann.destructiveHint).toBe(true);
+  });
+
+  it('marks a connection link as non-destructive even though it uses distribute scope', () => {
+    const ann = annotations.get('start_platform_connection')!;
+    expect(ann.destructiveHint).toBe(false);
+    expect(ann.openWorldHint).toBe(true);
   });
 
   it('marks extract_url_content as openWorld', () => {

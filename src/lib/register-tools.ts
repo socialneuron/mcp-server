@@ -8,6 +8,7 @@ import { applyAnnotations } from './tool-annotations.js';
 import { logMcpToolInvocation } from './supabase.js';
 import { buildWwwAuthenticateHeader } from './www-authenticate.js';
 import { toolError, classifyToolError } from './tool-error.js';
+import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // Scanner middleware (Task 1.14). Imports from the in-package mirror of the
 // repo-root TS SSOT (`lib/agent-harness/`). Mirror exists because mcp-server
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
@@ -341,8 +342,9 @@ function truncateResponse(result: any): any {
  */
 export function registerAllTools(
   server: McpServer,
-  options?: { skipScreenshots?: boolean; skipApps?: boolean }
+  options?: { skipScreenshots?: boolean; skipApps?: boolean; toolProfile?: ToolProfile }
 ): void {
+  applyToolProfile(server, options?.toolProfile ?? 'full');
   registerIdeationTools(server);
   registerContentTools(server);
   registerDistributionTools(server);

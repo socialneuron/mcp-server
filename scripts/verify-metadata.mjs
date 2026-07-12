@@ -22,6 +22,8 @@ const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const server = JSON.parse(readFileSync('server.json', 'utf8'));
 
 const failures = [];
+const expectedHostedToolCount = server.tools_count;
+const retiredHostedTools = ['get_loop_pulse', 'get_bandit_state'];
 
 // 1. Version equality
 if (server.version !== pkg.version) {
@@ -36,6 +38,7 @@ if (!pkg.mcpName) {
 // 3. Forbidden strings — retired claims, internal codenames, dead endpoints
 const FORBIDDEN = [
   // stale public-contract claims
+  '91 Social Neuron MCP tools',
   '85+ MCP tools',
   'advertises **85',
   '87 discoverable tools',
@@ -64,7 +67,10 @@ const FORBIDDEN = [
   '"monthlyLimit": 2000',
   '| Starter | 60 | 800 |',
   '100 credits/mo (no MCP access)',
+  '100 credits/mo',
+  'Starter includes MCP API access',
   // stale/dead REST origins
+  'https://api.socialneuron.com',
   'https://mcp.socialneuron.com/mcp/v1',
   'https://api.socialneuron.com/api/v1',
   'https://api.socialneuron.com/v1',
@@ -76,6 +82,9 @@ const FORBIDDEN = [
   'get_bandit_state',
   'hermes_run_id',
   '"hermes"',
+  'hermes',
+  'banditState',
+  'loopPulse',
   'bandit',
   'founder approves',
   'PR #4.4',
@@ -125,6 +134,19 @@ if (process.argv.includes('--live')) {
       const cardVersion = card.serverInfo?.version ?? card.version;
       if (cardVersion !== pkg.version) {
         failures.push(`live server card version "${cardVersion}" !== package.json version "${pkg.version}" (deploy lag or drift)`);
+      }
+      if (card.toolCount !== expectedHostedToolCount) {
+        failures.push(`live server card toolCount ${card.toolCount} !== server.json tools_count ${expectedHostedToolCount}`);
+      }
+      const cardTools = Array.isArray(card.tools) ? card.tools : [];
+      if (cardTools.length !== expectedHostedToolCount) {
+        failures.push(`live server card tools.length ${cardTools.length} !== server.json tools_count ${expectedHostedToolCount}`);
+      }
+      const cardToolNames = new Set(cardTools.map(tool => tool?.name).filter(Boolean));
+      for (const retiredTool of retiredHostedTools) {
+        if (cardToolNames.has(retiredTool)) {
+          failures.push(`live server card exposes retired hosted tool: ${retiredTool}`);
+        }
       }
       const cardText = JSON.stringify(card);
       for (const needle of FORBIDDEN) {

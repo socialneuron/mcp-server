@@ -1,0 +1,19 @@
+name: Live Metadata Contract
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "17 * * * *"
+
+jobs:
+  verify-live-metadata:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+
+      - name: Verify live hosted metadata contract
+        run: npm run verify:metadata:live

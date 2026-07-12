@@ -1,8 +1,8 @@
 /**
  * Drift guard: MCP_VERSION (what the server reports at /health and in
  * _meta.version) MUST equal package.json "version". version.ts is generated from
- * package.json by scripts/write-version.mjs in the `prebuild` lifecycle, so a
- * deploy can't report a stale version — this test fails if the committed
+ * package.json by scripts/write-version.mjs from the build scripts, so a
+ * deploy can't report a stale version - this test fails if the committed
  * version.ts ever drifts from package.json (e.g. a manual edit or a missed
  * regen). package.json is read via fs (not imported) to avoid the tsconfig
  * rootDir restriction.

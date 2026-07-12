@@ -29,21 +29,19 @@ jobs:
       - name: Lint package-lock.json
         run: npm run lint:lockfile
 
+      - name: Verify dependency contracts
+        run: npm run verify:deps
+
       - name: Detect dependency-surface changes
         id: dep-surface
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "pull_request" ]; then
-            changed="$(git diff --name-only "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}")"
+            enforce="$(node scripts/detect-dependency-surface.mjs "${{ github.event.pull_request.base.sha }}" "${{ github.event.pull_request.head.sha }}")"
           else
-            changed="$(git diff --name-only HEAD^ HEAD || true)"
+            enforce="$(node scripts/detect-dependency-surface.mjs HEAD^ HEAD || echo true)"
           fi
-
-          if printf '%s\n' "$changed" | grep -E '^(package(-lock)?\.json|packages/sdk/package(-lock)?\.json|apps/content-calendar/package(-lock)?\.json|\.github/workflows/release(-sdk)?\.yml)$'; then
-            echo "enforce=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "enforce=false" >> "$GITHUB_OUTPUT"
-          fi
+          echo "enforce=${enforce}" >> "$GITHUB_OUTPUT"
 
       - name: Dependency cooldown (enforced for dependency surfaces)
         if: steps.dep-surface.outputs.enforce == 'true'
