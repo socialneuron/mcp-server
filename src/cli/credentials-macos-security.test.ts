@@ -1,5 +1,13 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 
 const TEST_HOME = '/tmp/social-neuron-macos-credentials-test';
 const TEST_CONFIG_DIR = `${TEST_HOME}/.config/social-neuron`;
@@ -248,8 +256,10 @@ describe('macOS Keychain credential security', () => {
 
   it('validates an unsafe fallback before touching an existing Keychain credential', async () => {
     mkdirSync(TEST_CONFIG_DIR, { recursive: true, mode: 0o700 });
-    writeFileSync(`${TEST_HOME}/victim.json`, '{"unchanged":true}\n');
-    symlinkSync(`${TEST_HOME}/victim.json`, TEST_CREDENTIALS_FILE);
+    const victimDirectory = mkdtempSync(`${TEST_HOME}/victim-`);
+    const victimFile = `${victimDirectory}/victim.json`;
+    writeFileSync(victimFile, '{"unchanged":true}\n');
+    symlinkSync(victimFile, TEST_CREDENTIALS_FILE);
     keyringSetPassword.mockImplementation(() => {
       throw new Error('native write unavailable');
     });
@@ -260,7 +270,7 @@ describe('macOS Keychain credential security', () => {
     expect(keyringGetPassword).not.toHaveBeenCalled();
     expect(keyringDeletePassword).not.toHaveBeenCalled();
     expect(execFileSync).not.toHaveBeenCalled();
-    expect(readFileSync(`${TEST_HOME}/victim.json`, 'utf8')).toBe('{"unchanged":true}\n');
+    expect(readFileSync(victimFile, 'utf8')).toBe('{"unchanged":true}\n');
   });
 
   it('removes the file credential even when Keychain logout remains inconclusive', async () => {
