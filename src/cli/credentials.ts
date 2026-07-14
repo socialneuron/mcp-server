@@ -208,11 +208,13 @@ function macKeychainWrite(service: string, value: string): boolean {
         KEYCHAIN_ACCOUNT,
         '-s',
         service,
-        '-w',
-        value,
         '-U', // update if exists
+        // `security(1)` warns that passing the password after -w exposes it in
+        // the process argument list. With -w last it reads the value from
+        // stdin instead, so the API key never appears in argv.
+        '-w',
       ],
-      { stdio: ['pipe', 'pipe', 'pipe'] }
+      { input: value, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
     return true;
   } catch {

@@ -32,7 +32,9 @@ function makeSupabaseQuery(result: Record<string, unknown>) {
   for (const method of ['delete', 'lt', 'select', 'insert', 'update', 'eq', 'maybeSingle']) {
     chain[method] = vi.fn().mockReturnValue(chain);
   }
-  chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result));
+  chain.then = vi.fn((resolve: (value: typeof result) => unknown) =>
+    Promise.resolve(resolve(result))
+  );
   chain.catch = vi.fn().mockReturnValue(chain);
   chain.finally = vi.fn().mockReturnValue(chain);
   return chain;
@@ -98,6 +100,35 @@ describe('createOAuthProvider', () => {
       await expect(provider.clientsStore.getClient!('legacy-client')).resolves.toBeUndefined();
       expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
       expect(deleteQuery.eq).toHaveBeenCalledWith('client_id', 'legacy-client');
+    });
+
+    it('executes the last_used_at touch after a durable client read', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const selectQuery = makeSupabaseQuery({
+        data: {
+          client_id: 'durable-client',
+          client_secret: '',
+          client_secret_expires_at: 0,
+          client_id_issued_at: 1,
+          redirect_uris: ['http://localhost:6274/oauth/callback'],
+          client_name: 'Durable Client',
+          metadata: {},
+        },
+        error: null,
+      });
+      const touchQuery = makeSupabaseQuery({ data: null, error: null });
+      const from = vi.fn().mockReturnValueOnce(selectQuery).mockReturnValueOnce(touchQuery);
+      vi.mocked(getSupabaseClient).mockReturnValueOnce({ from } as never);
+
+      await expect(provider.clientsStore.getClient!('durable-client')).resolves.toMatchObject({
+        client_id: 'durable-client',
+      });
+      await vi.waitFor(() => expect(touchQuery.then).toHaveBeenCalledTimes(1));
+
+      expect(touchQuery.update).toHaveBeenCalledWith({
+        last_used_at: expect.any(String),
+      });
+      expect(touchQuery.eq).toHaveBeenCalledWith('client_id', 'durable-client');
     });
 
     it('revalidates cached clients when the environment becomes production', async () => {

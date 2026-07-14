@@ -1,12 +1,11 @@
 # Authentication Architecture
 
-The Social Neuron MCP Server supports three authentication modes:
+The Social Neuron MCP Server supports two client-facing authentication modes:
 
 1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven connector setup
 2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
-3. **Service Role** (legacy, deprecated) — self-hosted only
 
-General Social Neuron dashboard session JWTs are deliberately not accepted as hosted MCP bearer tokens: they are not resource-bound to the MCP server. A legacy self-hosted deployment can temporarily set `MCP_ALLOW_SUPABASE_SESSION_TOKENS=true` while migrating, but the supported hosted credentials are connector tokens and `snk_` API keys.
+General Social Neuron dashboard session JWTs are deliberately not accepted as hosted MCP bearer tokens: they are not resource-bound to the MCP server. A legacy self-hosted deployment can temporarily set `MCP_ALLOW_SUPABASE_SESSION_TOKENS=true` while migrating, but the supported credentials are resource-bound connector tokens and `snk_` API keys. Service-role credentials are never a supported client authentication mode.
 
 ## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
 
@@ -34,7 +33,7 @@ Claude.ai (or Desktop/Smithery/Glama)
 ### Adding the connector in Claude.ai
 
 1. **Settings → Integrations → Custom Connector**.
-2. **MCP Server URL**: `https://mcp.socialneuron.com/`.
+2. **MCP Server URL**: `https://mcp.socialneuron.com/mcp`.
 3. Approve the OAuth consent prompt that opens. Scopes are derived from your **plan tier** — they are not chosen during connection.
 4. The connector tile renders the SN icon (served via OAuth metadata `logo_uri`).
 
@@ -59,9 +58,11 @@ If a tool returns `Permission denied: '<tool>' requires scope '<scope>'` and you
 
 The DCR endpoint accepts:
 - `https://claude.ai/api/mcp/auth_callback`, `https://claude.com/api/mcp/auth_callback`
+- `https://chatgpt.com/connector_platform_oauth_redirect`, `https://chatgpt.com/connector/oauth/social-neuron`
 - `https://smithery.ai/callback`, `https://www.smithery.ai/callback`
 - `https://glama.ai/callback`, `https://mcp.so/callback`
-- `http://localhost:6274/oauth/callback` (Claude Code/Desktop debug)
+- `http://localhost:<port>/oauth/callback` and `/oauth/callback/debug` (native clients)
+- `http://127.0.0.1:<port>/callback` and `/callback/<token>` (Codex)
 
 Unknown HTTPS redirect URIs are rejected by default. Staging environments can set `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` while onboarding a new client before adding its callback to the allowlist. Disallowed URIs return `400 invalid_client_metadata` (not 500).
 
@@ -69,6 +70,8 @@ Unknown HTTPS redirect URIs are rejected by default. Staging environments can se
 
 | What | URL |
 |---|---|
+| MCP endpoint | `https://mcp.socialneuron.com/mcp` |
+| Protected-resource metadata | `https://mcp.socialneuron.com/.well-known/oauth-protected-resource/mcp` |
 | OAuth metadata | `https://mcp.socialneuron.com/.well-known/oauth-authorization-server` |
 | Server card | `https://mcp.socialneuron.com/.well-known/mcp/server-card.json` |
 | Health | `https://mcp.socialneuron.com/health` |
@@ -190,16 +193,11 @@ This prevents authenticated users from calling downstream EFs directly, bypassin
 
 See `supabase/functions/_shared/gatewayToken.ts` for the implementation.
 
-## Service Role (Legacy)
+## Service Role Is Not a Client Authentication Mode
 
-When no API key is configured, the server falls back to using `SUPABASE_SERVICE_ROLE_KEY` directly. This mode:
+When no API key is configured, stdio startup fails closed; it does not fall back to `SUPABASE_SERVICE_ROLE_KEY`. Remove service-role credentials from MCP client configuration and use `npx @socialneuron/mcp-server login` instead.
 
-- Grants `mcp:full` scope (all permissions)
-- Requires `SOCIALNEURON_USER_ID` env var (no user discovery)
-- Bypasses credit enforcement
-- Logs deprecation warnings on startup
-
-**This mode is deprecated.** Use `npx @socialneuron/mcp-server login` to migrate to API key auth.
+The hosted HTTP process may use a service-role credential supplied through its deployment environment for server-internal OAuth dynamic-client persistence. That credential is never sent to clients, never embedded in the npm package, and never grants an MCP caller access.
 
 ## Intentionally Public Values
 

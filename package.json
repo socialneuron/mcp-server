@@ -60,7 +60,7 @@
     "provenance": true
   },
   "scripts": {
-    "lint:lockfile": "node scripts/lint-lockfile.mjs package-lock.json",
+    "lint:lockfile": "node scripts/lint-lockfile.mjs package-lock.json packages/sdk/package-lock.json apps/content-calendar/package-lock.json apps/analytics-pulse/package-lock.json",
     "check:dep-age": "node scripts/check-dep-age.mjs",
     "verify:deps": "node scripts/verify-dependency-contracts.mjs",
     "build": "esbuild src/http.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/http.js --packages=external",

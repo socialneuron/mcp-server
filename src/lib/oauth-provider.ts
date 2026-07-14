@@ -315,12 +315,26 @@ function createClientsStore(): OAuthRegisteredClientsStore {
 
         cacheClient(cache, clientId, client);
 
-        // Touch last_used_at fire-and-forget. Failure here doesn't matter for
-        // the request; it only affects the 90-day pruning window.
-        void supabase
-          .from('mcp_oauth_clients')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('client_id', clientId);
+        // Touch last_used_at without delaying the request. Supabase query
+        // builders are lazy thenables, so merely constructing this chain does
+        // not execute it; the detached async task must await the builder.
+        void (async () => {
+          try {
+            const { error: touchError } = await supabase
+              .from('mcp_oauth_clients')
+              .update({ last_used_at: new Date().toISOString() })
+              .eq('client_id', clientId);
+            if (touchError) {
+              console.error(
+                `[oauth] failed to update client activity: ${sanitizeError(touchError)}`
+              );
+            }
+          } catch (touchError) {
+            console.error(
+              `[oauth] failed to update client activity: ${sanitizeError(touchError)}`
+            );
+          }
+        })();
 
         return client;
       } catch (err) {
