@@ -6,7 +6,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Security
 
-- macOS Keychain writes now pass API keys over stdin instead of exposing them in the `security` process argument list.
+- macOS Keychain writes now use a native Security.framework binding, keeping API keys out of subprocess argument lists; installations without the optional native module use the owner-only file fallback.
 - The release lockfile gate now validates the root, SDK, Content Calendar, and Analytics Pulse lockfiles.
 
 ### Fixed

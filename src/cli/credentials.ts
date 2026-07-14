@@ -3,7 +3,7 @@
  *
  * Storage priority:
  *   1. SOCIALNEURON_API_KEY env var (CI/headless)
- *   2. macOS Keychain via `security` CLI
+ *   2. macOS Keychain via native Security.framework binding
  *   3. Linux `secret-tool` / `libsecret`
  *   4. Fallback: ~/.config/social-neuron/credentials.json (chmod 0600, dir 0700)
  */
@@ -32,6 +32,14 @@ const KEYCHAIN_SERVICE_URL = 'socialneuron-supabase-url';
 
 const CONFIG_DIR = join(homedir(), '.config', 'social-neuron');
 const CREDENTIALS_FILE = join(CONFIG_DIR, 'credentials.json');
+
+type NativeKeyringModule = typeof import('@napi-rs/keyring');
+let nativeKeyringModule: Promise<NativeKeyringModule | null> | undefined;
+
+function loadNativeKeyring(): Promise<NativeKeyringModule | null> {
+  nativeKeyringModule ??= import('@napi-rs/keyring').catch(() => null);
+  return nativeKeyringModule;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -185,7 +193,15 @@ function writeCredentialsFile(data: CredentialsFile): void {
 
 // ── macOS Keychain ───────────────────────────────────────────────────
 
-function macKeychainRead(service: string): string | null {
+async function macKeychainRead(service: string): Promise<string | null> {
+  const native = await loadNativeKeyring();
+  if (native) {
+    try {
+      return new native.Entry(service, KEYCHAIN_ACCOUNT).getPassword();
+    } catch {
+      // Fall through to the read-only CLI path for legacy or ambiguous entries.
+    }
+  }
   try {
     const result = execFileSync(
       'security',
@@ -198,31 +214,26 @@ function macKeychainRead(service: string): string | null {
   }
 }
 
-function macKeychainWrite(service: string, value: string): boolean {
+async function macKeychainWrite(service: string, value: string): Promise<boolean> {
+  const native = await loadNativeKeyring();
+  if (!native) return false;
   try {
-    execFileSync(
-      'security',
-      [
-        'add-generic-password',
-        '-a',
-        KEYCHAIN_ACCOUNT,
-        '-s',
-        service,
-        '-U', // update if exists
-        // `security(1)` warns that passing the password after -w exposes it in
-        // the process argument list. With -w last it reads the value from
-        // stdin instead, so the API key never appears in argv.
-        '-w',
-      ],
-      { input: value, encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    new native.Entry(service, KEYCHAIN_ACCOUNT).setPassword(value);
     return true;
   } catch {
     return false;
   }
 }
 
-function macKeychainDelete(service: string): boolean {
+async function macKeychainDelete(service: string): Promise<boolean> {
+  const native = await loadNativeKeyring();
+  if (native) {
+    try {
+      return new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
+    } catch {
+      // Fall through to CLI deletion so legacy entries can still be removed.
+    }
+  }
   try {
     execFileSync('security', ['delete-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', service], {
       stdio: ['pipe', 'pipe', 'pipe'],
@@ -289,7 +300,7 @@ export async function loadApiKey(): Promise<string | null> {
 
   // 2. OS keychain
   if (os === 'darwin') {
-    const key = macKeychainRead(KEYCHAIN_SERVICE_API);
+    const key = await macKeychainRead(KEYCHAIN_SERVICE_API);
     if (key) return key;
   } else if (os === 'linux') {
     const key = linuxSecretRead('api-key');
@@ -315,7 +326,7 @@ export async function saveApiKey(key: string): Promise<void> {
   let saved = false;
 
   if (os === 'darwin') {
-    saved = macKeychainWrite(KEYCHAIN_SERVICE_API, key);
+    saved = await macKeychainWrite(KEYCHAIN_SERVICE_API, key);
   } else if (os === 'linux') {
     saved = linuxSecretWrite('api-key', key);
   }
@@ -349,7 +360,7 @@ export async function deleteApiKey(): Promise<void> {
   const os = platform();
 
   if (os === 'darwin') {
-    macKeychainDelete(KEYCHAIN_SERVICE_API);
+    await macKeychainDelete(KEYCHAIN_SERVICE_API);
   } else if (os === 'linux') {
     linuxSecretDelete('api-key');
   }
@@ -381,7 +392,7 @@ export async function loadSupabaseUrl(): Promise<string | null> {
   const os = platform();
 
   if (os === 'darwin') {
-    const url = macKeychainRead(KEYCHAIN_SERVICE_URL);
+    const url = await macKeychainRead(KEYCHAIN_SERVICE_URL);
     if (url) return url;
   } else if (os === 'linux') {
     const url = linuxSecretRead('supabase-url');
@@ -400,7 +411,7 @@ export async function saveSupabaseUrl(url: string): Promise<void> {
   let saved = false;
 
   if (os === 'darwin') {
-    saved = macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
+    saved = await macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
   } else if (os === 'linux') {
     saved = linuxSecretWrite('supabase-url', url);
   }

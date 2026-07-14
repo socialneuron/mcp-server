@@ -98,7 +98,7 @@ API keys are stored securely via OS-native mechanisms:
 
 | Platform | Storage | Details |
 |----------|---------|---------|
-| macOS | Keychain | `security add-generic-password` |
+| macOS | Keychain | Native Security.framework binding (`@napi-rs/keyring`) |
 | Linux | `secret-tool` (libsecret) | D-Bus Secret Service API |
 | Windows / fallback | `~/.config/social-neuron/credentials.json` | `chmod 0600` |
 | CI/headless | `SOCIALNEURON_API_KEY` env var | Highest priority |

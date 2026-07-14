@@ -124,5 +124,8 @@
     "playwright": {
       "optional": true
     }
+  },
+  "optionalDependencies": {
+    "@napi-rs/keyring": "1.3.0"
   }
 }
