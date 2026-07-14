@@ -10,10 +10,12 @@ import {
 } from 'node:fs';
 import { join } from 'node:path';
 
-const TEST_HOME = '/private/tmp/social-neuron-credentials-security-test';
+const { TEST_HOME } = vi.hoisted(() => ({
+  TEST_HOME: `${process.env.RUNNER_TEMP ?? process.env.TMPDIR ?? '/tmp'}/social-neuron-credentials-security-test-${process.pid}`,
+}));
 
 vi.mock('node:os', () => ({
-  homedir: () => '/private/tmp/social-neuron-credentials-security-test',
+  homedir: () => TEST_HOME,
   platform: () => 'linux',
 }));
 
