@@ -118,7 +118,9 @@ describe('createOAuthProvider', () => {
       });
       const touchQuery = makeSupabaseQuery({ data: null, error: null });
       const from = vi.fn().mockReturnValueOnce(selectQuery).mockReturnValueOnce(touchQuery);
-      vi.mocked(getSupabaseClient).mockReturnValueOnce({ from } as never);
+      vi.mocked(getSupabaseClient)
+        .mockReturnValueOnce({ from } as never)
+        .mockReturnValueOnce({ from } as never);
 
       await expect(provider.clientsStore.getClient!('durable-client')).resolves.toMatchObject({
         client_id: 'durable-client',
@@ -129,6 +131,113 @@ describe('createOAuthProvider', () => {
         last_used_at: expect.any(String),
       });
       expect(touchQuery.eq).toHaveBeenCalledWith('client_id', 'durable-client');
+    });
+
+    it('refreshes cached client activity at most once per day', async () => {
+      const now = new Date('2026-07-14T10:00:00.000Z').getTime();
+      const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const selectQuery = makeSupabaseQuery({
+        data: {
+          client_id: 'active-client',
+          client_secret: '',
+          client_secret_expires_at: 0,
+          client_id_issued_at: 1,
+          redirect_uris: ['http://localhost:6274/oauth/callback'],
+          client_name: 'Active Client',
+          metadata: {},
+        },
+        error: null,
+      });
+      const firstTouchQuery = makeSupabaseQuery({ data: null, error: null });
+      const secondTouchQuery = makeSupabaseQuery({ data: null, error: null });
+      const from = vi
+        .fn()
+        .mockReturnValueOnce(selectQuery)
+        .mockReturnValueOnce(firstTouchQuery)
+        .mockReturnValueOnce(secondTouchQuery);
+      vi.mocked(getSupabaseClient)
+        .mockReturnValueOnce({ from } as never)
+        .mockReturnValueOnce({ from } as never)
+        .mockReturnValueOnce({ from } as never);
+
+      try {
+        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
+          client_id: 'active-client',
+        });
+        await vi.waitFor(() => expect(firstTouchQuery.then).toHaveBeenCalledTimes(1));
+
+        // A cached hit inside the interval must not generate another write.
+        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
+          client_id: 'active-client',
+        });
+        expect(from).toHaveBeenCalledTimes(2);
+
+        // Once the interval has elapsed, a cached hit refreshes durable activity
+        // so retention cleanup cannot prune an actively used registration.
+        dateNow.mockReturnValue(now + 24 * 60 * 60 * 1000);
+        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
+          client_id: 'active-client',
+        });
+        await vi.waitFor(() => expect(secondTouchQuery.then).toHaveBeenCalledTimes(1));
+
+        expect(secondTouchQuery.update).toHaveBeenCalledWith({
+          last_used_at: expect.any(String),
+        });
+        expect(secondTouchQuery.eq).toHaveBeenCalledWith('client_id', 'active-client');
+      } finally {
+        dateNow.mockRestore();
+      }
+    });
+
+    it('retries a cached client activity refresh after a transient write failure', async () => {
+      const provider = createOAuthProvider(TEST_OPTIONS);
+      const selectQuery = makeSupabaseQuery({
+        data: {
+          client_id: 'retry-client',
+          client_secret: '',
+          client_secret_expires_at: 0,
+          client_id_issued_at: 1,
+          redirect_uris: ['http://localhost:6274/oauth/callback'],
+          client_name: 'Retry Client',
+          metadata: {},
+        },
+        error: null,
+      });
+      const failedTouchQuery = makeSupabaseQuery({
+        data: null,
+        error: { message: 'temporary write failure' },
+      });
+      const retryTouchQuery = makeSupabaseQuery({ data: null, error: null });
+      const from = vi
+        .fn()
+        .mockReturnValueOnce(selectQuery)
+        .mockReturnValueOnce(failedTouchQuery)
+        .mockReturnValueOnce(retryTouchQuery);
+      vi.mocked(getSupabaseClient)
+        .mockReturnValueOnce({ from } as never)
+        .mockReturnValueOnce({ from } as never)
+        .mockReturnValueOnce({ from } as never);
+      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+      try {
+        await expect(provider.clientsStore.getClient!('retry-client')).resolves.toMatchObject({
+          client_id: 'retry-client',
+        });
+        await vi.waitFor(() =>
+          expect(consoleError).toHaveBeenCalledWith(
+            expect.stringContaining('failed to update client activity')
+          )
+        );
+
+        await expect(provider.clientsStore.getClient!('retry-client')).resolves.toMatchObject({
+          client_id: 'retry-client',
+        });
+        await vi.waitFor(() => expect(retryTouchQuery.then).toHaveBeenCalledTimes(1));
+        expect(from).toHaveBeenCalledTimes(3);
+      } finally {
+        consoleError.mockRestore();
+      }
     });
 
     it('revalidates cached clients when the environment becomes production', async () => {
