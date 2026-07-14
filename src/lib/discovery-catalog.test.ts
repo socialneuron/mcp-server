@@ -26,9 +26,11 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     }
   });
 
-  it('advertises TOOL_CATALOG minus localOnly and internal tools (only adds schemas)', async () => {
+  it('advertises only the public TOOL_CATALOG projection (only adds schemas)', async () => {
     const tools = await buildDiscoveryCatalog();
-    const expected = TOOL_CATALOG.filter(t => !t.localOnly && !t.internal)
+    const expected = TOOL_CATALOG.filter(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+    )
       .map(t => t.name)
       .sort();
     expect(tools.map(t => t.name).sort()).toEqual(expected);

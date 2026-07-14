@@ -98,6 +98,7 @@ export async function enumerateCatalogTools() {
         `    scope: String(t.scope ?? ''),\n` +
         `    local_only: Boolean(t.localOnly),\n` +
         `    internal: Boolean(t.internal),\n` +
+        `    hidden_from_public_count: Boolean(t.hiddenFromPublicCount),\n` +
         `    task_intent: t.task_intent == null ? null : String(t.task_intent),\n` +
         `    use_when: t.use_when == null ? null : String(t.use_when),\n` +
         `    avoid_when: t.avoid_when == null ? null : String(t.avoid_when),\n` +

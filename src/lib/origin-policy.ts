@@ -49,21 +49,24 @@ export function buildOriginPolicy(input: {
   nodeEnv?: string;
 }): OriginPolicy {
   const envOrigins = parseAllowedOrigins(input.allowedOriginsEnv);
-  if (envOrigins.size > 0) {
-    return { allowedOrigins: envOrigins, source: 'env' };
-  }
+  const source = envOrigins.size > 0 ? 'env' : 'fallback';
+  const allowedOrigins =
+    source === 'env' ? envOrigins : new Set(PRODUCTION_FALLBACK_ORIGINS);
 
-  const fallback = new Set(PRODUCTION_FALLBACK_ORIGINS);
+  // Configured service/client URLs are explicit operator trust decisions and
+  // must remain additive when ALLOWED_ORIGINS is set. Previously the env value
+  // silently discarded them, which broke browser-hosted MCP connectors while
+  // leaving non-browser clients unaffected.
   for (const configuredUrl of input.configuredUrls ?? []) {
     const normalized = normalizeOrigin(configuredUrl);
-    if (normalized) fallback.add(normalized);
+    if (normalized) allowedOrigins.add(normalized);
   }
 
-  if (input.nodeEnv !== 'production') {
-    for (const origin of DEVELOPMENT_FALLBACK_ORIGINS) fallback.add(origin);
+  if (source === 'fallback' && input.nodeEnv !== 'production') {
+    for (const origin of DEVELOPMENT_FALLBACK_ORIGINS) allowedOrigins.add(origin);
   }
 
-  return { allowedOrigins: fallback, source: 'fallback' };
+  return { allowedOrigins, source };
 }
 
 export function validateBrowserOrigin(

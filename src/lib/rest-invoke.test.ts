@@ -75,9 +75,11 @@ describe('httpStatusForResult', () => {
 });
 
 describe('restToolNames', () => {
-  it('is the public surface (catalog minus internal + localOnly)', () => {
+  it('is the public surface (catalog minus internal, localOnly, and hidden)', () => {
     const names = restToolNames();
-    const expected = TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).length;
+    const expected = TOOL_CATALOG.filter(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+    ).length;
     expect(names.size).toBe(expected);
     // Internal tools excluded.
     expect(names.has('write_agent_reflection')).toBe(false);

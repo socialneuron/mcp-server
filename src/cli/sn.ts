@@ -122,7 +122,7 @@ export function printSnUsage(): void {
   console.error('');
   console.error('Discovery:');
   console.error('  tools [--scope <scope>] [--module <module>] [--json]');
-  console.error('  info [--json]');
+  console.error('  info [--offline] [--json]');
   console.error('');
   console.error('Content:');
   console.error(

@@ -2,7 +2,7 @@
 
 > **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
 
-REST interface to the Social Neuron AI content tools (90 public tools in the current hosted target surface — live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)). It uses the same auth, project scoping, scopes, rate limits, and credit pool as the hosted MCP endpoint.
+REST interface to the Social Neuron AI content tools (91 public tools in the current hosted target surface — live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)). It uses the same auth, project scoping, scopes, rate limits, and credit pool as the hosted MCP endpoint.
 
 ## Base URL
 

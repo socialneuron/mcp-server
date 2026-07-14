@@ -32,7 +32,7 @@ describe('origin-policy', () => {
   });
 
   describe('buildOriginPolicy', () => {
-    it('uses ALLOWED_ORIGINS when provided', () => {
+    it('uses ALLOWED_ORIGINS and preserves explicitly configured URLs', () => {
       const policy = buildOriginPolicy({
         allowedOriginsEnv: 'https://socialneuron.com,https://app.socialneuron.com',
         configuredUrls: ['https://mcp.socialneuron.com/mcp'],
@@ -43,7 +43,29 @@ describe('origin-policy', () => {
       expect([...policy.allowedOrigins]).toEqual([
         'https://socialneuron.com',
         'https://app.socialneuron.com',
+        'https://mcp.socialneuron.com',
       ]);
+    });
+
+    it('allows exact browser connector origins without allowing arbitrary origins', () => {
+      const policy = buildOriginPolicy({
+        allowedOriginsEnv: 'https://socialneuron.com',
+        configuredUrls: ['https://claude.ai', 'https://chatgpt.com'],
+        nodeEnv: 'production',
+      });
+
+      expect(validateBrowserOrigin('https://claude.ai', policy)).toEqual({
+        allowed: true,
+        origin: 'https://claude.ai',
+      });
+      expect(validateBrowserOrigin('https://chatgpt.com', policy)).toEqual({
+        allowed: true,
+        origin: 'https://chatgpt.com',
+      });
+      expect(validateBrowserOrigin('https://attacker.example', policy)).toEqual({
+        allowed: false,
+        reason: 'invalid_origin',
+      });
     });
 
     it('falls back to production domains and configured service URLs when env is absent', () => {

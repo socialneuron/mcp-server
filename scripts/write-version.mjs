@@ -19,3 +19,16 @@ const output = `/**
 export const MCP_VERSION = '${pkg.version}';
 `;
 writeFileSync(resolve(root, 'src/lib/version.ts'), output, 'utf8');
+
+// Public MCP Registry metadata is part of the same release contract.
+const serverPath = resolve(root, 'server.json');
+const serverSource = readFileSync(serverPath, 'utf8');
+const server = JSON.parse(serverSource);
+if (typeof server.version !== 'string') {
+  throw new Error('server.json version must be a string');
+}
+const nextServerSource = serverSource.replace(
+  /("version"\s*:\s*)"[^"]+"/,
+  `$1${JSON.stringify(pkg.version)}`
+);
+writeFileSync(serverPath, nextServerSource, 'utf8');

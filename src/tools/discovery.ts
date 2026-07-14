@@ -116,7 +116,9 @@ function toolKnowledgeDocument(tool: ToolEntry): KnowledgeDocument {
 function getKnowledgeDocuments(): KnowledgeDocument[] {
   return [
     ...STATIC_KNOWLEDGE_DOCUMENTS,
-    ...TOOL_CATALOG.filter(t => !t.internal).map(toolKnowledgeDocument),
+    ...TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).map(
+      toolKnowledgeDocument
+    ),
   ];
 }
 
@@ -271,7 +273,7 @@ export function registerDiscoveryTools(server: McpServer): void {
         results = searchTools(query);
       }
       // Internal operations tools are runtime-registered but not discoverable.
-      results = results.filter(t => !t.internal);
+      results = results.filter(t => !t.internal && !t.hiddenFromPublicCount);
       if (module) {
         const moduleTools = getToolsByModule(module);
         results = results.filter(t => moduleTools.some(mt => mt.name === t.name));

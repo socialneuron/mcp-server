@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **90 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **91 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -39,6 +39,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `get_pipeline_status` | Check status of a pipeline run, including stages completed, pending approvals, and scheduled posts. |
 | `get_recipe_details` | Get full details of a recipe template including all steps, input schema, and estimated costs. Use this before execute_recipe to understand what inputs are required. |
 | `get_recipe_run_status` | Check the status of a running recipe execution. Shows progress, current step, credits used, and outputs when complete. |
+| `get_skill` | Fetch the full body of a single Social Neuron skill by slug — the hand-maintained strategy/specs plus the machine-maintained "what's working now" compiled section. Use this after list_skills when the user wants the actual playbook for a pla |
 | `list_compositions` | List all available Remotion video compositions defined in Social Neuron. Returns composition IDs, dimensions, duration, and descriptions. Use this to discover what videos can be rendered with render_demo_video. |
 | `list_connected_accounts` | Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. Pass project_id to list the accounts for a specific brand/project, then pass the returned account id as account_id |
 | `list_hyperframes_blocks` | List the curated subset of pre-built Hyperframes blocks (transitions, social overlays, data-viz, branding, decorative) the agent can compose into an HTML video composition. Returns block IDs with categories + 1-line descriptions. No network |
@@ -87,7 +88,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `generate_voiceover` | Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Pass project_id to keep the asset with the corre |
 | `plan_content_week` | Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_pl |
 | `render_demo_video` | Render a Remotion composition to an MP4 or GIF file locally. Uses the Remotion bundler and renderer from the root project. This can take 30-120 seconds depending on composition length. Output is saved to public/videos/. |
-| `render_hyperframes` | Render an HTML video composition (Hyperframes) to MP4. Author the composition as HTML with data-* timing attributes and GSAP timelines — frame-accurate, no React build step. Use list_hyperframes_blocks to see the pre-built block catalog. Pa |
+| `render_hyperframes` | Render an HTML video composition (Hyperframes) to MP4 — frame-accurate, no React build step. The page MUST expose window.__hf = { duration: <seconds>, seek: (t) => void }; the renderer calls seek(t) per frame (GSAP timelines work when drive |
 | `render_template_video` | Render a Remotion template video in the cloud. Creates an async render job that is processed by the production worker, uploaded to R2, and tracked via async_jobs. Returns a job ID that can be polled with check_status. Costs credits based on |
 | `respond_plan_approval` | Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an  |
 | `run_skill` | Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the exact step plan, credit cost, and a deep-link to launch the run in the SN dashboard. A future release executes in-pro |

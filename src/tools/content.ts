@@ -39,8 +39,21 @@ interface AsyncJob {
   completed_at: string | null;
   result_metadata?: {
     all_urls?: string[];
+    model_requested?: string;
+    model_delivered?: string;
+    fallback_reason?: string;
     [key: string]: unknown;
   } | null;
+}
+
+function buildFallbackDisclosureLine(meta: AsyncJob['result_metadata']): string | null {
+  const requested = meta?.model_requested;
+  const delivered = meta?.model_delivered;
+  if (!requested || !delivered || requested === delivered) return null;
+  // Never echo provider diagnostics. The private backend already normalizes
+  // this field, but the public projection treats it as untrusted defense-in-depth.
+  const reason = meta?.fallback_reason ? ' because the requested model was unavailable' : '';
+  return `Note: requested "${requested}" but delivered "${delivered}"${reason} — cost never exceeds the requested model's price.`;
 }
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -570,6 +583,8 @@ export function registerContentTools(server: McpServer): void {
           if (livePayload.error) {
             lines.push(`Error: ${livePayload.error}`);
           }
+          const fallbackDisclosure = buildFallbackDisclosureLine(job.result_metadata);
+          if (fallbackDisclosure) lines.push(fallbackDisclosure);
           lines.push(`Credits: ${job.credits_cost}`);
           if (job.billing_status) {
             lines.push(
@@ -641,6 +656,8 @@ export function registerContentTools(server: McpServer): void {
       if (job.error_message) {
         lines.push(`Error: ${job.error_message}`);
       }
+      const fallbackDisclosure = buildFallbackDisclosureLine(job.result_metadata);
+      if (fallbackDisclosure) lines.push(fallbackDisclosure);
       lines.push(`Credits: ${job.credits_cost}`);
       if (job.billing_status) {
         lines.push(

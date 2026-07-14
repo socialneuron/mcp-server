@@ -619,6 +619,30 @@ describe('content tools', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.all_urls).toEqual(['url1', 'url2']);
     });
+
+    it('discloses when a different fallback model delivered the result', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          job: {
+            ...completedJob,
+            result_metadata: {
+              model_requested: 'seedance-2-fast',
+              model_delivered: 'kling-3',
+              fallback_reason: 'provider timeout',
+            },
+          },
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('check_status')!({ job_id: 'job-fallback' });
+      expect(result.content[0].text).toContain('requested "seedance-2-fast"');
+      expect(result.content[0].text).toContain('delivered "kling-3"');
+      expect(result.content[0].text).toContain('requested model was unavailable');
+      expect(result.content[0].text).not.toContain('provider timeout');
+      expect(result.content[0].text).toContain("cost never exceeds the requested model's price");
+    });
   });
 
   // -------------------------------------------------------------------------

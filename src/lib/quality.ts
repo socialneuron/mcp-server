@@ -48,6 +48,11 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   const firstLine = caption.split('\n')[0]?.trim() ?? '';
   const hashtags = countHashtags(caption);
   const threshold = Math.min(35, Math.max(0, input.threshold ?? 26));
+  // Long-caption keyword heuristics unfairly block clean X posts. Keep them
+  // neutral for an X-only post inside the platform limit; blocked-term and
+  // downstream substance checks still apply.
+  const isShortFormX =
+    platforms.length > 0 && platforms.every(p => p === 'twitter') && caption.length <= 280;
   const blockedTerms = [
     ...(input.brandAvoidPatterns ?? []).map(t => t.trim()).filter(Boolean),
     ...(input.customBannedTerms ?? []).map(t => t.trim()).filter(Boolean),
@@ -59,11 +64,14 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   if (firstLine.length >= 20 && firstLine.length <= 120) hookScore += 1;
   if (/[!?]/.test(firstLine) || /\b\d+(\.\d+)?\b/.test(firstLine)) hookScore += 1;
   if (/\b(how|why|stop|avoid|build|launch|scale|grow|mistake)\b/i.test(firstLine)) hookScore += 1;
+  if (isShortFormX) hookScore = Math.max(hookScore, 3);
   categories.push({
     name: 'Hook Strength',
     score: Math.min(5, hookScore),
     maxScore: 5,
-    detail: 'First line should create curiosity/value within 120 chars.',
+    detail: isShortFormX
+      ? 'Short-form X: keyword-hook heuristics neutralized; substance judge arbitrates.'
+      : 'First line should create curiosity/value within 120 chars.',
   });
 
   // 2. Message Clarity
@@ -95,7 +103,11 @@ export function evaluateQuality(input: QualityInput): QualityResult {
 
   // 4. Brand Alignment
   let brandScore = 3;
-  const brandKeyword = input.brandKeyword ?? process.env.SOCIALNEURON_BRAND_KEYWORD?.trim();
+  const rawBrandKeyword = input.brandKeyword ?? process.env.SOCIALNEURON_BRAND_KEYWORD?.trim();
+  // Escape and cap caller-controlled text before compiling it as a regex.
+  const brandKeyword = rawBrandKeyword
+    ? rawBrandKeyword.slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    : null;
   if (brandKeyword && new RegExp('\\b' + brandKeyword + '\\b', 'i').test(title + ' ' + caption))
     brandScore += 1;
   if (!/\b(you|your|customer|audience)\b/i.test(caption)) brandScore -= 1;
@@ -106,11 +118,14 @@ export function evaluateQuality(input: QualityInput): QualityResult {
       brandScore -= Math.min(2, matched.length);
     }
   }
+  if (isShortFormX) brandScore = Math.max(brandScore, 3);
   categories.push({
     name: 'Brand Alignment',
     score: Math.max(0, Math.min(5, brandScore)),
     maxScore: 5,
-    detail: 'Voice should match brand context and audience focus.',
+    detail: isShortFormX
+      ? 'Short-form X: second-person-address heuristic neutralized; blocked terms still enforced.'
+      : 'Voice should match brand context and audience focus.',
   });
 
   // 5. Novelty
@@ -123,11 +138,14 @@ export function evaluateQuality(input: QualityInput): QualityResult {
     const matched = blockedTerms.filter(term => lowerCombined.includes(term.toLowerCase()));
     if (matched.length > 0) noveltyScore -= Math.min(2, matched.length);
   }
+  if (isShortFormX) noveltyScore = Math.max(noveltyScore, 3);
   categories.push({
     name: 'Novelty',
     score: Math.max(0, Math.min(5, noveltyScore)),
     maxScore: 5,
-    detail: 'Avoid generic phrasing; include distinct angle.',
+    detail: isShortFormX
+      ? 'Short-form X: keyword-novelty neutralized; substance judge arbitrates.'
+      : 'Avoid generic phrasing; include distinct angle.',
   });
 
   // 6. CTA Strength
@@ -135,11 +153,14 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   if (/\b(comment|reply|share|save|follow|subscribe|click|try|book|download)\b/i.test(caption))
     ctaScore += 2;
   if (/\?$/.test(firstLine)) ctaScore += 1;
+  if (isShortFormX) ctaScore = Math.max(ctaScore, 3);
   categories.push({
     name: 'CTA Strength',
     score: Math.min(5, ctaScore),
     maxScore: 5,
-    detail: 'Should include a clear next action.',
+    detail: isShortFormX
+      ? 'Short-form X: explicit CTA optional; native posts may close without one.'
+      : 'Should include a clear next action.',
   });
 
   // 7. Safety/Claims

@@ -59,10 +59,12 @@ const PLATFORM_CASE_MAP: Record<string, string> = {
  * to `use_inbox: true` while this is false, mirroring the Composer's
  * `defaultTikTokInboxMode()` helper in `constants/platform/capabilities.ts`.
  *
- * Flip to `true` AFTER TikTok audit approval lands. Audit submitted
- * 2026-04-29; turnaround 4-6 weeks.
+ * Audit approved around 2026-05-30. Operators can set
+ * TIKTOK_AUDIT_APPROVED=false to restore the inbox-mode fail-safe.
  */
-const TIKTOK_AUDIT_APPROVED = false;
+const TIKTOK_AUDIT_APPROVED = !["false", "0", "no"].includes(
+  (process.env.TIKTOK_AUDIT_APPROVED ?? "").toLowerCase(),
+);
 
 /**
  * Platforms that are NOT live for posting today. MCP `schedule_post`
@@ -403,7 +405,7 @@ export function registerDistributionTools(server: McpServer): void {
                 .boolean()
                 .optional()
                 .describe(
-                  "Declare realistic altered or synthetic content to YouTube when applicable.",
+                  "YouTube altered-or-synthetic-content disclosure. Defaults to true for MCP posts; set false explicitly for verified non-AI media.",
                 ),
             })
             .optional(),
@@ -1004,6 +1006,30 @@ export function registerDistributionTools(server: McpServer): void {
         };
         return true;
       })();
+
+      // MCP is an AI-assisted publishing surface, so enable each platform's
+      // native AI disclosure by default. Explicit false remains available for
+      // verified human-shot/non-AI media.
+      const defaultAiDisclosure = (platformKey: string, field: string): void => {
+        const existing = normalizedPlatformMetadata?.[platformKey];
+        if (existing && existing[field] !== undefined) return;
+        normalizedPlatformMetadata = {
+          ...(normalizedPlatformMetadata ?? {}),
+          [platformKey]: {
+            ...(existing ?? {}),
+            [field]: true,
+          },
+        };
+      };
+      if (normalizedPlatforms.includes("TikTok")) {
+        defaultAiDisclosure("tiktok", "is_ai_generated");
+      }
+      if (normalizedPlatforms.includes("Instagram")) {
+        defaultAiDisclosure("instagram", "is_ai_generated");
+      }
+      if (normalizedPlatforms.includes("YouTube")) {
+        defaultAiDisclosure("youtube", "contains_synthetic_media");
+      }
 
       const { data, error } = await callEdgeFunction<SchedulePostResult>(
         "schedule-post",

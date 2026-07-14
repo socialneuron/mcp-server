@@ -37,7 +37,8 @@ const repoRoot = resolve(__dirname, '..');
 // merged via a packages/sdk Dependabot bump) got through because only the
 // root manifest was checked. Keep this list in sync with the dep-surface
 // regex in .github/workflows/ci.yml.
-const SURFACES = ['.', 'packages/sdk', 'apps/content-calendar'];
+const SURFACES = ['.', 'packages/sdk', 'apps/content-calendar', 'apps/analytics-pulse'];
+const resolutionErrors = [];
 
 // Resolve the EXACT installed version from the lockfile, not the package.json
 // range floor. A range like ^1.2.3 can resolve to a freshly-published 1.2.9
@@ -48,13 +49,15 @@ function loadSurface(dir) {
   let pkg;
   try {
     pkg = JSON.parse(readFileSync(resolve(base, 'package.json'), 'utf8'));
-  } catch {
-    return null; // surface without a manifest — nothing to check
+  } catch (err) {
+    resolutionErrors.push(`${dir}/package.json: ${err.message}`);
+    return null;
   }
   let lockPackages = {};
   try {
     lockPackages = JSON.parse(readFileSync(resolve(base, 'package-lock.json'), 'utf8')).packages ?? {};
-  } catch {
+  } catch (err) {
+    resolutionErrors.push(`${dir}/package-lock.json: ${err.message}`);
     console.warn(`⚠️  Could not read ${dir}/package-lock.json — falling back to range floor (less safe).`);
   }
   return { dir, pkg, lockPackages };
@@ -142,13 +145,17 @@ for (const { name, versionRange, resolved, dir } of deps.values()) {
     // Use default Accept — the abbreviated v1 format omits `time`.
     const res = await fetch(`https://registry.npmjs.org/${name}`);
     if (!res.ok) {
-      console.warn(`⚠️  Could not fetch registry for ${name}: HTTP ${res.status}`);
+      const message = `${name}@${version}: registry returned HTTP ${res.status}`;
+      resolutionErrors.push(message);
+      console.warn(`⚠️  Could not fetch registry for ${message}`);
       continue;
     }
     const data = await res.json();
     const publishedAt = data.time?.[version];
     if (!publishedAt) {
-      console.warn(`⚠️  No publish time for ${name}@${version} — skipping`);
+      const message = `${name}@${version}: registry metadata has no publish time`;
+      resolutionErrors.push(message);
+      console.warn(`⚠️  ${message}`);
       continue;
     }
     const ageMs = Date.now() - new Date(publishedAt).getTime();
@@ -165,7 +172,9 @@ for (const { name, versionRange, resolved, dir } of deps.values()) {
       }
     }
   } catch (err) {
-    console.warn(`⚠️  Error checking ${name}: ${err.message}`);
+    const message = `${name}@${version}: ${err.message}`;
+    resolutionErrors.push(message);
+    console.warn(`⚠️  Error checking ${message}`);
   }
 }
 
@@ -174,6 +183,17 @@ console.log(`Checked ${checked.length} deps against ${MIN_AGE_DAYS}-day cooldown
 if (preexisting.length > 0) {
   console.warn(`\n⚠️  Pre-existing cooldown violations on ${BASELINE_REF} (warn-only, age out on their own):`);
   for (const f of preexisting) console.warn(`   - ${f}`);
+}
+
+if (resolutionErrors.length > 0) {
+  const label = ENFORCE ? '❌' : '⚠️';
+  console.error(`\n${label} Dependency cooldown could not verify ${resolutionErrors.length} package version(s):`);
+  for (const error of resolutionErrors) console.error(`   - ${error}`);
+  if (ENFORCE) {
+    console.error('\nEnforced mode fails closed when registry age evidence is unavailable.');
+    process.exit(1);
+  }
+  console.error('\nℹ️  Running in warn mode. Enforced CI and releases fail closed.');
 }
 
 if (failures.length > 0) {
@@ -194,4 +214,6 @@ if (failures.length > 0) {
   }
 }
 
-console.log('✅ All direct dependencies pass the cooldown.');
+if (resolutionErrors.length === 0) {
+  console.log('✅ All direct dependencies pass the cooldown.');
+}

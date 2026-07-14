@@ -38,7 +38,6 @@ if (!pkg.mcpName) {
 // 3. Forbidden strings — retired claims, internal codenames, dead endpoints
 const FORBIDDEN = [
   // stale public-contract claims
-  '91 Social Neuron MCP tools',
   '85+ MCP tools',
   '85 public tools',
   '80+ public',
@@ -52,7 +51,6 @@ const FORBIDDEN = [
   '92 AI tools',
   '| MCP tools | 92 |',
   '92-tool',
-  '91 tools',
   '77 tools over stdio',
   '77 stdio MCP tools',
   '79-entry local catalog',
@@ -171,6 +169,15 @@ if (process.argv.includes('--live')) {
       const doc = await res.json();
       if (doc.info?.version !== pkg.version) {
         failures.push(`live openapi version "${doc.info?.version}" !== package.json "${pkg.version}"`);
+      }
+      const pathCount = Object.keys(doc.paths ?? {}).length;
+      if (pathCount !== expectedHostedToolCount) {
+        failures.push(`live openapi path count ${pathCount} !== server.json tools_count ${expectedHostedToolCount}`);
+      }
+      for (const retiredTool of retiredHostedTools) {
+        if (doc.paths?.[`/tools/${retiredTool}`]) {
+          failures.push(`live openapi exposes retired hosted tool: ${retiredTool}`);
+        }
       }
       const docText = JSON.stringify(doc);
       for (const needle of FORBIDDEN) {

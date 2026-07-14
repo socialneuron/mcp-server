@@ -17,7 +17,7 @@ import { TOOL_CATALOG } from '../../lib/tool-catalog.js';
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BINARY = resolve(__dirname, '../../../dist/index.js');
 const PUBLIC_STDIO_TOOL_COUNT = TOOL_CATALOG.filter(
-  tool => !tool.internal && tool.module !== 'apps'
+  tool => !tool.internal && !tool.hiddenFromPublicCount && tool.module !== 'apps'
 ).length;
 
 function run(
@@ -292,7 +292,7 @@ describeE2E('sn tools', () => {
 
 describeE2E('sn info', () => {
   it('returns offline info in JSON', () => {
-    const { stdout, exitCode } = run(['sn', 'info', '--json']);
+    const { stdout, exitCode } = run(['sn', 'info', '--offline', '--json']);
     expect(exitCode).toBe(0);
     const json = parseJson(stdout);
     expect(json.ok).toBe(true);

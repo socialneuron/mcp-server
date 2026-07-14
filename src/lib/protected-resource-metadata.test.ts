@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'vitest';
-import { buildProtectedResourceMetadata } from './protected-resource-metadata.js';
+import {
+  buildProtectedResourceMetadata,
+  PROTECTED_RESOURCE_METADATA_PATHS,
+} from './protected-resource-metadata.js';
 
 describe('buildProtectedResourceMetadata', () => {
+  it('supports root and path-specific RFC 9728 discovery', () => {
+    expect(PROTECTED_RESOURCE_METADATA_PATHS).toEqual([
+      '/.well-known/oauth-protected-resource',
+      '/.well-known/oauth-protected-resource/mcp',
+    ]);
+  });
+
   it('preserves the exact MCP URL including its path', () => {
     expect(
       buildProtectedResourceMetadata({
