@@ -2,6 +2,18 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [Unreleased]
+
+### Security
+
+- macOS Keychain writes now use a native Security.framework binding, keeping API keys out of subprocess argument lists; installations without the optional native module use the owner-only file fallback.
+- The release lockfile gate now validates the root, SDK, Content Calendar, and Analytics Pulse lockfiles.
+
+### Fixed
+
+- Durable OAuth client reads now execute the `last_used_at` update, preventing active connector registrations from being pruned as stale after 90 days.
+- Authentication and security documentation now matches the `/mcp` connector URL, current 1.8 support policy, service-role boundary, and connector-token cache behavior.
+
 ## [1.8.2] - 2026-07-14
 
 ### Added

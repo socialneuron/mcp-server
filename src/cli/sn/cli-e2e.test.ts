@@ -41,6 +41,12 @@ function run(
     maxBuffer: 1024 * 1024,
     env,
   });
+  if (result.error) {
+    throw new Error(
+      `CLI subprocess failed for ${args.join(' ')}: ${result.error.message}`,
+      { cause: result.error }
+    );
+  }
   return {
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
@@ -118,7 +124,9 @@ describeE2E('unified JSON envelope', () => {
       ['--version', '--json'],
       ['--help', '--json'],
       ['sn', 'tools', '--json'],
-      ['sn', 'info', '--json'],
+      // Keep E2E discovery tests hermetic: never read the developer Keychain or
+      // make authenticated API/credit-balance calls during a local test run.
+      ['sn', 'info', '--offline', '--json'],
       ['sn', 'preset', 'list', '--json'],
       ['sn', 'preset', 'show', '--name', 'tiktok', '--json'],
     ];
@@ -128,7 +136,7 @@ describeE2E('unified JSON envelope', () => {
       const json = parseJson(stdout);
       expect(json.schema_version).toBe('1');
     }
-  });
+  }, 30_000);
 });
 
 // ---------------------------------------------------------------------------

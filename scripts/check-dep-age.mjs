@@ -116,7 +116,11 @@ const EXEMPT_EXACT_VERSIONS = new Set([
 // in several manifests is checked once per distinct resolved version.
 const deps = new Map();
 for (const { dir, pkg, lockPackages } of surfaces) {
-  const manifest = { ...(pkg.dependencies ?? {}), ...(pkg.devDependencies ?? {}) };
+  const manifest = {
+    ...(pkg.dependencies ?? {}),
+    ...(pkg.devDependencies ?? {}),
+    ...(pkg.optionalDependencies ?? {}),
+  };
   for (const [name, versionRange] of Object.entries(manifest)) {
     const resolved = lockPackages[`node_modules/${name}`]?.version;
     const key = `${name}@@${resolved ?? versionRange}`;

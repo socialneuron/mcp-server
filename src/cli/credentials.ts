@@ -3,7 +3,7 @@
  *
  * Storage priority:
  *   1. SOCIALNEURON_API_KEY env var (CI/headless)
- *   2. macOS Keychain via `security` CLI
+ *   2. macOS Keychain via native Security.framework binding
  *   3. Linux `secret-tool` / `libsecret`
  *   4. Fallback: ~/.config/social-neuron/credentials.json (chmod 0600, dir 0700)
  */
@@ -32,6 +32,14 @@ const KEYCHAIN_SERVICE_URL = 'socialneuron-supabase-url';
 
 const CONFIG_DIR = join(homedir(), '.config', 'social-neuron');
 const CREDENTIALS_FILE = join(CONFIG_DIR, 'credentials.json');
+
+type NativeKeyringModule = typeof import('@napi-rs/keyring');
+let nativeKeyringModule: Promise<NativeKeyringModule | null> | undefined;
+
+function loadNativeKeyring(): Promise<NativeKeyringModule | null> {
+  nativeKeyringModule ??= import('@napi-rs/keyring').catch(() => null);
+  return nativeKeyringModule;
+}
 
 // ── Helpers ──────────────────────────────────────────────────────────
 
@@ -185,50 +193,122 @@ function writeCredentialsFile(data: CredentialsFile): void {
 
 // ── macOS Keychain ───────────────────────────────────────────────────
 
-function macKeychainRead(service: string): string | null {
+type MacKeychainReadResult =
+  | { status: 'found'; value: string }
+  | { status: 'missing' }
+  | { status: 'unavailable' };
+
+type MacKeychainDeleteResult = 'deleted' | 'missing' | 'unavailable';
+
+function isMacKeychainItemMissing(error: unknown): boolean {
+  const commandError = error as { status?: number; stderr?: string | Buffer; message?: string };
+  if (commandError?.status === 44) return true;
+  const detail = `${commandError?.stderr ?? ''}\n${commandError?.message ?? ''}`;
+  return (
+    /\berrsecitemnotfound\b/i.test(detail) ||
+    /(?:^|:\s*)the specified item could not be found in the keychain\.\s*$/i.test(detail.trim())
+  );
+}
+
+async function inspectMacKeychain(service: string): Promise<MacKeychainReadResult> {
+  const native = await loadNativeKeyring();
+  if (native) {
+    try {
+      const value = new native.Entry(service, KEYCHAIN_ACCOUNT).getPassword();
+      if (value) return { status: 'found', value };
+    } catch {
+      // Fall through to the read-only CLI path for legacy or ambiguous entries.
+    }
+  }
   try {
     const result = execFileSync(
       'security',
       ['find-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', service, '-w'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
-    return result.trim() || null;
-  } catch {
-    return null;
+    const value = result.trim();
+    return value ? { status: 'found', value } : { status: 'missing' };
+  } catch (error) {
+    return isMacKeychainItemMissing(error) ? { status: 'missing' } : { status: 'unavailable' };
   }
 }
 
-function macKeychainWrite(service: string, value: string): boolean {
+async function macKeychainRead(service: string): Promise<string | null> {
+  const result = await inspectMacKeychain(service);
+  return result.status === 'found' ? result.value : null;
+}
+
+async function macKeychainWrite(service: string, value: string): Promise<boolean> {
+  const native = await loadNativeKeyring();
+  if (!native) return false;
   try {
-    execFileSync(
-      'security',
-      [
-        'add-generic-password',
-        '-a',
-        KEYCHAIN_ACCOUNT,
-        '-s',
-        service,
-        '-w',
-        value,
-        '-U', // update if exists
-      ],
-      { stdio: ['pipe', 'pipe', 'pipe'] }
-    );
+    new native.Entry(service, KEYCHAIN_ACCOUNT).setPassword(value);
     return true;
   } catch {
     return false;
   }
 }
 
-function macKeychainDelete(service: string): boolean {
+async function macKeychainDelete(service: string): Promise<MacKeychainDeleteResult> {
+  const native = await loadNativeKeyring();
+  let nativeDeleted = false;
+  if (native) {
+    try {
+      nativeDeleted = new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
+    } catch {
+      // The legacy CLI may still be able to remove or positively verify the item.
+    }
+  }
   try {
     execFileSync('security', ['delete-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', service], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    return true;
-  } catch {
-    return false;
+    return 'deleted';
+  } catch (error) {
+    if (isMacKeychainItemMissing(error)) return nativeDeleted ? 'deleted' : 'missing';
+    return 'unavailable';
   }
+}
+
+async function clearMacKeychain(service: string): Promise<void> {
+  // A matching item can exist in more than one searched Keychain. Clear and
+  // verify in a small bounded loop so a native item never masks a legacy one.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const deleted = await macKeychainDelete(service);
+    if (deleted === 'unavailable') break;
+
+    const remaining = await inspectMacKeychain(service);
+    if (remaining.status === 'missing') return;
+    if (remaining.status === 'unavailable') break;
+  }
+
+  throw new Error(
+    'Unable to verify removal of the existing Social Neuron Keychain credential. ' +
+      'Unlock Keychain Access, remove the item, and retry.'
+  );
+}
+
+async function verifyMacFileFallback(service: string): Promise<void> {
+  // Keychain reads take precedence over the credentials file. Never delete an
+  // existing credential automatically during a save: if the fallback path is
+  // unsafe or its write later fails, destructive migration could leave the user
+  // with neither the previous value nor the replacement. File fallback is safe
+  // only when Keychain absence is positively verified; otherwise retain the old
+  // credential and make the user repair/unlock Keychain before retrying.
+  const existing = await inspectMacKeychain(service);
+  if (existing.status === 'missing') return;
+
+  if (existing.status === 'found') {
+    throw new Error(
+      'An existing Social Neuron Keychain credential could not be replaced. ' +
+        'The existing value was retained; unlock or remove it in Keychain Access and retry.'
+    );
+  }
+
+  throw new Error(
+    'Unable to verify absence of an existing Social Neuron Keychain credential. ' +
+      'Unlock Keychain Access and retry.'
+  );
 }
 
 // ── Linux secret-tool ────────────────────────────────────────────────
@@ -287,7 +367,7 @@ export async function loadApiKey(): Promise<string | null> {
 
   // 2. OS keychain
   if (os === 'darwin') {
-    const key = macKeychainRead(KEYCHAIN_SERVICE_API);
+    const key = await macKeychainRead(KEYCHAIN_SERVICE_API);
     if (key) return key;
   } else if (os === 'linux') {
     const key = linuxSecretRead('api-key');
@@ -311,16 +391,23 @@ export async function loadApiKey(): Promise<string | null> {
 export async function saveApiKey(key: string): Promise<void> {
   const os = platform();
   let saved = false;
+  let fallbackCredentials: CredentialsFile | undefined;
 
   if (os === 'darwin') {
-    saved = macKeychainWrite(KEYCHAIN_SERVICE_API, key);
+    saved = await macKeychainWrite(KEYCHAIN_SERVICE_API, key);
+    if (!saved) {
+      // Validate and parse the deterministic fallback before examining the
+      // Keychain. No Keychain state is mutated on this fallback path.
+      fallbackCredentials = readCredentialsFile();
+      await verifyMacFileFallback(KEYCHAIN_SERVICE_API);
+    }
   } else if (os === 'linux') {
     saved = linuxSecretWrite('api-key', key);
   }
 
   if (!saved) {
     // File fallback
-    const creds = readCredentialsFile();
+    const creds = fallbackCredentials ?? readCredentialsFile();
     creds.apiKey = key;
     writeCredentialsFile(creds);
 
@@ -345,9 +432,17 @@ export async function saveApiKey(key: string): Promise<void> {
  */
 export async function deleteApiKey(): Promise<void> {
   const os = platform();
+  let keychainError: unknown;
 
   if (os === 'darwin') {
-    macKeychainDelete(KEYCHAIN_SERVICE_API);
+    try {
+      await clearMacKeychain(KEYCHAIN_SERVICE_API);
+    } catch (error) {
+      // Continue removing the deterministic file fallback below. Logout must
+      // not leave a usable file credential merely because Keychain is locked,
+      // but it must still report that complete Keychain cleanup was unverified.
+      keychainError = error;
+    }
   } else if (os === 'linux') {
     linuxSecretDelete('api-key');
   }
@@ -366,6 +461,8 @@ export async function deleteApiKey(): Promise<void> {
       writeCredentialsFile(creds);
     }
   }
+
+  if (keychainError) throw keychainError;
 }
 
 /**
@@ -379,7 +476,7 @@ export async function loadSupabaseUrl(): Promise<string | null> {
   const os = platform();
 
   if (os === 'darwin') {
-    const url = macKeychainRead(KEYCHAIN_SERVICE_URL);
+    const url = await macKeychainRead(KEYCHAIN_SERVICE_URL);
     if (url) return url;
   } else if (os === 'linux') {
     const url = linuxSecretRead('supabase-url');
@@ -396,15 +493,20 @@ export async function loadSupabaseUrl(): Promise<string | null> {
 export async function saveSupabaseUrl(url: string): Promise<void> {
   const os = platform();
   let saved = false;
+  let fallbackCredentials: CredentialsFile | undefined;
 
   if (os === 'darwin') {
-    saved = macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
+    saved = await macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
+    if (!saved) {
+      fallbackCredentials = readCredentialsFile();
+      await verifyMacFileFallback(KEYCHAIN_SERVICE_URL);
+    }
   } else if (os === 'linux') {
     saved = linuxSecretWrite('supabase-url', url);
   }
 
   if (!saved) {
-    const creds = readCredentialsFile();
+    const creds = fallbackCredentials ?? readCredentialsFile();
     creds.supabaseUrl = url;
     writeCredentialsFile(creds);
   }
