@@ -1,4 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+
+const TEST_HOME = '/tmp/social-neuron-macos-credentials-test';
+const TEST_CONFIG_DIR = `${TEST_HOME}/.config/social-neuron`;
+const TEST_CREDENTIALS_FILE = `${TEST_CONFIG_DIR}/credentials.json`;
 
 const {
   execFileSync,
@@ -50,6 +55,7 @@ import { deleteApiKey, loadApiKey, saveApiKey } from './credentials.js';
 
 describe('macOS Keychain credential security', () => {
   beforeEach(() => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
     vi.stubEnv('SOCIALNEURON_API_KEY', '');
     execFileSync.mockReset();
     keyringConstructor.mockReset();
@@ -58,7 +64,10 @@ describe('macOS Keychain credential security', () => {
     keyringDeletePassword.mockReset();
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => {
+    rmSync(TEST_HOME, { recursive: true, force: true });
+    vi.unstubAllEnvs();
+  });
 
   it('writes through the native Keychain API without exposing the key to a subprocess', async () => {
     const apiKey = 'snk_test_key_that_must_not_appear_in_argv';
@@ -180,5 +189,35 @@ describe('macOS Keychain credential security', () => {
     await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
       /Unable to verify removal of the existing Social Neuron Keychain credential/
     );
+  });
+
+  it('does not classify an unavailable Keychain as a missing item', async () => {
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('keychain unavailable');
+    });
+    keyringDeletePassword.mockReturnValue(false);
+    execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('The default keychain could not be found.'), { status: 45 });
+    });
+
+    await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
+      /Unable to verify removal of the existing Social Neuron Keychain credential/
+    );
+  });
+
+  it('removes the file credential even when Keychain logout remains inconclusive', async () => {
+    mkdirSync(TEST_CONFIG_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(TEST_CREDENTIALS_FILE, '{"apiKey":"snk_test_file_key"}\n', { mode: 0o600 });
+    keyringDeletePassword.mockImplementation(() => {
+      throw new Error('keychain locked');
+    });
+    execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('User interaction is not allowed.'), { status: 36 });
+    });
+
+    await expect(deleteApiKey()).rejects.toThrow(
+      /Unable to verify removal of the existing Social Neuron Keychain credential/
+    );
+    expect(existsSync(TEST_CREDENTIALS_FILE)).toBe(false);
   });
 });

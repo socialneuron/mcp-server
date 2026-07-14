@@ -204,7 +204,10 @@ function isMacKeychainItemMissing(error: unknown): boolean {
   const commandError = error as { status?: number; stderr?: string | Buffer; message?: string };
   if (commandError?.status === 44) return true;
   const detail = `${commandError?.stderr ?? ''}\n${commandError?.message ?? ''}`;
-  return /could not be found|item not found|errsecitemnotfound/i.test(detail);
+  return (
+    /\berrsecitemnotfound\b/i.test(detail) ||
+    /(?:^|:\s*)the specified item could not be found in the keychain\.\s*$/i.test(detail.trim())
+  );
 }
 
 async function inspectMacKeychain(service: string): Promise<MacKeychainReadResult> {
@@ -407,9 +410,17 @@ export async function saveApiKey(key: string): Promise<void> {
  */
 export async function deleteApiKey(): Promise<void> {
   const os = platform();
+  let keychainError: unknown;
 
   if (os === 'darwin') {
-    await clearMacKeychain(KEYCHAIN_SERVICE_API);
+    try {
+      await clearMacKeychain(KEYCHAIN_SERVICE_API);
+    } catch (error) {
+      // Continue removing the deterministic file fallback below. Logout must
+      // not leave a usable file credential merely because Keychain is locked,
+      // but it must still report that complete Keychain cleanup was unverified.
+      keychainError = error;
+    }
   } else if (os === 'linux') {
     linuxSecretDelete('api-key');
   }
@@ -428,6 +439,8 @@ export async function deleteApiKey(): Promise<void> {
       writeCredentialsFile(creds);
     }
   }
+
+  if (keychainError) throw keychainError;
 }
 
 /**
