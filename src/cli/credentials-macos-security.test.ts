@@ -102,4 +102,39 @@ describe('macOS Keychain credential security', () => {
     expect(keyringDeletePassword).toHaveBeenCalledOnce();
     expect(execFileSync).not.toHaveBeenCalled();
   });
+
+  it('falls through to legacy CLI deletion when the native Keychain reports a miss', async () => {
+    keyringDeletePassword.mockReturnValue(false);
+
+    await deleteApiKey();
+
+    expect(execFileSync).toHaveBeenCalledWith(
+      'security',
+      [
+        'delete-generic-password',
+        '-a',
+        'socialneuron',
+        '-s',
+        'socialneuron-api-key',
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+  });
+
+  it('refuses a file fallback while a stale Keychain value remains readable', async () => {
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('native write unavailable');
+    });
+    keyringDeletePassword.mockReturnValue(false);
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockImplementation((_command, args: string[]) => {
+      if (args[0] === 'delete-generic-password') throw new Error('legacy delete failed');
+      if (args[0] === 'find-generic-password') return 'snk_test_stale_legacy_key\n';
+      throw new Error('unexpected command');
+    });
+
+    await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
+      /Unable to replace the existing Social Neuron Keychain credential/
+    );
+  });
 });

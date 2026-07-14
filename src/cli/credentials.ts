@@ -230,7 +230,10 @@ async function macKeychainDelete(service: string): Promise<boolean> {
   const native = await loadNativeKeyring();
   if (native) {
     try {
-      return new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
+      const deleted = new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
+      if (deleted) return true;
+      // A false result can mean this item predates the native backend or is
+      // otherwise only discoverable through the legacy security CLI.
     } catch {
       // Fall through to CLI deletion so legacy entries can still be removed.
     }
@@ -242,6 +245,20 @@ async function macKeychainDelete(service: string): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+async function prepareMacFileFallback(service: string): Promise<void> {
+  // Keychain reads take precedence over the credentials file. If a native
+  // write is unavailable or fails, remove any older Keychain value before
+  // persisting the replacement to disk; otherwise a successful login could
+  // silently keep using the stale value forever.
+  await macKeychainDelete(service);
+  if (await macKeychainRead(service)) {
+    throw new Error(
+      'Unable to replace the existing Social Neuron Keychain credential. ' +
+        'Remove it from Keychain Access and retry.'
+    );
   }
 }
 
@@ -328,6 +345,7 @@ export async function saveApiKey(key: string): Promise<void> {
 
   if (os === 'darwin') {
     saved = await macKeychainWrite(KEYCHAIN_SERVICE_API, key);
+    if (!saved) await prepareMacFileFallback(KEYCHAIN_SERVICE_API);
   } else if (os === 'linux') {
     saved = linuxSecretWrite('api-key', key);
   }
@@ -413,6 +431,7 @@ export async function saveSupabaseUrl(url: string): Promise<void> {
 
   if (os === 'darwin') {
     saved = await macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
+    if (!saved) await prepareMacFileFallback(KEYCHAIN_SERVICE_URL);
   } else if (os === 'linux') {
     saved = linuxSecretWrite('supabase-url', url);
   }
