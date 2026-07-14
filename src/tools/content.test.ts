@@ -377,6 +377,23 @@ describe('content tools', () => {
       const callBody = mockCallEdge.mock.calls[0][1];
       expect(callBody.aspectRatio).toBe('16:9');
     });
+
+    it('passes project_id to the generation worker', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { asyncJobId: 'img-project-1', model: 'imagen4', status: 'pending' },
+        error: null,
+      });
+
+      await server.getHandler('generate_image')!({
+        prompt: 'brand asset',
+        model: 'imagen4',
+        project_id: 'project-123',
+      });
+
+      expect(mockCallEdge.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ projectId: 'project-123' })
+      );
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -733,6 +750,53 @@ describe('content tools', () => {
   });
 
   // -------------------------------------------------------------------------
+  // create_storyboard
+  // -------------------------------------------------------------------------
+  describe('create_storyboard', () => {
+    it('accepts the canonical social-neuron-ai text response and forwards project_id', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          content: '',
+          text: JSON.stringify({
+            title: 'Launch',
+            totalDuration: 15,
+            aspectRatio: '9:16',
+            characterDescription: 'Creator at a desk',
+            frames: [],
+          }),
+          model: 'gemini-2.5-flash',
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('create_storyboard')!({
+        concept: 'Product launch',
+        platform: 'instagram-reels',
+        project_id: 'project-123',
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(JSON.parse(result.content[0].text).data.title).toBe('Launch');
+      expect(mockCallEdge.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ projectId: 'project-123' })
+      );
+    });
+
+    it('returns an error when the AI service returns no storyboard content', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { text: '' }, error: null });
+
+      const result = await server.getHandler('create_storyboard')!({
+        concept: 'Product launch',
+        platform: 'tiktok',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('empty response');
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // generate_voiceover (P1.4 — must send voiceId, NOT the friendly `voice` name)
   // -------------------------------------------------------------------------
   describe('generate_voiceover', () => {
@@ -753,6 +817,22 @@ describe('content tools', () => {
       expect(body.voiceId).toBe('AZnzlk1XvdvUeBnXmlld'); // domi — the EF requires voiceId
       expect(body.voice).toBeUndefined(); // friendly name must NOT be sent (EF ignores it)
       expect(body.speed).toBe(1.1);
+    });
+
+    it('passes project_id to the voiceover worker', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { audioUrl: 'https://r2.example/project-audio.mp3' },
+        error: null,
+      });
+
+      await server.getHandler('generate_voiceover')!({
+        text: 'Hello project',
+        project_id: 'project-123',
+      });
+
+      expect(mockCallEdge.mock.calls[0][1]).toEqual(
+        expect.objectContaining({ projectId: 'project-123' })
+      );
     });
 
     it('defaults to the rachel voiceId when no voice is given', async () => {

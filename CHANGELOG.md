@@ -2,6 +2,15 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## Unreleased
+
+### Fixed
+
+- **`create_storyboard` empty responses.** The tool now accepts the AI service's canonical `text` response field as well as the legacy `content` field, and reports a real tool error when neither contains a storyboard.
+- **Project isolation across the creative workflow.** `generate_image`, `create_storyboard`, `generate_voiceover`, and `render_hyperframes` now accept `project_id`. Analytics refresh, analytics reads, performance insights, and best-time recommendations are also project-scoped and default to the active project context.
+- **Autopilot run visibility.** `get_autopilot_status` now returns recent runs supplied by the backend instead of replacing them with an empty array.
+- **HyperFrames capability copy.** Removed the obsolete Phase-2/runtime-not-installed warning now that live HyperFrames renders complete successfully, and corrected image/storyboard/voiceover credit descriptions to match the client budget checks.
+
 ## [1.8.0] - 2026-07-14
 
 ### Changed

@@ -232,6 +232,8 @@ export function registerAutopilotTools(server: McpServer): void {
         activeConfigs: number;
         pendingApprovals: number;
         configs: Array<Record<string, unknown>>;
+        recentRuns?: Array<Record<string, unknown>>;
+        recent_runs?: Array<Record<string, unknown>>;
       }>('mcp-data', { action: 'autopilot-status' });
 
       if (efError) {
@@ -243,7 +245,7 @@ export function registerAutopilotTools(server: McpServer): void {
 
       const statusData = {
         activeConfigs: result?.activeConfigs ?? 0,
-        recentRuns: [] as Array<Record<string, unknown>>,
+        recentRuns: result?.recentRuns ?? result?.recent_runs ?? [],
         pendingApprovals: result?.pendingApprovals ?? 0,
       };
 
@@ -261,7 +263,17 @@ export function registerAutopilotTools(server: McpServer): void {
       let text = `Autopilot Status\n${'='.repeat(40)}\n\n`;
       text += `Active Configs: ${statusData.activeConfigs}\n`;
       text += `Pending Approvals: ${statusData.pendingApprovals}\n\n`;
-      text += `No recent runs.\n`;
+      if (statusData.recentRuns.length === 0) {
+        text += `No recent runs.\n`;
+      } else {
+        text += `Recent Runs (${statusData.recentRuns.length}):\n`;
+        for (const run of statusData.recentRuns.slice(0, 10)) {
+          const id = String(run.id ?? run.run_id ?? 'unknown');
+          const status = String(run.status ?? 'unknown');
+          const credits = run.credits_used ?? run.creditsUsed;
+          text += `  ${id}: ${status}${credits == null ? '' : ` (${String(credits)} credits)`}\n`;
+        }
+      }
 
       return {
         content: [{ type: 'text' as const, text }],
