@@ -42,7 +42,11 @@ describe('insights tools', () => {
 
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
-        expect.objectContaining({ action: 'performance-insights' })
+        expect.objectContaining({
+          action: 'performance-insights',
+          projectId: 'test-project-id',
+          project_id: 'test-project-id',
+        })
       );
       const text = result.content[0].text;
       expect(text).toContain('top_hooks');
@@ -188,7 +192,11 @@ describe('insights tools', () => {
 
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
-        expect.objectContaining({ action: 'best-posting-times' })
+        expect.objectContaining({
+          action: 'best-posting-times',
+          projectId: 'test-project-id',
+          project_id: 'test-project-id',
+        })
       );
 
       const text = result.content[0].text;

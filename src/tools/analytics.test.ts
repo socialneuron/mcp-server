@@ -261,7 +261,11 @@ describe('analytics tools', () => {
       const handler = server.getHandler('refresh_platform_analytics')!;
       const result = await handler({});
 
-      expect(mockCallEdge).toHaveBeenCalledWith('fetch-analytics', { userId: 'test-user-id' });
+      expect(mockCallEdge).toHaveBeenCalledWith('fetch-analytics', {
+        userId: 'test-user-id',
+        projectId: 'test-project-id',
+        project_id: 'test-project-id',
+      });
       const text = result.content[0].text;
       expect(text).toContain('Analytics refresh triggered successfully');
       expect(text).toContain('Posts processed: 5');
@@ -323,6 +327,21 @@ describe('analytics tools', () => {
       expect(parsed.data.success).toBe(true);
       expect(parsed.data.postsProcessed).toBe(3);
       expect(parsed.data.queued).toBe(2);
+      expect(parsed.data.projectId).toBe('test-project-id');
+    });
+
+    it('honors an explicit project_id', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, postsProcessed: 0, results: [] },
+        error: null,
+      });
+
+      await server.getHandler('refresh_platform_analytics')!({ project_id: 'project-456' });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'fetch-analytics',
+        expect.objectContaining({ projectId: 'project-456', project_id: 'project-456' })
+      );
     });
   });
 });

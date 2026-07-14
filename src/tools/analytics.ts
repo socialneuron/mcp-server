@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { MCP_VERSION } from '../lib/version.js';
@@ -22,7 +22,7 @@ export function registerAnalyticsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'fetch_analytics',
-    'Get post performance metrics — views, likes, comments, shares, and engagement rate. Filter by platform, time range (default 30 days), or specific content_id. Call refresh_platform_analytics first if data seems stale. Results sorted by most recent capture.',
+    'Get project-scoped post performance metrics — views, likes, comments, shares, and engagement rate. Filter by platform, time range (default 30 days), or specific content_id. Call refresh_platform_analytics first if data seems stale. Results sorted by most recent capture.',
     {
       platform: z
         .enum([
@@ -52,6 +52,10 @@ export function registerAnalyticsTools(server: McpServer): void {
         .describe(
           'Filter to a specific content_history ID to see performance of one piece of content.'
         ),
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID. Defaults to the active project context.'),
       limit: z
         .number()
         .min(1)
@@ -63,10 +67,11 @@ export function registerAnalyticsTools(server: McpServer): void {
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ platform, days, content_id, limit, response_format }) => {
+    async ({ platform, days, content_id, project_id, limit, response_format }) => {
       const format = response_format ?? 'text';
       const lookbackDays = days ?? 30;
       const maxPosts = limit ?? 20;
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
 
       // Route through mcp-data EF (works in cloud mode with API key)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -95,6 +100,9 @@ export function registerAnalyticsTools(server: McpServer): void {
         days: lookbackDays,
         limit: maxPosts,
         contentId: content_id,
+        ...(resolvedProjectId
+          ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
+          : {}),
       });
 
       if (efError) {
@@ -177,17 +185,25 @@ export function registerAnalyticsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'refresh_platform_analytics',
-    'Queue analytics refresh jobs for all posts from the last 7 days across connected platforms. Call this before fetch_analytics if you need fresh data. Returns immediately — data updates asynchronously over the next 1-5 minutes.',
+    'Queue analytics refresh jobs for posts from the last 7 days in one project across its connected platforms. Call this before fetch_analytics if you need fresh data. Returns immediately — data updates asynchronously over the next 1-5 minutes.',
     {
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID. Defaults to the active project context.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ response_format }) => {
+    async ({ project_id, response_format }) => {
       const format = response_format ?? 'text';
       const userId = await getDefaultUserId();
-      const rateLimit = checkRateLimit('posting', `refresh_platform_analytics:${userId}`);
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      const rateLimit = checkRateLimit(
+        'posting',
+        `refresh_platform_analytics:${userId}:${resolvedProjectId ?? 'default'}`
+      );
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -200,7 +216,12 @@ export function registerAnalyticsTools(server: McpServer): void {
         };
       }
 
-      const { data, error } = await callEdgeFunction('fetch-analytics', { userId });
+      const { data, error } = await callEdgeFunction('fetch-analytics', {
+        userId,
+        ...(resolvedProjectId
+          ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
+          : {}),
+      });
 
       if (error) {
         return {
@@ -240,6 +261,7 @@ export function registerAnalyticsTools(server: McpServer): void {
           postsProcessed: result.postsProcessed,
           queued,
           errored,
+          projectId: resolvedProjectId ?? null,
         });
         return {
           structuredContent,

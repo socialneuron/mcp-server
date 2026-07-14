@@ -314,7 +314,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_image",
-    "Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 2-10 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (image-to-video).",
+    "Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (image-to-video). Pass project_id so the asset is stored with the correct brand/project.",
     {
       prompt: z
         .string()
@@ -351,12 +351,16 @@ export function registerContentTools(server: McpServer): void {
           "Reference image URL for image-to-image generation. Required for " +
             "ideogram model. Optional for others.",
         ),
+      project_id: z
+        .string()
+        .optional()
+        .describe("Project ID to associate the generated image with."),
       response_format: z
         .enum(["text", "json"])
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
-    async ({ prompt, model, aspect_ratio, image_url, response_format }) => {
+    async ({ prompt, model, aspect_ratio, image_url, project_id, response_format }) => {
       const format = response_format ?? "text";
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
@@ -394,6 +398,7 @@ export function registerContentTools(server: McpServer): void {
           model,
           aspectRatio: aspect_ratio ?? "1:1",
           imageUrl: image_url,
+          ...(project_id && { projectId: project_id }),
         },
         { timeoutMs: 30_000 },
       );
@@ -437,6 +442,7 @@ export function registerContentTools(server: McpServer): void {
                   taskId: data.taskId,
                   asyncJobId: data.asyncJobId,
                   model: data.model,
+                  projectId: project_id ?? null,
                 }),
                 null,
                 2,
@@ -661,7 +667,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "create_storyboard",
-    "Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profile for consistent visual branding across frames.",
+    "Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profile and project_id for consistent, project-scoped production. Costs 10 credits.",
     {
       concept: z
         .string()
@@ -710,6 +716,10 @@ export function registerContentTools(server: McpServer): void {
         .describe(
           'Visual style direction (e.g., "cinematic", "anime", "documentary", "motion graphics").',
         ),
+      project_id: z
+        .string()
+        .optional()
+        .describe("Project ID for brand-scoped generation and attribution."),
       response_format: z
         .enum(["text", "json"])
         .optional()
@@ -724,6 +734,7 @@ export function registerContentTools(server: McpServer): void {
       target_duration,
       num_scenes,
       style,
+      project_id,
       response_format,
     }) => {
       const format = response_format ?? "json";
@@ -810,8 +821,9 @@ Return ONLY valid JSON in this exact format:
       }
 
       const { data, error } = await callEdgeFunction<{
-        content: string;
-        model: string;
+        content?: string;
+        text?: string;
+        model?: string;
       }>(
         "social-neuron-ai",
         {
@@ -819,6 +831,7 @@ Return ONLY valid JSON in this exact format:
           type: "storyboard",
           model: "gemini-2.5-flash",
           responseFormat: "json",
+          ...(project_id && { projectId: project_id }),
         },
         { timeoutMs: 60_000 },
       );
@@ -835,7 +848,21 @@ Return ONLY valid JSON in this exact format:
         };
       }
 
-      const rawContent = data?.content ?? "";
+      // social-neuron-ai's generation contract uses `text`; older storyboard
+      // deployments returned `content`. Accept both so an otherwise successful
+      // generation is never discarded as an empty MCP response.
+      const rawContent = data?.content?.trim() || data?.text?.trim() || "";
+      if (!rawContent) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Storyboard generation failed: the AI service returned an empty response.",
+            },
+          ],
+          isError: true,
+        };
+      }
       addCreditsUsed(estimatedCost);
 
       if (format === "json") {
@@ -879,7 +906,7 @@ Return ONLY valid JSON in this exact format:
   // ---------------------------------------------------------------------------
   server.tool(
     "generate_voiceover",
-    "Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Costs ~2 credits per generation.",
+    "Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Pass project_id to keep the asset with the correct brand/project. Costs 15 credits per generation.",
     {
       text: z
         .string()
@@ -901,12 +928,16 @@ Return ONLY valid JSON in this exact format:
         .max(2.0)
         .optional()
         .describe("Speech speed multiplier. 1.0 is normal. Defaults to 1.0."),
+      project_id: z
+        .string()
+        .optional()
+        .describe("Project ID to associate the generated voiceover with."),
       response_format: z
         .enum(["text", "json"])
         .optional()
         .describe("Response format. Defaults to text."),
     },
-    async ({ text, voice, speed, response_format }) => {
+    async ({ text, voice, speed, project_id, response_format }) => {
       const format = response_format ?? "text";
       const userId = await getDefaultUserId();
 
@@ -950,6 +981,7 @@ Return ONLY valid JSON in this exact format:
           text,
           voiceId: ELEVENLABS_VOICE_IDS[voice ?? "rachel"],
           speed: speed ?? 1.0,
+          ...(project_id && { projectId: project_id }),
         },
         { timeoutMs: 60_000 },
       );
@@ -990,6 +1022,7 @@ Return ONLY valid JSON in this exact format:
                   audioUrl: data.audioUrl,
                   durationSeconds: data.durationSeconds,
                   voice: voice ?? "rachel",
+                  projectId: project_id ?? null,
                 }),
                 null,
                 2,
