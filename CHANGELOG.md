@@ -2,7 +2,7 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## Unreleased
+## [1.8.1] - 2026-07-14
 
 ### Fixed
 
