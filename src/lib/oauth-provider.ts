@@ -129,6 +129,7 @@ const MAX_METADATA_BYTES = 8192;
 const MAX_CACHED_CLIENTS = 1000;
 const MAX_PERSISTED_CLIENTS = 5000;
 const OAUTH_CLIENT_RETENTION_DAYS = 90;
+const OAUTH_CLIENT_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, 'utf8');
@@ -161,7 +162,8 @@ function cacheClient(
   cache: Map<string, OAuthClientInformationFull>,
   clientId: string,
   client: OAuthClientInformationFull
-): void {
+): string[] {
+  const evictedClientIds: string[] = [];
   if (cache.has(clientId)) {
     cache.delete(clientId);
   }
@@ -171,7 +173,10 @@ function cacheClient(
     const oldestClientId = cache.keys().next().value as string | undefined;
     if (!oldestClientId) break;
     cache.delete(oldestClientId);
+    evictedClientIds.push(oldestClientId);
   }
+
+  return evictedClientIds;
 }
 
 // ── Configuration ───────────────────────────────────────────────────
@@ -250,6 +255,10 @@ function clientToRow(c: OAuthClientInformationFull): OAuthClientRow {
 
 function createClientsStore(): OAuthRegisteredClientsStore {
   const cache = new Map<string, OAuthClientInformationFull>();
+  // Tracks the most recent durable activity refresh for cached clients. The
+  // map is pruned alongside the bounded client cache so long-lived processes
+  // cannot accumulate per-registration state indefinitely.
+  const lastClientTouch = new Map<string, number>();
   // Latches false on first persistent-store failure to avoid log spam and
   // unnecessary Supabase round-trips for the rest of the process lifetime.
   // Reset on process restart, so a redeploy re-attempts the persistent path.
@@ -266,6 +275,60 @@ function createClientsStore(): OAuthRegisteredClientsStore {
     }
   }
 
+  function clearEvictedClientTouches(evictedClientIds: string[]): void {
+    for (const evictedClientId of evictedClientIds) {
+      lastClientTouch.delete(evictedClientId);
+    }
+  }
+
+  function touchClientActivity(clientId: string): void {
+    if (!supabaseAvailable) return;
+
+    const now = Date.now();
+    const lastTouchedAt = lastClientTouch.get(clientId);
+    if (
+      lastTouchedAt !== undefined &&
+      now - lastTouchedAt < OAUTH_CLIENT_TOUCH_INTERVAL_MS
+    ) {
+      return;
+    }
+
+    // Reserve the interval before starting the detached write so concurrent
+    // requests for one client collapse into a single Supabase update.
+    lastClientTouch.set(clientId, now);
+
+    const releaseTouchReservation = (): void => {
+      // A stale detached request must not clear a newer reservation after a
+      // cache eviction/reload or an unusually long-running activity write.
+      if (lastClientTouch.get(clientId) === now) {
+        lastClientTouch.delete(clientId);
+      }
+    };
+
+    // Supabase query builders are lazy thenables, so merely constructing this
+    // chain does not execute it; the detached async task must await the builder.
+    void (async () => {
+      try {
+        const supabase = getSupabaseClient();
+        const { error: touchError } = await supabase
+          .from('mcp_oauth_clients')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('client_id', clientId);
+        if (touchError) {
+          // Let the next request retry rather than suppressing activity writes
+          // for a full day after a transient failure.
+          releaseTouchReservation();
+          console.error(
+            `[oauth] failed to update client activity: ${sanitizeError(touchError)}`
+          );
+        }
+      } catch (touchError) {
+        releaseTouchReservation();
+        console.error(`[oauth] failed to update client activity: ${sanitizeError(touchError)}`);
+      }
+    })();
+  }
+
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
       const cached = cache.get(clientId);
@@ -274,8 +337,10 @@ function createClientsStore(): OAuthRegisteredClientsStore {
         // non-production escape hatch cannot survive a switch to production.
         if (!hasAllowedRedirectUris(cached)) {
           cache.delete(clientId);
+          lastClientTouch.delete(clientId);
           return undefined;
         }
+        touchClientActivity(clientId);
         return cached;
       }
       if (!supabaseAvailable) return undefined;
@@ -313,14 +378,8 @@ function createClientsStore(): OAuthRegisteredClientsStore {
           return undefined;
         }
 
-        cacheClient(cache, clientId, client);
-
-        // Touch last_used_at fire-and-forget. Failure here doesn't matter for
-        // the request; it only affects the 90-day pruning window.
-        void supabase
-          .from('mcp_oauth_clients')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('client_id', clientId);
+        clearEvictedClientTouches(cacheClient(cache, clientId, client));
+        touchClientActivity(clientId);
 
         return client;
       } catch (err) {
@@ -393,7 +452,8 @@ function createClientsStore(): OAuthRegisteredClientsStore {
       // Cache is the floor — registration succeeds in-memory whenever the
       // durable store is unavailable, but the cache is bounded so
       // unauthenticated DCR traffic cannot grow process memory without limit.
-      cacheClient(cache, client.client_id, client);
+      lastClientTouch.delete(client.client_id);
+      clearEvictedClientTouches(cacheClient(cache, client.client_id, client));
       return client;
     },
   };

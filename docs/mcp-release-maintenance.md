@@ -60,7 +60,7 @@ Also run the repository secret scan, CodeQL/CI, app-specific typechecks/builds, 
 
 ## Version and release checklist
 
-- `package.json`, root `package-lock.json`, runtime version constant, and `server.json` agree.
+- `package.json`, all four npm lockfiles (root, SDK, and both Apps), runtime version constant, and `server.json` agree.
 - `CHANGELOG.md` documents user-visible changes, fixes, security impact, compatibility, migrations, and known limits.
 - hosted and stdio public tool counts are intentional; Apps and local-only tools explain any transport difference.
 - `tools.lock.json` verifies schemas, descriptions, visibility, task intent, use/avoid guidance, and next-tool guidance.
