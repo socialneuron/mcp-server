@@ -83,6 +83,7 @@ function escapeCell(value) {
 function visibility(catalog) {
   if (catalog?.internal) return 'internal';
   if (catalog?.local_only) return 'local only';
+  if (catalog?.hidden_from_public_count) return 'authenticated hidden';
   if (catalog?.module === 'apps') return 'public app';
   return 'public';
 }
@@ -148,6 +149,7 @@ function controlFor(name, info, binding) {
   if (info.runtime?.annotations?.destructiveHint) parts.push('destructive annotation');
   if (info.runtime?.annotations?.readOnlyHint) parts.push('read-only annotation');
   if (info.catalog?.internal) parts.push('hidden from public discovery');
+  if (info.catalog?.hidden_from_public_count) parts.push('authenticated-only discovery');
   if (info.catalog?.local_only) parts.push('not hosted');
   if (name === 'schedule_post') parts.push('quality gate + idempotency key');
   if (name === 'reschedule_post') parts.push('optimistic timestamp precondition');
@@ -206,8 +208,8 @@ const rows = entries.map(([name, info]) => {
 const lines = [
   '# MCP Tool Surface Security and Usability Audit',
   '',
-  '**Date:** 2026-07-14  ',
-  '**Generated from:** runtime `tools/list` registration plus `TOOL_CATALOG`  ',
+  '**Date:** 2026-07-14',
+  '**Generated from:** runtime `tools/list` registration plus `TOOL_CATALOG`',
   `**Inventory:** ${entries.length} sealed tools (${Object.entries(visibilityCounts)
     .map(([key, count]) => `${count} ${key}`)
     .join(', ')})`,
@@ -245,8 +247,7 @@ const lines = [
   '3. Add distributed rate limiting before horizontal hosted-MCP scaling; current in-process limits remain single-replica controls.',
   '4. Treat quality checks as advisory unless the server-side publish gate independently enforces them.',
   '5. Re-run this generator, `lint:tools`, `verify:lock`, contract tests, and live read-only probes on every tool-surface release.',
-  '',
 ];
 
 writeFileSync(OUTPUT, `${lines.join('\n')}\n`, 'utf8');
-console.log(`Wrote ${entries.length}-tool audit matrix to ${OUTPUT}`);
+process.stdout.write(`Wrote ${entries.length}-tool audit matrix to ${OUTPUT}\n`);

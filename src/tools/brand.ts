@@ -4,6 +4,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { normalizeBrandUrlInput } from '../lib/brandUrlInput.js';
 import type { BrandProfile, ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -29,16 +30,41 @@ export function registerBrandTools(server: McpServer): void {
     {
       url: z
         .string()
-        .url()
+        .min(1)
+        .max(2048)
         .describe(
-          'The website URL to analyze for brand identity ' + '(e.g. "https://example.com").'
+          'The website URL to analyze for brand identity (e.g. "https://example.com"). ' +
+            'Bare handles are rejected; supply a full profile URL or use ' +
+            '"platform:handle" shorthand (e.g. "instagram:acmefoods").'
         ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ url, response_format }) => {
+    async ({ url: rawUrl, response_format }) => {
+      const normalized = normalizeBrandUrlInput(rawUrl);
+      if (normalized.invalidUrl) {
+        return {
+          content: [{ type: 'text' as const, text: `URL blocked: "${rawUrl}" is not a valid URL.` }],
+          isError: true,
+        };
+      }
+      if (!normalized.url) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                `"${rawUrl}" looks like a handle, not a full URL. Provide a profile URL ` +
+                'or use "platform:handle" shorthand (for example "instagram:acmefoods").',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const url = normalized.url;
+
       const ssrfCheck = await validateUrlForSSRF(url);
       if (!ssrfCheck.isValid) {
         return {

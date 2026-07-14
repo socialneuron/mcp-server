@@ -35,8 +35,10 @@ describe('buildOpenApiDocument', () => {
     const doc = (await buildOpenApiDocument()) as any;
     const pathKeys = Object.keys(doc.paths);
     expect(pathKeys.length).toBe(publicRestToolCount());
-    // Public surface = catalog minus localOnly + internal.
-    const expected = TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).length;
+    // Public surface excludes local, internal, and authenticated-hidden tools.
+    const expected = TOOL_CATALOG.filter(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+    ).length;
     expect(pathKeys.length).toBe(expected);
     for (const k of pathKeys) {
       expect(k).toMatch(/^\/tools\//);
@@ -44,11 +46,12 @@ describe('buildOpenApiDocument', () => {
     }
   });
 
-  it('never exposes internal or localOnly tools', async () => {
+  it('never exposes internal, localOnly, or authenticated-hidden tools', async () => {
     const doc = (await buildOpenApiDocument()) as any;
     const internal = TOOL_CATALOG.filter(t => t.internal).map(t => t.name);
     const local = TOOL_CATALOG.filter(t => t.localOnly).map(t => t.name);
-    for (const n of [...internal, ...local]) {
+    const hidden = TOOL_CATALOG.filter(t => t.hiddenFromPublicCount).map(t => t.name);
+    for (const n of [...internal, ...local, ...hidden]) {
       expect(doc.paths[`/tools/${n}`]).toBeUndefined();
     }
     // Spot-check a known internal tool is absent.
@@ -59,7 +62,9 @@ describe('buildOpenApiDocument', () => {
 
   it('carries the required scope on each operation', async () => {
     const doc = (await buildOpenApiDocument()) as any;
-    const sample = TOOL_CATALOG.find(t => !t.localOnly && !t.internal && TOOL_SCOPES[t.name])!;
+    const sample = TOOL_CATALOG.find(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount && TOOL_SCOPES[t.name]
+    )!;
     const op = doc.paths[`/tools/${sample.name}`].post;
     expect(op['x-required-scope']).toBe(TOOL_SCOPES[sample.name]);
     expect(op.security).toEqual([{ bearerAuth: [] }]);

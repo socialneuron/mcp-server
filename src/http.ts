@@ -55,11 +55,15 @@ import {
   publicToolsForProfile,
   resolveToolProfile,
 } from "./lib/tool-profile.js";
-import { buildProtectedResourceMetadata } from "./lib/protected-resource-metadata.js";
+import {
+  buildProtectedResourceMetadata,
+  PROTECTED_RESOURCE_METADATA_PATHS,
+} from "./lib/protected-resource-metadata.js";
 import {
   buildOriginPolicy,
   validateBrowserOrigin,
 } from "./lib/origin-policy.js";
+import { findOldestIdleSessionId } from "./lib/session-lru.js";
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -71,9 +75,19 @@ const MCP_SERVER_URL =
 const APP_BASE_URL = process.env.APP_BASE_URL ?? "https://www.socialneuron.com";
 const NODE_ENV = process.env.NODE_ENV ?? "development";
 const TOOL_PROFILE = resolveToolProfile(process.env.MCP_TOOL_PROFILE);
+const TRUSTED_BROWSER_MCP_CLIENTS = [
+  "https://claude.ai",
+  "https://claude.com",
+  "https://chatgpt.com",
+  "https://chat.openai.com",
+];
 const ORIGIN_POLICY = buildOriginPolicy({
   allowedOriginsEnv: process.env.ALLOWED_ORIGINS,
-  configuredUrls: [APP_BASE_URL, MCP_SERVER_URL],
+  configuredUrls: [
+    APP_BASE_URL,
+    MCP_SERVER_URL,
+    ...TRUSTED_BROWSER_MCP_CLIENTS,
+  ],
   nodeEnv: NODE_ENV,
 });
 
@@ -180,6 +194,7 @@ interface SessionEntry {
   server: McpServer;
   lastActivity: number;
   userId: string;
+  activeRequests: number;
 }
 
 const sessions = new Map<string, SessionEntry>();
@@ -194,15 +209,63 @@ function countUserSessions(userId: string): number {
   return count;
 }
 
+async function closeSessionEntry(
+  sessionId: string,
+  entry: SessionEntry,
+): Promise<void> {
+  // Delete first so transport.onclose and concurrent cap checks observe the
+  // slot as reclaimed immediately. Both close operations are best-effort.
+  sessions.delete(sessionId);
+  for (const close of [
+    () => entry.transport.close(),
+    () => entry.server.close(),
+  ]) {
+    try {
+      await close();
+    } catch {
+      // The peer may already have closed either side of the session.
+    }
+  }
+}
+
+async function reclaimOldestIdleSession(userId?: string): Promise<boolean> {
+  const sessionId = findOldestIdleSessionId(sessions, userId);
+  if (!sessionId) return false;
+
+  const entry = sessions.get(sessionId);
+  if (!entry) return false;
+
+  await closeSessionEntry(sessionId, entry);
+  console.log(
+    `[MCP HTTP] Reclaimed one idle ${userId ? 'user' : 'global'} session.`,
+  );
+  return true;
+}
+
+async function runInSession<T>(
+  entry: SessionEntry,
+  callback: () => Promise<T>,
+): Promise<T> {
+  entry.activeRequests += 1;
+  entry.lastActivity = Date.now();
+  try {
+    return await callback();
+  } finally {
+    entry.activeRequests = Math.max(0, entry.activeRequests - 1);
+    entry.lastActivity = Date.now();
+  }
+}
+
 // Clean up stale sessions every 5 minutes
 const cleanupInterval = setInterval(
   () => {
     const now = Date.now();
     for (const [sessionId, entry] of sessions) {
-      if (now - entry.lastActivity > SESSION_TIMEOUT_MS) {
-        entry.transport.close();
-        entry.server.close();
-        sessions.delete(sessionId);
+      if (
+        now - entry.lastActivity > SESSION_TIMEOUT_MS &&
+        entry.activeRequests === 0
+      ) {
+        void closeSessionEntry(sessionId, entry);
         console.log('[MCP HTTP] Cleaned up one stale session.');
       }
     }
@@ -245,7 +308,7 @@ app.use((req, res, next) => {
   // reachable without getting throttled, or OAuth discovery silently fails.
   if (
     req.path === "/health" ||
-    req.path === "/.well-known/oauth-protected-resource" ||
+    PROTECTED_RESOURCE_METADATA_PATHS.includes(req.path) ||
     req.path === "/.well-known/oauth-authorization-server" ||
     req.path === "/config"
   )
@@ -370,7 +433,7 @@ const SCOPES_SUPPORTED = [
 // RFC 9728 metadata must identify the exact MCP resource URL, including /mcp.
 // The SDK default currently emits the issuer origin, which Claude rejects when
 // it differs from the connector URL entered during submission.
-app.get("/.well-known/oauth-protected-resource", (_req, res) => {
+app.get(PROTECTED_RESOURCE_METADATA_PATHS, (_req, res) => {
   res.json(
     buildProtectedResourceMetadata({
       resourceUrl: MCP_SERVER_URL,
@@ -883,36 +946,44 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
         return;
       }
 
-      entry.lastActivity = Date.now();
-
       // Run in request context for per-user isolation
-      await requestContext.run(
-        {
-          userId: auth.userId,
-          scopes: auth.scopes,
-          token: auth.token,
-          creditsUsed: 0,
-          assetsGenerated: 0,
-          projectId: auth.projectId,
-        },
-        () => entry.transport.handleRequest(req, res, req.body),
+      await runInSession(entry, () =>
+        requestContext.run(
+          {
+            userId: auth.userId,
+            scopes: auth.scopes,
+            token: auth.token,
+            creditsUsed: 0,
+            assetsGenerated: 0,
+            projectId: auth.projectId,
+          },
+          () => entry.transport.handleRequest(req, res, req.body),
+        ),
       );
       return;
     }
 
-    // Session cap enforcement
-    if (sessions.size >= MAX_SESSIONS) {
+    // Bound memory without turning normal short-lived connector sessions into
+    // a 30-minute self-denial. Reclaim only idle sessions; active requests and
+    // SSE streams are never evicted.
+    if (
+      countUserSessions(auth.userId) >= MAX_SESSIONS_PER_USER &&
+      !(await reclaimOldestIdleSession(auth.userId))
+    ) {
       res.status(429).json({
         error: "too_many_sessions",
-        error_description: `Server session limit reached (${MAX_SESSIONS}). Try again later.`,
+        error_description: `Per-user session limit reached (${MAX_SESSIONS_PER_USER}); all sessions are active. Close an existing client and retry.`,
       });
       return;
     }
 
-    if (countUserSessions(auth.userId) >= MAX_SESSIONS_PER_USER) {
+    if (
+      sessions.size >= MAX_SESSIONS &&
+      !(await reclaimOldestIdleSession())
+    ) {
       res.status(429).json({
         error: "too_many_sessions",
-        error_description: `Per-user session limit reached (${MAX_SESSIONS_PER_USER}). Close existing sessions or wait for timeout.`,
+        error_description: `Server session limit reached (${MAX_SESSIONS}); all sessions are active. Try again later.`,
       });
       return;
     }
@@ -932,14 +1003,17 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
     registerPrompts(server);
     registerResources(server);
 
+    let initializedSessionId: string | null = null;
     const transport = new StreamableHTTPServerTransport({
       sessionIdGenerator: () => randomUUID(),
       onsessioninitialized: (sessionId: string) => {
+        initializedSessionId = sessionId;
         sessions.set(sessionId, {
           transport,
           server,
           lastActivity: Date.now(),
           userId: auth.userId,
+          activeRequests: 1,
         });
       },
     });
@@ -954,17 +1028,27 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
     await server.connect(transport);
 
     // Handle the request in user context
-    await requestContext.run(
-      {
-        userId: auth.userId,
-        scopes: auth.scopes,
-        token: auth.token,
-        creditsUsed: 0,
-        assetsGenerated: 0,
-        projectId: auth.projectId,
-      },
-      () => transport.handleRequest(req, res, req.body),
-    );
+    try {
+      await requestContext.run(
+        {
+          userId: auth.userId,
+          scopes: auth.scopes,
+          token: auth.token,
+          creditsUsed: 0,
+          assetsGenerated: 0,
+          projectId: auth.projectId,
+        },
+        () => transport.handleRequest(req, res, req.body),
+      );
+    } finally {
+      if (initializedSessionId) {
+        const entry = sessions.get(initializedSessionId);
+        if (entry) {
+          entry.activeRequests = Math.max(0, entry.activeRequests - 1);
+          entry.lastActivity = Date.now();
+        }
+      }
+    }
   } catch (err) {
     logOperationalError('POST /mcp error', err);
     if (!res.headersSent) {
@@ -989,22 +1073,22 @@ app.get("/mcp", authenticateRequest, async (req: AuthenticatedRequest, res) => {
     res.status(403).json({ error: "Session belongs to another user" });
     return;
   }
-  entry.lastActivity = Date.now();
-
   // SSE headers for Cloudflare proxy compatibility
   res.setHeader("X-Accel-Buffering", "no");
   res.setHeader("Cache-Control", "no-cache");
 
-  await requestContext.run(
-    {
-      userId: req.auth!.userId,
-      scopes: req.auth!.scopes,
-      token: req.auth!.token,
-      creditsUsed: 0,
-      assetsGenerated: 0,
-      projectId: req.auth!.projectId,
-    },
-    () => entry.transport.handleRequest(req, res),
+  await runInSession(entry, () =>
+    requestContext.run(
+      {
+        userId: req.auth!.userId,
+        scopes: req.auth!.scopes,
+        token: req.auth!.token,
+        creditsUsed: 0,
+        assetsGenerated: 0,
+        projectId: req.auth!.projectId,
+      },
+      () => entry.transport.handleRequest(req, res),
+    ),
   );
 });
 
@@ -1024,9 +1108,7 @@ app.delete(
       res.status(403).json({ error: "Session belongs to another user" });
       return;
     }
-    await entry.transport.close();
-    await entry.server.close();
-    sessions.delete(sessionId);
+    await closeSessionEntry(sessionId, entry);
 
     res.status(200).json({ status: "session_closed" });
   },

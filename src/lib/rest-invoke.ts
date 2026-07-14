@@ -61,9 +61,13 @@ export function __resetRestInvokeCache(): void {
   cachedCallHandler = undefined;
 }
 
-/** The set of tool names reachable over REST (public surface: not localOnly / internal). */
+/** The set of tool names reachable over REST (the public catalog surface). */
 export function restToolNames(): Set<string> {
-  return new Set(TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).map(t => t.name));
+  return new Set(
+    TOOL_CATALOG.filter(t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount).map(
+      t => t.name
+    )
+  );
 }
 
 /**

@@ -33,6 +33,19 @@ const locked = await enumerateLockedTools();
 const fresh = {};
 for (const [name, info] of Object.entries(locked)) fresh[name] = hashTool(name, info);
 
+const manifestContractErrors = [];
+if (committed.version !== 3) {
+  manifestContractErrors.push(`manifest version ${committed.version ?? '<missing>'} !== 3`);
+}
+if (!committed.hashed_fields?.includes('catalog.hidden_from_public_count')) {
+  manifestContractErrors.push('hashed_fields omits catalog.hidden_from_public_count');
+}
+for (const [name, info] of Object.entries(locked)) {
+  if (info.catalog && typeof info.catalog.hidden_from_public_count !== 'boolean') {
+    manifestContractErrors.push(`${name}: catalog.hidden_from_public_count is not sealed`);
+  }
+}
+
 const committedNames = new Set(Object.keys(committed.tools || {}));
 const freshNames = new Set(Object.keys(fresh));
 const added = [...freshNames].filter((n) => !committedNames.has(n)).sort();
@@ -41,12 +54,23 @@ const changed = [...freshNames]
   .filter((n) => committedNames.has(n) && committed.tools[n] !== fresh[n])
   .sort();
 
-if (added.length === 0 && removed.length === 0 && changed.length === 0) {
-  console.log(`✅ tools.lock.json matches model-visible tool metadata (${freshNames.size} tools).`);
+if (
+  manifestContractErrors.length === 0 &&
+  added.length === 0 &&
+  removed.length === 0 &&
+  changed.length === 0
+) {
+  process.stdout.write(
+    `✅ tools.lock.json matches model-visible tool metadata (${freshNames.size} tools).\n`
+  );
   process.exit(0);
 }
 
 console.error('❌ tools.lock.json drift detected:');
+if (manifestContractErrors.length) {
+  console.error(`\n   Manifest contract (${manifestContractErrors.length}):`);
+  for (const error of manifestContractErrors) console.error(`     ! ${error}`);
+}
 if (added.length) {
   console.error(`\n   Added (${added.length}):`);
   for (const n of added) console.error(`     + ${n}`);
