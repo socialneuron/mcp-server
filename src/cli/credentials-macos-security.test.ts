@@ -14,6 +14,12 @@ const {
   keyringDeletePassword: vi.fn(),
 }));
 
+function keychainItemNotFound(): Error & { status: number } {
+  return Object.assign(new Error('The specified item could not be found in the keychain.'), {
+    status: 44,
+  });
+}
+
 vi.mock('node:os', () => ({
   homedir: () => '/tmp/social-neuron-macos-credentials-test',
   platform: () => 'darwin',
@@ -93,18 +99,37 @@ describe('macOS Keychain credential security', () => {
     );
   });
 
-  it('deletes through the native Keychain API without invoking a subprocess', async () => {
+  it('checks the legacy CLI after native deletion and verifies logout', async () => {
     keyringDeletePassword.mockReturnValue(true);
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockImplementation(() => {
+      throw keychainItemNotFound();
+    });
 
     await deleteApiKey();
 
     expect(keyringConstructor).toHaveBeenCalledWith('socialneuron-api-key', 'socialneuron');
     expect(keyringDeletePassword).toHaveBeenCalledOnce();
-    expect(execFileSync).not.toHaveBeenCalled();
+    expect(execFileSync).toHaveBeenCalledWith(
+      'security',
+      [
+        'delete-generic-password',
+        '-a',
+        'socialneuron',
+        '-s',
+        'socialneuron-api-key',
+      ],
+      { stdio: ['pipe', 'pipe', 'pipe'] }
+    );
   });
 
   it('falls through to legacy CLI deletion when the native Keychain reports a miss', async () => {
     keyringDeletePassword.mockReturnValue(false);
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockImplementation((_command, args: string[]) => {
+      if (args[0] === 'delete-generic-password') return '';
+      throw keychainItemNotFound();
+    });
 
     await deleteApiKey();
 
@@ -128,13 +153,32 @@ describe('macOS Keychain credential security', () => {
     keyringDeletePassword.mockReturnValue(false);
     keyringGetPassword.mockReturnValue(null);
     execFileSync.mockImplementation((_command, args: string[]) => {
-      if (args[0] === 'delete-generic-password') throw new Error('legacy delete failed');
+      if (args[0] === 'delete-generic-password') return '';
       if (args[0] === 'find-generic-password') return 'snk_test_stale_legacy_key\n';
       throw new Error('unexpected command');
     });
 
     await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
-      /Unable to replace the existing Social Neuron Keychain credential/
+      /Unable to verify removal of the existing Social Neuron Keychain credential/
+    );
+  });
+
+  it('fails closed when Keychain cleanup cannot distinguish absence from unavailability', async () => {
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('keychain locked');
+    });
+    keyringDeletePassword.mockImplementation(() => {
+      throw new Error('keychain locked');
+    });
+    keyringGetPassword.mockImplementation(() => {
+      throw new Error('keychain locked');
+    });
+    execFileSync.mockImplementation(() => {
+      throw Object.assign(new Error('User interaction is not allowed.'), { status: 36 });
+    });
+
+    await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
+      /Unable to verify removal of the existing Social Neuron Keychain credential/
     );
   });
 });

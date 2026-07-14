@@ -193,12 +193,26 @@ function writeCredentialsFile(data: CredentialsFile): void {
 
 // ── macOS Keychain ───────────────────────────────────────────────────
 
-async function macKeychainRead(service: string): Promise<string | null> {
+type MacKeychainReadResult =
+  | { status: 'found'; value: string }
+  | { status: 'missing' }
+  | { status: 'unavailable' };
+
+type MacKeychainDeleteResult = 'deleted' | 'missing' | 'unavailable';
+
+function isMacKeychainItemMissing(error: unknown): boolean {
+  const commandError = error as { status?: number; stderr?: string | Buffer; message?: string };
+  if (commandError?.status === 44) return true;
+  const detail = `${commandError?.stderr ?? ''}\n${commandError?.message ?? ''}`;
+  return /could not be found|item not found|errsecitemnotfound/i.test(detail);
+}
+
+async function inspectMacKeychain(service: string): Promise<MacKeychainReadResult> {
   const native = await loadNativeKeyring();
   if (native) {
     try {
       const value = new native.Entry(service, KEYCHAIN_ACCOUNT).getPassword();
-      if (value) return value;
+      if (value) return { status: 'found', value };
     } catch {
       // Fall through to the read-only CLI path for legacy or ambiguous entries.
     }
@@ -209,10 +223,16 @@ async function macKeychainRead(service: string): Promise<string | null> {
       ['find-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', service, '-w'],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
-    return result.trim() || null;
-  } catch {
-    return null;
+    const value = result.trim();
+    return value ? { status: 'found', value } : { status: 'missing' };
+  } catch (error) {
+    return isMacKeychainItemMissing(error) ? { status: 'missing' } : { status: 'unavailable' };
   }
+}
+
+async function macKeychainRead(service: string): Promise<string | null> {
+  const result = await inspectMacKeychain(service);
+  return result.status === 'found' ? result.value : null;
 }
 
 async function macKeychainWrite(service: string, value: string): Promise<boolean> {
@@ -226,40 +246,50 @@ async function macKeychainWrite(service: string, value: string): Promise<boolean
   }
 }
 
-async function macKeychainDelete(service: string): Promise<boolean> {
+async function macKeychainDelete(service: string): Promise<MacKeychainDeleteResult> {
   const native = await loadNativeKeyring();
+  let nativeDeleted = false;
   if (native) {
     try {
-      const deleted = new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
-      if (deleted) return true;
-      // A false result can mean this item predates the native backend or is
-      // otherwise only discoverable through the legacy security CLI.
+      nativeDeleted = new native.Entry(service, KEYCHAIN_ACCOUNT).deletePassword();
     } catch {
-      // Fall through to CLI deletion so legacy entries can still be removed.
+      // The legacy CLI may still be able to remove or positively verify the item.
     }
   }
   try {
     execFileSync('security', ['delete-generic-password', '-a', KEYCHAIN_ACCOUNT, '-s', service], {
       stdio: ['pipe', 'pipe', 'pipe'],
     });
-    return true;
-  } catch {
-    return false;
+    return 'deleted';
+  } catch (error) {
+    if (isMacKeychainItemMissing(error)) return nativeDeleted ? 'deleted' : 'missing';
+    return 'unavailable';
   }
 }
 
-async function prepareMacFileFallback(service: string): Promise<void> {
-  // Keychain reads take precedence over the credentials file. If a native
-  // write is unavailable or fails, remove any older Keychain value before
-  // persisting the replacement to disk; otherwise a successful login could
-  // silently keep using the stale value forever.
-  await macKeychainDelete(service);
-  if (await macKeychainRead(service)) {
-    throw new Error(
-      'Unable to replace the existing Social Neuron Keychain credential. ' +
-        'Remove it from Keychain Access and retry.'
-    );
+async function clearMacKeychain(service: string): Promise<void> {
+  // A matching item can exist in more than one searched Keychain. Clear and
+  // verify in a small bounded loop so a native item never masks a legacy one.
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const deleted = await macKeychainDelete(service);
+    if (deleted === 'unavailable') break;
+
+    const remaining = await inspectMacKeychain(service);
+    if (remaining.status === 'missing') return;
+    if (remaining.status === 'unavailable') break;
   }
+
+  throw new Error(
+    'Unable to verify removal of the existing Social Neuron Keychain credential. ' +
+      'Unlock Keychain Access, remove the item, and retry.'
+  );
+}
+
+async function prepareMacFileFallback(service: string): Promise<void> {
+  // Keychain reads take precedence over the credentials file. A fallback is
+  // safe only after absence is positively verified; "could not read" must not
+  // be treated as "not found" or an old value can later reappear.
+  await clearMacKeychain(service);
 }
 
 // ── Linux secret-tool ────────────────────────────────────────────────
@@ -379,7 +409,7 @@ export async function deleteApiKey(): Promise<void> {
   const os = platform();
 
   if (os === 'darwin') {
-    await macKeychainDelete(KEYCHAIN_SERVICE_API);
+    await clearMacKeychain(KEYCHAIN_SERVICE_API);
   } else if (os === 'linux') {
     linuxSecretDelete('api-key');
   }
