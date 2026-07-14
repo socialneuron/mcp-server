@@ -411,7 +411,10 @@ export function registerMediaTools(server: McpServer): void {
                 content: [
                   {
                     type: 'text' as const,
-                    text: `R2 upload failed (HTTP ${putResp.status}): ${await putResp.text().catch(() => 'Unknown error')}`,
+                    // Presigned-store bodies may include provider request IDs,
+                    // bucket names, or signed URL fragments. Status is enough
+                    // for user recovery and safe diagnostics.
+                    text: `R2 upload failed (HTTP ${putResp.status}). Please retry.`,
                   },
                 ],
                 isError: true,

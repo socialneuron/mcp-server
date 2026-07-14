@@ -355,7 +355,7 @@ describe('createOAuthProvider', () => {
 
       await expect(
         provider.exchangeAuthorizationCode(client, 'bad-code', 'bad-verifier')
-      ).rejects.toThrow('PKCE verification failed');
+      ).rejects.toThrow('Authorization code exchange failed (HTTP 403)');
     });
 
     it('throws when no access_token in response', async () => {

@@ -110,8 +110,7 @@ async function runLoginDevice(): Promise<void> {
   });
 
   if (!response.ok) {
-    const text = await response.text();
-    console.error(`  Error: Failed to create device code. ${text}`);
+    console.error(`  Error: Failed to create device code (HTTP ${response.status}).`);
     process.exit(1);
   }
 
@@ -444,7 +443,7 @@ export async function runHealthCheck(options?: { json?: boolean }): Promise<void
       checks.push({
         name: 'Connectivity',
         ok: false,
-        detail: err instanceof Error ? err.message : 'Failed to reach server',
+        detail: 'Failed to reach the authentication service.',
       });
     }
   }
@@ -472,7 +471,7 @@ export async function runHealthCheck(options?: { json?: boolean }): Promise<void
     checks.push({
       name: 'Connectivity',
       ok: false,
-      detail: err instanceof Error ? err.message : 'Network error',
+      detail: 'Network request failed.',
     });
   }
 

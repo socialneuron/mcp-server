@@ -8,8 +8,8 @@
  * package versions.
  *
  * Source of truth: runtime tools/list metadata plus static TOOL_CATALOG entries
- * served by search_tools. The HTTP-only open_content_calendar app is included
- * through the catalog side because search_tools can expose it to agents.
+ * served by search_tools. The runtime union includes hosted MCP Apps and the
+ * stdio-only screenshot tools so neither surface can change schema unsealed.
  *
  * Reference: https://nvd.nist.gov/vuln/detail/CVE-2025-6514
  *
@@ -48,6 +48,12 @@ const manifest = {
     'catalog.description',
     'catalog.module',
     'catalog.scope',
+    'catalog.local_only',
+    'catalog.internal',
+    'catalog.task_intent',
+    'catalog.use_when',
+    'catalog.avoid_when',
+    'catalog.next_tools',
   ],
   tool_count: names.length,
   runtime_tool_count: names.filter(name => locked[name].runtime).length,

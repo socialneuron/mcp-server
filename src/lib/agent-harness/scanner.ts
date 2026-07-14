@@ -10,8 +10,14 @@ export function scan(text: string, options: ScanOptions): ScanResult {
   const flagged = new Set<string>();
   let risk = 0;
 
-  // Length check BEFORE normalize (cheap).
-  if (text.length > CONSTANTS.MAX_LENGTH) {
+  // Length check BEFORE normalize (cheap). Tool inputs stay tightly bounded;
+  // tool outputs can legitimately contain larger analytics/brand payloads but
+  // still have a hard ceiling so regex scanning cannot become a memory/CPU DoS.
+  const maxLength =
+    options.source === 'mcp_tool_output'
+      ? CONSTANTS.MAX_OUTPUT_LENGTH
+      : CONSTANTS.MAX_LENGTH;
+  if (text.length > maxLength) {
     return {
       passed: false,
       risk_score: 1.0,

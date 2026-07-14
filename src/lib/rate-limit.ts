@@ -13,6 +13,8 @@ interface BucketConfig {
   refillRate: number;
 }
 
+import { TOOL_SCOPES } from '../auth/scopes.js';
+
 export interface RateLimitCheckResult {
   allowed: boolean;
   retryAfter: number;
@@ -25,6 +27,58 @@ const CATEGORY_CONFIGS: Record<string, BucketConfig> = {
   screenshot: { maxTokens: 10, refillRate: 10 / 60 }, // 10 req/min — browser capture
   read: { maxTokens: 60, refillRate: 60 / 60 }, // 60 req/min — default
 };
+
+const GENERATION_TOOLS = new Set([
+  'generate_content',
+  'adapt_content',
+  'generate_video',
+  'generate_image',
+  'create_storyboard',
+  'generate_voiceover',
+  'generate_carousel',
+  'create_carousel',
+  'render_demo_video',
+  'render_template_video',
+  'render_hyperframes',
+  'execute_recipe',
+  'run_content_pipeline',
+  'plan_content_week',
+  'extract_brand',
+  'generate_performance_digest',
+]);
+
+const POSTING_TOOLS = new Set([
+  'schedule_post',
+  'reschedule_post',
+  'schedule_content_plan',
+  'reply_to_comment',
+  'post_comment',
+  'moderate_comment',
+  'delete_comment',
+  'start_platform_connection',
+  'refresh_platform_analytics',
+]);
+
+/** Rate-limit category for an externally invoked tool. Unknown/read tools fail to read. */
+export function rateLimitCategoryForTool(toolName: string | undefined): string {
+  if (!toolName) return 'read';
+  if (GENERATION_TOOLS.has(toolName)) return 'generation';
+  if (POSTING_TOOLS.has(toolName)) return 'posting';
+  if (toolName === 'upload_media') return 'upload';
+  if (toolName === 'capture_screenshot' || toolName === 'capture_app_page') return 'screenshot';
+  const scope = TOOL_SCOPES[toolName];
+  // Every externally mutating scope gets a stricter bucket even when a new
+  // tool has not yet been added to a specialized set. This fail-safe prevents
+  // future write tools from silently inheriting the loose 60/min read limit.
+  if (
+    scope === 'mcp:write' ||
+    scope === 'mcp:distribute' ||
+    scope === 'mcp:analytics' ||
+    scope === 'mcp:comments' ||
+    scope === 'mcp:autopilot'
+  ) return 'posting';
+  return 'read';
+}
 
 export class RateLimiter {
   private tokens: number;

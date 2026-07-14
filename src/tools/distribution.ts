@@ -5,7 +5,7 @@ import { callEdgeFunction } from "../lib/edge-function.js";
 import { sanitizeError } from "../lib/sanitize-error.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
 import { validateUrlForSSRF } from "../lib/ssrf.js";
-import { getDefaultUserId } from "../lib/supabase.js";
+import { getDefaultProjectId, getDefaultUserId } from "../lib/supabase.js";
 import { evaluateQuality } from "../lib/quality.js";
 import type {
   SchedulePostResult,
@@ -94,6 +94,144 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+/**
+ * Never relay an Edge Function object wholesale. The backend is allowed to add
+ * internal fields without turning them into part of the public MCP/REST/SDK
+ * contract (most importantly OAuth token material and provider diagnostics).
+ */
+function publicConnectedAccount(value: unknown): ConnectedAccount | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.id !== "string" ||
+    typeof row.platform !== "string" ||
+    typeof row.status !== "string" ||
+    typeof row.created_at !== "string"
+  ) {
+    return null;
+  }
+  return {
+    id: row.id,
+    platform: row.platform,
+    status: row.status,
+    ...(typeof row.effective_status === "string"
+      ? { effective_status: row.effective_status }
+      : {}),
+    username: typeof row.username === "string" ? row.username : null,
+    created_at: row.created_at,
+    ...(typeof row.updated_at === "string" || row.updated_at === null
+      ? { updated_at: row.updated_at as string | null }
+      : {}),
+    ...(typeof row.expires_at === "string" || row.expires_at === null
+      ? { expires_at: row.expires_at as string | null }
+      : {}),
+    ...(typeof row.has_refresh_token === "boolean"
+      ? { has_refresh_token: row.has_refresh_token }
+      : {}),
+    ...(typeof row.project_id === "string" || row.project_id === null
+      ? { project_id: row.project_id as string | null }
+      : {}),
+  };
+}
+
+function publicPostRecord(value: unknown): PostRecord | null {
+  if (!value || typeof value !== "object") return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.id !== "string" ||
+    typeof row.platform !== "string" ||
+    typeof row.status !== "string" ||
+    typeof row.created_at !== "string"
+  ) {
+    return null;
+  }
+  const nullableString = (field: string): string | null =>
+    typeof row[field] === "string" ? (row[field] as string) : null;
+  return {
+    id: row.id,
+    platform: row.platform,
+    status: row.status,
+    title: nullableString("title"),
+    external_post_id: nullableString("external_post_id"),
+    published_at: nullableString("published_at"),
+    scheduled_at: nullableString("scheduled_at"),
+    created_at: row.created_at,
+  };
+}
+
+type ScheduleMediaType = "IMAGE" | "VIDEO" | "CAROUSEL_ALBUM";
+
+const VIDEO_FILE_EXTENSIONS = new Set([
+  "mp4",
+  "mov",
+  "m4v",
+  "webm",
+  "avi",
+  "mkv",
+  "mpeg",
+  "mpg",
+]);
+const IMAGE_FILE_EXTENSIONS = new Set([
+  "jpg",
+  "jpeg",
+  "png",
+  "webp",
+  "gif",
+  "avif",
+  "heic",
+]);
+
+function mediaTypeFromPath(value: string): ScheduleMediaType | null {
+  try {
+    const pathname = value.startsWith("http") ? new URL(value).pathname : value;
+    const extension = pathname.split(".").pop()?.toLowerCase();
+    if (!extension) return null;
+    if (VIDEO_FILE_EXTENSIONS.has(extension)) return "VIDEO";
+    if (IMAGE_FILE_EXTENSIONS.has(extension)) return "IMAGE";
+  } catch {
+    return null;
+  }
+  return null;
+}
+
+function inferScheduleMediaType(
+  explicit: ScheduleMediaType | undefined,
+  singleCandidates: Array<string | undefined>,
+  collectionCandidates: Array<string[] | undefined>,
+): ScheduleMediaType | null {
+  if (explicit) return explicit;
+  const populatedCollection = collectionCandidates.find(
+    (values): values is string[] => Array.isArray(values) && values.length > 0,
+  );
+  if (populatedCollection) {
+    if (populatedCollection.length > 1) return "CAROUSEL_ALBUM";
+    for (const values of collectionCandidates) {
+      if (!values || values.length !== 1) continue;
+      const inferred = mediaTypeFromPath(values[0]);
+      if (inferred) return inferred;
+    }
+    return null;
+  }
+  for (const value of singleCandidates) {
+    if (typeof value !== "string" || value.length === 0) continue;
+    const inferred = mediaTypeFromPath(value);
+    if (inferred) return inferred;
+  }
+  return null;
+}
+
+async function validatePublishMediaUrl(url: string): Promise<string | null> {
+  try {
+    if (new URL(url).protocol !== "https:") {
+      return "Media URLs must use HTTPS.";
+    }
+  } catch {
+    return "Media URL is invalid.";
+  }
+  const check = await validateUrlForSSRF(url);
+  return check.isValid ? null : check.error || "Media URL failed safety validation.";
+}
+
 function accountEffectiveStatus(account: ConnectedAccount): string {
   return account.effective_status || account.status;
 }
@@ -125,15 +263,6 @@ function requestedAccountIdForPlatform(
  * produced by our own get-signed-url EF and point at R2. Rehosting them
  * would be wasteful (we'd fetch our own CDN back into R2).
  */
-function isAlreadyR2Signed(url: string): boolean {
-  try {
-    const u = new URL(url);
-    return u.searchParams.has("X-Amz-Signature");
-  } catch {
-    return false;
-  }
-}
-
 /**
  * Rehost a caller-supplied media URL into R2 so posts survive scheduling
  * delays and work on platforms that require byte-upload (X, LinkedIn, YouTube,
@@ -144,19 +273,11 @@ async function rehostExternalUrl(
   mediaUrl: string,
   projectId: string | undefined,
 ): Promise<{ signedUrl: string; r2Key: string } | { error: string }> {
-  // SSRF check FIRST — before the R2-signed short-circuit. An attacker can
-  // append ?X-Amz-Signature=anything to an internal URL
-  // (e.g. http://169.254.169.254/latest/meta-data/?X-Amz-Signature=x) and
-  // the isAlreadyR2Signed() check would let it through if we ran it first.
-  // Async DNS-resolving validator closes the DNS-rebinding gap — accepting
-  // a few hundred ms latency on the upload path is the right trade.
+  // Async DNS-resolving validation closes the first-hop DNS-rebinding gap.
+  // upload-to-r2 also revalidates every redirect before fetching bytes.
   const ssrf = await validateUrlForSSRF(mediaUrl);
   if (!ssrf.isValid) {
     return { error: ssrf.error ?? "URL rejected by SSRF check" };
-  }
-
-  if (isAlreadyR2Signed(mediaUrl)) {
-    return { signedUrl: mediaUrl, r2Key: "" };
   }
 
   const { data, error } = await callEdgeFunction<{
@@ -197,7 +318,9 @@ export function registerDistributionTools(server: McpServer): void {
             "to skip. Not needed if media_urls, r2_key, or job_id is provided.",
         ),
       media_urls: z
-        .array(z.string())
+        .array(z.string().url())
+        .min(2)
+        .max(10)
         .optional()
         .describe(
           "Array of 2-10 image URLs for carousel posts. Same rehosting rules as media_url — " +
@@ -212,6 +335,8 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       r2_keys: z
         .array(z.string())
+        .min(2)
+        .max(10)
         .optional()
         .describe(
           "Array of R2 object keys for carousel posts. Each is signed on demand. Alternative to media_urls.",
@@ -225,6 +350,8 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       job_ids: z
         .array(z.string())
+        .min(2)
+        .max(10)
         .optional()
         .describe(
           "Array of async job IDs for carousel posts. Each resolved to its R2 key. Alternative to media_urls/r2_keys.",
@@ -272,6 +399,12 @@ export function registerDistributionTools(server: McpServer): void {
               tags: z.array(z.string()).optional(),
               made_for_kids: z.boolean().optional(),
               notify_subscribers: z.boolean().optional(),
+              contains_synthetic_media: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Declare realistic altered or synthetic content to YouTube when applicable.",
+                ),
             })
             .optional(),
           facebook: z
@@ -418,28 +551,13 @@ export function registerDistributionTools(server: McpServer): void {
             "Default: true. Set to false only if you know the source URL will outlive the " +
             "scheduling window and every target platform supports URL ingest.",
         ),
-      visual_gate_result: z
-        .object({ passed: z.boolean() })
-        .passthrough()
-        .optional()
-        .describe(
-          "Visual QA gate verdict from the carousel/image generation pipeline. " +
-            "Required when mediaType is CAROUSEL_ALBUM, IMAGE, or VIDEO and " +
-            "VISUAL_GATE_ENFORCE is enabled on the EF. Produce with visual_quality_check tool. " +
-            "Must have passed=true for the gate to allow the publish.",
-        ),
-      origin: z
-        .enum(["human", "hermes", "user"])
-        .optional()
-        .describe(
-          "Originator lineage for the post. Marks who scheduled it; use the agent value when " +
-            "calling from an autonomous workflow, otherwise default 'human'.",
-        ),
-      hermes_run_id: z
+      idempotency_key: z
         .string()
+        .regex(/^[a-zA-Z0-9_-]{8,128}$/)
         .optional()
         .describe(
-          "Optional agent run identifier for traceability between a draft and the run that produced it.",
+          "Stable 8-128 character retry key (letters, numbers, underscore, hyphen). " +
+            "Reuse the same key when retrying the same publish request to prevent duplicate posts.",
         ),
     },
     async ({
@@ -462,9 +580,7 @@ export function registerDistributionTools(server: McpServer): void {
       platform_metadata,
       account_id,
       account_ids,
-      visual_gate_result,
-      origin,
-      hermes_run_id,
+      idempotency_key,
     }) => {
       const format = response_format ?? "text";
       if (
@@ -498,6 +614,11 @@ export function registerDistributionTools(server: McpServer): void {
       // --- Resolve R2 keys / job IDs to signed URLs ---
       let resolvedMediaUrl = media_url;
       let resolvedMediaUrls = media_urls;
+      // Trust R2 provenance only when this process obtained the signed URL by
+      // resolving an owned R2 key. A caller can append X-Amz-Signature to any
+      // host, so the query parameter alone is never an authenticity signal.
+      let resolvedMediaUrlIsTrustedR2 = false;
+      let resolvedMediaUrlsAreTrustedR2 = (media_urls ?? []).map(() => false);
 
       const signR2Key = async (key: string): Promise<string | null> => {
         // Strip r2:// prefix if present (job result_urls use this format)
@@ -513,7 +634,9 @@ export function registerDistributionTools(server: McpServer): void {
         return signData?.signedUrl ?? signData?.url ?? null;
       };
 
-      const resolveJobId = async (jid: string): Promise<string | null> => {
+      const resolveJobId = async (
+        jid: string,
+      ): Promise<{ url: string; trustedR2: boolean } | null> => {
         const { data: jobData } = await callEdgeFunction<{
           success: boolean;
           job?: { result_url: string | null; status: string };
@@ -525,8 +648,11 @@ export function registerDistributionTools(server: McpServer): void {
         const resultUrl = jobData?.job?.result_url;
         if (!resultUrl) return null;
         // R2 keys don't start with http — sign them
-        if (!resultUrl.startsWith("http")) return signR2Key(resultUrl);
-        return resultUrl;
+        if (!resultUrl.startsWith("http")) {
+          const signed = await signR2Key(resultUrl);
+          return signed ? { url: signed, trustedR2: true } : null;
+        }
+        return { url: resultUrl, trustedR2: false };
       };
 
       try {
@@ -544,6 +670,7 @@ export function registerDistributionTools(server: McpServer): void {
             };
           }
           resolvedMediaUrl = signed;
+          resolvedMediaUrlIsTrustedR2 = true;
         } else if (job_id && !resolvedMediaUrl && !r2_key) {
           const resolved = await resolveJobId(job_id);
           if (!resolved) {
@@ -557,7 +684,8 @@ export function registerDistributionTools(server: McpServer): void {
               isError: true,
             };
           }
-          resolvedMediaUrl = resolved;
+          resolvedMediaUrl = resolved.url;
+          resolvedMediaUrlIsTrustedR2 = resolved.trustedR2;
         }
 
         if (r2_keys && r2_keys.length > 0 && !resolvedMediaUrls) {
@@ -575,6 +703,7 @@ export function registerDistributionTools(server: McpServer): void {
             };
           }
           resolvedMediaUrls = signed as string[];
+          resolvedMediaUrlsAreTrustedR2 = signed.map(() => true);
         } else if (
           job_ids &&
           job_ids.length > 0 &&
@@ -594,7 +723,9 @@ export function registerDistributionTools(server: McpServer): void {
               isError: true,
             };
           }
-          resolvedMediaUrls = resolved as string[];
+          const resolvedJobs = resolved as Array<{ url: string; trustedR2: boolean }>;
+          resolvedMediaUrls = resolvedJobs.map((item) => item.url);
+          resolvedMediaUrlsAreTrustedR2 = resolvedJobs.map((item) => item.trustedR2);
         }
 
         // --- Auto-rehost non-R2 URLs into R2 ---
@@ -605,11 +736,9 @@ export function registerDistributionTools(server: McpServer): void {
         // generators whose job_id result_url is a raw ephemeral URL rather
         // than a persisted R2 key. URLs already bearing X-Amz-Signature
         // (signed by our get-signed-url EF) are skipped.
-        // The R2-signed short-circuit lives inside rehostExternalUrl — do NOT
-        // gate on isAlreadyR2Signed() here, or a crafted ?X-Amz-Signature=x on
-        // an internal URL would skip the SSRF check too.
+        // Only URLs signed from an owned R2 key above may skip rehosting.
         const shouldRehost = auto_rehost !== false;
-        if (shouldRehost && resolvedMediaUrl) {
+        if (shouldRehost && resolvedMediaUrl && !resolvedMediaUrlIsTrustedR2) {
           const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
           if ("error" in rehost) {
             return {
@@ -627,14 +756,16 @@ export function registerDistributionTools(server: McpServer): void {
             };
           }
           resolvedMediaUrl = rehost.signedUrl;
+          resolvedMediaUrlIsTrustedR2 = true;
         }
 
         if (shouldRehost && resolvedMediaUrls && resolvedMediaUrls.length > 0) {
-          // Always invoke rehostExternalUrl per slot — it short-circuits R2-signed
-          // URLs internally AFTER running validateUrlForSSRF, so a forged
-          // ?X-Amz-Signature=x on an internal URL cannot bypass SSRF.
           const rehosted = await Promise.all(
-            resolvedMediaUrls.map((u) => rehostExternalUrl(u, project_id)),
+            resolvedMediaUrls.map((u, index) =>
+              resolvedMediaUrlsAreTrustedR2[index]
+                ? Promise.resolve({ signedUrl: u, r2Key: "" })
+                : rehostExternalUrl(u, project_id),
+            ),
           );
           const failIdx = rehosted.findIndex((r) => "error" in r);
           if (failIdx !== -1) {
@@ -654,6 +785,7 @@ export function registerDistributionTools(server: McpServer): void {
           resolvedMediaUrls = (
             rehosted as { signedUrl: string; r2Key: string }[]
           ).map((r) => r.signedUrl);
+          resolvedMediaUrlsAreTrustedR2 = resolvedMediaUrls.map(() => true);
         }
       } catch (resolveErr) {
         return {
@@ -665,6 +797,48 @@ export function registerDistributionTools(server: McpServer): void {
           ],
           isError: true,
         };
+      }
+
+      const hasResolvedMedia = Boolean(
+        resolvedMediaUrl || (resolvedMediaUrls && resolvedMediaUrls.length > 0),
+      );
+      const resolvedMediaType = inferScheduleMediaType(
+        media_type,
+        [resolvedMediaUrl, r2_key],
+        [resolvedMediaUrls, r2_keys],
+      );
+      if (hasResolvedMedia && !resolvedMediaType) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                "media_type is required when the media format cannot be inferred from a file extension. " +
+                "Set IMAGE, VIDEO, or CAROUSEL_ALBUM explicitly.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      // Validate every final media URL even when auto_rehost=false. Otherwise
+      // the persistence opt-out would also become an SSRF-validation bypass.
+      const finalUrls = [resolvedMediaUrl, ...(resolvedMediaUrls ?? [])].filter(
+        (value): value is string => typeof value === "string" && value.length > 0,
+      );
+      for (const url of finalUrls) {
+        const validationError = await validatePublishMediaUrl(url);
+        if (validationError) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Media URL blocked: ${validationError}`,
+              },
+            ],
+            isError: true,
+          };
+        }
       }
 
       // Normalize platform names to DB convention (capitalized) before sending
@@ -836,7 +1010,7 @@ export function registerDistributionTools(server: McpServer): void {
         {
           mediaUrl: resolvedMediaUrl,
           mediaUrls: resolvedMediaUrls,
-          mediaType: media_type,
+          mediaType: resolvedMediaType ?? undefined,
           caption: finalCaption,
           platforms: normalizedPlatforms,
           title,
@@ -851,16 +1025,10 @@ export function registerDistributionTools(server: McpServer): void {
                 ),
               }
             : {}),
-          // Forward visual gate verdict + source so the EF can enforce on media posts.
-          ...(visual_gate_result
-            ? { visualGateResult: visual_gate_result }
-            : {}),
-          visualGateSource: "mcp",
-          // Originator lineage (Hermes integration, 2026-05-22). EF validates origin
-          // against the posts.origin CHECK constraint and persists hermesRunId when
-          // origin === 'hermes'.
-          ...(origin ? { origin } : {}),
-          ...(hermes_run_id ? { hermesRunId: hermes_run_id } : {}),
+          ...(idempotency_key ? { idempotencyKey: idempotency_key } : {}),
+          // Attribution is assigned by the authenticated gateway. Visual QA
+          // attestations are server-produced evidence and are deliberately not
+          // accepted from an MCP caller.
         },
         { timeoutMs: 30_000 },
       );
@@ -935,6 +1103,142 @@ export function registerDistributionTools(server: McpServer): void {
   );
 
   // ---------------------------------------------------------------------------
+  // reschedule_post
+  // ---------------------------------------------------------------------------
+  server.tool(
+    "reschedule_post",
+    "Move an existing pending or scheduled post to a new future time without creating a duplicate. Pass project_id for the post's brand. expected_scheduled_at is recommended: it prevents overwriting a change made in another client after the calendar was loaded.",
+    {
+      post_id: z.string().uuid().describe("Post ID returned by list_recent_posts."),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Brand/project ID that owns the post. Defaults to the authenticated key's project or the account default.",
+        ),
+      scheduled_at: z
+        .string()
+        .datetime({ offset: true })
+        .describe("New future publish time as an ISO 8601 datetime with timezone."),
+      expected_scheduled_at: z
+        .string()
+        .datetime({ offset: true })
+        .optional()
+        .describe(
+          "Optional current schedule timestamp. If it changed since you read it, the update is rejected instead of silently overwriting it.",
+        ),
+      response_format: z.enum(["text", "json"]).default("text"),
+    },
+    async ({
+      post_id,
+      project_id,
+      scheduled_at,
+      expected_scheduled_at,
+      response_format,
+    }) => {
+      const next = new Date(scheduled_at);
+      if (!Number.isFinite(next.getTime()) || next.getTime() <= Date.now()) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "scheduled_at must be a valid future ISO datetime with timezone.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      if (!resolvedProjectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No project_id was provided and no default project is configured.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const userId = await getDefaultUserId();
+      const rateLimit = checkRateLimit("posting", `reschedule_post:${userId}`);
+      if (!rateLimit.allowed) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { data: result, error } = await callEdgeFunction<{
+        success: boolean;
+        error?: string;
+        status?: string;
+        post_id?: string;
+        project_id?: string;
+        previous_scheduled_at?: string | null;
+        scheduled_at?: string;
+        current_scheduled_at?: string | null;
+      }>("mcp-data", {
+        action: "reschedule-scheduled-post",
+        post_id,
+        projectId: resolvedProjectId,
+        project_id: resolvedProjectId,
+        scheduled_at: next.toISOString(),
+        ...(expected_scheduled_at
+          ? { expected_scheduled_at: new Date(expected_scheduled_at).toISOString() }
+          : {}),
+      });
+
+      if (error || !result?.success) {
+        const code = result?.error ?? error ?? "reschedule_failed";
+        const recovery =
+          code === "publishing_in_progress"
+            ? "The worker has already started publishing this post."
+            : code === "schedule_conflict"
+              ? `The schedule changed in another client${result?.current_scheduled_at ? ` to ${result.current_scheduled_at}` : ""}; refresh the calendar before retrying.`
+              : code === "not_found"
+                ? "The post was not found in this project."
+                : code === "not_reschedulable"
+                  ? `This post can no longer be rescheduled${result?.status ? ` (status: ${result.status})` : ""}.`
+                  : "The post could not be rescheduled.";
+        return {
+          content: [{ type: "text" as const, text: recovery }],
+          isError: true,
+        };
+      }
+
+      const publicResult = {
+        success: true,
+        post_id: result.post_id ?? post_id,
+        project_id: result.project_id ?? resolvedProjectId,
+        previous_scheduled_at: result.previous_scheduled_at ?? null,
+        scheduled_at: result.scheduled_at ?? next.toISOString(),
+      };
+      const structuredContent = asEnvelope(publicResult);
+      return {
+        structuredContent,
+        content: [
+          {
+            type: "text" as const,
+            text:
+              response_format === "json"
+                ? JSON.stringify(structuredContent, null, 2)
+                : `Post ${publicResult.post_id} rescheduled to ${publicResult.scheduled_at}.`,
+          },
+        ],
+      };
+    },
+  );
+
+  // ---------------------------------------------------------------------------
   // list_connected_accounts
   // ---------------------------------------------------------------------------
   server.tool(
@@ -982,15 +1286,19 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      const accounts = result.accounts ?? [];
+      const accounts = (result.accounts ?? [])
+        .map(publicConnectedAccount)
+        .filter((account): account is ConnectedAccount => account !== null);
 
       if (accounts.length === 0) {
         if (format === "json") {
+          const structuredContent = asEnvelope({ accounts: [] });
           return {
+            structuredContent,
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(asEnvelope({ accounts: [] }), null, 2),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
           };
@@ -1025,11 +1333,13 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       if (format === "json") {
+        const structuredContent = asEnvelope({ accounts });
         return {
+          structuredContent,
           content: [
             {
               type: "text" as const,
-              text: JSON.stringify(asEnvelope({ accounts }), null, 2),
+              text: JSON.stringify(structuredContent, null, 2),
             },
           ],
         };
@@ -1048,6 +1358,13 @@ export function registerDistributionTools(server: McpServer): void {
     "list_recent_posts",
     "List recent published and scheduled posts with status, platform, title, and timestamps. Use to check what has been posted before planning new content, or to find post IDs for fetch_analytics. Filter by platform or status to narrow results.",
     {
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Brand/project ID to scope posts. Defaults to the authenticated key's project or the account default.",
+        ),
       platform: z
         .enum([
           "youtube",
@@ -1082,9 +1399,21 @@ export function registerDistributionTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
-    async ({ platform, status, days, limit, response_format }) => {
+    async ({ project_id, platform, status, days, limit, response_format }) => {
       const format = response_format ?? "text";
       const lookbackDays = days ?? 7;
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      if (!resolvedProjectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "No project_id was provided and no default project is configured.",
+            },
+          ],
+          isError: true,
+        };
+      }
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -1104,6 +1433,8 @@ export function registerDistributionTools(server: McpServer): void {
         action: "recent-posts",
         days: lookbackDays,
         limit: limit ?? 20,
+        projectId: resolvedProjectId,
+        project_id: resolvedProjectId,
         ...(platform ? { platform } : {}),
         ...(status ? { status } : {}),
       });
@@ -1120,7 +1451,9 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      const rows = result.posts ?? [];
+      const rows = (result.posts ?? [])
+        .map(publicPostRecord)
+        .filter((post): post is PostRecord => post !== null);
 
       if (rows.length === 0) {
         if (format === "json") {
@@ -1210,8 +1543,15 @@ export function registerDistributionTools(server: McpServer): void {
 
   server.tool(
     "find_next_slots",
-    "Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score.",
+    "Find optimal posting time slots for one brand/project based on preferred posting times and that project's existing schedule. Returns non-conflicting slots sorted by engagement score.",
     {
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Brand/project ID used for conflict detection. Defaults to the authenticated key's project or the account default.",
+        ),
       platforms: z
         .array(
           z.enum([
@@ -1245,6 +1585,7 @@ export function registerDistributionTools(server: McpServer): void {
       response_format: z.enum(["text", "json"]).default("text"),
     },
     async ({
+      project_id,
       platforms,
       count,
       start_after,
@@ -1252,7 +1593,27 @@ export function registerDistributionTools(server: McpServer): void {
       response_format,
     }) => {
       try {
+        const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+        if (!resolvedProjectId) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: "No project_id was provided and no default project is configured.",
+              },
+            ],
+            isError: true,
+          };
+        }
         const startDate = start_after ? new Date(start_after) : new Date();
+        if (!Number.isFinite(startDate.getTime())) {
+          return {
+            content: [
+              { type: "text" as const, text: "start_after must be a valid ISO datetime." },
+            ],
+            isError: true,
+          };
+        }
         const endDate = new Date(startDate.getTime() + 7 * 24 * 60 * 60 * 1000);
 
         // Get existing scheduled posts
@@ -1268,7 +1629,9 @@ export function registerDistributionTools(server: McpServer): void {
             action: "scheduled-posts",
             start_date: startDate.toISOString(),
             end_date: endDate.toISOString(),
-            statuses: ["scheduled", "draft"],
+            statuses: ["pending", "scheduled", "draft"],
+            projectId: resolvedProjectId,
+            project_id: resolvedProjectId,
           });
         const existingPosts = postsError ? [] : (postsResult?.posts ?? []);
 
@@ -1321,19 +1684,17 @@ export function registerDistributionTools(server: McpServer): void {
         const conflictsAvoided = candidates.filter((s) => s.conflict).length;
 
         if (response_format === "json") {
+          const structuredContent = asEnvelope({
+            slots,
+            total_candidates: candidates.length,
+            conflicts_avoided: conflictsAvoided,
+          });
           return {
+            structuredContent,
             content: [
               {
                 type: "text" as const,
-                text: JSON.stringify(
-                  asEnvelope({
-                    slots,
-                    total_candidates: candidates.length,
-                    conflicts_avoided: conflictsAvoided,
-                  }),
-                  null,
-                  2,
-                ),
+                text: JSON.stringify(structuredContent, null, 2),
               },
             ],
             isError: false,

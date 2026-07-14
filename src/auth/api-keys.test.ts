@@ -74,7 +74,7 @@ describe('validateApiKey', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('Validation failed');
-    expect(result.error).toContain('Unauthorized: invalid API key');
+    expect(result.error).not.toContain('Unauthorized: invalid API key');
   });
 
   it('returns valid: false with error for HTTP 500', async () => {
@@ -84,7 +84,7 @@ describe('validateApiKey', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('Validation failed');
-    expect(result.error).toContain('Internal Server Error');
+    expect(result.error).not.toContain('Internal Server Error');
   });
 
   it('returns valid: false with error message on network failure', async () => {
@@ -93,7 +93,7 @@ describe('validateApiKey', () => {
     const result = await validateApiKey('sn_network_error_key');
 
     expect(result.valid).toBe(false);
-    expect(result.error).toBe('fetch failed: DNS resolution failed');
+    expect(result.error).toBe('Authentication service is temporarily unavailable.');
   });
 
   it('returns valid: false with stringified value for non-Error rejections', async () => {
@@ -102,7 +102,7 @@ describe('validateApiKey', () => {
     const result = await validateApiKey('sn_weird_error_key');
 
     expect(result.valid).toBe(false);
-    expect(result.error).toBe('raw string error');
+    expect(result.error).toBe('Authentication service is temporarily unavailable.');
   });
 
   it('returns the parsed JSON body for a valid-but-expired key', async () => {
@@ -114,9 +114,8 @@ describe('validateApiKey', () => {
 
     const result = await validateApiKey('sn_expired_key');
 
-    // The function trusts the response body; HTTP 200 with valid:false is passed through
     expect(result.valid).toBe(false);
-    expect(result.error).toBe('API key expired');
+    expect(result.error).toBe('API key is invalid, expired, or revoked.');
   });
 
   it('calls the correct URL with correct POST body and headers', async () => {
@@ -202,7 +201,7 @@ describe('validateApiKey', () => {
 
     expect(result.valid).toBe(false);
     expect(result.error).toContain('Validation failed');
-    expect(result.error).toContain('Bad Gateway');
+    expect(result.error).not.toContain('Bad Gateway');
   });
 
   it('preserves all fields from a successful response', async () => {

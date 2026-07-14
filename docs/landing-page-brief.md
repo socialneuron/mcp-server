@@ -6,7 +6,7 @@
 
 **Headline:** "Build with Social Neuron"
 
-**Subheadline:** "80+ public AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
+**Subheadline:** "90 public AI tools for content creation, scheduling, and analytics. Use via MCP agents, REST API, TypeScript SDK, or CLI. The agent-native operating layer for the content growth loop — understand brand, plan, create, schedule, measure, optimize."
 
 **CTA:** "Get API Key" → links to /settings/developer
 
@@ -17,7 +17,7 @@ The landing page should have a tabbed code viewer showing the same operation (ge
 ### Tab 1: MCP (Claude)
 
 ```
-Ask Claude: "Generate a 30-second video about AI productivity
+Ask Claude: "Generate an 8-second video about AI productivity
 and schedule it to YouTube and TikTok at 2pm tomorrow"
 ```
 
@@ -28,46 +28,53 @@ and schedule it to YouTube and TikTok at 2pm tomorrow"
 
 ```bash
 # Generate video
-curl -X POST https://mcp.socialneuron.com/v1/content/video \
-  -H "Authorization: Bearer snk_live_..." \
+curl -X POST https://mcp.socialneuron.com/v1/tools/generate_video \
   -H "Content-Type: application/json" \
-  -d '{"prompt": "AI productivity tips", "model": "veo3-fast"}'
+  -d '{"project_id": "project_uuid", "prompt": "AI productivity tips", "model": "veo3-fast", "response_format": "json"}' \
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
 
 # Poll for completion
-curl https://mcp.socialneuron.com/v1/content/status/job_abc \
-  -H "Authorization: Bearer snk_live_..."
-
-# Schedule to platforms
-curl -X POST https://mcp.socialneuron.com/v1/distribution/schedule \
-  -H "Authorization: Bearer snk_live_..." \
+curl -X POST https://mcp.socialneuron.com/v1/tools/check_status \
   -H "Content-Type: application/json" \
-  -d '{"media_url": "https://...", "platforms": ["youtube", "tiktok"]}'
+  -d '{"job_id": "job_abc", "response_format": "json"}' \
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
+
+# After list_connected_accounts confirms the destinations, schedule the result
+curl -X POST https://mcp.socialneuron.com/v1/tools/schedule_post \
+  -H "Content-Type: application/json" \
+  -d '{"project_id": "project_uuid", "job_id": "job_abc", "platforms": ["youtube", "tiktok"], "youtube_title": "AI productivity tips", "schedule_at": "2026-07-20T14:00:00Z"}' \
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
 ```
 
 **Label:** "REST API — Any Language"
-**Description:** "35 endpoints. OpenAPI spec included. Works from any language."
+**Description:** "85 scoped tools through one OpenAPI contract. Works from any language."
 
 ### Tab 3: TypeScript SDK
 
 ```typescript
 import { SocialNeuron } from '@socialneuron/sdk';
 
-const sn = new SocialNeuron({ apiKey: 'snk_live_...' });
+const sn = new SocialNeuron({ apiKey: process.env.SOCIAL_NEURON_API_KEY! });
 
 const video = await sn.content.generateVideo({
+  project_id: 'project_uuid',
   prompt: 'AI productivity tips',
   model: 'veo3-fast',
 });
-const result = await sn.jobs.waitForCompletion(video.data.taskId);
+const jobId = video.data.job_id ?? video.data.taskId;
+if (!jobId) throw new Error('Video generation returned no job ID');
+await sn.jobs.waitForCompletion(jobId);
 
 await sn.posts.schedule({
-  media_url: result.data.resultUrl!,
+  project_id: 'project_uuid',
+  job_id: jobId,
   platforms: ['youtube', 'tiktok'],
+  youtube_title: 'AI productivity tips',
 });
 ```
 
 **Label:** "TypeScript SDK"
-**Description:** "Typed client with auto-polling for async jobs."
+**Description:** "Preview typed client with auto-polling for async jobs."
 
 ### Tab 4: CLI
 
@@ -90,25 +97,25 @@ socialneuron-mcp sn publish \
 **Icon:** Sparkle / Wand
 **Title:** "AI-Powered Content"
 **Copy:** "Generate videos, images, carousels, voiceovers, and scripts with 20+ AI models including Veo 3, Sora 2, Midjourney, and Flux Pro."
-**Endpoints:** `POST /v1/content/video`, `POST /v1/content/image`, `POST /v1/content/generate`, `POST /v1/tools/generate_carousel`
+**Tools:** `POST /v1/tools/generate_video`, `POST /v1/tools/generate_image`, `POST /v1/tools/generate_content`, `POST /v1/tools/generate_carousel`
 
 ### Card 2: Multi-Platform Scheduling
 **Icon:** Calendar
 **Title:** "Schedule Everywhere"
 **Copy:** "Publish to YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, and Bluesky. AI-optimized posting times."
-**Endpoints:** `POST /v1/distribution/schedule`, `GET /v1/analytics/best-times`
+**Tools:** `POST /v1/tools/schedule_post`, `POST /v1/tools/get_best_posting_times`
 
 ### Card 3: Analytics & Insights
 **Icon:** Chart
 **Title:** "Data-Driven Optimization"
 **Copy:** "AI-generated insights on what's working. Best posting times per platform. Closed-loop feedback that improves future content."
-**Endpoints:** `GET /v1/analytics`, `GET /v1/analytics/insights`
+**Tools:** `POST /v1/tools/fetch_analytics`, `POST /v1/tools/get_performance_insights`
 
 ### Card 4: Content Planning
 **Icon:** Clipboard / Plan
 **Title:** "Plan → Approve → Publish"
 **Copy:** "Generate weekly content plans, review with your team, approve, and schedule everything with one call."
-**Endpoints:** `POST /v1/tools/plan_content_week`, `POST /v1/tools/respond_plan_approval`, `POST /v1/tools/schedule_content_plan`
+**Tools:** `POST /v1/tools/plan_content_week`, `POST /v1/tools/respond_plan_approval`, `POST /v1/tools/schedule_content_plan`
 
 ---
 
@@ -155,7 +162,7 @@ See Pricing (socialneuron.com/pricing)
 
 | Stat | Value |
 |------|-------|
-| MCP tools | 83 hosted public / 84 stdio public |
+| MCP tools | 85 hosted public / 85 stdio public (Apps hosted; screenshots stdio) |
 | REST endpoints | 35 |
 | Supported platforms | 8 (YouTube, TikTok, Instagram, Twitter, LinkedIn, Facebook, Threads, Bluesky) |
 | Video models | 8 (Veo 3 Fast/Quality, Sora 2/Pro, Runway Aleph, Kling, Luma, Midjourney Video) |

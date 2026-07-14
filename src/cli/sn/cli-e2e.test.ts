@@ -12,9 +12,13 @@ import { spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { TOOL_CATALOG } from '../../lib/tool-catalog.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const BINARY = resolve(__dirname, '../../../dist/index.js');
+const PUBLIC_STDIO_TOOL_COUNT = TOOL_CATALOG.filter(
+  tool => !tool.internal && tool.module !== 'apps'
+).length;
 
 function run(
   args: string[],
@@ -248,8 +252,9 @@ describeE2E('sn tools', () => {
     expect(json.command).toBe('tools');
     expect(json.schema_version).toBe('1');
     const tools = json.tools as { name: string; module: string; scope: string }[];
-    expect(tools.length).toBeGreaterThanOrEqual(50);
+    expect(tools).toHaveLength(PUBLIC_STDIO_TOOL_COUNT);
     expect(json.toolCount).toBe(tools.length);
+    expect(tools.some(tool => tool.module === 'apps')).toBe(false);
   });
 
   it('filters by --module', () => {
@@ -296,9 +301,10 @@ describeE2E('sn info', () => {
     const data = json.data as Record<string, unknown>;
     expect(typeof data.version).toBe('string');
     expect(typeof data.toolCount).toBe('number');
-    expect(data.toolCount as number).toBeGreaterThanOrEqual(50);
+    expect(data.toolCount).toBe(PUBLIC_STDIO_TOOL_COUNT);
     expect(Array.isArray(data.modules)).toBe(true);
     expect((data.modules as string[]).length).toBeGreaterThanOrEqual(15);
+    expect(data.modules).not.toContain('apps');
   });
 });
 

@@ -8,6 +8,7 @@ export interface ConstantsShape {
   INSTRUCTION_PHRASES: string[];
   PII_PATTERNS: Record<string, string>;
   MAX_LENGTH: number;
+  MAX_OUTPUT_LENGTH: number;
 }
 
 export const CONSTANTS: ConstantsShape = data as ConstantsShape;

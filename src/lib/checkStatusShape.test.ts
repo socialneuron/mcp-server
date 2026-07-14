@@ -24,6 +24,11 @@ const completedJob: CheckStatusAsyncJobLike = {
   created_at: '2026-02-10T12:00:00Z',
   completed_at: '2026-02-10T12:01:30Z',
   result_metadata: null,
+  credits_reserved: 0,
+  credits_charged: 10,
+  credits_refunded: 0,
+  billing_status: 'charged',
+  failure_reason: null,
 };
 
 const pendingJob: CheckStatusAsyncJobLike = {
@@ -51,6 +56,9 @@ describe('buildCheckStatusPayload', () => {
     expect(payload.credits_cost).toBe(10);
     expect(payload.created_at).toBe('2026-02-10T12:00:00Z');
     expect(payload.completed_at).toBe('2026-02-10T12:01:30Z');
+    expect(payload.billing_status).toBe('charged');
+    expect(payload.credits_charged).toBe(10);
+    expect(payload.credits_refunded).toBe(0);
 
     // Aliases must always be populated too, not just present-when-convenient
     expect(payload.jobId).toBe('job-abc');
@@ -58,6 +66,25 @@ describe('buildCheckStatusPayload', () => {
     expect(payload.credits).toBe(10);
     expect(payload.createdAt).toBe('2026-02-10T12:00:00Z');
     expect(payload.completedAt).toBe('2026-02-10T12:01:30Z');
+  });
+
+  it('keeps failed-job billing explicit and stable', () => {
+    const payload = buildCheckStatusPayload({
+      ...completedJob,
+      status: 'failed',
+      result_url: null,
+      credits_charged: 10,
+      credits_refunded: 10,
+      billing_status: 'refunded',
+      failure_reason: 'generation_failed',
+    });
+    expect(payload).toMatchObject({
+      credits_reserved: 0,
+      credits_charged: 10,
+      credits_refunded: 10,
+      billing_status: 'refunded',
+      failure_reason: 'generation_failed',
+    });
   });
 
   it('live-poll branch: populates both canonical and alias fields from liveStatus', () => {
@@ -114,8 +141,12 @@ describe('buildCheckStatusPayload', () => {
     expect(payload.modelRequested).toBe('imagen4-fast');
     expect(payload.model_delivered).toBe('flux-pro');
     expect(payload.modelDelivered).toBe('flux-pro');
-    expect(payload.fallback_reason).toBe('Internal Error, Please try again later.');
-    expect(payload.fallbackReason).toBe('Internal Error, Please try again later.');
+    expect(payload.fallback_reason).toBe(
+      'Requested model was unavailable; a fallback model was used.'
+    );
+    expect(payload.fallbackReason).toBe(
+      'Requested model was unavailable; a fallback model was used.'
+    );
   });
 
   it('prefers liveStatus.error over job.error_message when both would be relevant', () => {
@@ -130,8 +161,8 @@ describe('buildCheckStatusPayload', () => {
       error: 'live provider error',
     };
     const payload = buildCheckStatusPayload(failedPendingJob, liveFailed);
-    expect(payload.error).toBe('live provider error');
-    expect(payload.error_message).toBe('live provider error');
+    expect(payload.error).toBe('Generation failed. Retry or choose another model.');
+    expect(payload.error_message).toBe('Generation failed. Retry or choose another model.');
   });
 
   it('falls back to job.error_message when there is no liveStatus', () => {
@@ -142,8 +173,8 @@ describe('buildCheckStatusPayload', () => {
       error_message: 'db-side error',
     };
     const payload = buildCheckStatusPayload(failedJob);
-    expect(payload.error).toBe('db-side error');
-    expect(payload.error_message).toBe('db-side error');
+    expect(payload.error).toBe('Generation failed. Retry or choose another model.');
+    expect(payload.error_message).toBe('Generation failed. Retry or choose another model.');
   });
 
   it('returns null progress when there is no liveStatus', () => {

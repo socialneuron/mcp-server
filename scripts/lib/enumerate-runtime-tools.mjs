@@ -2,7 +2,9 @@
  * Enumerate the model-visible MCP tool metadata that needs an integrity seal.
  *
  * This includes:
- *   - runtime tools/list metadata from registerAllTools(server, { skipApps: true })
+ *   - runtime tools/list metadata for the union of hosted Apps and stdio-local
+ *     tools. No single transport exposes every member, but every callable
+ *     schema is sealed here.
  *   - JSON-schema-compatible input/output schema metadata, including descriptions
  *   - annotations and _meta
  *   - static TOOL_CATALOG descriptions exposed by search_tools
@@ -43,7 +45,7 @@ export async function enumerateRuntimeTools() {
         `  return toJsonSchemaCompat(objectSchema, { strictUnions: true, pipeStrategy: 'input' });\n` +
         `}\n` +
         `const server = new McpServer({ name: 'tools-lock', version: '0' });\n` +
-        `registerAllTools(server, { skipApps: true });\n` +
+        `registerAllTools(server);\n` +
         `const reg = server._registeredTools ?? {};\n` +
         `const out = {};\n` +
         `for (const [name, t] of Object.entries(reg)) {\n` +
@@ -90,7 +92,17 @@ export async function enumerateCatalogTools() {
       `import { TOOL_CATALOG } from ${JSON.stringify(resolve(ROOT, 'src/lib/tool-catalog.ts'))};\n` +
         `const out = {};\n` +
         `for (const t of TOOL_CATALOG) {\n` +
-        `  out[t.name] = { description: String(t.description ?? ''), module: String(t.module ?? ''), scope: String(t.scope ?? '') };\n` +
+        `  out[t.name] = {\n` +
+        `    description: String(t.description ?? ''),\n` +
+        `    module: String(t.module ?? ''),\n` +
+        `    scope: String(t.scope ?? ''),\n` +
+        `    local_only: Boolean(t.localOnly),\n` +
+        `    internal: Boolean(t.internal),\n` +
+        `    task_intent: t.task_intent == null ? null : String(t.task_intent),\n` +
+        `    use_when: t.use_when == null ? null : String(t.use_when),\n` +
+        `    avoid_when: t.avoid_when == null ? null : String(t.avoid_when),\n` +
+        `    next_tools: Array.isArray(t.next_tools) ? t.next_tools.map(String) : [],\n` +
+        `  };\n` +
         `}\n` +
         `export const CATALOG_TOOLS = out;\n`
     );

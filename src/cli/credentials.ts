@@ -9,7 +9,20 @@
  */
 
 import { execFileSync } from 'node:child_process';
-import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs';
+import {
+  closeSync,
+  constants,
+  existsSync,
+  fchmodSync,
+  fstatSync,
+  ftruncateSync,
+  lstatSync,
+  mkdirSync,
+  openSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 
@@ -27,13 +40,98 @@ interface CredentialsFile {
   supabaseUrl?: string;
 }
 
-function readCredentialsFile(): CredentialsFile {
+function assertSafeCredentialPaths(): void {
+  if (platform() === 'win32') return;
+  const uid = process.getuid?.();
+  if (existsSync(CONFIG_DIR)) {
+    const directory = lstatSync(CONFIG_DIR);
+    if (directory.isSymbolicLink() || !directory.isDirectory()) {
+      throw new Error('Unsafe Social Neuron credential directory. Refusing to use it.');
+    }
+    if (uid !== undefined && directory.uid !== uid) {
+      throw new Error('Social Neuron credential directory is not owned by the current user.');
+    }
+  }
+  if (existsSync(CREDENTIALS_FILE)) {
+    const file = lstatSync(CREDENTIALS_FILE);
+    if (file.isSymbolicLink() || !file.isFile()) {
+      throw new Error('Unsafe Social Neuron credential file. Refusing to use it.');
+    }
+    if (uid !== undefined && file.uid !== uid) {
+      throw new Error('Social Neuron credential file is not owned by the current user.');
+    }
+  }
+}
+
+function openValidatedCredentialPath(
+  target: string,
+  kind: 'directory' | 'file',
+  flags: number
+): number | null {
+  let fd: number;
   try {
-    if (!existsSync(CREDENTIALS_FILE)) return {};
-    const raw = readFileSync(CREDENTIALS_FILE, 'utf-8');
-    return JSON.parse(raw) as CredentialsFile;
-  } catch {
-    return {};
+    fd = openSync(
+      target,
+      flags | constants.O_NOFOLLOW | (kind === 'directory' ? constants.O_DIRECTORY : 0)
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
+  }
+
+  const opened = fstatSync(fd);
+  const uid = process.getuid?.();
+  if (
+    (kind === 'directory' ? !opened.isDirectory() : !opened.isFile()) ||
+    (uid !== undefined && opened.uid !== uid) ||
+    (kind === 'file' && opened.nlink !== 1)
+  ) {
+    closeSync(fd);
+    throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
+  }
+  return fd;
+}
+
+function hardenCredentialPath(target: string, kind: 'directory' | 'file', mode: number): void {
+  const fd = openValidatedCredentialPath(target, kind, constants.O_RDONLY);
+  if (fd === null) return;
+  try {
+    const opened = fstatSync(fd);
+    if ((opened.mode & 0o077) !== 0) fchmodSync(fd, mode);
+  } finally {
+    closeSync(fd);
+  }
+}
+
+function hardenCredentialPermissions(): void {
+  if (platform() === 'win32') return;
+  hardenCredentialPath(CONFIG_DIR, 'directory', 0o700);
+  hardenCredentialPath(CREDENTIALS_FILE, 'file', 0o600);
+}
+
+function readCredentialsFile(): CredentialsFile {
+  if (platform() !== 'win32') hardenCredentialPath(CONFIG_DIR, 'directory', 0o700);
+  const fd =
+    platform() === 'win32'
+      ? (() => {
+          try {
+            return openSync(CREDENTIALS_FILE, constants.O_RDONLY);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          }
+        })()
+      : openValidatedCredentialPath(CREDENTIALS_FILE, 'file', constants.O_RDONLY);
+  if (fd === null) return {};
+  try {
+    if (platform() !== 'win32') fchmodSync(fd, 0o600);
+    const parsed = JSON.parse(readFileSync(fd, 'utf-8')) as unknown;
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      throw new Error('Social Neuron credential file is invalid.');
+    }
+    return parsed as CredentialsFile;
+  } finally {
+    closeSync(fd);
   }
 }
 
@@ -41,9 +139,48 @@ function writeCredentialsFile(data: CredentialsFile): void {
   if (!existsSync(CONFIG_DIR)) {
     mkdirSync(CONFIG_DIR, { recursive: true, mode: 0o700 });
   }
-  writeFileSync(CREDENTIALS_FILE, JSON.stringify(data, null, 2) + '\n', {
-    mode: 0o600,
-  });
+  assertSafeCredentialPaths();
+  const payload = JSON.stringify(data, null, 2) + '\n';
+  if (platform() === 'win32') {
+    // The destination is the fixed per-user credential path, never request-controlled.
+    // codeql[js/http-to-file-access]
+    writeFileSync(CREDENTIALS_FILE, payload, { mode: 0o600 });
+  } else {
+    // Open without truncating first, validate the opened inode, and only then
+    // clear it. This prevents symlink swaps and hard-link clobbering.
+    let fd: number;
+    try {
+      fd = openSync(
+        CREDENTIALS_FILE,
+        constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW,
+        0o600
+      );
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'EEXIST') {
+        throw new Error('Unsafe Social Neuron credential file. Refusing to write it.');
+      }
+      try {
+        fd = openSync(CREDENTIALS_FILE, constants.O_WRONLY | constants.O_NOFOLLOW);
+      } catch {
+        throw new Error('Unsafe Social Neuron credential file. Refusing to write it.');
+      }
+    }
+    try {
+      const opened = fstatSync(fd);
+      const uid = process.getuid?.();
+      if (!opened.isFile() || opened.nlink !== 1 || (uid !== undefined && opened.uid !== uid)) {
+        throw new Error('Unsafe Social Neuron credential file. Refusing to write it.');
+      }
+      fchmodSync(fd, 0o600);
+      ftruncateSync(fd, 0);
+      // The descriptor was opened with O_NOFOLLOW and ownership/link-count checked above.
+      // codeql[js/http-to-file-access]
+      writeFileSync(fd, payload);
+    } finally {
+      closeSync(fd);
+    }
+  }
+  hardenCredentialPermissions();
 }
 
 // ── macOS Keychain ───────────────────────────────────────────────────

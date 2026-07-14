@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>Social Neuron — Analytics Pulse</title>
+    <style>
+      :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, -apple-system, sans-serif; }
+      * { box-sizing: border-box; }
+      body { margin: 0; padding: 18px; background: light-dark(#f7f8fa, #111318); color: light-dark(#17191f, #f2f3f5); }
+      header { display: flex; justify-content: space-between; gap: 12px; align-items: flex-start; flex-wrap: wrap; }
+      h1 { margin: 0; font-size: 19px; letter-spacing: -.02em; }
+      #subtitle { margin: 4px 0 16px; color: light-dark(#656b76, #aeb4c0); font-size: 12px; }
+      .filters { display: flex; gap: 6px; flex-wrap: wrap; }
+      button, select { border: 1px solid light-dark(#d7dbe2, #3a3f49); background: light-dark(#fff, #20242c); color: inherit; border-radius: 7px; padding: 6px 10px; font: inherit; font-size: 12px; }
+      button { cursor: pointer; }
+      button.active { background: #6657e8; border-color: #6657e8; color: white; }
+      button:disabled { opacity: .55; cursor: wait; }
+      .kpis { display: grid; grid-template-columns: repeat(4, minmax(110px, 1fr)); gap: 9px; margin-bottom: 12px; }
+      .card { background: light-dark(#fff, #1c2027); border: 1px solid light-dark(#e3e5ea, #30353e); border-radius: 10px; padding: 12px; }
+      .label { color: light-dark(#6e7480, #a9afba); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+      .value { font-size: 22px; font-weight: 750; margin-top: 5px; font-variant-numeric: tabular-nums; }
+      .layout { display: grid; grid-template-columns: minmax(210px, .8fr) minmax(380px, 2fr); gap: 10px; }
+      h2 { margin: 0 0 10px; font-size: 13px; }
+      .bar-row { display: grid; grid-template-columns: 78px 1fr auto; align-items: center; gap: 8px; margin: 9px 0; font-size: 11px; }
+      .bar-track { height: 7px; border-radius: 99px; overflow: hidden; background: light-dark(#eceef2, #343944); }
+      .bar { height: 100%; border-radius: inherit; background: linear-gradient(90deg, #6657e8, #26a8e0); }
+      table { width: 100%; border-collapse: collapse; font-size: 11px; }
+      th { color: light-dark(#6e7480, #a9afba); text-transform: uppercase; letter-spacing: .04em; font-size: 9px; text-align: right; padding: 0 7px 8px; }
+      th:first-child, td:first-child { text-align: left; }
+      td { text-align: right; padding: 8px 7px; border-top: 1px solid light-dark(#eceef2, #30353e); font-variant-numeric: tabular-nums; }
+      .post-title { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+      .platform { color: #6657e8; font-size: 9px; font-weight: 750; text-transform: uppercase; display: block; margin-bottom: 2px; }
+      .empty, .error { text-align: center; padding: 28px 16px; color: light-dark(#6e7480, #a9afba); }
+      .error { color: light-dark(#a12424, #ff8a8a); }
+      @media (max-width: 680px) {
+        body { padding: 12px; }
+        .kpis { grid-template-columns: repeat(2, 1fr); }
+        .layout { grid-template-columns: 1fr; }
+        .table-wrap { overflow-x: auto; }
+        table { min-width: 540px; }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div><h1>Analytics Pulse</h1><div id="subtitle">Loading project performance…</div></div>
+      <div class="filters" aria-label="Analytics filters">
+        <select id="platform" aria-label="Platform"><option value="">All platforms</option></select>
+        <button data-days="7">7d</button><button data-days="30" class="active">30d</button><button data-days="90">90d</button>
+        <button id="refresh" aria-label="Refresh dashboard">Refresh</button>
+      </div>
+    </header>
+    <main id="root" aria-live="polite"></main>
+    <script type="module" src="/src/mcp-app.ts"></script>
+  </body>
+</html>

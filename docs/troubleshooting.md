@@ -7,7 +7,7 @@ Common issues and fixes for `@socialneuron/mcp-server`. If none of these help, o
 ### The server doesn't appear in my MCP client
 1. Confirm the config points at the right command. The canonical stdio command is `npx -y @socialneuron/mcp-server` with your key in `SOCIALNEURON_API_KEY`.
 2. Fully **restart** the client after editing its MCP config (Claude Desktop/Cursor cache the server list at launch).
-3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy boot logs `[annotations] Applied annotations to 95/95 tools` **to stderr** and then waits on stdio.
+3. Run the command yourself to see startup errors: `SOCIALNEURON_API_KEY=snk_live_... npx -y @socialneuron/mcp-server`. A healthy build logs an `[annotations] Applied annotations to …/… tools` line **to stderr** and then waits on stdio. The exact count can increase; the important invariant is that the two numbers match.
 
 ### `tools/list` returns 0 tools, or the client reports "Invalid JSON" / pydantic parse errors
 This was a stdout-corruption bug fixed in **1.7.13** — any log written to stdout corrupts the JSON-RPC channel. Upgrade:
@@ -33,10 +33,10 @@ npx clear-npx-cache 2>/dev/null || rm -rf "$(npm config get cache)/_npx"
 - For HTTP, send it as `Authorization: Bearer snk_live_...`.
 
 ### "Requires a Pro plan or above" / a tool returns a permission error
-MCP access is **tier-gated**: Free/Starter have **no** MCP access; **Pro** grants `mcp:read` + `mcp:analytics`; **Team/Agency** grant full MCP (write, distribute, comments, autopilot). See [Pricing](../README.md#pricing) and [Scopes](../README.md#scopes). If a *specific* tool is denied, your key/tier lacks that tool's scope — regenerate the key with the needed scope (Team/Agency) or upgrade your plan.
+MCP access is **tier-gated**: Free/Starter have **no** MCP access; **Pro** grants `mcp:read`, `mcp:analytics`, `mcp:write`, and `mcp:distribute`; **Team/Agency** additionally grant comments and autopilot. See [Pricing](../README.md#pricing) and [Scopes](../README.md#scopes). If a specific tool is denied, refresh or regenerate the key after a tier change, or upgrade to the tier that includes the required scope.
 
 ### OAuth (Claude Custom Connector) connects but tools are limited
-The OAuth/JWT path derives scopes from your subscription tier. A Pro account gets read+analytics only — write/distribute tools won't appear. Upgrade to Team/Agency for the full set.
+The OAuth connector path derives scopes from the current subscription tier at validation time. Pro includes read, analytics, write, and distribute; Team/Agency also include comments and autopilot. Reconnect after a tier change so the host refreshes its advertised tool surface. General Social Neuron dashboard session JWTs are not accepted as MCP bearer tokens; use the connector OAuth flow or an API key.
 
 ## Platforms
 
@@ -62,7 +62,7 @@ Each generation/job reserves credits. Check with `get_credit_balance`; top up or
 ## Runtime
 
 ### Node version errors
-Requires Node **20.x** or **22.x+** (Node 21 is excluded). Check with `node -v`; this repo ships a `.nvmrc` (`nvm use`).
+Requires Node **20.20.x** or **22.22.x+** (Node 21 is excluded). Check with `node -v`; this repo ships a `.nvmrc` (`nvm use`).
 
 ### HTTP transport (`/mcp`) returns 401 or 413
 - 401: send `Authorization: Bearer snk_live_...`. The HTTP server does its own auth (deployed with `verify_jwt=false`).

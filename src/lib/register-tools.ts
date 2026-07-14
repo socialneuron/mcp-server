@@ -46,12 +46,14 @@ import { registerCarouselTools } from '../tools/carousel.js';
 import { registerNicheResearchTools } from '../tools/niche-research.js';
 import { registerHyperframesTools } from '../tools/hyperframes.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
+import { registerAnalyticsPulseApp } from '../apps/analytics-pulse.js';
 import { registerConnectionTools } from '../tools/connections.js';
 import { registerHarnessTools } from '../tools/harness.js';
 import { registerHermesTools } from '../tools/hermes.js';
 import { registerSkillsTools } from '../tools/skills.js';
 import { registerLoopPulseTools } from '../tools/loopPulse.js';
 import { registerBanditStateTools } from '../tools/banditState.js';
+import { registerLifecycleTools } from '../tools/lifecycle.js';
 
 /**
  * Tool handler type. Matches the MCP SDK signature loosely — handlers are
@@ -61,6 +63,32 @@ import { registerBanditStateTools } from '../tools/banditState.js';
  */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ToolHandler = (...args: any[]) => Promise<any>;
+
+// Large uploads are validated by upload_media itself (10 MB ceiling). Scanning
+// their encoded bytes as prose adds no prompt-injection coverage and would make
+// the harness's 10 KB text limit reject every useful file. Replace only strict
+// base64 values under the two supported upload keys in the scanner copy; the
+// handler always receives the original arguments and every neighbouring field
+// remains fully scanned.
+const BASE64_PAYLOAD_KEYS = new Set(['file_data', 'fileData']);
+const DATA_URI_PREFIX = /^data:[\w.+-]+\/[\w.+-]+;base64,/;
+const STRICT_BASE64 = /^[A-Za-z0-9+/]+={0,2}$/;
+
+function redactBase64Payloads(args: unknown): unknown {
+  if (typeof args !== 'object' || args === null || Array.isArray(args)) return args;
+  let changed = false;
+  const out: Record<string, unknown> = { ...(args as Record<string, unknown>) };
+  for (const key of BASE64_PAYLOAD_KEYS) {
+    const value = out[key];
+    if (typeof value !== 'string' || value.length < 64) continue;
+    const body = value.replace(DATA_URI_PREFIX, '');
+    if (STRICT_BASE64.test(body)) {
+      out[key] = `[base64:${body.length} chars omitted from prose scan]`;
+      changed = true;
+    }
+  }
+  return changed ? out : args;
+}
 
 /**
  * Wrap a tool handler with the agent-harness scanner middleware (Task 1.14).
@@ -75,8 +103,8 @@ export type ToolHandler = (...args: any[]) => Promise<any>;
  *   - Stringify result, feed to scanner. mcp_tool_output role preserves
  *     UUIDs (anchored PII regex) while redacting email / phone / etc.
  *   - On redaction: re-parse the sanitized JSON and return it. On parse
- *     failure (non-JSON-serialisable shapes): fail OPEN, return original
- *     result — a broken scan must never break a working tool.
+ *     failure, fail closed with a generic tool error so a scanner failure can
+ *     never re-expose the content it just classified for redaction.
  *
  * Chains INSIDE `applyScopeEnforcement` — scope check runs first, scanner
  * second, original handler third. The scope-denial path (isError result)
@@ -90,8 +118,13 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
 
     // 1. Scan input. `args === undefined` is normal for nullary tools; treat
     //    as empty object string so scanner sees something benign.
+    const scanArgs = redactBase64Payloads(args);
     const inputText =
-      args === undefined ? '{}' : typeof args === 'string' ? args : JSON.stringify(args);
+      scanArgs === undefined
+        ? '{}'
+        : typeof scanArgs === 'string'
+          ? scanArgs
+          : JSON.stringify(scanArgs);
     const inputScan = scan(inputText, {
       mode: 'block',
       source: 'mcp_tool_input',
@@ -126,6 +159,17 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       source: 'mcp_tool_output',
       user_id: ctx?.userId,
     });
+    if (!outputScan.passed) {
+      try {
+        ctx?.logScan?.(toolName, 'output', outputScan);
+      } catch {
+        // never block on audit log failure
+      }
+      return toolError(
+        'server_error',
+        'The response exceeded the safe output limit and was not returned.'
+      );
+    }
     if (outputScan.sanitized_text !== undefined) {
       try {
         ctx?.logScan?.(toolName, 'output', outputScan);
@@ -135,10 +179,10 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       try {
         return JSON.parse(outputScan.sanitized_text);
       } catch {
-        // fail OPEN — sanitised string was not valid JSON (shouldn't happen
-        // for MCP-shaped results but defensive). Return original result so
-        // tool keeps working.
-        return result;
+        return toolError(
+          'server_error',
+          'The response could not be returned safely. Please retry or contact support.'
+        );
       }
     }
     return result;
@@ -212,7 +256,6 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
               source: 'wrapper',
               // A thrown exception escaped the handler — an unclassified fault.
               error_type: 'server_error',
-              exception: err instanceof Error ? err.message.slice(0, 200) : 'unknown',
             },
           });
           throw err;
@@ -337,8 +380,8 @@ function truncateResponse(result: any): any {
 /**
  * Register all tool groups on a McpServer instance.
  * @param options.skipScreenshots - Skip screenshot tools (requires local Playwright, unavailable on Railway)
- * @param options.skipApps - Skip MCP App registrations. Pass true for stdio mode where the npm
- *   package doesn't ship the app HTML bundle (Apps render via HTTP custom connectors only).
+ * @param options.skipApps - Skip MCP App registrations. Pass true for stdio mode: the package
+ *   ships the HTML, but interactive app resources are registered on the HTTP surface only.
  */
 export function registerAllTools(
   server: McpServer,
@@ -383,13 +426,15 @@ export function registerAllTools(
   registerSkillsTools(server);
   registerLoopPulseTools(server);
   registerBanditStateTools(server);
+  registerLifecycleTools(server);
 
   // MCP Apps (interactive UI rendered inside the host).
   // Apps require an HTTP transport — postMessage iframe surfaces in
-  // Custom Connectors / claude.ai. The npm-shipped stdio package
-  // doesn't bundle the app HTML so skip registration there.
+  // Custom Connectors and other Apps-capable HTTP hosts. The npm package ships
+  // the HTML for deployment completeness, but stdio skips app registration.
   if (!options?.skipApps) {
     registerContentCalendarApp(server);
+    registerAnalyticsPulseApp(server);
   }
 
   // Apply safety annotations to all registered tools (required for Anthropic Connectors Directory)

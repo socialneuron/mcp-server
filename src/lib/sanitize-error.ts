@@ -46,10 +46,6 @@ const ERROR_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 export function sanitizeDbError(error: { message?: string; code?: string }): string {
-  if (process.env.NODE_ENV !== 'production') {
-    console.error('[DB Error]', error.message);
-  }
-
   const msg = error.message ?? '';
   const code = error.code ?? '';
 
@@ -68,10 +64,6 @@ export function sanitizeDbError(error: { message?: string; code?: string }): str
 export function sanitizeError(error: unknown): string {
   const msg =
     error instanceof Error ? error.message : typeof error === 'string' ? error : 'Unknown error';
-
-  if (process.env.NODE_ENV !== 'production') {
-    console.error('[Error]', msg);
-  }
 
   for (const [pattern, userMessage] of ERROR_PATTERNS) {
     if (pattern.test(msg)) {
