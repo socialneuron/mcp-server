@@ -97,6 +97,26 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'carousel',
     scope: 'mcp:write',
   },
+  {
+    name: 'cancel_async_job',
+    description: 'Cancel an owned pending async job and refund an eligible debit',
+    module: 'lifecycle',
+    scope: 'mcp:write',
+    task_intent: 'Stop a queued generation or render before worker execution',
+    use_when: 'The user explicitly wants to cancel a pending job and has confirmed the action.',
+    avoid_when: 'The job is already processing or terminal; check_status instead.',
+    next_tools: ['check_status', 'get_credit_balance'],
+  },
+  {
+    name: 'delete_carousel',
+    description: 'Delete an owned carousel content record from one project',
+    module: 'lifecycle',
+    scope: 'mcp:write',
+    task_intent: 'Remove an unwanted carousel record from Social Neuron',
+    use_when: 'The user explicitly confirms deletion and understands stored media follows normal retention.',
+    avoid_when: 'The user expects an already-published social post or retained media object to be removed.',
+    next_tools: ['list_recent_posts'],
+  },
 
   // media
   {
@@ -118,6 +138,27 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description: 'Schedule content for publishing to social platforms',
     module: 'distribution',
     scope: 'mcp:distribute',
+  },
+  {
+    name: 'reschedule_post',
+    description:
+      'Atomically move an unclaimed scheduled post to a new time within its brand project',
+    module: 'distribution',
+    scope: 'mcp:distribute',
+    task_intent: 'Move an already scheduled post without creating a duplicate publication',
+    use_when: 'A pending or scheduled post needs a different future publication time.',
+    avoid_when: 'The post is already publishing or published; create a new post instead.',
+    next_tools: ['list_recent_posts', 'open_content_calendar'],
+  },
+  {
+    name: 'cancel_scheduled_post',
+    description: 'Cancel an owned scheduled post before publishing begins',
+    module: 'lifecycle',
+    scope: 'mcp:distribute',
+    task_intent: 'Unschedule a post without publishing it',
+    use_when: 'The user explicitly confirms cancellation of a draft, pending, or scheduled post.',
+    avoid_when: 'The post is already publishing or published.',
+    next_tools: ['list_recent_posts', 'open_content_calendar'],
   },
   {
     name: 'list_recent_posts',
@@ -319,6 +360,16 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
   {
+    name: 'delete_content_plan',
+    description: 'Permanently delete an owned content plan from one project',
+    module: 'lifecycle',
+    scope: 'mcp:write',
+    task_intent: 'Remove an obsolete saved content plan',
+    use_when: 'The user explicitly confirms permanent deletion of a specific plan.',
+    avoid_when: 'The plan has scheduled posts the user also expects to cancel; cancel those posts separately.',
+    next_tools: ['plan_content_week', 'list_recent_posts'],
+  },
+  {
     name: 'submit_content_plan_for_approval',
     description: 'Submit a content plan for team approval',
     module: 'planning',
@@ -417,6 +468,16 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description: 'Get current autopilot status',
     module: 'autopilot',
     scope: 'mcp:autopilot',
+  },
+  {
+    name: 'delete_autopilot_config',
+    description: 'Permanently delete an owned autopilot configuration from one project',
+    module: 'lifecycle',
+    scope: 'mcp:autopilot',
+    task_intent: 'Remove an autopilot configuration while retaining historical run records',
+    use_when: 'The user explicitly confirms deletion of the configuration.',
+    avoid_when: 'The user only wants to pause or edit automation, or expects historical posts to be deleted.',
+    next_tools: ['list_autopilot_configs'],
   },
 
   // extraction
@@ -550,7 +611,14 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'open_content_calendar',
     description:
-      "Open an interactive drag-drop calendar of the user's scheduled posts inside the host (Claude Desktop / claude.ai). Renders an MCP App; backed by list_recent_posts, schedule_post, find_next_slots — no new tools needed.",
+      "Open a project-scoped interactive calendar inside MCP App-capable hosts. Uses reschedule_post for conflict-safe drag/drop and schedule_post for new posts.",
+    module: 'apps',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'open_analytics_pulse',
+    description:
+      'Open a project-scoped interactive performance dashboard with views, engagement, platform mix, and top posts.',
     module: 'apps',
     scope: 'mcp:read',
   },

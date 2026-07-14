@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Import the REAL module, bypassing the global mock from test-setup.ts
-const { RateLimiter, checkRateLimit, getRateLimiter } =
+const { RateLimiter, checkRateLimit, getRateLimiter, rateLimitCategoryForTool } =
   await vi.importActual<typeof import('./rate-limit.js')>('./rate-limit.js');
 
 describe('RateLimiter', () => {
@@ -128,6 +128,39 @@ describe('RateLimiter', () => {
       const a = getRateLimiter('diff-cat-a');
       const b = getRateLimiter('diff-cat-b');
       expect(a).not.toBe(b);
+    });
+  });
+
+  describe('rateLimitCategoryForTool', () => {
+    it.each([
+      'generate_video',
+      'generate_image',
+      'render_hyperframes',
+      'execute_recipe',
+      'plan_content_week',
+      'extract_brand',
+    ])(
+      'classifies %s as generation',
+      tool => expect(rateLimitCategoryForTool(tool)).toBe('generation')
+    );
+
+    it.each(['schedule_post', 'reschedule_post', 'post_comment', 'delete_comment'])(
+      'classifies %s as posting',
+      tool => expect(rateLimitCategoryForTool(tool)).toBe('posting')
+    );
+
+    it('fails new mutating tools into a strict mutation bucket instead of read', () => {
+      expect(rateLimitCategoryForTool('save_brand_profile')).toBe('posting');
+      expect(rateLimitCategoryForTool('refresh_platform_analytics')).toBe('posting');
+      expect(rateLimitCategoryForTool('create_autopilot_config')).toBe('posting');
+      expect(rateLimitCategoryForTool('start_platform_connection')).toBe('posting');
+    });
+
+    it('classifies upload, screenshot, and unknown/read tools', () => {
+      expect(rateLimitCategoryForTool('upload_media')).toBe('upload');
+      expect(rateLimitCategoryForTool('capture_screenshot')).toBe('screenshot');
+      expect(rateLimitCategoryForTool('fetch_analytics')).toBe('read');
+      expect(rateLimitCategoryForTool(undefined)).toBe('read');
     });
   });
 });

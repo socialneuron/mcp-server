@@ -34,6 +34,15 @@ export function generatePKCE(): { codeVerifier: string; codeChallenge: string } 
   return { codeVerifier, codeChallenge };
 }
 
+export function isValidSetupApiKey(value: unknown): value is string {
+  return (
+    typeof value === 'string' &&
+    value.length >= 32 &&
+    value.length <= 512 &&
+    /^snk_live_[A-Za-z0-9_-]+$/.test(value)
+  );
+}
+
 export function getAppBaseUrl(): string {
   return process.env.SOCIALNEURON_APP_URL || 'https://www.socialneuron.com';
 }
@@ -124,11 +133,24 @@ function configureMcpClient(configPath: string): boolean {
 
 // ── HTTP Callback Server ─────────────────────────────────────────────
 
-function readBody(req: IncomingMessage): Promise<string> {
+function readBody(req: IncomingMessage, maxBytes = 16 * 1024): Promise<string> {
   return new Promise((resolve, reject) => {
     const chunks: Buffer[] = [];
-    req.on('data', (chunk: Buffer) => chunks.push(chunk));
-    req.on('end', () => resolve(Buffer.concat(chunks).toString('utf-8')));
+    let total = 0;
+    let tooLarge = false;
+    req.on('data', (chunk: Buffer) => {
+      if (tooLarge) return;
+      total += chunk.length;
+      if (total > maxBytes) {
+        tooLarge = true;
+        reject(new Error('request_too_large'));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on('end', () => {
+      if (!tooLarge) resolve(Buffer.concat(chunks).toString('utf-8'));
+    });
     req.on('error', reject);
   });
 }
@@ -146,15 +168,14 @@ async function completePkceExchange(codeVerifier: string, state: string): Promis
     });
 
     if (!response.ok) {
-      const text = await response.text();
-      console.error(`  PKCE exchange failed: ${text}`);
+      console.error(`  PKCE exchange failed (HTTP ${response.status}).`);
       return false;
     }
 
     const data = (await response.json()) as { success?: boolean };
     return data.success === true;
-  } catch (err) {
-    console.error(`  PKCE exchange error: ${err instanceof Error ? err.message : String(err)}`);
+  } catch {
+    console.error('  PKCE exchange failed because the authentication service was unavailable.');
     return false;
   }
 }
@@ -170,7 +191,8 @@ export async function runSetup(): Promise<void> {
   // Privacy notice (first-run)
   console.error('  Privacy Notice:');
   console.error('  - Your API key is stored locally in your OS keychain');
-  console.error('  - Tool invocations are logged for usage metering (no content stored)');
+  console.error('  - CLI telemetry records tool name, status, and duration — not tool input/output');
+  console.error('  - Service-side content processing follows https://socialneuron.com/privacy');
   console.error('  - Set DO_NOT_TRACK=1 to disable telemetry');
   console.error('  - Data export/delete: https://www.socialneuron.com/settings');
   console.error('');
@@ -204,7 +226,6 @@ export async function runSetup(): Promise<void> {
     const open = (await import('open')).default;
     await open(authorizeUrl.toString());
     console.error('  Opening browser for authorization...');
-    console.error(`  URL: ${authorizeUrl.toString()}`);
     console.error('');
     console.error('  Waiting for authorization (timeout: 120s)...');
   } catch {
@@ -218,6 +239,7 @@ export async function runSetup(): Promise<void> {
 
   // Wait for callback
   const result = await new Promise<{ apiKey: string } | { error: string }>(resolve => {
+    const callbackOrigin = new URL(baseUrl).origin;
     const timeout = setTimeout(() => {
       server.close();
       resolve({ error: 'Authorization timed out after 120 seconds.' });
@@ -227,7 +249,14 @@ export async function runSetup(): Promise<void> {
       // CORS headers for the browser POST
       // Private Network Access (PNA): Chrome requires this header for
       // requests from public HTTPS origins to localhost/private IPs.
-      res.setHeader('Access-Control-Allow-Origin', '*');
+      const requestOrigin = req.headers.origin;
+      if (requestOrigin !== callbackOrigin) {
+        res.writeHead(403, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Origin not allowed' }));
+        return;
+      }
+      res.setHeader('Access-Control-Allow-Origin', callbackOrigin);
+      res.setHeader('Vary', 'Origin');
       res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
       res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
       res.setHeader('Access-Control-Allow-Private-Network', 'true');
@@ -249,9 +278,9 @@ export async function runSetup(): Promise<void> {
             return;
           }
 
-          if (!data.api_key) {
+          if (!isValidSetupApiKey(data.api_key)) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ error: 'Missing api_key' }));
+            res.end(JSON.stringify({ error: 'Invalid api_key' }));
             return;
           }
 

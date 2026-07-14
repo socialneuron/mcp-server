@@ -47,6 +47,7 @@ export interface ToolErrorOptions {
 }
 
 export interface ToolErrorResult {
+  [key: string]: unknown;
   content: Array<{ type: 'text'; text: string }>;
   structuredContent: {
     error: {

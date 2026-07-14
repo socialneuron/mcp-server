@@ -46,12 +46,14 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     }
   });
 
-  it('omits internal-only input fields from public tool schemas', async () => {
+  it('does not expose caller-controlled provenance attestations', async () => {
     const tools = await buildDiscoveryCatalog();
     const schedulePost = tools.find(t => t.name === 'schedule_post');
     expect(schedulePost).toBeDefined();
     expect(schedulePost!.inputSchema.properties).not.toHaveProperty('origin');
     expect(schedulePost!.inputSchema.properties).not.toHaveProperty('hermes_run_id');
+    expect(schedulePost!.inputSchema.properties).not.toHaveProperty('visual_gate_result');
+    expect(schedulePost!.inputSchema.properties).toHaveProperty('idempotency_key');
   });
 
   it('memoizes the catalog (same instance until reset)', async () => {

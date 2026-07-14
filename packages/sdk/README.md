@@ -1,116 +1,93 @@
 # @socialneuron/sdk
 
-> **Preview — not yet published to npm.** This package is under active development and not available on the npm registry. Its resource-style client still needs to be reconciled with the production generic `/v1/tools/{name}` proxy and pass live route-contract tests before publication. APIs documented here may change. For production use today, use the [REST API](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) directly.
+> **Preview — not yet published to npm.** The client now targets the production generic `/v1/tools/{name}` proxy and is protected by route-contract tests, but the package remains unpublished until its separate release gates and live smoke test pass. For production today, call the [REST API](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) directly.
 
-[![npm version](https://img.shields.io/npm/v/@socialneuron/sdk)](https://www.npmjs.com/package/@socialneuron/sdk)
-[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue.svg)](https://www.typescriptlang.org/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-
-TypeScript SDK for the [Social Neuron](https://socialneuron.com) REST API. 9 resource classes, full TypeScript types, and auto-polling for async jobs.
+Typed TypeScript client for the hosted Social Neuron REST tool proxy. It provides nine convenience resources while preserving each raw MCP-style result in `content` and `structuredContent`.
 
 ## Installation
 
-> **Not yet on npm.** Until the first stable release, install directly from the repository or wait for the published package announcement.
-
 ```bash
-# Not yet available — watch for the release announcement
-# npm install @socialneuron/sdk
+# Available after the first SDK release
+npm install @socialneuron/sdk
 ```
 
-## Quick Start
+## Quick start
 
 ```typescript
 import { SocialNeuron } from '@socialneuron/sdk';
 
-const sn = new SocialNeuron({ apiKey: 'snk_live_...' });
-
-// Generate content
-const content = await sn.content.generate({
-  prompt: 'Write a TikTok script about productivity tips',
-  platform: 'tiktok',
-  content_type: 'script',
+const sn = new SocialNeuron({
+  apiKey: process.env.SOCIALNEURON_API_KEY!,
 });
 
-// Generate video (async - returns job ID)
 const video = await sn.content.generateVideo({
-  prompt: 'A timelapse of a sunrise over mountains',
+  prompt: 'A sunrise timelapse over mountains',
   model: 'veo3-fast',
+  aspect_ratio: '9:16',
+  project_id: 'project_uuid',
 });
 
-// Wait for video to complete
-const result = await sn.jobs.waitForCompletion(video.data.taskId);
-console.log('Video URL:', result.data.resultUrl);
+const jobId = video.data.job_id ?? video.data.taskId;
+if (!jobId) throw new Error('Generation did not return a job ID');
 
-// Schedule a post
-await sn.posts.schedule({
-  media_url: result.data.resultUrl!,
-  caption: 'Beautiful sunrise #nature',
-  platforms: ['youtube', 'tiktok', 'instagram'],
-});
-
-// Get analytics
-const analytics = await sn.analytics.fetch({ days: 30 });
-
-// Create a content plan
-const plan = await sn.plans.create({
-  topic: 'AI productivity tools',
-  platforms: ['youtube', 'tiktok'],
-  days: 7,
-});
-
-// Check credits
-const credits = await sn.account.credits();
+const completed = await sn.jobs.waitForCompletion(jobId);
+console.log(completed.data.result_url ?? completed.data.resultUrl);
 ```
 
-## API Reference
+Every convenience method executes the canonical production route:
 
-### Resources
+```text
+POST https://mcp.socialneuron.com/v1/tools/{tool_name}
+```
+
+`sn.tools.list()` uses `GET /v1/tools`; `sn.tools.execute()` can call a tool that does not yet have a convenience wrapper.
+
+The client accepts only Social Neuron `snk_live_…` or `snk_test_…` API keys. A custom `baseUrl` must use HTTPS; plain HTTP is accepted only for `localhost`, `127.0.0.1`, or `::1` development. URLs containing credentials, query parameters, or fragments are rejected, and request timeouts must be between 1 ms and 600,000 ms.
+
+## Resources
 
 | Resource | Methods |
 |----------|---------|
-| `sn.content` | `generate()`, `generateVideo()`, `generateImage()`, `generateCarousel()`, `generateVoiceover()`, `adapt()`, `trends()` |
-| `sn.posts` | `schedule()`, `list()`, `accounts()` |
+| `sn.content` | `generate()`, `generateVideo()`, `generateImage()`, `generateCarousel()`, `generateVoiceover()`, `adapt()`, `trends()`, `deleteCarousel()` |
+| `sn.posts` | `schedule()`, `reschedule()`, `list()`, `accounts()`, `cancel()` |
 | `sn.analytics` | `fetch()`, `refresh()`, `youtube()`, `insights()`, `postingTimes()` |
 | `sn.brand` | `get()`, `save()`, `extract()` |
-| `sn.plans` | `create()`, `list()`, `get()`, `update()`, `schedule()`, `approve()`, `approvals()` |
+| `sn.plans` | `create()`, `save()`, `get()`, `update()`, `schedule()`, `submitForApproval()`, `approvals()`, `delete()` |
 | `sn.comments` | `list()`, `post()`, `reply()`, `moderate()`, `delete()` |
-| `sn.jobs` | `check()`, `waitForCompletion()` |
+| `sn.jobs` | `check()`, `waitForCompletion()`, `cancel()` |
+| `sn.autopilot` | `deleteConfiguration()` |
 | `sn.tools` | `list()`, `execute()` |
 | `sn.account` | `credits()`, `usage()` |
 
-### Error Handling
+## Results and errors
 
 ```typescript
-import { SocialNeuron, SocialNeuronError } from '@socialneuron/sdk';
+const result = await sn.analytics.fetch({ project_id: 'project_uuid', days: 30 });
+
+result.data;              // normalized convenience value
+result.content;           // original tool content blocks
+result.structuredContent; // original structured result, when present
+```
+
+```typescript
+import { SocialNeuronError } from '@socialneuron/sdk';
 
 try {
-  await sn.content.generateVideo({ prompt: '...' });
-} catch (err) {
-  if (err instanceof SocialNeuronError) {
-    console.error(err.code);      // 'rate_limited'
-    console.error(err.status);     // 429
-    console.error(err.retryAfter); // 30
-    console.error(err.message);    // 'Too many requests...'
+  await sn.content.generateVideo({ prompt: '...', model: 'seedance-2-fast' });
+} catch (error) {
+  if (error instanceof SocialNeuronError) {
+    console.error(error.code, error.status, error.retryAfter, error.recoverWith);
   }
 }
 ```
 
-### Configuration
+Do not place API keys in browser bundles or commit them to source control. Use this SDK from a trusted server process and keep every customer workflow scoped with `project_id` where the tool accepts it.
 
-```typescript
-const sn = new SocialNeuron({
-  apiKey: 'snk_live_...',              // Required
-  baseUrl: 'https://mcp.socialneuron.com', // Optional (default)
-  timeout: 60000,                       // Optional, ms (default: 60s)
-});
-```
+## Documentation
 
-## Full Documentation
-
-- [SDK Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/sdk-guide.md) — complete walkthrough with all resources
-- [REST API Guide](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md) — curl examples for every endpoint
-- [Examples](https://github.com/socialneuron/mcp-server/tree/main/examples/sdk) — runnable TypeScript examples
-- [OpenAPI Spec](https://github.com/socialneuron/mcp-server/blob/main/openapi.yaml) — full API specification
+- [SDK guide](https://github.com/socialneuron/mcp-server/blob/main/docs/sdk-guide.md)
+- [REST API guide](https://github.com/socialneuron/mcp-server/blob/main/docs/rest-api.md)
+- [Live OpenAPI 3.1 document](https://mcp.socialneuron.com/v1/openapi.json)
 
 ## License
 

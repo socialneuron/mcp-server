@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **84 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **90 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -23,7 +23,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `fetch` | Fetch a public Social Neuron knowledge document by ID. Use IDs returned by the search tool. |
 | `fetch_analytics` | Get project-scoped post performance metrics — views, likes, comments, shares, and engagement rate. Filter by platform, time range (default 30 days), or specific content_id. Call refresh_platform_analytics first if data seems stale. Results  |
 | `fetch_trends` | Get current trending topics for content inspiration. Source "youtube" returns trending videos with view counts, "google_trends" returns rising search terms, "rss"/"url" extracts topics from any feed or page. Results cached 1 hour — set forc |
-| `find_next_slots` | Find optimal posting time slots based on best posting times and existing schedule. Returns non-conflicting slots sorted by engagement score. |
+| `find_next_slots` | Find optimal posting time slots for one brand/project based on preferred posting times and that project's existing schedule. Returns non-conflicting slots sorted by engagement score. |
 | `find_winning_content` | Find QA-gated high-performing short-form videos in the project's niche. Returns extracted hook patterns, content structures, and pre-compiled replication prompts you can use to generate new content on a different topic. Only QA-gated winner |
 | `get_best_posting_times` | Analyze project-scoped post analytics data to find the best times to post for maximum engagement. Returns the top 5 time slots (day of week + hour) ranked by average engagement. |
 | `get_brand_profile` | Load the active persisted brand profile for a project from brand_profiles. |
@@ -68,14 +68,17 @@ _Scope: `mcp:analytics` — Available on **Pro** and above._
 
 ## Content Creation & Management
 
-_Scope: `mcp:write` — Requires **Team** or **Agency** (full MCP)._
+_Scope: `mcp:write` — Available on **Pro** and above._
 
 | Tool | Description |
 |------|-------------|
 | `adapt_content` | Rewrite existing content for a different platform — adjusts character limits, hashtag style, tone, and CTA format automatically. Use after generate_content when you need the same message across multiple platforms. Pass project_id to apply p |
+| `cancel_async_job` | Cancel an owned pending async generation/render job before a worker starts it. If credits were already debited, the backend attempts an idempotent refund and reports the result. Processing or terminal jobs are not cancellable. |
 | `create_carousel` | End-to-end carousel creation: generates slide text + kicks off image generation for each slide in parallel. When brand_id is provided, auto-injects brand colors, logo watermark, and visual mood into every image prompt. Returns carousel data |
 | `create_plan_approvals` | Create pending approval rows for each post in a content plan — one row per post, status="pending". Use after submit_content_plan_for_approval to materialize the approval queue. Each entry in posts becomes a row that respond_plan_approval ca |
 | `create_storyboard` | Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profil |
+| `delete_carousel` | Delete an owned carousel content-history record from one project. Stored media is retained until the normal retention cleanup; this does not delete already-published platform posts. |
+| `delete_content_plan` | Permanently delete an owned content plan in one project. This does not cancel posts that were already scheduled from the plan. |
 | `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. |
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_ch |
@@ -97,10 +100,12 @@ _Scope: `mcp:write` — Requires **Team** or **Agency** (full MCP)._
 
 ## Publishing & Scheduling
 
-_Scope: `mcp:distribute` — Requires **Team** or **Agency** (full MCP)._
+_Scope: `mcp:distribute` — Available on **Pro** and above._
 
 | Tool | Description |
 |------|-------------|
+| `cancel_scheduled_post` | Cancel an owned draft, pending, or scheduled post before publishing starts. This closes its pending schedule job first; it refuses once a worker has claimed the publication. |
+| `reschedule_post` | Move an existing pending or scheduled post to a new future time without creating a duplicate. Pass project_id for the post's brand. expected_scheduled_at is recommended: it prevents overwriting a change made in another client after the cale |
 | `schedule_content_plan` | Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. |
 | `schedule_post` | Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete |
 | `start_platform_connection` | Begin connecting a social platform (Instagram, TikTok, YouTube, etc.). Returns a single-use deep link the user opens in a browser to complete the one-time OAuth handshake on socialneuron.com. This is NOT another OAuth in Claude — platform c |
@@ -125,6 +130,7 @@ _Scope: `mcp:autopilot` — Requires **Team** or **Agency** (full MCP)._
 |------|-------------|
 | `auto_approve_plan` | Batch auto-approve posts in a content plan that meet quality thresholds. Posts below the threshold are flagged for manual review. |
 | `create_autopilot_config` | Create a new autopilot configuration for automated content pipeline execution. Defines schedule, credit budgets, and approval mode. |
+| `delete_autopilot_config` | Permanently delete an owned autopilot configuration in one project. Historical runs and already-published posts are retained. |
 | `get_autopilot_status` | Get autopilot system overview: active config count, recent execution results, credits consumed, and next scheduled run time. Use as a dashboard check before modifying autopilot settings. |
 | `list_autopilot_configs` | List autopilot configurations showing schedules, credit budgets, last run times, and active/inactive status. Use to check what is automated before creating new configs, or to find config_id for update_autopilot_config. |
 | `run_content_pipeline` | Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts |

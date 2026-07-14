@@ -1,6 +1,112 @@
 import { getSupabaseUrl, getDefaultUserId, getAuthenticatedApiKey } from './supabase.js';
 import { getRequestToken } from './request-context.js';
 
+const SAFE_GATEWAY_ERROR_CODES = new Set([
+  'daily_limit_reached',
+  'insufficient_credits',
+  'project_scope_mismatch',
+  'schedule_conflict',
+  'post_not_found',
+  'post_not_reschedulable',
+  'post_in_progress',
+  'not_cancellable',
+  'publishing_in_progress',
+  'plan_upgrade_required',
+  'rate_limited',
+  'validation_error',
+  'permission_denied',
+  'not_found',
+]);
+
+function safeGatewayError(responseText: string, status: number): string {
+  try {
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    const nested =
+      parsed.error && typeof parsed.error === 'object'
+        ? (parsed.error as Record<string, unknown>)
+        : null;
+    const candidates = [
+      nested?.error_type,
+      nested?.code,
+      parsed.error_type,
+      parsed.error_code,
+      parsed.code,
+      typeof parsed.error === 'string' ? parsed.error : null,
+    ];
+    for (const value of candidates) {
+      if (typeof value !== 'string') continue;
+      const normalized = value.trim().toLowerCase();
+      if (SAFE_GATEWAY_ERROR_CODES.has(normalized)) return normalized;
+      const embedded = [...SAFE_GATEWAY_ERROR_CODES].find(code => normalized.includes(code));
+      if (embedded) return embedded;
+    }
+  } catch {
+    // Non-JSON upstream bodies are deliberately not relayed.
+  }
+  return `Backend request failed (HTTP ${status}).`;
+}
+
+const SAFE_BILLING_STATUSES = new Set([
+  'reserved',
+  'charged',
+  'refunded',
+  'failed_no_charge',
+  'refund_pending',
+  'not_charged',
+]);
+
+const SAFE_JOB_STATUSES = new Set([
+  'queued',
+  'pending',
+  'processing',
+  'completed',
+  'failed',
+  'cancelled',
+  'canceled',
+]);
+
+/** Whitelist structured billing evidence from an otherwise failed response. */
+function safeFailureData<T>(responseText: string): T | null {
+  try {
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    const metric = (name: string): number | undefined => {
+      const value = parsed[name];
+      return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
+    };
+    const billingStatus =
+      typeof parsed.billing_status === 'string' && SAFE_BILLING_STATUSES.has(parsed.billing_status)
+        ? parsed.billing_status
+        : undefined;
+    const failureReason =
+      parsed.failure_reason === 'generation_failed' ||
+      parsed.failure_reason === 'authentication_failed' ||
+      parsed.failure_reason === 'cancelled_by_user'
+        ? parsed.failure_reason
+        : undefined;
+    const jobStatus =
+      typeof parsed.status === 'string' && SAFE_JOB_STATUSES.has(parsed.status)
+        ? parsed.status
+        : undefined;
+    const safe = {
+      ...(jobStatus ? { status: jobStatus } : {}),
+      ...(metric('credits_reserved') !== undefined
+        ? { credits_reserved: metric('credits_reserved') }
+        : {}),
+      ...(metric('credits_charged') !== undefined
+        ? { credits_charged: metric('credits_charged') }
+        : {}),
+      ...(metric('credits_refunded') !== undefined
+        ? { credits_refunded: metric('credits_refunded') }
+        : {}),
+      ...(billingStatus ? { billing_status: billingStatus } : {}),
+      ...(failureReason ? { failure_reason: failureReason } : {}),
+    };
+    return Object.keys(safe).length > 0 ? (safe as T) : null;
+  } catch {
+    return null;
+  }
+}
+
 function getApiKeyOrNull(): string | null {
   // 1. Env var (explicit override)
   const envKey = process.env.SOCIALNEURON_API_KEY;
@@ -107,19 +213,14 @@ export async function callEdgeFunction<T = unknown>(
     const responseText = await response.text();
 
     if (!response.ok) {
-      let errorMessage: string;
-      try {
-        const errorJson = JSON.parse(responseText);
-        errorMessage = errorJson.error || errorJson.message || responseText;
-      } catch {
-        errorMessage = responseText || `HTTP ${response.status}`;
-      }
+      const errorCode = safeGatewayError(responseText, response.status);
+      const failureData = safeFailureData<T>(responseText);
       // 401 = authentication failure → tell the user to re-authenticate. Some
       // connectors (claude.ai/Cowork) read this as "OAuth is dead" and tear down
       // the whole connection — which is correct ONLY for a genuine auth failure.
       if (response.status === 401) {
         return {
-          data: null,
+          data: failureData,
           error: `Authentication failed (HTTP 401). Run 'npx @socialneuron/mcp-server login' to re-authenticate.`,
         };
       }
@@ -129,18 +230,18 @@ export async function callEdgeFunction<T = unknown>(
       // reproducible global-403 teardown). Return a scoped, per-call tool error.
       if (response.status === 403) {
         return {
-          data: null,
-          error: `Forbidden (HTTP 403): ${errorMessage}. This action isn't permitted for your account, plan, or scope — your connection is still valid.`,
+          data: failureData,
+          error: `Forbidden (HTTP 403): ${errorCode}. This action isn't permitted for your account, plan, or scope — your connection is still valid.`,
         };
       }
       if (response.status === 429) {
         const retryAfter = response.headers.get('retry-after') || '60';
         return {
-          data: null,
+          data: failureData,
           error: `Rate limit exceeded (HTTP 429). Wait ${retryAfter}s before retrying. Reduce request frequency or upgrade your plan.`,
         };
       }
-      return { data: null, error: errorMessage };
+      return { data: failureData, error: errorCode };
     }
 
     try {
@@ -157,7 +258,6 @@ export async function callEdgeFunction<T = unknown>(
         error: `Edge Function '${functionName}' timed out after ${timeoutMs}ms`,
       };
     }
-    const message = err instanceof Error ? err.message : String(err);
-    return { data: null, error: message };
+    return { data: null, error: 'Network request failed. Please retry.' };
   }
 }

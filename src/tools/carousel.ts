@@ -39,6 +39,11 @@ interface ImageJobResult {
   jobId: string | null;
   model: string;
   error: string | null;
+  creditsReserved: number | null;
+  creditsCharged: number | null;
+  creditsRefunded: number | null;
+  billingStatus: string;
+  failureReason: string | null;
 }
 
 interface BrandVisualContext {
@@ -267,7 +272,7 @@ export function registerCarouselTools(server: McpServer): void {
       }
 
       const userId = await getDefaultUserId();
-      const rateLimit = checkRateLimit('posting', `create_carousel:${userId}`);
+      const rateLimit = checkRateLimit('generation', `create_carousel:${userId}`);
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -357,6 +362,11 @@ export function registerCarouselTools(server: McpServer): void {
                 jobId: null,
                 model: image_model,
                 error: error ?? 'No job ID returned',
+                creditsReserved: data?.credits_reserved ?? null,
+                creditsCharged: data?.credits_charged ?? null,
+                creditsRefunded: data?.credits_refunded ?? null,
+                billingStatus: data?.billing_status ?? 'unknown',
+                failureReason: data?.failure_reason ?? null,
               };
             }
 
@@ -371,6 +381,11 @@ export function registerCarouselTools(server: McpServer): void {
               jobId,
               model: image_model,
               error: null,
+              creditsReserved: 0,
+              creditsCharged: data.creditsDeducted ?? perImageCost,
+              creditsRefunded: 0,
+              billingStatus: 'charged',
+              failureReason: null,
             };
           } catch (err: unknown) {
             return {
@@ -378,6 +393,11 @@ export function registerCarouselTools(server: McpServer): void {
               jobId: null,
               model: image_model,
               error: sanitizeError(err),
+              creditsReserved: null,
+              creditsCharged: null,
+              creditsRefunded: null,
+              billingStatus: 'unknown',
+              failureReason: null,
             };
           }
         })
@@ -406,6 +426,7 @@ export function registerCarouselTools(server: McpServer): void {
                         ...s,
                         imageJobId: job?.jobId ?? null,
                         imageError: job?.error ?? null,
+                        imageBillingStatus: job?.billingStatus ?? 'unknown',
                       };
                     }),
                     imageModel: image_model,
@@ -420,10 +441,18 @@ export function registerCarouselTools(server: McpServer): void {
                     failedSlides: failedJobs.map(j => ({
                       slideNumber: j.slideNumber,
                       error: j.error,
+                      credits_reserved: j.creditsReserved,
+                      credits_charged: j.creditsCharged,
+                      credits_refunded: j.creditsRefunded,
+                      billing_status: j.billingStatus,
+                      failure_reason: j.failureReason,
                     })),
                     credits: {
                       textGeneration: textCredits,
                       imagesEstimated: successfulJobs.length * perImageCost,
+                      imagesCharged: imageJobs.reduce((sum, job) => sum + (job.creditsCharged ?? 0), 0),
+                      imagesRefunded: imageJobs.reduce((sum, job) => sum + (job.creditsRefunded ?? 0), 0),
+                      billingUnknownSlides: imageJobs.filter(job => job.billingStatus === 'unknown').length,
                       totalEstimated: textCredits + successfulJobs.length * perImageCost,
                     },
                   },

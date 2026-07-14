@@ -87,6 +87,11 @@ const SCOPE_DEFAULTS: Record<string, AnnotationHints> = {
 const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   // Destructive or overwrite tools
   delete_comment: { destructiveHint: true },
+  cancel_async_job: { destructiveHint: true, idempotentHint: true },
+  cancel_scheduled_post: { destructiveHint: true, idempotentHint: true, openWorldHint: true },
+  delete_carousel: { destructiveHint: true, idempotentHint: true },
+  delete_content_plan: { destructiveHint: true, idempotentHint: true },
+  delete_autopilot_config: { destructiveHint: true, idempotentHint: true },
   moderate_comment: { destructiveHint: true },
   save_brand_profile: { destructiveHint: true, idempotentHint: true },
   update_platform_voice: { destructiveHint: true, idempotentHint: true },

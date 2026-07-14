@@ -40,6 +40,8 @@ const FORBIDDEN = [
   // stale public-contract claims
   '91 Social Neuron MCP tools',
   '85+ MCP tools',
+  '85 public tools',
+  '80+ public',
   'advertises **85',
   '87 discoverable tools',
   '96 MCP tools',

@@ -248,7 +248,7 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
 
       await expect(
         provider.exchangeAuthorizationCode(client, 'auth-code', 'wrong-verifier')
-      ).rejects.toThrow('PKCE verification failed');
+      ).rejects.toThrow('Authorization code exchange failed (HTTP 403)');
     });
 
     it('propagates authorization code expired error', async () => {
@@ -263,7 +263,7 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
 
       await expect(
         provider.exchangeAuthorizationCode(client, 'expired-code', 'verifier')
-      ).rejects.toThrow('Authorization code expired or already used');
+      ).rejects.toThrow('Authorization code exchange failed (HTTP 410)');
     });
 
     it('handles non-JSON error response gracefully', async () => {
@@ -279,7 +279,7 @@ describe('OAuth 2.0 Integration Smoke Tests', () => {
       });
 
       await expect(provider.exchangeAuthorizationCode(client, 'code', 'verifier')).rejects.toThrow(
-        'Exchange failed'
+        'Authorization code exchange failed (HTTP 500)'
       );
     });
   });

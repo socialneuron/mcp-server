@@ -30,6 +30,11 @@ interface AsyncJob {
   result_url: string | null;
   error_message: string | null;
   credits_cost: number | null;
+  credits_reserved?: number | null;
+  credits_charged?: number | null;
+  credits_refunded?: number | null;
+  billing_status?: string | null;
+  failure_reason?: string | null;
   created_at: string;
   completed_at: string | null;
   result_metadata?: {
@@ -207,7 +212,7 @@ export function registerContentTools(server: McpServer): void {
           isError: true,
         };
       }
-      const rateLimit = checkRateLimit("posting", `generate_video:${userId}`);
+      const rateLimit = checkRateLimit("generation", `generate_video:${userId}`);
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -378,7 +383,7 @@ export function registerContentTools(server: McpServer): void {
           isError: true,
         };
       }
-      const rateLimit = checkRateLimit("posting", `generate_image:${userId}`);
+      const rateLimit = checkRateLimit("generation", `generate_image:${userId}`);
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -551,20 +556,26 @@ export function registerContentTools(server: McpServer): void {
         );
 
         if (liveStatus) {
+          const livePayload = buildCheckStatusPayload(job, liveStatus);
           const lines = [
             `Job: ${job.id}`,
             `Type: ${job.job_type}`,
             `Model: ${job.model}`,
-            `Status: ${liveStatus.status}`,
-            `Progress: ${liveStatus.progress}%`,
+            `Status: ${livePayload.status}`,
+            `Progress: ${livePayload.progress}%`,
           ];
-          if (liveStatus.resultUrl) {
-            lines.push(`Result URL: ${liveStatus.resultUrl}`);
+          if (livePayload.result_url) {
+            lines.push(`Result URL: ${livePayload.result_url}`);
           }
-          if (liveStatus.error) {
-            lines.push(`Error: ${liveStatus.error}`);
+          if (livePayload.error) {
+            lines.push(`Error: ${livePayload.error}`);
           }
           lines.push(`Credits: ${job.credits_cost}`);
+          if (job.billing_status) {
+            lines.push(
+              `Billing: ${job.billing_status} (charged ${job.credits_charged ?? 0}, refunded ${job.credits_refunded ?? 0})`,
+            );
+          }
           lines.push(`Created: ${job.created_at}`);
 
           if (format === "json") {
@@ -583,7 +594,7 @@ export function registerContentTools(server: McpServer): void {
                     // `job` + `liveStatus`; do not duplicate them here.
                     asEnvelope({
                       ...liveStatus,
-                      ...buildCheckStatusPayload(job, liveStatus),
+                      ...livePayload,
                     }),
                     null,
                     2,
@@ -631,6 +642,11 @@ export function registerContentTools(server: McpServer): void {
         lines.push(`Error: ${job.error_message}`);
       }
       lines.push(`Credits: ${job.credits_cost}`);
+      if (job.billing_status) {
+        lines.push(
+          `Billing: ${job.billing_status} (charged ${job.credits_charged ?? 0}, refunded ${job.credits_refunded ?? 0})`,
+        );
+      }
       lines.push(`Created: ${job.created_at}`);
       if (job.completed_at) {
         lines.push(`Completed: ${job.completed_at}`);
@@ -951,7 +967,7 @@ Return ONLY valid JSON in this exact format:
       }
 
       const rateLimit = checkRateLimit(
-        "posting",
+        "generation",
         `generate_voiceover:${userId}`,
       );
       if (!rateLimit.allowed) {
@@ -1193,7 +1209,7 @@ Return ONLY valid JSON in this exact format:
 
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit(
-        "posting",
+        "generation",
         `generate_carousel:${userId}`,
       );
       if (!rateLimit.allowed) {

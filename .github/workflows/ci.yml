@@ -26,6 +26,9 @@ jobs:
 
       - run: npm ci --ignore-scripts
 
+      - name: Install MCP App dependencies
+        run: npm run install:apps
+
       - name: Lint package-lock.json
         run: npm run lint:lockfile
 

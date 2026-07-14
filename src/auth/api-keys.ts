@@ -65,7 +65,6 @@ export async function validateApiKey(apiKey: string, _attempt = 0): Promise<Vali
     );
 
     if (!response.ok) {
-      const text = await response.text();
       // 429 (rate-limited) and 5xx (server) are transient — the key is fine.
       const retryable = response.status === 429 || response.status >= 500;
       if (retryable && _attempt < VALIDATE_MAX_RETRIES) {
@@ -75,12 +74,20 @@ export async function validateApiKey(apiKey: string, _attempt = 0): Promise<Vali
       return {
         valid: false,
         retryable,
-        error: `Validation failed (HTTP ${response.status}): ${text}`,
+        error: `Validation failed (HTTP ${response.status}).`,
       };
     }
 
-    return (await response.json()) as ValidateApiKeyResult;
-  } catch (err) {
+    const result = (await response.json()) as ValidateApiKeyResult;
+    if (!result.valid) {
+      return {
+        valid: false,
+        retryable: false,
+        error: 'API key is invalid, expired, or revoked.',
+      };
+    }
+    return result;
+  } catch {
     // Network/transport error — transient; retry with backoff before giving up.
     if (_attempt < VALIDATE_MAX_RETRIES) {
       await sleep(300 * (_attempt + 1));
@@ -89,7 +96,7 @@ export async function validateApiKey(apiKey: string, _attempt = 0): Promise<Vali
     return {
       valid: false,
       retryable: true,
-      error: err instanceof Error ? err.message : String(err),
+      error: 'Authentication service is temporarily unavailable.',
     };
   }
 }

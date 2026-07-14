@@ -1,31 +1,31 @@
 import {
   TOOL_CATALOG,
-  getToolsByModule,
-  getToolsByScope,
-  getModules,
 } from '../../lib/tool-catalog.js';
 import { emitSnResult } from './parse.js';
 import { MCP_VERSION } from '../../lib/version.js';
 import type { SnArgs } from './types.js';
 
+function publicStdioTools() {
+  // The deterministic CLI invokes the npm/stdio surface. Interactive Apps are
+  // hosted-HTTP UI resources; localOnly screenshot tools remain available.
+  return TOOL_CATALOG.filter(t => !t.internal && t.module !== 'apps');
+}
+
 /**
  * `sn tools` — List all MCP tools, optionally filtered by scope or module.
  */
 export async function handleTools(args: SnArgs, asJson: boolean): Promise<void> {
-  let tools = TOOL_CATALOG;
+  let tools = publicStdioTools();
 
   const scope = args.scope;
   if (typeof scope === 'string') {
-    tools = getToolsByScope(scope);
+    tools = tools.filter(tool => tool.scope === scope);
   }
 
   const module = args.module;
   if (typeof module === 'string') {
-    tools = getToolsByModule(module);
+    tools = tools.filter(tool => tool.module === module);
   }
-
-  // Internal operations tools are not part of the user-facing surface.
-  tools = tools.filter(t => !t.internal);
 
   if (asJson) {
     emitSnResult({ ok: true, command: 'tools', toolCount: tools.length, tools }, true);
@@ -64,10 +64,11 @@ export async function handleTools(args: SnArgs, asJson: boolean): Promise<void> 
  * Gracefully degrades: offline portions always work, auth/credits fail silently.
  */
 export async function handleInfo(args: SnArgs, asJson: boolean): Promise<void> {
+  const stdioTools = publicStdioTools();
   const info: Record<string, unknown> = {
     version: MCP_VERSION,
-    toolCount: TOOL_CATALOG.filter(t => !t.internal).length,
-    modules: getModules(),
+    toolCount: stdioTools.length,
+    modules: Array.from(new Set(stdioTools.map(tool => tool.module))).sort(),
   };
 
   // Try to load auth info (optional — fails silently when offline or unconfigured)

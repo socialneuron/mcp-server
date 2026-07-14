@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "display_name": "Social Neuron",
-  "description": "80+ public MCP tools for end-to-end social media content lifecycle. The only MCP server where performance analytics feed back into content generation. Create with 35+ AI models, distribute to X, Bluesky, and YouTube today (Instagram, TikTok, LinkedIn, Facebook, Threads rolling out), track analytics, and optimise automatically. Now ships with the Content Calendar MCP App for interactive drag-drop scheduling inside Claude. Includes 5 prompt templates and 4 resources.",
+  "description": "90 public MCP tools for end-to-end social media content lifecycle. Create with 35+ AI models, distribute across connected social platforms, track analytics, and optimise automatically. Hosted HTTP includes project-scoped Content Calendar and Analytics Pulse MCP Apps. Includes 5 prompt templates and 4 resources.",
   "version": "1.8.1",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
@@ -19,7 +19,7 @@
     "url": "https://socialneuron.com"
   },
   "categories": ["social-media", "content-creation", "analytics", "marketing", "automation"],
-  "tools_count": 83,
+  "tools_count": 90,
   "transport": ["stdio", "http"],
   "http_endpoint": "https://mcp.socialneuron.com/mcp",
   "install": {

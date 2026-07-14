@@ -6,6 +6,10 @@ title = "Social Neuron MCP Server - Gitleaks Config"
     '''node_modules/''',
     '''dist/''',
     '''package-lock\.json''',
+    # Generated file containing only tool names and SHA-256 integrity hashes.
+    # Descriptions/schemas are not serialized here, so it cannot legitimately
+    # contain credentials while high-entropy hash values cause false positives.
+    '''tools\.lock\.json''',
   ]
   # Narrowly allowlist ONLY the known public anon JWT embedded in supabase.ts
   # (role:"anon", intentionally shipped client-side; RLS enforces access).

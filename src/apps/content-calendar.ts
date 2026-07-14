@@ -7,9 +7,19 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { getRequestScopes } from '../lib/request-context.js';
+import { getAuthenticatedScopes, getDefaultProjectId } from '../lib/supabase.js';
 
-const CALENDAR_URI = 'ui://content-calendar/mcp-app.html';
+const CALENDAR_URI = 'ui://content-calendar/v1/mcp-app.html';
+const CALENDAR_CSP = {
+  // The HTML is fully self-contained. Tool calls travel over the host bridge,
+  // not fetch/XHR, so the secure default is no network or remote resources.
+  connectDomains: [] as string[],
+  resourceDomains: [] as string[],
+  frameDomains: [] as string[],
+};
 
 interface RecentPost {
   id: string;
@@ -35,10 +45,72 @@ const RecentPostOutputSchema = z.object({
 
 function startOfCurrentWeekMonday(): string {
   const now = new Date();
-  const day = now.getDay();
+  const day = now.getUTCDay();
   const monday = new Date(now);
-  monday.setUTCDate(now.getUTCDate() - day + (day === 0 ? -6 : 1));
+  monday.setUTCDate(now.getUTCDate() - ((day + 6) % 7));
+  monday.setUTCHours(0, 0, 0, 0);
   return monday.toISOString().split('T')[0];
+}
+
+function endOfWeek(startDate: string): string {
+  const end = new Date(`${startDate}T00:00:00.000Z`);
+  end.setUTCDate(end.getUTCDate() + 7);
+  end.setUTCMilliseconds(end.getUTCMilliseconds() - 1);
+  return end.toISOString();
+}
+
+function isStrictIsoDate(value: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+  const parsed = new Date(`${value}T00:00:00.000Z`);
+  return Number.isFinite(parsed.getTime()) && parsed.toISOString().slice(0, 10) === value;
+}
+
+function publicRecentPost(value: unknown): RecentPost | null {
+  if (!value || typeof value !== 'object') return null;
+  const row = value as Record<string, unknown>;
+  if (
+    typeof row.id !== 'string' ||
+    typeof row.platform !== 'string' ||
+    typeof row.status !== 'string' ||
+    typeof row.created_at !== 'string'
+  ) {
+    return null;
+  }
+  const optional = (name: string): string | null =>
+    typeof row[name] === 'string' ? (row[name] as string) : null;
+  return {
+    id: row.id,
+    platform: row.platform,
+    status: row.status,
+    title: optional('title'),
+    external_post_id: optional('external_post_id'),
+    published_at: optional('published_at'),
+    scheduled_at: optional('scheduled_at'),
+    created_at: row.created_at,
+  };
+}
+
+function calendarHtmlCandidates(): string[] {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url));
+  return [
+    // Bundled HTTP entry: import.meta.url is dist/http.js.
+    path.join(moduleDir, 'apps/content-calendar/mcp-app.html'),
+    // Source/tsx/vitest: import.meta.url is src/apps/content-calendar.ts.
+    path.resolve(moduleDir, '../../dist/apps/content-calendar/mcp-app.html'),
+    // Local development fallback; never the sole package path.
+    path.resolve(process.cwd(), 'dist/apps/content-calendar/mcp-app.html'),
+  ];
+}
+
+async function readCalendarHtml(): Promise<string> {
+  for (const candidate of calendarHtmlCandidates()) {
+    try {
+      return await fs.readFile(candidate, 'utf-8');
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
+    }
+  }
+  throw new Error('calendar_bundle_missing');
 }
 
 export function registerContentCalendarApp(server: McpServer): void {
@@ -48,10 +120,18 @@ export function registerContentCalendarApp(server: McpServer): void {
     {
       title: 'Content Calendar',
       description:
-        "Open an interactive drag-drop calendar showing the user's scheduled posts for the current week. Users can reschedule via drag, filter by platform, drill into any post, or quick-create a new post. Backed by list_recent_posts, schedule_post, and find_next_slots — no new tools needed.",
+        "Open a project-scoped interactive calendar for the current week. Users can filter, inspect, quick-create, suggest a slot, and reschedule pending posts with optimistic conflict protection.",
       inputSchema: {
+        project_id: z
+          .string()
+          .uuid()
+          .optional()
+          .describe(
+            "Brand/project ID. Defaults to the authenticated key's project or the account default.",
+          ),
         start_date: z
           .string()
+          .regex(/^\d{4}-\d{2}-\d{2}$/)
           .optional()
           .describe(
             "ISO date for the week start (YYYY-MM-DD); defaults to the current week's Monday."
@@ -59,22 +139,37 @@ export function registerContentCalendarApp(server: McpServer): void {
       },
       outputSchema: {
         start_date: z.string(),
+        project_id: z.string(),
         posts: z.array(RecentPostOutputSchema),
         scopes: z.array(z.string()),
       },
       _meta: {
         ui: {
           resourceUri: CALENDAR_URI,
-          csp: {
-            'img-src': ["'self'", 'https://*.r2.cloudflarestorage.com', 'data:'],
-            'connect-src': ["'self'"],
-          },
         },
       },
     },
-    async ({ start_date }, extra) => {
-      const userScopes = extra.authInfo?.scopes ?? [];
+    async ({ project_id, start_date }) => {
+      const userScopes = getRequestScopes() ?? getAuthenticatedScopes();
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId());
+      if (!resolvedProjectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No project_id was provided and no default project is configured.',
+            },
+          ],
+          isError: true,
+        };
+      }
       const fromDate = start_date ?? startOfCurrentWeekMonday();
+      if (!isStrictIsoDate(fromDate)) {
+        return {
+          content: [{ type: 'text' as const, text: 'start_date must be a valid YYYY-MM-DD date.' }],
+          isError: true,
+        };
+      }
       const { data: result, error } = await callEdgeFunction<{
         success: boolean;
         posts?: RecentPost[];
@@ -82,9 +177,12 @@ export function registerContentCalendarApp(server: McpServer): void {
       }>(
         'mcp-data',
         {
-          action: 'recent-posts',
-          days: 14,
-          limit: 50,
+          action: 'scheduled-posts',
+          start_date: `${fromDate}T00:00:00.000Z`,
+          end_date: endOfWeek(fromDate),
+          statuses: ['pending', 'scheduled', 'draft'],
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
         },
         { timeoutMs: 15_000 }
       );
@@ -94,21 +192,20 @@ export function registerContentCalendarApp(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to load posts: ${error || result?.error || 'Unknown error'}`,
+              text: 'The content calendar could not load posts. Please retry.',
             },
           ],
           isError: true,
         };
       }
 
-      const posts = (result.posts ?? []).filter(p => {
-        const ts = p.scheduled_at ?? p.published_at ?? p.created_at;
-        if (!ts) return false;
-        return ts.split('T')[0] >= fromDate;
-      });
+      const posts = (result.posts ?? [])
+        .map(publicRecentPost)
+        .filter((post): post is RecentPost => post !== null);
 
       const structuredContent = {
         start_date: fromDate,
+        project_id: resolvedProjectId,
         posts,
         scopes: userScopes,
       };
@@ -129,34 +226,41 @@ export function registerContentCalendarApp(server: McpServer): void {
     server,
     CALENDAR_URI,
     CALENDAR_URI,
-    { mimeType: RESOURCE_MIME_TYPE },
+    {
+      mimeType: RESOURCE_MIME_TYPE,
+      description: 'Self-contained Social Neuron project content calendar.',
+      _meta: { ui: { csp: CALENDAR_CSP } },
+    },
     async () => {
-      // process.cwd() resolves consistently across source mode (vitest, tsx)
-      // and bundled mode (Railway runs `node dist/http.js` from mcp-server/),
-      // because both start with cwd = mcp-server/. The previous implementation
-      // used `import.meta.url` + `../../`, which worked in source mode but
-      // resolved to the parent of mcp-server/ after esbuild bundling.
-      const htmlPath = path.join(process.cwd(), 'apps/content-calendar/dist/mcp-app.html');
       try {
-        const html = await fs.readFile(htmlPath, 'utf-8');
+        const html = await readCalendarHtml();
         return {
-          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: html }],
+          contents: [
+            {
+              uri: CALENDAR_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: html,
+              _meta: { ui: { csp: CALENDAR_CSP } },
+            },
+          ],
         };
-      } catch (err) {
-        // Most likely cause: deploy was built with `npm run build` only and
-        // never ran `npm run build:app` to produce the calendar dist. Surface
-        // a readable error rather than crashing the resource handler.
+      } catch {
+        // Keep build paths and exception strings out of the user-visible iframe.
         const errorHtml = `<!DOCTYPE html>
 <html><head><title>Content Calendar — unavailable</title></head>
 <body style="font-family:sans-serif;padding:24px;color:#444;">
   <h2>Content Calendar app bundle missing</h2>
-  <p>The server registered <code>open_content_calendar</code> but
-  <code>apps/content-calendar/dist/mcp-app.html</code> is not built.
-  Run <code>npm run build:app</code> in the mcp-server directory and redeploy.</p>
-  <p style="color:#999;font-size:12px;">${(err as Error).message}</p>
+  <p>The interactive bundle is unavailable on this deployment. Please contact Social Neuron support.</p>
 </body></html>`;
         return {
-          contents: [{ uri: CALENDAR_URI, mimeType: RESOURCE_MIME_TYPE, text: errorHtml }],
+          contents: [
+            {
+              uri: CALENDAR_URI,
+              mimeType: RESOURCE_MIME_TYPE,
+              text: errorHtml,
+              _meta: { ui: { csp: CALENDAR_CSP } },
+            },
+          ],
         };
       }
     }

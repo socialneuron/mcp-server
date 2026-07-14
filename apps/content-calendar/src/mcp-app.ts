@@ -12,6 +12,8 @@ interface ScheduledPost {
 }
 
 interface CalendarPayload {
+  start_date: string;
+  project_id: string;
   posts: ScheduledPost[];
   scopes: string[];
 }
@@ -35,6 +37,11 @@ const PLATFORMS = [
   'threads',
   'bluesky',
 ] as const;
+
+// This wave has a text composer, not an asset picker. Keep quick-create to
+// channels where a text-only post is a valid, live operation. Media-first
+// channels remain visible and reschedulable in the calendar.
+const QUICK_CREATE_PLATFORMS = ['twitter', 'facebook', 'threads', 'bluesky'] as const;
 
 const PLATFORM_CHAR_LIMITS: Record<string, number> = {
   twitter: 280,
@@ -69,14 +76,60 @@ function hasScope(userScopes: string[], required: string): boolean {
 
 // Scope-denied responses arrive as success-shaped tool calls with a content
 // prefix. See `superpowers/specs/2026-04-24-mcp-app-content-calendar.md` Auth flow.
-function isScopeDenied(result: { content?: Array<{ type: string; text?: string }> }): boolean {
+function isScopeDenied(result: {
+  isError?: boolean;
+  structuredContent?: unknown;
+  content?: Array<{ type: string; text?: string }>;
+}): boolean {
+  const structured = result.structuredContent as
+    | { error?: { error_type?: string } }
+    | undefined;
+  if (structured?.error?.error_type === 'permission_denied') return true;
   const text = result.content?.find((c) => c.type === 'text')?.text ?? '';
-  return text.startsWith('Permission denied:');
+  if (!result.isError) return false;
+  try {
+    return (JSON.parse(text) as { error_type?: string }).error_type === 'permission_denied';
+  } catch {
+    return /permission denied|insufficient.scope/i.test(text);
+  }
+}
+
+function calendarPayloadFromResult(result: {
+  structuredContent?: unknown;
+  content?: Array<{ type: string; text?: string }>;
+}): CalendarPayload | null {
+  const candidate = result.structuredContent;
+  if (candidate && typeof candidate === 'object') {
+    const payload = candidate as Partial<CalendarPayload>;
+    if (
+      typeof payload.start_date === 'string' &&
+      typeof payload.project_id === 'string' &&
+      Array.isArray(payload.posts) &&
+      Array.isArray(payload.scopes)
+    ) {
+      return payload as CalendarPayload;
+    }
+  }
+
+  // Compatibility fallback for older hosts that do not forward
+  // structuredContent. New servers never rely on narration text.
+  const text = result.content?.find((c) => c.type === 'text')?.text;
+  if (!text) return null;
+  try {
+    const payload = JSON.parse(text) as Partial<CalendarPayload>;
+    return typeof payload.project_id === 'string' && Array.isArray(payload.posts)
+      ? (payload as CalendarPayload)
+      : null;
+  } catch {
+    return null;
+  }
 }
 
 const state: {
   posts: ScheduledPost[];
   scopes: string[];
+  startDate: string;
+  projectId: string;
   canSchedule: boolean;
   platformFilter: string | null;
   selectedPostId: string | null;
@@ -87,12 +140,15 @@ const state: {
     platform: string;
     caption: string;
     time: string;
+    idempotencyKey: string;
     submitting: boolean;
     error: string | null;
   };
 } = {
   posts: [],
   scopes: [],
+  startDate: '',
+  projectId: '',
   canSchedule: false,
   platformFilter: null,
   selectedPostId: null,
@@ -103,6 +159,7 @@ const state: {
     platform: 'instagram',
     caption: '',
     time: '12:00',
+    idempotencyKey: '',
     submitting: false,
     error: null,
   },
@@ -125,26 +182,24 @@ document.addEventListener('keydown', (ev) => {
 });
 
 app.ontoolresult = (result) => {
-  const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
-  try {
-    const payload = JSON.parse(text) as CalendarPayload;
-    state.posts = payload.posts ?? [];
-    state.scopes = payload.scopes ?? [];
-    state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
-    renderAll();
-  } catch (err) {
-    showError(`Failed to parse calendar payload: ${(err as Error).message}`);
-  }
+  const payload = calendarPayloadFromResult(result);
+  // Ignore callback results from reschedule/schedule/find_next_slots. Only the
+  // open_content_calendar payload owns the calendar state.
+  if (!payload) return;
+  state.posts = payload.posts;
+  state.scopes = payload.scopes;
+  state.startDate = payload.start_date;
+  state.projectId = payload.project_id;
+  state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
+  renderAll();
 };
 
 function getWeekDates(): string[] {
-  const now = new Date();
-  const day = now.getDay();
-  const monday = new Date(now);
-  monday.setDate(now.getDate() - day + (day === 0 ? -6 : 1));
+  const monday = new Date(`${state.startDate}T00:00:00.000Z`);
+  if (!Number.isFinite(monday.getTime())) return [];
   return Array.from({ length: 7 }, (_, i) => {
     const d = new Date(monday);
-    d.setDate(monday.getDate() + i);
+    d.setUTCDate(monday.getUTCDate() + i);
     return d.toISOString().split('T')[0];
   });
 }
@@ -227,9 +282,11 @@ function renderUpgradeBanner(): HTMLElement | null {
 }
 
 function renderPostCard(post: ScheduledPost): HTMLElement {
-  const card = el('div', `post-card${state.canSchedule ? '' : ' disabled'}`);
+  const canReschedule =
+    state.canSchedule && ['pending', 'scheduled', 'draft'].includes(post.status.toLowerCase());
+  const card = el('div', `post-card${canReschedule ? '' : ' disabled'}`);
   card.dataset.postId = post.id;
-  if (state.canSchedule) {
+  if (canReschedule) {
     card.draggable = true;
     card.addEventListener('dragstart', onCardDragStart);
     card.addEventListener('dragend', onCardDragEnd);
@@ -391,6 +448,7 @@ async function suggestNextSlot(platforms: string[]) {
     const result = await app.callServerTool({
       name: 'find_next_slots',
       arguments: {
+        project_id: state.projectId,
         platforms,
         count: 1,
         response_format: 'json',
@@ -402,8 +460,11 @@ async function suggestNextSlot(platforms: string[]) {
       return;
     }
 
+    const structured = result.structuredContent as
+      | { data?: { slots?: PostingSlot[] }; slots?: PostingSlot[] }
+      | undefined;
     const text = result.content?.find((c) => c.type === 'text')?.text ?? '';
-    const parsed = (() => {
+    const parsed = structured ?? (() => {
       try {
         return JSON.parse(text) as { data?: { slots?: PostingSlot[] }; slots?: PostingSlot[] };
       } catch {
@@ -429,8 +490,8 @@ async function suggestNextSlot(platforms: string[]) {
     state.suggestedSlot = { date, platform: slot.platform };
     renderCalendar();
     showToast(`Suggested ${slot.platform} slot: ${slot.datetime}`);
-  } catch (err) {
-    showError(`Failed to find slots: ${(err as Error).message}`);
+  } catch {
+    showError('Failed to find a slot. Please retry.');
   }
 }
 
@@ -474,6 +535,10 @@ async function onSlotDrop(ev: DragEvent) {
 
   const post = state.posts.find((p) => p.id === postId);
   if (!post) return;
+  if (!['pending', 'scheduled', 'draft'].includes(post.status.toLowerCase())) {
+    showError(`A ${post.status} post cannot be rescheduled.`);
+    return;
+  }
 
   const oldScheduledAt = post.scheduled_at ?? post.published_at ?? post.created_at;
   const oldDate = oldScheduledAt?.split('T')[0];
@@ -489,11 +554,12 @@ async function onSlotDrop(ev: DragEvent) {
 
   try {
     const result = await app.callServerTool({
-      name: 'schedule_post',
+      name: 'reschedule_post',
       arguments: {
         post_id: postId,
-        update: true,
-        schedule_at: newScheduledAt,
+        project_id: state.projectId,
+        scheduled_at: newScheduledAt,
+        expected_scheduled_at: oldScheduledAt,
       },
     });
     if (isScopeDenied(result)) {
@@ -508,9 +574,9 @@ async function onSlotDrop(ev: DragEvent) {
       return;
     }
     showToast(`Rescheduled to ${newDate}.`);
-  } catch (err) {
+  } catch {
     revertPost(postId, oldScheduledAt);
-    showError(`Reschedule failed: ${(err as Error).message}`);
+    showError('Reschedule failed. Please refresh and retry.');
   }
 }
 
@@ -547,12 +613,21 @@ function showError(msg: string) {
 // ─── Quick-create modal ───────────────────────────────────────────────
 
 function openQuickCreate(date: string) {
+  const requestedPlatform = state.platformFilter;
+  const defaultPlatform = QUICK_CREATE_PLATFORMS.includes(
+    requestedPlatform as (typeof QUICK_CREATE_PLATFORMS)[number]
+  )
+    ? requestedPlatform!
+    : QUICK_CREATE_PLATFORMS[0];
   state.modal = {
     open: true,
     date,
-    platform: state.platformFilter ?? 'instagram',
+    platform: defaultPlatform,
     caption: '',
     time: '12:00',
+    // Keep this stable across a failed/ambiguous retry so the backend cannot
+    // create a duplicate destination post for the same modal submission.
+    idempotencyKey: `calendar-${crypto.randomUUID()}`,
     submitting: false,
     error: null,
   };
@@ -602,7 +677,7 @@ function renderModal() {
   const platformRow = el('div', 'modal-row');
   platformRow.append(el('label', undefined, 'Platform'));
   const platformSelect = document.createElement('select');
-  for (const p of PLATFORMS) {
+  for (const p of QUICK_CREATE_PLATFORMS) {
     const option = document.createElement('option');
     option.value = p;
     option.textContent = p;
@@ -716,9 +791,11 @@ async function submitQuickCreate() {
     const result = await app.callServerTool({
       name: 'schedule_post',
       arguments: {
+        project_id: state.projectId,
         caption: state.modal.caption,
         platforms: [state.modal.platform],
         schedule_at: scheduleAt,
+        idempotency_key: state.modal.idempotencyKey,
       },
     });
 
@@ -741,9 +818,9 @@ async function submitQuickCreate() {
     closeQuickCreate();
     showToast(`Scheduled for ${state.modal.date} ${state.modal.time}.`);
     void refreshCalendar();
-  } catch (err) {
+  } catch {
     state.modal.submitting = false;
-    state.modal.error = `Failed: ${(err as Error).message}`;
+    state.modal.error = 'Scheduling failed. Please retry.';
     renderModal();
   }
 }
@@ -752,16 +829,21 @@ async function refreshCalendar() {
   try {
     const result = await app.callServerTool({
       name: 'open_content_calendar',
-      arguments: {},
+      arguments: {
+        project_id: state.projectId,
+        start_date: state.startDate,
+      },
     });
-    const text = result.content?.find((c) => c.type === 'text')?.text ?? '{}';
-    const payload = JSON.parse(text) as CalendarPayload;
-    state.posts = payload.posts ?? [];
-    state.scopes = payload.scopes ?? state.scopes;
+    const payload = calendarPayloadFromResult(result);
+    if (!payload) throw new Error('Calendar refresh returned no structured payload.');
+    state.posts = payload.posts;
+    state.scopes = payload.scopes;
+    state.startDate = payload.start_date;
+    state.projectId = payload.project_id;
     state.canSchedule = hasScope(state.scopes, 'mcp:distribute');
     renderAll();
-  } catch (err) {
-    showError(`Failed to refresh calendar: ${(err as Error).message}`);
+  } catch {
+    showError('Failed to refresh the calendar. Please retry.');
   }
 }
 

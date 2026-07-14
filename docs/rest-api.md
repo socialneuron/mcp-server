@@ -2,7 +2,7 @@
 
 > **Hosted service only.** The `/v1` REST API is served exclusively by the hosted backend at `mcp.socialneuron.com`. It is **not** available when running a self-hosted instance of the `@socialneuron/mcp-server` npm package (which exposes MCP over stdio/HTTP only). If you are self-hosting, use the MCP or CLI interfaces instead.
 
-REST interface to the Social Neuron AI content tools (83 public tools on the hosted product — live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)). Same auth, scopes, and rate limits as the hosted MCP endpoint.
+REST interface to the Social Neuron AI content tools (90 public tools in the current hosted target surface — live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)). It uses the same auth, project scoping, scopes, rate limits, and credit pool as the hosted MCP endpoint.
 
 ## Base URL
 
@@ -167,11 +167,14 @@ Per-IP rate limit: 60 requests/minute (before auth).
 | `mcp:comments` | Comment management | list/reply/post/moderate/delete comments |
 | `mcp:autopilot` | Automation config (Pro+) | autopilot tools |
 
+Destructive lifecycle calls (`cancel_async_job`, `cancel_scheduled_post`, `delete_carousel`, `delete_content_plan`, and `delete_autopilot_config`) require `confirm: true`, enforce ownership and project scope server-side, and do not remove already-published platform content. Job cancellation reports any attempted credit refund explicitly.
+
 ## OpenAPI Spec
 
 The full OpenAPI 3.1 specification is served at:
 
 ```
+https://mcp.socialneuron.com/v1/openapi.json
 ```
 
 Import into Postman, generate client SDKs, or use with Swagger UI.

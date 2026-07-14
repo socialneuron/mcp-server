@@ -1,16 +1,8 @@
 # TypeScript SDK Guide
 
-> **Preview.** The SDK is in development and not yet published to npm. APIs documented here may change before the first stable release. For production use today, see the [REST API guide](./rest-api.md).
+> **Preview.** `@socialneuron/sdk` is not yet published. Its generic tool-proxy route contract is implemented and tested, but the first release remains gated on package and live smoke tests. For production today, use the [REST API](./rest-api.md).
 >
-> **Hosted service only.** The SDK targets the REST API served by the hosted backend at `mcp.socialneuron.com`. It does **not** connect to a self-hosted instance of the `@socialneuron/mcp-server` npm package, which exposes MCP over stdio/HTTP only and does not serve `/v1` routes.
-
-The `@socialneuron/sdk` package provides a typed client for the Social Neuron REST API.
-
-## Installation
-
-```bash
-npm install @socialneuron/sdk
-```
+> **Hosted service only.** The SDK calls `https://mcp.socialneuron.com/v1`. It does not add `/v1` routes to a local stdio server.
 
 ## Setup
 
@@ -19,275 +11,204 @@ import { SocialNeuron } from '@socialneuron/sdk';
 
 const sn = new SocialNeuron({
   apiKey: process.env.SOCIALNEURON_API_KEY!,
-  // baseUrl: 'https://mcp.socialneuron.com',  // default
-  // timeout: 60000,                            // default: 60s
+  // baseUrl: 'https://mcp.socialneuron.com',
+  // timeout: 60_000,
 });
 ```
 
-## Resources
+Run the SDK only in a trusted server process. Never embed an `snk_live_…` key in client-side JavaScript, logs, screenshots, prompts, or source control.
 
-The SDK organizes methods by resource, matching the REST API structure.
+The constructor accepts only `snk_live_…` or `snk_test_…` keys. Custom base URLs must use HTTPS; HTTP is allowed only for loopback development (`localhost`, `127.0.0.1`, or `::1`). Credentials, query parameters, and fragments are rejected in `baseUrl`, and `timeout` must be a finite positive value no greater than 600,000 ms.
 
-### Content
+## One route contract
+
+All wrappers call `POST /v1/tools/{tool_name}`. Tool discovery calls `GET /v1/tools`. The SDK returns the original MCP-style result plus a normalized `data` field:
 
 ```typescript
-// Generate text content
-const script = await sn.content.generate({
-  prompt: '5 productivity tips for remote workers',
-  platform: 'tiktok',
-  content_type: 'script',
+const response = await sn.account.credits();
+response.data;
+response.content;
+response.structuredContent;
+```
+
+This is deliberately not a second resource-style API. Tool names, scopes, validation, project isolation, credits, and audit behavior remain shared with MCP and CLI.
+
+## Content and jobs
+
+```typescript
+const caption = await sn.content.generate({
+  prompt: 'Write a concise launch caption',
+  content_type: 'caption',
+  platform: 'instagram',
+  project_id: 'project_uuid',
 });
 
-// Generate video (async — returns job ID)
 const video = await sn.content.generateVideo({
-  prompt: 'A sunrise timelapse over mountains',
-  model: 'veo3-fast',       // veo3-fast, veo3-quality, runway-aleph, sora2, sora2-pro, kling, luma, midjourney-video
-  aspect_ratio: '9:16',     // 16:9, 9:16, 1:1, 4:3, 3:4
+  prompt: 'A cinematic product reveal on a black studio set',
+  model: 'seedance-2-fast',
+  aspect_ratio: '9:16',
   duration: 5,
+  enable_audio: true,
+  project_id: 'project_uuid',
 });
 
-// Generate image (async — returns job ID)
-const image = await sn.content.generateImage({
-  prompt: 'Minimalist workspace',
-  model: 'flux-pro',        // midjourney, nano-banana, ideogram, flux-pro, flux-max, gpt4o-image, imagen4, seedream
+const jobId = video.data.job_id ?? video.data.taskId;
+if (!jobId) throw new Error('No generation job ID returned');
+
+const completed = await sn.jobs.waitForCompletion(jobId, { maxWaitMs: 600_000 });
+console.log(completed.data.result_url ?? completed.data.resultUrl);
+```
+
+Current video model identifiers are typed in `VideoModel`, including `seedance-2-fast`, `seedance-2`, `kling-3`, `kling-3-pro`, `grok-imagine`, `veo3-fast`, and `veo3-quality`. Read the live tool schema before building a model picker because availability and pricing can change independently of the SDK package.
+
+Failed and cancelled jobs expose `credits_reserved`, `credits_charged`, `credits_refunded`, `billing_status`, and `failure_reason`. These are server-derived billing facts; do not infer a reservation or refund from the quoted generation cost.
+
+Other content methods:
+
+```typescript
+await sn.content.generateImage({
+  prompt: 'Editorial flat lay',
+  model: 'flux-pro',
   aspect_ratio: '1:1',
+  project_id: 'project_uuid',
 });
 
-// Generate carousel
-const carousel = await sn.content.generateCarousel({
-  topic: '5 AI tools every marketer needs',
+await sn.content.generateCarousel({
+  topic: 'Five practical AI workflows',
+  slide_count: 5,
   platform: 'linkedin',
-  slides: 5,
+  project_id: 'project_uuid',
 });
 
-// Generate voiceover
-const voice = await sn.content.generateVoiceover({
-  text: 'Welcome to our channel...',
-  voice: 'alloy',
-  language: 'en',
+await sn.content.generateVoiceover({
+  text: 'Welcome to the launch.',
+  voice: 'rachel',
+  project_id: 'project_uuid',
 });
 
-// Adapt content for other platforms
-const adapted = await sn.content.adapt({
-  content: 'Your YouTube script...',
-  source_platform: 'youtube',
-  target_platforms: ['tiktok', 'linkedin', 'twitter'],
+await sn.content.adapt({
+  content: 'Original caption',
+  source_platform: 'instagram',
+  target_platform: 'linkedin',
+  project_id: 'project_uuid',
 });
-
-// Fetch trending topics
-const trends = await sn.content.trends({ source: 'youtube', category: 'tech' });
 ```
 
-### Jobs (Async Operations)
-
-Video and image generation returns a job ID. Use `waitForCompletion()` to poll automatically:
+## Publishing and rescheduling
 
 ```typescript
-const video = await sn.content.generateVideo({ prompt: '...' });
-
-// Option 1: Auto-poll with exponential backoff (recommended)
-const result = await sn.jobs.waitForCompletion(video.data.taskId);
-console.log(result.data.resultUrl);
-
-// Option 2: Manual polling
-const status = await sn.jobs.check(video.data.taskId);
-if (status.data.status === 'completed') {
-  console.log(status.data.resultUrl);
-}
-```
-
-### Posts
-
-```typescript
-// Schedule a post
 await sn.posts.schedule({
   media_url: 'https://example.com/video.mp4',
-  caption: 'New video! #productivity',
-  title: 'Productivity Tips',
-  platforms: ['youtube', 'tiktok', 'instagram'],
-  scheduled_at: '<ISO-8601 timestamp>',
+  caption: 'Launch day',
+  platforms: ['instagram'],
+  schedule_at: '2026-07-20T09:00:00Z',
+  project_id: 'project_uuid',
+  idempotency_key: 'launch-instagram-2026-07-20',
 });
 
-// List recent posts
-const posts = await sn.posts.list({ days: 7, platform: 'youtube' });
+await sn.posts.reschedule({
+  post_id: 'post_uuid',
+  scheduled_at: '2026-07-20T10:00:00Z',
+  expected_scheduled_at: '2026-07-20T09:00:00Z',
+  project_id: 'project_uuid',
+});
 
-// Get connected accounts
-const accounts = await sn.posts.accounts();
+const posts = await sn.posts.list({ project_id: 'project_uuid', limit: 20 });
+const accounts = await sn.posts.accounts({ project_id: 'project_uuid' });
 ```
 
-### Analytics
+Scheduling is an external write. Require explicit user approval, use an idempotency key, and prefer a future scheduled time during tests. `expected_scheduled_at` prevents a stale calendar client from overwriting a newer edit.
+
+## Analytics and brand
 
 ```typescript
-// Fetch performance data
-const analytics = await sn.analytics.fetch({ days: 30, platform: 'youtube' });
+const analytics = await sn.analytics.fetch({
+  project_id: 'project_uuid',
+  platform: 'instagram',
+  days: 30,
+  limit: 25,
+});
 
-// Trigger analytics refresh
-await sn.analytics.refresh({ platform: 'youtube' });
+const insights = await sn.analytics.insights({
+  project_id: 'project_uuid',
+  insight_type: 'top_hooks',
+  days: 30,
+});
 
-// YouTube deep analytics
-const yt = await sn.analytics.youtube({ days: 28 });
-
-// AI-generated insights
-const insights = await sn.analytics.insights({ days: 30 });
-
-// Best posting times
-const times = await sn.analytics.postingTimes({ platform: 'tiktok' });
-```
-
-### Brand
-
-```typescript
-// Get brand profile
-const brand = await sn.brand.get();
-
-// Save brand profile
+const brand = await sn.brand.get({ project_id: 'project_uuid' });
 await sn.brand.save({
-  brand_context: { name: 'My Brand', voice: 'professional' },
-  change_summary: 'Updated voice',
+  project_id: 'project_uuid',
+  brand_context: { name: 'Example', voice: 'clear and practical' },
+  change_summary: 'Updated voice after owner review',
 });
-
-// Extract brand from URL
-const extracted = await sn.brand.extract({ url: 'https://example.com' });
 ```
 
-### Plans
+`extract_brand` analyses a public URL but does not accept `project_id`; review the extracted profile before explicitly saving it to a project.
+
+## Plans, comments, and universal tools
+
+Confirmed lifecycle operations are available on their natural resources:
+
+```ts
+await sn.jobs.cancel({ job_id: jobId, project_id: projectId, confirm: true });
+await sn.posts.cancel({ post_id: postId, project_id: projectId, confirm: true });
+await sn.content.deleteCarousel({ content_id: contentId, project_id: projectId, confirm: true });
+await sn.plans.delete({ plan_id: planId, project_id: projectId, confirm: true });
+await sn.autopilot.deleteConfiguration({ config_id: configId, project_id: projectId, confirm: true });
+```
+
+These calls cannot delete already-published platform posts. The service re-checks ownership, project membership, and cancellable state even when a caller uses the generic REST tool proxy.
 
 ```typescript
-// Create a content plan
-const plan = await sn.plans.create({
-  topic: 'AI productivity tools',
-  platforms: ['youtube', 'tiktok'],
+const draft = await sn.plans.create({
+  topic: 'AI workflows',
+  platforms: ['linkedin', 'instagram'],
   days: 7,
+  project_id: 'project_uuid',
 });
 
-// List plans
-const plans = await sn.plans.list({ status: 'draft' });
+await sn.plans.save({
+  project_id: 'project_uuid',
+  plan: { topic: 'AI workflows', posts: [] },
+});
 
-// Get plan details
-const details = await sn.plans.get('plan_abc123');
+await sn.plans.submitForApproval('plan_uuid');
+const approvals = await sn.plans.approvals('plan_uuid', 'pending');
 
-// Update a plan
-await sn.plans.update('plan_abc123', { topic: 'Updated topic' });
-
-// Approve
-await sn.plans.approve('plan_abc123', { action: 'approve' });
-
-// Schedule all posts
-await sn.plans.schedule('plan_abc123', { auto_slot: true });
-
-// List pending approvals
-const approvals = await sn.plans.approvals();
-```
-
-### Comments
-
-```typescript
-// List comments
-const comments = await sn.comments.list({ sort: 'time', limit: 20 });
-
-// Post a comment
-await sn.comments.post({ video_id: 'vid_123', text: 'Great video!' });
-
-// Reply to a comment
-await sn.comments.reply('comment_id', { text: 'Thanks!' });
-
-// Moderate (approve, hide, flag)
-await sn.comments.moderate('comment_id', { action: 'approve' });
-
-// Delete
-await sn.comments.delete('comment_id');
-```
-
-### Tools
-
-```typescript
-// List all tools
 const tools = await sn.tools.list();
-
-// Filter by module
-const contentTools = await sn.tools.list({ module: 'content' });
-
-// Execute any tool by name (universal proxy)
-const result = await sn.tools.execute('quality_check', {
-  content: 'Check out our new tool!',
+const checked = await sn.tools.execute('quality_check', {
+  content: 'Review this copy',
   platform: 'instagram',
 });
 ```
 
-### Account
+The SDK also exposes comments and account methods. Comment mutation requires the comments scope; scheduling requires distribute; generation requires write. Plan tier and live key scopes are enforced by the service even if an older key token claims more access.
+
+## Errors
 
 ```typescript
-const credits = await sn.account.credits();
-const usage = await sn.account.usage();
-```
-
-## Error Handling
-
-```typescript
-import { SocialNeuron, SocialNeuronError } from '@socialneuron/sdk';
+import { SocialNeuronError } from '@socialneuron/sdk';
 
 try {
-  await sn.content.generateVideo({ prompt: '...' });
-} catch (err) {
-  if (err instanceof SocialNeuronError) {
-    console.error(err.code);       // 'rate_limited', 'validation_error', etc.
-    console.error(err.status);     // 429, 400, 403, etc.
-    console.error(err.retryAfter); // seconds to wait (rate limit only)
-    console.error(err.message);    // human-readable description
+  await sn.content.generateVideo({
+    prompt: '...',
+    model: 'veo3-fast',
+    project_id: 'project_uuid',
+  });
+} catch (error) {
+  if (error instanceof SocialNeuronError) {
+    console.error(error.code);        // e.g. rate_limited
+    console.error(error.status);      // e.g. 429
+    console.error(error.retryAfter);  // seconds, when supplied
+    console.error(error.recoverWith); // safe recovery suggestions, when supplied
   }
 }
 ```
 
-### Common error codes
+The client parses the current nested REST error envelope and older flat errors. Unknown upstream bodies are not exposed as an SDK contract.
 
-| Status | Code | What to do |
-|--------|------|-----------|
-| 400 | `validation_error` | Check request parameters |
-| 401 | `unauthorized` | Check API key |
-| 403 | `insufficient_scope` | Upgrade plan or request scope |
-| 429 | `rate_limited` | Wait `retryAfter` seconds, then retry |
-| 502 | `upstream_error` | Temporary — retry after a moment |
+## See also
 
-## Complete Workflow Example
-
-```typescript
-import { SocialNeuron } from '@socialneuron/sdk';
-
-const sn = new SocialNeuron({ apiKey: process.env.SOCIALNEURON_API_KEY! });
-
-// 1. Get insights on what's working
-const insights = await sn.analytics.insights({ days: 30 });
-
-// 2. Plan content based on insights
-const plan = await sn.plans.create({
-  topic: 'Topics based on top-performing content',
-  platforms: ['youtube', 'tiktok', 'instagram'],
-  days: 7,
-});
-
-// 3. Generate videos for each post in the plan
-const planDetails = await sn.plans.get(plan.data.planId);
-for (const post of planDetails.data.posts ?? []) {
-  const video = await sn.content.generateVideo({
-    prompt: post.title,
-    model: 'veo3-fast',
-    aspect_ratio: post.platform === 'youtube' ? '16:9' : '9:16',
-  });
-  const result = await sn.jobs.waitForCompletion(video.data.taskId);
-  console.log(`${post.platform}: ${result.data.resultUrl}`);
-}
-
-// 4. Approve and schedule
-await sn.plans.approve(plan.data.planId, { action: 'approve' });
-await sn.plans.schedule(plan.data.planId, { auto_slot: true });
-
-// 5. Check credits
-const credits = await sn.account.credits();
-console.log('Credits remaining:', credits.data);
-```
-
-## See Also
-
-- [REST API Guide](./rest-api.md) — curl examples for every endpoint
-- [CLI Guide](./cli-guide.md) — terminal commands for scripting
-- [Examples](../examples/) — runnable code examples
+- [REST API guide](./rest-api.md)
+- [CLI guide](./cli-guide.md)
+- [Live OpenAPI 3.1 document](https://mcp.socialneuron.com/v1/openapi.json)

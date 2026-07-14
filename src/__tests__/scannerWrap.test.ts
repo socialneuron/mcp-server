@@ -28,6 +28,27 @@ describe('wrapToolWithScanner', () => {
     expect(JSON.stringify(r)).not.toContain('jane@example.com');
   });
 
+  it('still sanitizes PII in legitimate outputs larger than the input limit', async () => {
+    const handler = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: `${'x'.repeat(20_000)} jane@example.com` }],
+    });
+    const wrapped = wrapToolWithScanner('test_tool', handler);
+    const r = await wrapped({ msg: 'safe' }, { userId: 'user-1' } as any);
+    expect(JSON.stringify(r)).toContain('[REDACTED:email]');
+    expect(JSON.stringify(r)).not.toContain('jane@example.com');
+  });
+
+  it('fails closed when a tool output exceeds the maximum scan size', async () => {
+    const handler = vi.fn().mockResolvedValue({
+      content: [{ type: 'text', text: 'x'.repeat(1_000_001) }],
+    });
+    const wrapped = wrapToolWithScanner('test_tool', handler);
+    const r = await wrapped({ msg: 'safe' }, { userId: 'user-1' } as any);
+    expect((r as any).isError).toBe(true);
+    expect((r as any).structuredContent.error.error_type).toBe('server_error');
+    expect(JSON.stringify(r)).not.toContain('x'.repeat(100));
+  });
+
   it('preserves UUIDs in tool output', async () => {
     const uuid = '550e8400-e29b-41d4-a716-446655440000';
     const handler = vi.fn().mockResolvedValue({

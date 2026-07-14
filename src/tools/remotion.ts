@@ -191,7 +191,7 @@ export function registerRemotionTools(server: McpServer): void {
     },
     async ({ composition_id, output_format, props }) => {
       const userId = await getDefaultUserId();
-      const rateLimit = checkRateLimit('screenshot', `render_demo_video:${userId}`);
+      const rateLimit = checkRateLimit('generation', `render_demo_video:${userId}`);
       if (!rateLimit.allowed) {
         return {
           content: [

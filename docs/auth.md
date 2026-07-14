@@ -6,6 +6,8 @@ The Social Neuron MCP Server supports three authentication modes:
 2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
 3. **Service Role** (legacy, deprecated) — self-hosted only
 
+General Social Neuron dashboard session JWTs are deliberately not accepted as hosted MCP bearer tokens: they are not resource-bound to the MCP server. A legacy self-hosted deployment can temporarily set `MCP_ALLOW_SUPABASE_SESSION_TOKENS=true` while migrating, but the supported hosted credentials are connector tokens and `snk_` API keys.
+
 ## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
 
 This is the path most agent users take. Claude.ai (and other connector hosts) discover the server via standard OAuth metadata, register dynamically, and exchange an authorization code (with PKCE) for a bearer token scoped to your plan tier.

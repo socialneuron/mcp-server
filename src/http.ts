@@ -45,7 +45,7 @@ import {
 import { TOOL_SCOPES, hasScope } from "./auth/scopes.js";
 import { createTokenVerifier } from "./lib/token-verifier.js";
 import { createOAuthProvider } from "./lib/oauth-provider.js";
-import { checkRateLimit } from "./lib/rate-limit.js";
+import { checkRateLimit, rateLimitCategoryForTool } from "./lib/rate-limit.js";
 import { initPostHog, shutdownPostHog } from "./lib/posthog.js";
 import { MCP_VERSION } from "./lib/version.js";
 import { sanitizeError } from "./lib/sanitize-error.js";
@@ -117,6 +117,22 @@ function deriveOAuthIssuerUrl(): string {
 
 const OAUTH_ISSUER_URL = deriveOAuthIssuerUrl();
 
+function logOperationalError(label: string, error?: unknown): void {
+  // Request/upstream exceptions can contain bearer tokens, URLs with query
+  // secrets, SQL, or customer content. Logs retain a safe category only.
+  const category = error === undefined ? 'An internal error occurred.' : sanitizeError(error);
+  console.error(`[MCP HTTP] ${label}: ${category}`);
+}
+
+function safeEndpointForLog(value: string): string {
+  try {
+    const url = new URL(value);
+    return `${url.origin}${url.pathname}`;
+  } catch {
+    return '[invalid endpoint configuration]';
+  }
+}
+
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
   console.error("[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY");
   process.exit(1);
@@ -133,13 +149,12 @@ if (SUPABASE_SERVICE_ROLE_KEY && SUPABASE_SERVICE_ROLE_KEY.length < 100) {
 // ── Crash handlers ───────────────────────────────────────────────────
 
 process.on("uncaughtException", (err) => {
-  console.error(`[MCP HTTP] Uncaught exception: ${err.message}`);
+  logOperationalError('Uncaught exception', err);
   process.exit(1);
 });
 
 process.on("unhandledRejection", (reason) => {
-  const message = reason instanceof Error ? reason.message : String(reason);
-  console.error(`[MCP HTTP] Unhandled rejection: ${message}`);
+  logOperationalError('Unhandled rejection', reason);
   process.exit(1);
 });
 
@@ -148,6 +163,9 @@ process.on("unhandledRejection", (reason) => {
 const tokenVerifier = createTokenVerifier({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
+  // Match RFC 9728 metadata exactly. Opaque connector tokens minted for the
+  // issuer origin must not be replayable at the more-specific /mcp resource.
+  resource: MCP_SERVER_URL,
 });
 
 initPostHog();
@@ -185,7 +203,7 @@ const cleanupInterval = setInterval(
         entry.transport.close();
         entry.server.close();
         sessions.delete(sessionId);
-        console.log(`[MCP HTTP] Cleaned up stale session: ${sessionId}`);
+        console.log('[MCP HTTP] Cleaned up one stale session.');
       }
     }
   },
@@ -336,6 +354,7 @@ const oauthProvider = createOAuthProvider({
   supabaseUrl: SUPABASE_URL,
   supabaseAnonKey: SUPABASE_ANON_KEY,
   appBaseUrl: APP_BASE_URL,
+  resource: MCP_SERVER_URL,
 });
 
 const SCOPES_SUPPORTED = [
@@ -424,7 +443,7 @@ app.use((req, _res, next) => {
 app.use((req, res, next) => {
   authRouter(req, res, (err?: unknown) => {
     if (err) {
-      console.error("[MCP HTTP] Auth router error:", err);
+      logOperationalError('Auth router error', err);
     }
     next(err);
   });
@@ -488,9 +507,10 @@ async function authenticateRequest(
       projectId: (authInfo.extra?.projectId as string | undefined) ?? null,
     };
     next();
-  } catch (err) {
-    const message =
-      err instanceof Error ? err.message : "Token verification failed";
+  } catch {
+    // Verification errors can contain upstream URLs, provider diagnostics, or
+    // claim details. Keep the RFC 6750 response stable and non-enumerating.
+    const message = "The access token is invalid, expired, or not authorized for MCP.";
     res.setHeader(
       "WWW-Authenticate",
       buildWwwAuthenticateHeader({
@@ -627,7 +647,9 @@ app.get("/health", (_req, res) => {
   res.json({ status: "ok", version: MCP_VERSION });
 });
 
-// Authenticated health details — memory, sessions, uptime
+// Authenticated health details. Keep customer-visible diagnostics coarse;
+// process memory, environment names, and global session counts are operator
+// telemetry and can reveal deployment/load characteristics.
 app.get(
   "/health/details",
   authenticateRequest,
@@ -636,11 +658,7 @@ app.get(
       status: "ok",
       version: MCP_VERSION,
       transport: "streamable-http",
-      sessions: sessions.size,
-      sessionCap: MAX_SESSIONS,
       uptime: Math.floor(process.uptime()),
-      memory: Math.round(process.memoryUsage().rss / 1024 / 1024),
-      env: NODE_ENV,
     });
   },
 );
@@ -714,8 +732,10 @@ app.post(
       return;
     }
 
-    // Per-user rate limiting — same categories as the tool would use internally.
-    const rl = checkRateLimit("read", `rest:${auth.userId}`);
+    // Per-user rate limiting, classified before execution so expensive and
+    // externally-mutating calls cannot consume the looser read bucket.
+    const category = rateLimitCategoryForTool(name);
+    const rl = checkRateLimit(category, `rest:${auth.userId}`);
     if (!rl.allowed) {
       res.setHeader("Retry-After", String(rl.retryAfter));
       res.status(429).json({
@@ -832,8 +852,14 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
   const auth = req.auth!;
   const existingSessionId = req.headers["mcp-session-id"] as string | undefined;
 
-  // Per-user rate limiting
-  const rl = checkRateLimit("read", auth.userId);
+  // Parse the already-authenticated MCP envelope only to classify the surface
+  // bucket. Tool handlers still enforce their own finer-grained limits.
+  const requestedTool =
+    req.body?.method === "tools/call" && typeof req.body?.params?.name === "string"
+      ? req.body.params.name
+      : undefined;
+  const category = rateLimitCategoryForTool(requestedTool);
+  const rl = checkRateLimit(category, `mcp:${auth.userId}`);
   if (!rl.allowed) {
     res.setHeader("Retry-After", String(rl.retryAfter));
     res.status(429).json({
@@ -940,9 +966,7 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
       () => transport.handleRequest(req, res, req.body),
     );
   } catch (err) {
-    const rawMessage =
-      err instanceof Error ? err.message : "Internal server error";
-    console.error(`[MCP HTTP] POST /mcp error: ${rawMessage}`);
+    logOperationalError('POST /mcp error', err);
     if (!res.headersSent) {
       res.status(500).json({
         jsonrpc: "2.0",
@@ -1016,10 +1040,7 @@ app.use(
     res: express.Response,
     _next: express.NextFunction,
   ) => {
-    console.error(
-      "[MCP HTTP] Unhandled Express error:",
-      err.stack || err.message || err,
-    );
+    logOperationalError('Unhandled Express error', err);
     if (res.headersSent) return;
     // body-parser raises a 413 (entity.too.large) when the JSON body exceeds the
     // configured limit — surface it as 413, not a generic 500.
@@ -1049,9 +1070,8 @@ const httpServer = app.listen(PORT, "0.0.0.0", () => {
     `[MCP HTTP] Social Neuron MCP Server listening on 0.0.0.0:${PORT}`,
   );
   console.log(`[MCP HTTP] Health: http://localhost:${PORT}/health`);
-  console.log(`[MCP HTTP] MCP endpoint: ${MCP_SERVER_URL}`);
+  console.log(`[MCP HTTP] MCP endpoint: ${safeEndpointForLog(MCP_SERVER_URL)}`);
   console.log(`[MCP HTTP] Tool profile: ${TOOL_PROFILE}`);
-  console.log(`[MCP HTTP] Environment: ${NODE_ENV}`);
 });
 
 // ── Graceful shutdown ────────────────────────────────────────────────

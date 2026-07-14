@@ -240,8 +240,9 @@ const server = new McpServer({
 
 // ── Scope Enforcement + Tool Registration ────────────────────────────
 applyScopeEnforcement(server, getAuthenticatedScopes);
-// Stdio mode: skip MCP Apps. The npm package doesn't ship the app HTML
-// bundle, and Apps surface via HTTP custom connectors only.
+// Stdio mode: skip MCP Apps. The package includes their HTML so the hosted
+// deployment is self-contained, but interactive iframe resources require an
+// Apps-capable HTTP host. Stdio retains the normal text/tool workflows.
 registerAllTools(server, { skipApps: true });
 
 // ── Prompts & Resources ──────────────────────────────────────────────
