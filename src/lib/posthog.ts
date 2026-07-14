@@ -17,10 +17,11 @@ const POSTHOG_PSEUDONYMIZATION_KEY =
   process.env.POSTHOG_PSEUDONYMIZATION_KEY || randomBytes(32).toString('hex');
 
 function hashUserId(userId: string): string {
-  return createHmac('sha256', POSTHOG_PSEUDONYMIZATION_KEY)
-    .update(userId)
-    .digest('hex')
-    .substring(0, 32);
+  const hmac = createHmac('sha256', POSTHOG_PSEUDONYMIZATION_KEY);
+  // This is keyed pseudonymization of a non-secret database identifier, not password storage.
+  // codeql[js/insufficient-password-hash]
+  hmac.update(userId);
+  return hmac.digest('hex').substring(0, 32);
 }
 
 let client: PostHog | null = null;

@@ -201,6 +201,9 @@ export async function callEdgeFunction<T = unknown>(
   method = 'POST';
 
   try {
+    // The credential is sent only to the configured mcp-gateway. Environment-based
+    // URL overrides are an explicit operator trust boundary, never request-controlled.
+    // codeql[js/file-access-to-http]
     const response = await fetch(url.toString(), {
       method,
       headers,

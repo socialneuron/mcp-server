@@ -52,6 +52,9 @@ export async function validateApiKey(apiKey: string, _attempt = 0): Promise<Vali
       process.env.VITE_SUPABASE_ANON_KEY ||
       CLOUD_SUPABASE_ANON_KEY;
 
+    // Sending the locally stored Social Neuron API key to the fixed first-party auth
+    // endpoint is the intended validation protocol; the URL cannot be request-controlled.
+    // codeql[js/file-access-to-http]
     const response = await fetch(
       `${supabaseUrl}/functions/v1/mcp-auth?action=validate-key-public`,
       {

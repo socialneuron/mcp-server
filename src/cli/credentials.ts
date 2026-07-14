@@ -63,56 +63,68 @@ function assertSafeCredentialPaths(): void {
   }
 }
 
+function openValidatedCredentialPath(
+  target: string,
+  kind: 'directory' | 'file',
+  flags: number
+): number | null {
+  let fd: number;
+  try {
+    fd = openSync(
+      target,
+      flags | constants.O_NOFOLLOW | (kind === 'directory' ? constants.O_DIRECTORY : 0)
+    );
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
+  }
+
+  const opened = fstatSync(fd);
+  const uid = process.getuid?.();
+  if (
+    (kind === 'directory' ? !opened.isDirectory() : !opened.isFile()) ||
+    (uid !== undefined && opened.uid !== uid) ||
+    (kind === 'file' && opened.nlink !== 1)
+  ) {
+    closeSync(fd);
+    throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
+  }
+  return fd;
+}
+
+function hardenCredentialPath(target: string, kind: 'directory' | 'file', mode: number): void {
+  const fd = openValidatedCredentialPath(target, kind, constants.O_RDONLY);
+  if (fd === null) return;
+  try {
+    const opened = fstatSync(fd);
+    if ((opened.mode & 0o077) !== 0) fchmodSync(fd, mode);
+  } finally {
+    closeSync(fd);
+  }
+}
+
 function hardenCredentialPermissions(): void {
   if (platform() === 'win32') return;
-  assertSafeCredentialPaths();
-  const uid = process.getuid?.();
-  const harden = (target: string, kind: 'directory' | 'file', mode: number): void => {
-    if (!existsSync(target)) return;
-    let fd: number;
-    try {
-      fd = openSync(
-        target,
-        constants.O_RDONLY |
-          constants.O_NOFOLLOW |
-          (kind === 'directory' ? constants.O_DIRECTORY : 0)
-      );
-    } catch {
-      throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
-    }
-    try {
-      const opened = fstatSync(fd);
-      if (
-        (kind === 'directory' ? !opened.isDirectory() : !opened.isFile()) ||
-        (uid !== undefined && opened.uid !== uid) ||
-        (kind === 'file' && opened.nlink !== 1)
-      ) {
-        throw new Error(`Unsafe Social Neuron credential ${kind}. Refusing to use it.`);
-      }
-      if ((opened.mode & 0o077) !== 0) fchmodSync(fd, mode);
-    } finally {
-      closeSync(fd);
-    }
-  };
-  harden(CONFIG_DIR, 'directory', 0o700);
-  harden(CREDENTIALS_FILE, 'file', 0o600);
+  hardenCredentialPath(CONFIG_DIR, 'directory', 0o700);
+  hardenCredentialPath(CREDENTIALS_FILE, 'file', 0o600);
 }
 
 function readCredentialsFile(): CredentialsFile {
-  if (!existsSync(CREDENTIALS_FILE)) return {};
-  hardenCredentialPermissions();
-  let fd: number;
+  if (platform() !== 'win32') hardenCredentialPath(CONFIG_DIR, 'directory', 0o700);
+  const fd =
+    platform() === 'win32'
+      ? (() => {
+          try {
+            return openSync(CREDENTIALS_FILE, constants.O_RDONLY);
+          } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+            throw error;
+          }
+        })()
+      : openValidatedCredentialPath(CREDENTIALS_FILE, 'file', constants.O_RDONLY);
+  if (fd === null) return {};
   try {
-    fd = openSync(CREDENTIALS_FILE, constants.O_RDONLY | constants.O_NOFOLLOW);
-  } catch {
-    throw new Error('Unsafe Social Neuron credential file. Refusing to read it.');
-  }
-  try {
-    const opened = fstatSync(fd);
-    const uid = process.getuid?.();
-    if (!opened.isFile() || opened.nlink !== 1 || (uid !== undefined && opened.uid !== uid)) {
-      throw new Error('Unsafe Social Neuron credential file. Refusing to read it.');
-    }
+    if (platform() !== 'win32') fchmodSync(fd, 0o600);
     const parsed = JSON.parse(readFileSync(fd, 'utf-8')) as unknown;
     if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
       throw new Error('Social Neuron credential file is invalid.');
@@ -130,6 +142,8 @@ function writeCredentialsFile(data: CredentialsFile): void {
   assertSafeCredentialPaths();
   const payload = JSON.stringify(data, null, 2) + '\n';
   if (platform() === 'win32') {
+    // The destination is the fixed per-user credential path, never request-controlled.
+    // codeql[js/http-to-file-access]
     writeFileSync(CREDENTIALS_FILE, payload, { mode: 0o600 });
   } else {
     // Open without truncating first, validate the opened inode, and only then
@@ -159,6 +173,8 @@ function writeCredentialsFile(data: CredentialsFile): void {
       }
       fchmodSync(fd, 0o600);
       ftruncateSync(fd, 0);
+      // The descriptor was opened with O_NOFOLLOW and ownership/link-count checked above.
+      // codeql[js/http-to-file-access]
       writeFileSync(fd, payload);
     } finally {
       closeSync(fd);
