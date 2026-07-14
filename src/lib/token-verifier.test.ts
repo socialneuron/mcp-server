@@ -328,6 +328,54 @@ describe('createTokenVerifier', () => {
       expect(result.expiresAt).toBe(expectedExp);
     });
 
+    // Fix (v1.8.0): mcp-auth's
+    // validate-key-public also resolves the key's own project scope
+    // server-side. The HTTP-mode token verifier must carry it through so
+    // getDefaultProjectId() never has to guess a (possibly wrong) default
+    // project for a project-scoped key.
+    it('carries projectId through to extra when the key is project-scoped', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-project-scoped',
+        scopes: ['mcp:read'],
+        projectId: 'proj-abc-123',
+      });
+
+      const result = await verifier.verifyAccessToken('snk_live_projectscoped');
+
+      expect(result.extra).toEqual({
+        userId: 'user-project-scoped',
+        email: undefined,
+        projectId: 'proj-abc-123',
+      });
+    });
+
+    it('accepts project_id (snake_case) as a fallback for projectId', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-project-scoped-2',
+        scopes: ['mcp:read'],
+        project_id: 'proj-snake-456',
+      });
+
+      const result = await verifier.verifyAccessToken('snk_live_projectscoped2');
+
+      expect((result.extra as Record<string, unknown>).projectId).toBe('proj-snake-456');
+    });
+
+    it('omits projectId from extra for an unscoped key (backward compatible shape)', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-unscoped',
+        scopes: ['mcp:read'],
+      });
+
+      const result = await verifier.verifyAccessToken('snk_live_unscoped');
+
+      expect(result.extra).toEqual({ userId: 'user-unscoped', email: undefined });
+      expect(Object.prototype.hasOwnProperty.call(result.extra!, 'projectId')).toBe(false);
+    });
+
     it('defaults scopes to ["mcp:read"] when scopes missing from response', async () => {
       mockFetchResponse(200, {
         valid: true,

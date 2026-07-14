@@ -4,4 +4,4 @@
  * scripts/write-version.mjs from the build scripts. To change the version, bump
  * package.json and rebuild (version.test.ts guards against drift).
  */
-export const MCP_VERSION = '1.7.18';
+export const MCP_VERSION = '1.8.0';

@@ -438,6 +438,8 @@ interface AuthenticatedRequest extends express.Request {
     scopes: string[];
     clientId: string;
     token: string;
+    /** The calling key/token's own project scope (null when unscoped). */
+    projectId: string | null;
   };
 }
 
@@ -483,6 +485,7 @@ async function authenticateRequest(
       scopes,
       clientId: authInfo.clientId,
       token: authInfo.token,
+      projectId: (authInfo.extra?.projectId as string | undefined) ?? null,
     };
     next();
   } catch (err) {
@@ -666,16 +669,15 @@ app.get("/v1/openapi.json", async (_req, res) => {
 app.get("/v1/tools", authenticateRequest, (req: AuthenticatedRequest, res) => {
   const scopes = req.auth!.scopes;
   const tools = publicToolsForProfile(TOOL_PROFILE).map((t) => {
-      const scope = TOOL_SCOPES[t.name];
-      return {
-        name: t.name,
-        description: t.description,
-        module: t.module,
-        scope,
-        available: scope ? hasScope(scopes, scope) : false,
-      };
-    },
-  );
+    const scope = TOOL_SCOPES[t.name];
+    return {
+      name: t.name,
+      description: t.description,
+      module: t.module,
+      scope,
+      available: scope ? hasScope(scopes, scope) : false,
+    };
+  });
   res.json({ tools, count: tools.length });
 });
 
@@ -700,7 +702,9 @@ app.post(
       return;
     }
 
-    if (!publicToolsForProfile(TOOL_PROFILE).some((tool) => tool.name === name)) {
+    if (
+      !publicToolsForProfile(TOOL_PROFILE).some((tool) => tool.name === name)
+    ) {
       res.status(404).json({
         error: {
           error_type: "not_found",
@@ -732,6 +736,7 @@ app.post(
           token: auth.token,
           creditsUsed: 0,
           assetsGenerated: 0,
+          projectId: auth.projectId,
           surface: "rest",
         },
         () => invokeToolRest(name, args),
@@ -797,13 +802,11 @@ app.post(
             jsonrpc: "2.0",
             id: body.id ?? null,
             result: {
-              tools: publicToolsForProfile(TOOL_PROFILE).map(
-                (t) => ({
-                  name: t.name,
-                  description: t.description,
-                  inputSchema: { type: "object" as const, properties: {} },
-                }),
-              ),
+              tools: publicToolsForProfile(TOOL_PROFILE).map((t) => ({
+                name: t.name,
+                description: t.description,
+                inputSchema: { type: "object" as const, properties: {} },
+              })),
             },
           });
         });
@@ -864,6 +867,7 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
           token: auth.token,
           creditsUsed: 0,
           assetsGenerated: 0,
+          projectId: auth.projectId,
         },
         () => entry.transport.handleRequest(req, res, req.body),
       );
@@ -931,6 +935,7 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
         token: auth.token,
         creditsUsed: 0,
         assetsGenerated: 0,
+        projectId: auth.projectId,
       },
       () => transport.handleRequest(req, res, req.body),
     );
@@ -939,12 +944,10 @@ app.post("/mcp", async (req: AuthenticatedRequest, res) => {
       err instanceof Error ? err.message : "Internal server error";
     console.error(`[MCP HTTP] POST /mcp error: ${rawMessage}`);
     if (!res.headersSent) {
-      res
-        .status(500)
-        .json({
-          jsonrpc: "2.0",
-          error: { code: -32603, message: sanitizeError(err) },
-        });
+      res.status(500).json({
+        jsonrpc: "2.0",
+        error: { code: -32603, message: sanitizeError(err) },
+      });
     }
   }
 });
@@ -975,6 +978,7 @@ app.get("/mcp", authenticateRequest, async (req: AuthenticatedRequest, res) => {
       token: req.auth!.token,
       creditsUsed: 0,
       assetsGenerated: 0,
+      projectId: req.auth!.projectId,
     },
     () => entry.transport.handleRequest(req, res),
   );

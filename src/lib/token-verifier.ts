@@ -196,6 +196,12 @@ async function verifyApiKey(
       email?: string;
       expiresAt?: string;
       error?: string;
+      // mcp-auth's validate-key-public also resolves the key's own project
+      // scope server-side (server-side) — capture
+      // it so getDefaultProjectId() never has to guess. Both name variants
+      // for parity with the rest of the codebase's projectId/project_id split.
+      projectId?: string | null;
+      project_id?: string | null;
     };
 
     if (!data.valid || !data.userId) {
@@ -211,12 +217,19 @@ async function verifyApiKey(
       throw new Error('API key expired');
     }
 
+    // Only add `projectId` to `extra` when the key actually carries a scope —
+    // keeps `extra` identical to the pre-fix shape for unscoped keys (assert
+    // by exact-match tests in token-verifier.test.ts).
+    const projectId = data.projectId ?? data.project_id ?? null;
+    const extra: Record<string, unknown> = { userId: data.userId, email: data.email };
+    if (projectId) extra.projectId = projectId;
+
     return {
       token: apiKey,
       clientId: 'api-key',
       scopes: data.scopes ?? ['mcp:read'],
       expiresAt,
-      extra: { userId: data.userId, email: data.email },
+      extra,
     };
   } catch (err) {
     clearTimeout(timer);

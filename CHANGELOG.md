@@ -2,6 +2,23 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## [1.8.0] - 2026-07-14
+
+### Changed
+
+- **`generate_video` model menu rebuilt around quality — 8 → 12 models.** New: `seedance-2-fast`, `seedance-2`, `grok-imagine`, `wan-2.6`, `gemini-omni-video`, `hailuo-02-standard`, `seedance-1.5-pro`. Removed from the menu: `runway-aleph` (upstream provider sunsets 2026-07-30), `sora2`/`sora2-pro` (upstream API shuts down 2026-09-24). The model description now carries a quality ladder plus honest per-model base credit costs, replacing figures that had drifted badly from real charges.
+- **`enable_audio` now defaults to FALSE** (cost control) with the real per-model audio multipliers documented in the parameter description.
+- **Video prices corrected server-side** (notably `veo3-fast` cut to roughly a third of its previous credit price); the client-side estimate map matches.
+
+### Added
+
+- **`generate_video` accepts `project_id`** so videos land in the right workspace/brand on multi-project accounts (brand context auto-injects from the project's brand profile).
+- **Stable `check_status` JSON shape** (`lib/checkStatusShape.ts`): canonical snake_case fields (`job_id`, `status`, `progress`, `result_url`, `r2_key`, `all_urls`, `error`, `credits_cost`, `created_at`, `completed_at`) are ALWAYS present regardless of which poll branch serves the response, with legacy camelCase aliases (`jobId`, `resultUrl`, `credits`, `createdAt`, …) also always populated. Previously the field names differed depending on whether the poll caught a job mid-render or after completion.
+
+### Fixed
+
+- **False `PROJECT_SCOPE_MISMATCH` (403) on project-scoped API keys** for tools that take no `project_id` argument (e.g. `get_credit_balance`). The client previously guessed a default project from "most recently created", which can disagree with the key's real scope on multi-project accounts. The key's own server-resolved project scope is now carried per-request (stdio and HTTP modes) and always wins over the guess. Fixes the same class of failure across every project-scoped tool that relied on the default-project lookup.
+
 ## [1.7.18] - 2026-07-06
 
 ### Added

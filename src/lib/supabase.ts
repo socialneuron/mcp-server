@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { randomUUID } from 'node:crypto';
-import { getRequestUserId } from './request-context.js';
+import { getRequestUserId, getRequestProjectId } from './request-context.js';
 
 const SUPABASE_URL = process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || '';
 
@@ -18,6 +18,10 @@ let authenticatedScopes: string[] = [];
 let authenticatedEmail: string | null = null;
 let authenticatedExpiresAt: string | null = null;
 let authenticatedApiKey: string | null = null;
+// The stdio-mode API key's OWN project scope, captured at initializeAuth()
+// time from mcp-auth's validate-key-public response (server-side truth, never
+// a client-side guess). Null for unscoped keys. See getDefaultProjectId().
+let authenticatedProjectId: string | null = null;
 const MCP_RUN_ID = randomUUID();
 
 /**
@@ -126,13 +130,32 @@ export async function getDefaultUserId(): Promise<string> {
  * Returns a default project ID for scoping queries.
  *
  * Resolution order:
- *   1. Per-user cache (safe for multi-user HTTP mode)
- *   2. SOCIALNEURON_PROJECT_ID env var
- *   3. Most recently created project owned by the current user
+ *   1. Per-request project scope (HTTP mode) — the calling key/token's OWN
+ *      project, resolved server-side by mcp-auth and carried through
+ *      AsyncLocalStorage. Safe for multi-user HTTP mode.
+ *   2. Authenticated project scope (stdio mode) — same server-side value,
+ *      captured once at initializeAuth() time.
+ *   3. Per-user cache (safe for multi-user HTTP mode)
+ *   4. SOCIALNEURON_PROJECT_ID env var
+ *   5. Most recently created project owned by the current user
+ *
+ * Steps 1-2 MUST outrank 3-5: a project-scoped API key can only ever act on
+ * its own project, so falling through to a DB-guessed "most recent project"
+ * (or a stale per-user cache entry) on a multi-project account produces a
+ * project_id that disagrees with the key's actual scope — which mcp-gateway
+ * then rejects with a false PROJECT_SCOPE_MISMATCH even though the call was
+ * legitimate. Observed in live testing (2026-07-13): a
+ * project-scoped key calling get_credit_balance (no project_id argument of
+ * its own) 403'd this way on a split-project e2e account.
  */
 const projectIdCache = new Map<string, string>(); // userId -> projectId
 
 export async function getDefaultProjectId(): Promise<string | null> {
+  const requestProjectId = getRequestProjectId();
+  if (requestProjectId) return requestProjectId;
+
+  if (authenticatedProjectId) return authenticatedProjectId;
+
   const userId = await getDefaultUserId().catch(() => null);
 
   // Check per-user cache
@@ -215,6 +238,7 @@ export async function initializeAuth(): Promise<void> {
         result.scopes && result.scopes.length > 0 ? result.scopes : ['mcp:read'];
       authenticatedEmail = result.email || null;
       authenticatedExpiresAt = result.expiresAt || null;
+      authenticatedProjectId = result.projectId || null;
       if (!_quietAuth) {
         console.error(
           '[MCP] Authenticated via API key (prefix: ' +
@@ -293,6 +317,11 @@ export function getAuthMode(): 'api-key' | 'unauthenticated' {
 
 export function getAuthenticatedApiKey(): string | null {
   return authenticatedApiKey;
+}
+
+/** The stdio-mode authenticated key's own project scope, or null if unscoped. */
+export function getAuthenticatedProjectId(): string | null {
+  return authenticatedProjectId;
 }
 
 /**
