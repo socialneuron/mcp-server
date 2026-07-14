@@ -33,7 +33,7 @@ for (const name of names) tools[name] = hashTool(name, locked[name]);
 // `generated_at` is intentionally omitted — same source → same output
 // (reproducible). The per-tool sha256 is the integrity seal.
 const manifest = {
-  version: 2,
+  version: 3,
   source: 'runtime tools/list + search_tools catalog',
   hash_algorithm: 'sha256',
   hashed_fields: [
@@ -50,6 +50,7 @@ const manifest = {
     'catalog.scope',
     'catalog.local_only',
     'catalog.internal',
+    'catalog.hidden_from_public_count',
     'catalog.task_intent',
     'catalog.use_when',
     'catalog.avoid_when',
@@ -63,4 +64,4 @@ const manifest = {
 
 const lockPath = resolve(ROOT, 'tools.lock.json');
 writeFileSync(lockPath, JSON.stringify(manifest, null, 2) + '\n', 'utf8');
-console.log(`✅ Wrote ${manifest.tool_count} locked tool surfaces to ${lockPath}`);
+process.stdout.write(`✅ Wrote ${manifest.tool_count} locked tool surfaces to ${lockPath}\n`);

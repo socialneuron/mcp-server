@@ -2,6 +2,16 @@
 
 > **Historical evidence snapshot.** This report records the initial read-only investigation and the production state observed at that time. It is intentionally preserved for traceability, but several recommendations and version statements were superseded by remediation work later on 2026-07-14. Use [Security, Privacy, and Legal Readiness Audit](./2026-07-14-security-privacy-legal-audit.md), [MCP Product and Workflow Improvement Research](./2026-07-14-mcp-product-improvements.md), and the release evidence for the current decision. Do not treat this snapshot as release sign-off.
 
+## Superseding 2026-07-14 release snapshot
+
+- Hosted Railway reports MCP `1.8.2` at private commit `0fd2947e`; npm latest remains `1.8.1`, GitHub's latest formal release remains `v1.7.18`, and the audited local release candidate is `1.8.2`.
+- Claude Web successfully completed discovery, dynamic client registration, OAuth consent, and an authenticated `get_credit_balance` call against `https://mcp.socialneuron.com/mcp`.
+- Codex Desktop successfully invoked authenticated Social Neuron tools. Its installed connector catalogue was stale: `generate_video` lacked `project_id` and the new model menu, and MCP App calls returned their structured/text fallback without an interactive widget.
+- Repeated Claude/Codex calls reproduced the 10-session per-user self-denial. Private PR `#2223` adds exact Claude/ChatGPT browser origins, path-specific RFC 9728 metadata, and least-recently-used idle-session reclamation while protecting active requests and SSE streams. It is not production evidence until reviewed, merged, deployed, and exercised with more than 10 sequential connector sessions.
+- The complete public candidate suite passes 87 files / 1,279 tests and the private hosted package passes 89 files / 1,318 tests, both with zero skipped or todo tests. TypeScript and production builds pass.
+- Private PR CI is blocked before job execution by the GitHub account billing/spending-limit condition and still requires an independent approval. These are release blockers, not code-test failures.
+- The `v1.8.2` dependency-cooldown gate requires the approved exact-tag emergency exception for seven packages younger than 14 days: `posthog-node@5.41.0`, `@remotion/bundler@4.0.489`, `@remotion/renderer@4.0.489`, `@types/node@26.1.1`, `typescript@7.0.2`, `vitest@4.1.10`, and the Content Calendar's `vite@8.1.4`.
+
 **Date:** 2026-07-14  
 **Status:** Read-only architecture and production-evidence audit  
 **Purpose:** Provide a falsifiable, adversarially reviewable plan for making Social Neuron work reliably as an MCP server and CLI before scaling or expanding the SDK surface.  
@@ -33,18 +43,18 @@ The recommended design decision is therefore:
 
 ### Current disposition
 
-| Area | Verdict | Confidence |
-|---|---|---:|
-| Railway process health | Healthy; no crash or 5xx incident found | High |
-| Remote MCP session lifecycle | Defective for current client behavior | High |
-| Supabase availability | Not the cause of the observed session incident | High |
-| Supabase schema/migration governance | Material ledger drift; production schema needs reconciliation | High |
-| OAuth interoperability and resource binding | Incomplete/contradictory implementation | High |
-| Cloudflare involvement | Not currently in the request path | High |
-| Local stdio MCP and CLI strategy | Correct simplest baseline | High |
-| Public SDK necessity | Not necessary for the stated goal | High |
-| Safe horizontal scaling today | No | High |
-| Full production sign-off | Not yet; two closure tests remain | High |
+| Area                                        | Verdict                                                       | Confidence |
+| ------------------------------------------- | ------------------------------------------------------------- | ---------: |
+| Railway process health                      | Healthy; no crash or 5xx incident found                       |       High |
+| Remote MCP session lifecycle                | Defective for current client behavior                         |       High |
+| Supabase availability                       | Not the cause of the observed session incident                |       High |
+| Supabase schema/migration governance        | Material ledger drift; production schema needs reconciliation |       High |
+| OAuth interoperability and resource binding | Incomplete/contradictory implementation                       |       High |
+| Cloudflare involvement                      | Not currently in the request path                             |       High |
+| Local stdio MCP and CLI strategy            | Correct simplest baseline                                     |       High |
+| Public SDK necessity                        | Not necessary for the stated goal                             |       High |
+| Safe horizontal scaling today               | No                                                            |       High |
+| Full production sign-off                    | Not yet; two closure tests remain                             |       High |
 
 ---
 
@@ -136,14 +146,14 @@ flowchart LR
 
 ### 4.2 What each platform should do
 
-| Platform | Correct responsibility | What it should not be responsible for |
-|---|---|---|
-| MCP package | Protocol server, tool catalogue, stdio transport, CLI, shared execution contracts | Product-specific public SDK proliferation |
-| Railway | Run the remote HTTP MCP and optional REST projection | Persist in-memory sessions across replicas or deploys |
-| Supabase | Auth, API-key validation, RLS, data, durable OAuth registrations, Edge Functions, gateway enforcement | Repair MCP transport/session behavior |
-| Cloudflare | DNS, optional WAF/rate controls, optional proxy after explicit testing | Create affinity between hidden Railway replicas |
-| REST | Serve conventional HTTP clients and OpenAPI consumers | Be a prerequisite for Claude or Codex MCP use |
-| Public SDK | Optional developer convenience after stable REST demand exists | Be a launch requirement for MCP/CLI/plugin distribution |
+| Platform    | Correct responsibility                                                                                | What it should not be responsible for                   |
+| ----------- | ----------------------------------------------------------------------------------------------------- | ------------------------------------------------------- |
+| MCP package | Protocol server, tool catalogue, stdio transport, CLI, shared execution contracts                     | Product-specific public SDK proliferation               |
+| Railway     | Run the remote HTTP MCP and optional REST projection                                                  | Persist in-memory sessions across replicas or deploys   |
+| Supabase    | Auth, API-key validation, RLS, data, durable OAuth registrations, Edge Functions, gateway enforcement | Repair MCP transport/session behavior                   |
+| Cloudflare  | DNS, optional WAF/rate controls, optional proxy after explicit testing                                | Create affinity between hidden Railway replicas         |
+| REST        | Serve conventional HTTP clients and OpenAPI consumers                                                 | Be a prerequisite for Claude or Codex MCP use           |
+| Public SDK  | Optional developer convenience after stable REST demand exists                                        | Be a launch requirement for MCP/CLI/plugin distribution |
 
 ### 4.3 What the simplest successful product looks like
 
@@ -232,14 +242,14 @@ The audit queried all retained runtime deployment records and status-specific HT
 
 Deployment history in the retained week:
 
-| Record type | Count |
-|---|---:|
-| Deployment triggers | 319 |
-| Skipped by path filtering | 289 |
-| Removed runtime deployments | 28 |
-| Current successful deployment | 1 |
-| Failed deployment record | 1 |
-| Runtime deployment records inspected | 30 |
+| Record type                          | Count |
+| ------------------------------------ | ----: |
+| Deployment triggers                  |   319 |
+| Skipped by path filtering            |   289 |
+| Removed runtime deployments          |    28 |
+| Current successful deployment        |     1 |
+| Failed deployment record             |     1 |
+| Runtime deployment records inspected |    30 |
 
 The failed build was a manual/wrong-root build that could not find the expected `mcp-server` directory. It did not replace the successful production deployment.
 
@@ -266,16 +276,16 @@ Across 689 retained application log lines:
 
 ### 6.3 HTTP status findings
 
-| Status | Count | Interpretation |
-|---|---:|---|
-| 200 | High volume | Successful initialization, tool traffic, DELETEs, and long-running/reconnecting GET streams |
-| 400 | 4 | Two GET and two DELETE requests with missing/invalid sessions |
-| 401 | 52 | Mostly unauthenticated GET discovery/connection attempts; two POSTs |
-| 403 | 1 | Expected result from the audit's unapproved-Origin OPTIONS test |
-| 404 | 12 | Eleven favicon requests and one audit metadata-path probe |
-| 409 | 392 | Concurrent/competing GET stream conflicts for existing sessions |
-| 429 | 41 | Session/rate pressure; five requests identified as `openai-mcp/1.0.0 (Codex)` |
-| 500-599 | 0 | No server failure response found |
+| Status  |       Count | Interpretation                                                                              |
+| ------- | ----------: | ------------------------------------------------------------------------------------------- |
+| 200     | High volume | Successful initialization, tool traffic, DELETEs, and long-running/reconnecting GET streams |
+| 400     |           4 | Two GET and two DELETE requests with missing/invalid sessions                               |
+| 401     |          52 | Mostly unauthenticated GET discovery/connection attempts; two POSTs                         |
+| 403     |           1 | Expected result from the audit's unapproved-Origin OPTIONS test                             |
+| 404     |          12 | Eleven favicon requests and one audit metadata-path probe                                   |
+| 409     |         392 | Concurrent/competing GET stream conflicts for existing sessions                             |
+| 429     |          41 | Session/rate pressure; five requests identified as `openai-mcp/1.0.0 (Codex)`               |
+| 500-599 |           0 | No server failure response found                                                            |
 
 409 timing and latency:
 
@@ -1018,17 +1028,17 @@ Add three layers:
 
 ### 8.3 Highest-value attack paths to test
 
-| Attack | Current mitigating control | Residual concern |
-|---|---|---|
-| Session exhaustion | 500 global / 10 per-user caps, rate limiting | Reconnect traffic can keep sessions alive; caps produce 429 instead of recovery |
-| OAuth token theft | Hashed storage for API keys, revocation support | Connector receives long-lived raw API key; no resource/client binding |
-| DCR storage abuse | 1,000 cache / 5,000 durable limits, retention cleanup | Arbitrary HTTPS registrations; fallback cache resets on deploy |
-| Tool enumeration | Public-only catalogue filter | Internal hidden-tool predicate is inconsistent across OpenAPI/REST |
-| Cross-tenant data access | Request context, explicit user/project scoping, RLS/gateway | Service-role client bypasses RLS; context/filter mistakes become critical |
-| Scope escalation | Tool-to-scope mapping, plan-derived scopes | Challenge/consent/token semantics can diverge |
-| Credit bypass | `mcp-gateway`, gateway HMAC tokens | Direct/service-role paths must never bypass unintentionally |
-| False health | Process health and error monitoring | `/health` can be green while auth/gateway/database path is broken |
-| Redirect URI phishing | Server validation and PKCE | Server/UI policy mismatch; arbitrary HTTPS registration; redirect host not shown |
+| Attack                   | Current mitigating control                                  | Residual concern                                                                 |
+| ------------------------ | ----------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| Session exhaustion       | 500 global / 10 per-user caps, rate limiting                | Reconnect traffic can keep sessions alive; caps produce 429 instead of recovery  |
+| OAuth token theft        | Hashed storage for API keys, revocation support             | Connector receives long-lived raw API key; no resource/client binding            |
+| DCR storage abuse        | 1,000 cache / 5,000 durable limits, retention cleanup       | Arbitrary HTTPS registrations; fallback cache resets on deploy                   |
+| Tool enumeration         | Public-only catalogue filter                                | Internal hidden-tool predicate is inconsistent across OpenAPI/REST               |
+| Cross-tenant data access | Request context, explicit user/project scoping, RLS/gateway | Service-role client bypasses RLS; context/filter mistakes become critical        |
+| Scope escalation         | Tool-to-scope mapping, plan-derived scopes                  | Challenge/consent/token semantics can diverge                                    |
+| Credit bypass            | `mcp-gateway`, gateway HMAC tokens                          | Direct/service-role paths must never bypass unintentionally                      |
+| False health             | Process health and error monitoring                         | `/health` can be green while auth/gateway/database path is broken                |
+| Redirect URI phishing    | Server validation and PKCE                                  | Server/UI policy mismatch; arbitrary HTTPS registration; redirect host not shown |
 
 ### 8.4 Existing strengths worth preserving
 
@@ -1144,17 +1154,17 @@ The Social Neuron integration should be tested independently in both clients; su
 
 Use this section to challenge the plan rather than merely confirm it.
 
-| Hypothesis | Supporting evidence | Strongest challenge | Decisive test |
-|---|---|---|---|
-| Stateless HTTP is the correct remote design | Current tools are request/response or job/poll; session conflicts dominate logs; installed SDK supports stateless mode | MCP Apps or server-initiated capabilities may depend on state | Run full Apps/prompts/resources/tool matrix on a stateless branch in Claude, Codex, and Inspector |
-| Railway is not the incident root cause | Process healthy, 0 5xx, one replica, conflicts returned by application/SDK | Railway HTTP/2/SSE behavior could trigger client reconnects | Reproduce same client against local HTTP and another host; compare network trace |
-| Supabase is not the session root cause | No dependency-error pattern; status codes are session conflicts/rate limits | Slow auth could cause client retries | Correlate request IDs with auth latency and run a canary using mocked fast auth |
-| Cloudflare should remain out of path | It is not currently involved; adding it increases variables | Cloudflare could offer better connection handling or WAF | Stage a separate proxied hostname and compare streaming/OAuth behavior without changing production |
-| A public SDK is unnecessary | Claude/Codex use MCP; CLI is in-process; REST works directly | TypeScript customers may need typed convenience | Require concrete consumer design and compare OpenAPI-generated client effort vs maintained SDK cost |
-| 409 is mainly a server architecture issue | SDK rejects competing streams; server retains sessions and renews on GET | Misbehaving client may be solely responsible | Use official MCP client/Inspector and packet capture; determine whether standards-compliant client can trigger same condition |
-| OAuth must use short-lived connector tokens | Current spec and least-privilege model favor resource/audience binding | Long-lived API keys may be operationally simpler and accepted by target clients | Run directory/security requirements review and cross-resource replay test; document accepted risk if choosing API keys |
-| Supabase migration drift is material | Large remote/local ledger mismatch | Schema may still be correct because changes were applied manually | Schema diff + migration-to-PR reconciliation; inspect actual production objects and checksums |
-| Horizontal scaling should wait | No sticky sessions; in-memory map | One replica may be sufficient indefinitely | Load/cost forecast; if one replica meets SLO, scaling can be deferred after reliability fixes |
+| Hypothesis                                  | Supporting evidence                                                                                                    | Strongest challenge                                                             | Decisive test                                                                                                                 |
+| ------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| Stateless HTTP is the correct remote design | Current tools are request/response or job/poll; session conflicts dominate logs; installed SDK supports stateless mode | MCP Apps or server-initiated capabilities may depend on state                   | Run full Apps/prompts/resources/tool matrix on a stateless branch in Claude, Codex, and Inspector                             |
+| Railway is not the incident root cause      | Process healthy, 0 5xx, one replica, conflicts returned by application/SDK                                             | Railway HTTP/2/SSE behavior could trigger client reconnects                     | Reproduce same client against local HTTP and another host; compare network trace                                              |
+| Supabase is not the session root cause      | No dependency-error pattern; status codes are session conflicts/rate limits                                            | Slow auth could cause client retries                                            | Correlate request IDs with auth latency and run a canary using mocked fast auth                                               |
+| Cloudflare should remain out of path        | It is not currently involved; adding it increases variables                                                            | Cloudflare could offer better connection handling or WAF                        | Stage a separate proxied hostname and compare streaming/OAuth behavior without changing production                            |
+| A public SDK is unnecessary                 | Claude/Codex use MCP; CLI is in-process; REST works directly                                                           | TypeScript customers may need typed convenience                                 | Require concrete consumer design and compare OpenAPI-generated client effort vs maintained SDK cost                           |
+| 409 is mainly a server architecture issue   | SDK rejects competing streams; server retains sessions and renews on GET                                               | Misbehaving client may be solely responsible                                    | Use official MCP client/Inspector and packet capture; determine whether standards-compliant client can trigger same condition |
+| OAuth must use short-lived connector tokens | Current spec and least-privilege model favor resource/audience binding                                                 | Long-lived API keys may be operationally simpler and accepted by target clients | Run directory/security requirements review and cross-resource replay test; document accepted risk if choosing API keys        |
+| Supabase migration drift is material        | Large remote/local ledger mismatch                                                                                     | Schema may still be correct because changes were applied manually               | Schema diff + migration-to-PR reconciliation; inspect actual production objects and checksums                                 |
+| Horizontal scaling should wait              | No sticky sessions; in-memory map                                                                                      | One replica may be sufficient indefinitely                                      | Load/cost forecast; if one replica meets SLO, scaling can be deferred after reliability fixes                                 |
 
 ### Questions an adversarial reviewer should answer
 
@@ -1380,21 +1390,21 @@ SDK exit criteria:
 
 ### 13.1 Protocol matrix
 
-| Test | Stdio | HTTP stateless | HTTP stateful fallback | REST |
-|---|:---:|:---:|:---:|:---:|
-| Initialize/version negotiation | Required | Required | Required | N/A |
-| Tools list/schema parity | Required | Required | Required | Required |
-| Prompts list/get | Required | Required | Required | N/A |
-| Resources list/read | Required | Required | Required | N/A |
-| Safe read tool | Required | Required | Required | Required |
-| Async job submit/poll | Required | Required | Required | Required |
-| Invalid arguments | Required | Required | Required | Required |
-| Missing token | N/A/API key startup | Required | Required | Required |
-| Insufficient scope | Required | Required | Required | Required |
-| Revoked token | Required | Required | Required | Required |
-| Unknown session | N/A | N/A | Required | N/A |
-| Concurrent/reconnect load | N/A | Required | Required | Required |
-| Restart/redeploy | Process restart | Required | Required | Required |
+| Test                           |        Stdio        | HTTP stateless | HTTP stateful fallback |   REST   |
+| ------------------------------ | :-----------------: | :------------: | :--------------------: | :------: |
+| Initialize/version negotiation |      Required       |    Required    |        Required        |   N/A    |
+| Tools list/schema parity       |      Required       |    Required    |        Required        | Required |
+| Prompts list/get               |      Required       |    Required    |        Required        |   N/A    |
+| Resources list/read            |      Required       |    Required    |        Required        |   N/A    |
+| Safe read tool                 |      Required       |    Required    |        Required        | Required |
+| Async job submit/poll          |      Required       |    Required    |        Required        | Required |
+| Invalid arguments              |      Required       |    Required    |        Required        | Required |
+| Missing token                  | N/A/API key startup |    Required    |        Required        | Required |
+| Insufficient scope             |      Required       |    Required    |        Required        | Required |
+| Revoked token                  |      Required       |    Required    |        Required        | Required |
+| Unknown session                |         N/A         |      N/A       |        Required        |   N/A    |
+| Concurrent/reconnect load      |         N/A         |    Required    |        Required        | Required |
+| Restart/redeploy               |   Process restart   |    Required    |        Required        | Required |
 
 ### 13.2 OAuth matrix
 

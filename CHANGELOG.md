@@ -2,25 +2,35 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## Unreleased
+## [1.8.2] - 2026-07-14
 
 ### Added
 
 - **Five project-scoped lifecycle tools.** `cancel_async_job`, `cancel_scheduled_post`, `delete_carousel`, `delete_content_plan`, and `delete_autopilot_config` require explicit confirmation, carry destructive annotations, and are exposed consistently through MCP, REST/OpenAPI, CLI discovery, and typed SDK helpers.
 - **Analytics Pulse and corrected Content Calendar MCP Apps.** Both use scoped backing tools and conversational fallbacks; Calendar quick-create uses a stable idempotency key and rescheduling uses an optimistic concurrency precondition.
 - **Structured async-job billing.** Status and carousel responses expose server-derived reserved, charged, and refunded amounts plus `billing_status` and a stable failure reason.
+- **Living skill retrieval.** `list_skills` merges live guide rows with executable workflows, and `get_skill` returns the full current guide by slug without breaking the existing `run_skill` path.
 
 ### Security
 
 - Failed-job refunds now require explicit debit authority, inspect returned ledger errors, and report `refund_pending` rather than inventing success. Provider/database error strings are removed from public polling responses.
 - Hardened OAuth resource binding, CLI credential-file access, SDK endpoint validation, output scanning, strict base64 handling, publishing provenance/idempotency, and model-visible tool metadata sealing.
+- The version-3 tool manifest now seals every exposure flag, including authenticated-hidden registration, so a tool cannot silently move onto a public surface.
 - Added CodeQL, npm OIDC-only publication, and an exact-tag dependency cooldown exception for this audited release.
+- Hardened hosted connector discovery for Claude/ChatGPT browser origins and both RFC 9728 protected-resource metadata paths. Session caps now reclaim only the least-recently-used idle session and never evict an active request or SSE stream.
 
 ### Changed
 
-- Public transport count is 90 tools (103 sealed surfaces including internal, local-only, and App entries).
+- Public transport count is 91 tools (104 sealed surfaces including internal, local-only, and App entries).
+- Brand extraction rejects ambiguous handles instead of guessing DNS names; publishing enables native AI-content disclosures by default while preserving explicit false for verified non-AI media.
+- `check_status` discloses requested-versus-delivered model fallback, and HyperFrames documents the exact `window.__hf` runtime contract.
 - Analytics keeps the newest cumulative snapshot for each `(post_id, platform)` pair before aggregation.
 - The release workflow creates a matching formal GitHub release after npm succeeds and verifies npm/GitHub latest-version consistency.
+
+### Release acceptance
+
+- Lifecycle deletion/cancellation and failed-job billing are not considered production-verified until the compatible private backend is deployed and the evidence matrix in [`docs/lifecycle-backend-smoke.md`](docs/lifecycle-backend-smoke.md) passes against the hosted authenticated service.
+- Claude/Codex connector compatibility and session reclamation are not considered production-verified until private PR `#2223` is independently approved, deployed, and passes a greater-than-10-session live regression.
 
 ## [1.8.1] - 2026-07-14
 

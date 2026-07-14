@@ -1,14 +1,16 @@
 import {
   TOOL_CATALOG,
 } from '../../lib/tool-catalog.js';
-import { emitSnResult } from './parse.js';
+import { emitSnResult, isEnabledFlag } from './parse.js';
 import { MCP_VERSION } from '../../lib/version.js';
 import type { SnArgs } from './types.js';
 
 function publicStdioTools() {
   // The deterministic CLI invokes the npm/stdio surface. Interactive Apps are
   // hosted-HTTP UI resources; localOnly screenshot tools remain available.
-  return TOOL_CATALOG.filter(t => !t.internal && t.module !== 'apps');
+  return TOOL_CATALOG.filter(
+    t => !t.internal && !t.hiddenFromPublicCount && t.module !== 'apps'
+  );
 }
 
 /**
@@ -69,25 +71,29 @@ export async function handleInfo(args: SnArgs, asJson: boolean): Promise<void> {
     version: MCP_VERSION,
     toolCount: stdioTools.length,
     modules: Array.from(new Set(stdioTools.map(tool => tool.module))).sort(),
+    auth: null,
   };
 
-  // Try to load auth info (optional — fails silently when offline or unconfigured)
-  try {
-    const { loadApiKey } = await import('../../cli/credentials.js');
-    const { validateApiKey } = await import('../../auth/api-keys.js');
-    const apiKey = await loadApiKey();
-    if (apiKey) {
-      const result = await validateApiKey(apiKey);
-      if (result.valid) {
-        info.auth = {
-          email: result.email || null,
-          scopes: result.scopes || [],
-          expiresAt: result.expiresAt || null,
-        };
+  // `--offline` avoids keychain and network access entirely. This makes the
+  // inventory command deterministic in CI, air-gapped shells, and incident use.
+  if (!isEnabledFlag(args.offline)) {
+    try {
+      const { loadApiKey } = await import('../../cli/credentials.js');
+      const { validateApiKey } = await import('../../auth/api-keys.js');
+      const apiKey = await loadApiKey();
+      if (apiKey) {
+        const result = await validateApiKey(apiKey);
+        if (result.valid) {
+          info.auth = {
+            email: result.email || null,
+            scopes: result.scopes || [],
+            expiresAt: result.expiresAt || null,
+          };
+        }
       }
+    } catch {
+      info.auth = null;
     }
-  } catch {
-    info.auth = null;
   }
 
   // Try to get credit balance (only if authenticated)

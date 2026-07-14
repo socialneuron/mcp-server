@@ -93,7 +93,7 @@ describe('brand tools', () => {
       expect(mockCallEdge).toHaveBeenCalledOnce();
       const [fnName, body, opts] = mockCallEdge.mock.calls[0];
       expect(fnName).toBe('brand-extract');
-      expect(body).toEqual({ url: 'https://example.com' });
+      expect(body).toEqual({ url: 'https://example.com/' });
       expect(opts).toEqual({ timeoutMs: 60_000 });
 
       // Verify formatted output

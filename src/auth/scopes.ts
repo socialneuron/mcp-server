@@ -174,6 +174,7 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:read / mcp:write (Skills)
   list_skills: 'mcp:read',
+  get_skill: 'mcp:read',
   run_skill: 'mcp:write',
 
   // mcp:read (Loop observability — growth-loop KPIs + content learning state)

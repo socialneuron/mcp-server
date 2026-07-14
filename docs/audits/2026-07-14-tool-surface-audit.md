@@ -1,12 +1,12 @@
 # MCP Tool Surface Security and Usability Audit
 
-**Date:** 2026-07-14  
-**Generated from:** runtime `tools/list` registration plus `TOOL_CATALOG`  
-**Inventory:** 103 sealed tools (88 public, 2 local only, 11 internal, 2 public app)
+**Date:** 2026-07-14
+**Generated from:** runtime `tools/list` registration plus `TOOL_CATALOG`
+**Inventory:** 104 sealed tools (89 public, 2 local only, 11 internal, 2 public app)
 
 ## Executive findings
 
-- All 103 runtime and catalog entries are integrity-sealed. The seal now includes exposure flags and agent-selection guidance, closing the prior unsealed metadata gap.
+- All 104 runtime and catalog entries are integrity-sealed. The seal now includes exposure flags and agent-selection guidance, closing the prior unsealed metadata gap.
 - 51 tools expose an explicit `project_id`. 30 project-relevant tools still rely on account defaults or opaque IDs and should gain explicit compound project/account binding.
 - Generation tools now accept `project_id`; `generate_video` is no longer account-cap blocked on paid plans. HyperFrames remains a separate renderer and keeps a separate reliability verdict.
 - Destructive and open-world annotations are agent hints, not authorization. The gateway and backend must re-check scope, membership, ownership, budget, approval, and idempotency on every call.
@@ -20,7 +20,7 @@
 | `mcp:autopilot` | 7 |
 | `mcp:comments` | 5 |
 | `mcp:distribute` | 5 |
-| `mcp:read` | 50 |
+| `mcp:read` | 51 |
 | `mcp:write` | 32 |
 
 ## Review method and limitations
@@ -85,6 +85,7 @@ This matrix checks the exposed schemas, scopes, annotations, visibility flags, a
 | `get_pipeline_status` | pipeline | public | mcp:read | opaque ID/key | multi-stage spend, approval bypass, or unintended publish | mcp:read; backend ownership required; read-only annotation | Add project_id (and account_id where relevant), then assert compound ownership server-side. |
 | `get_recipe_details` | recipes | public | mcp:read | account/global | opaque multi-step spend and unintended external side effects | mcp:read; read-only annotation | Retain least-privilege scope, bounded outputs, sanitized errors, and regression coverage. |
 | `get_recipe_run_status` | recipes | public | mcp:read | opaque ID/key | opaque multi-step spend and unintended external side effects | mcp:read; backend ownership required; read-only annotation | Add project_id (and account_id where relevant), then assert compound ownership server-side. |
+| `get_skill` | skills | public | mcp:read | account/global | opaque workflow side effects or unbounded generation | mcp:read; read-only annotation | Retain least-privilege scope, bounded outputs, sanitized errors, and regression coverage. |
 | `list_autopilot_configs` | autopilot | public | mcp:autopilot | account/implicit | unbounded spend, schedule mutation, or approval bypass | mcp:autopilot; read-only annotation | Add project_id (and account_id where relevant), then assert compound ownership server-side. |
 | `list_comments` | comments | public | mcp:comments | opaque ID/key | external speech/moderation under the wrong account | mcp:comments; backend ownership required; read-only annotation | Add project_id (and account_id where relevant), then assert compound ownership server-side. |
 | `list_compositions` | remotion | public | mcp:read | account/global | untrusted props, render abuse, or paid compute exhaustion | mcp:read; read-only annotation | Retain least-privilege scope, bounded outputs, sanitized errors, and regression coverage. |
@@ -142,4 +143,3 @@ This matrix checks the exposed schemas, scopes, annotations, visibility flags, a
 3. Add distributed rate limiting before horizontal hosted-MCP scaling; current in-process limits remain single-replica controls.
 4. Treat quality checks as advisory unless the server-side publish gate independently enforces them.
 5. Re-run this generator, `lint:tools`, `verify:lock`, contract tests, and live read-only probes on every tool-surface release.
-

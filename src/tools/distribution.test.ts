@@ -171,6 +171,30 @@ describe('distribution tools', () => {
       expect(body).not.toHaveProperty('hermesRunId');
     });
 
+    it('defaults platform AI disclosures on and preserves explicit false', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['TikTok', 'Instagram', 'YouTube']));
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, results: {}, scheduledAt: '2026-08-15T14:00:00Z' },
+        error: null,
+      });
+
+      await server.getHandler('schedule_post')!({
+        media_url: 'https://cdn.example.com/audit.mp4',
+        media_type: 'VIDEO',
+        caption: 'Audit upload',
+        title: 'Audit upload',
+        platforms: ['tiktok', 'instagram', 'youtube'],
+        platform_metadata: { instagram: { is_ai_generated: false } },
+        auto_rehost: false,
+      });
+
+      const body = mockCallEdge.mock.calls[1][1] as Record<string, any>;
+      expect(body.platformMetadata.tiktok.isAiGenerated).toBe(true);
+      expect(body.platformMetadata.tiktok.useInbox).toBeUndefined();
+      expect(body.platformMetadata.instagram.isAiGenerated).toBe(false);
+      expect(body.platformMetadata.youtube.containsSyntheticMedia).toBe(true);
+    });
+
     it('rejects ambiguous media instead of bypassing the visual gate with an undefined type', async () => {
       const handler = server.getHandler('schedule_post')!;
       const result = await handler({

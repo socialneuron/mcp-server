@@ -35,6 +35,7 @@ export const ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS = new Set<string>([
   'list_hyperframes_blocks',
   'render_hyperframes',
   'list_skills',
+  'get_skill',
   'run_skill',
 ]);
 
@@ -52,7 +53,11 @@ export function isToolAllowedByProfile(toolName: string, profile: ToolProfile): 
 
 export function publicToolsForProfile(profile: ToolProfile): ToolEntry[] {
   return TOOL_CATALOG.filter(
-    tool => !tool.localOnly && !tool.internal && isToolAllowedByProfile(tool.name, profile)
+    tool =>
+      !tool.localOnly &&
+      !tool.internal &&
+      !tool.hiddenFromPublicCount &&
+      isToolAllowedByProfile(tool.name, profile)
   );
 }
 

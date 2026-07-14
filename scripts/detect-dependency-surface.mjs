@@ -19,12 +19,14 @@ const packageFiles = new Set([
   'package.json',
   'packages/sdk/package.json',
   'apps/content-calendar/package.json',
+  'apps/analytics-pulse/package.json',
 ]);
 
 const lockfiles = new Set([
   'package-lock.json',
   'packages/sdk/package-lock.json',
   'apps/content-calendar/package-lock.json',
+  'apps/analytics-pulse/package-lock.json',
 ]);
 
 // Release workflow edits can change how dependencies are installed, checked,

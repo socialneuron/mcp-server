@@ -171,10 +171,12 @@ export function registerHyperframesTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'render_hyperframes',
-    'Render an HTML video composition (Hyperframes) to MP4. Author the composition ' +
-      'as HTML with data-* timing attributes and GSAP timelines — frame-accurate, no ' +
-      'React build step. Use list_hyperframes_blocks to see the pre-built block ' +
-      'catalog. Pass project_id to keep the render with the correct brand/project. ' +
+    'Render an HTML video composition (Hyperframes) to MP4 — frame-accurate, no React build step. ' +
+      'The page MUST expose window.__hf = { duration: <seconds>, seek: (t) => void }; ' +
+      'the renderer calls seek(t) per frame (GSAP timelines work when driven from seek). ' +
+      'Missing window.__hf causes a terminal timeout; poll check_status and verify its reported billing/refund outcome. ' +
+      'Use list_hyperframes_blocks for the pre-built block catalog. ' +
+      'Pass project_id to keep the render with the correct brand/project. ' +
       'Returns a job ID — poll with check_status.',
     {
       composition_html: z

@@ -35,7 +35,7 @@ try {
       `import { TOOL_CATALOG } from ${JSON.stringify(resolve(ROOT, 'src/lib/tool-catalog.ts'))};\n` +
       `const s = new McpServer({ name: 'tools-ref', version: '0' });\n` +
       `registerAllTools(s, { skipApps: true });\n` +
-      `const publicToolNames = new Set(TOOL_CATALOG.filter(t => !t.internal).map(t => t.name));\n` +
+      `const publicToolNames = new Set(TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).map(t => t.name));\n` +
       `const out = {};\n` +
       `for (const [n, t] of Object.entries(s._registeredTools ?? {})) if (publicToolNames.has(n)) out[n] = { description: String(t?.description ?? ''), scope: TOOL_SCOPES[n] ?? 'mcp:read' };\n` +
       `export const RUNTIME_TOOLS = out;\n`

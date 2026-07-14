@@ -7,8 +7,8 @@
  * Schema 2020-12 natively, so the discovery `inputSchema` drops straight into
  * each `requestBody`.
  *
- * Served at `GET /v1/openapi.json` (unauthenticated — discovery metadata, per
- * the MCP spec's own `/v1/openapi.json` = no-auth convention). Memoized.
+ * Served at `GET /v1/openapi.json` as Social Neuron's unauthenticated REST
+ * discovery extension. OpenAPI is not an MCP-specified endpoint. Memoized.
  */
 import { buildDiscoveryCatalog } from './discovery-catalog.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
@@ -97,8 +97,10 @@ async function computeOpenApiDocument(): Promise<Record<string, unknown>> {
   const discovery = await buildDiscoveryCatalog(); // name, description, inputSchema
   const schemaByName = new Map(discovery.map(t => [t.name, t.inputSchema]));
 
-  // Public REST surface = catalog minus localOnly/internal (same as the server card).
-  const publicTools = TOOL_CATALOG.filter(t => !t.localOnly && !t.internal);
+  // Public REST surface = the same public catalog projection as the server card.
+  const publicTools = TOOL_CATALOG.filter(
+    t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+  );
 
   const paths: Record<string, unknown> = {};
   for (const tool of publicTools) {
@@ -172,5 +174,5 @@ async function computeOpenApiDocument(): Promise<Record<string, unknown>> {
 
 /** Count of REST-exposed operations — used by verify:metadata to guard drift. */
 export function publicRestToolCount(): number {
-  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal).length;
+  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount).length;
 }

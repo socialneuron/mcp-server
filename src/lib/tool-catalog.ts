@@ -15,6 +15,9 @@ export type ToolEntry = {
    *  runtime, but excluded from the public server-card, discovery search results, and
    *  knowledge documents. */
   internal?: boolean;
+  /** Operational tool that remains registered for authenticated runtimes but is
+   * omitted from public discovery, REST, OpenAPI, CLI, and documentation. */
+  hiddenFromPublicCount?: boolean;
   /** Human goal this tool is meant to satisfy; used by search_tools for task-intent discovery. */
   task_intent?: string;
   /** Positive selection guidance for agents after a tool is discovered. */
@@ -746,6 +749,13 @@ export const TOOL_CATALOG: ToolEntry[] = [
     name: 'list_skills',
     description:
       'List Social Neuron content workflow skills available to the user. A skill is a brand-locked multi-step pipeline inspired by documented viral patterns (MrBeast 3-second hook, Hormozi pattern interrupt, etc.).',
+    module: 'skills',
+    scope: 'mcp:read',
+  },
+  {
+    name: 'get_skill',
+    description:
+      'Fetch the full body and current compiled guidance for one Social Neuron skill by slug.',
     module: 'skills',
     scope: 'mcp:read',
   },
