@@ -197,7 +197,8 @@ async function macKeychainRead(service: string): Promise<string | null> {
   const native = await loadNativeKeyring();
   if (native) {
     try {
-      return new native.Entry(service, KEYCHAIN_ACCOUNT).getPassword();
+      const value = new native.Entry(service, KEYCHAIN_ACCOUNT).getPassword();
+      if (value) return value;
     } catch {
       // Fall through to the read-only CLI path for legacy or ambiguous entries.
     }

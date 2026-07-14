@@ -73,6 +73,26 @@ describe('macOS Keychain credential security', () => {
     expect(execFileSync).not.toHaveBeenCalled();
   });
 
+  it('falls back to a read-only CLI lookup when the native Keychain misses a legacy entry', async () => {
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockReturnValue('snk_test_legacy_read\n');
+
+    await expect(loadApiKey()).resolves.toBe('snk_test_legacy_read');
+
+    expect(execFileSync).toHaveBeenCalledWith(
+      'security',
+      [
+        'find-generic-password',
+        '-a',
+        'socialneuron',
+        '-s',
+        'socialneuron-api-key',
+        '-w',
+      ],
+      { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+    );
+  });
+
   it('deletes through the native Keychain API without invoking a subprocess', async () => {
     keyringDeletePassword.mockReturnValue(true);
 
