@@ -288,11 +288,27 @@ async function clearMacKeychain(service: string): Promise<void> {
   );
 }
 
-async function prepareMacFileFallback(service: string): Promise<void> {
-  // Keychain reads take precedence over the credentials file. A fallback is
-  // safe only after absence is positively verified; "could not read" must not
-  // be treated as "not found" or an old value can later reappear.
-  await clearMacKeychain(service);
+async function verifyMacFileFallback(service: string): Promise<void> {
+  // Keychain reads take precedence over the credentials file. Never delete an
+  // existing credential automatically during a save: if the fallback path is
+  // unsafe or its write later fails, destructive migration could leave the user
+  // with neither the previous value nor the replacement. File fallback is safe
+  // only when Keychain absence is positively verified; otherwise retain the old
+  // credential and make the user repair/unlock Keychain before retrying.
+  const existing = await inspectMacKeychain(service);
+  if (existing.status === 'missing') return;
+
+  if (existing.status === 'found') {
+    throw new Error(
+      'An existing Social Neuron Keychain credential could not be replaced. ' +
+        'The existing value was retained; unlock or remove it in Keychain Access and retry.'
+    );
+  }
+
+  throw new Error(
+    'Unable to verify absence of an existing Social Neuron Keychain credential. ' +
+      'Unlock Keychain Access and retry.'
+  );
 }
 
 // ── Linux secret-tool ────────────────────────────────────────────────
@@ -375,17 +391,23 @@ export async function loadApiKey(): Promise<string | null> {
 export async function saveApiKey(key: string): Promise<void> {
   const os = platform();
   let saved = false;
+  let fallbackCredentials: CredentialsFile | undefined;
 
   if (os === 'darwin') {
     saved = await macKeychainWrite(KEYCHAIN_SERVICE_API, key);
-    if (!saved) await prepareMacFileFallback(KEYCHAIN_SERVICE_API);
+    if (!saved) {
+      // Validate and parse the deterministic fallback before examining the
+      // Keychain. No Keychain state is mutated on this fallback path.
+      fallbackCredentials = readCredentialsFile();
+      await verifyMacFileFallback(KEYCHAIN_SERVICE_API);
+    }
   } else if (os === 'linux') {
     saved = linuxSecretWrite('api-key', key);
   }
 
   if (!saved) {
     // File fallback
-    const creds = readCredentialsFile();
+    const creds = fallbackCredentials ?? readCredentialsFile();
     creds.apiKey = key;
     writeCredentialsFile(creds);
 
@@ -471,16 +493,20 @@ export async function loadSupabaseUrl(): Promise<string | null> {
 export async function saveSupabaseUrl(url: string): Promise<void> {
   const os = platform();
   let saved = false;
+  let fallbackCredentials: CredentialsFile | undefined;
 
   if (os === 'darwin') {
     saved = await macKeychainWrite(KEYCHAIN_SERVICE_URL, url);
-    if (!saved) await prepareMacFileFallback(KEYCHAIN_SERVICE_URL);
+    if (!saved) {
+      fallbackCredentials = readCredentialsFile();
+      await verifyMacFileFallback(KEYCHAIN_SERVICE_URL);
+    }
   } else if (os === 'linux') {
     saved = linuxSecretWrite('supabase-url', url);
   }
 
   if (!saved) {
-    const creds = readCredentialsFile();
+    const creds = fallbackCredentials ?? readCredentialsFile();
     creds.supabaseUrl = url;
     writeCredentialsFile(creds);
   }

@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 
 const TEST_HOME = '/tmp/social-neuron-macos-credentials-test';
 const TEST_CONFIG_DIR = `${TEST_HOME}/.config/social-neuron`;
@@ -51,7 +51,7 @@ vi.mock('@napi-rs/keyring', () => ({
   },
 }));
 
-import { deleteApiKey, loadApiKey, saveApiKey } from './credentials.js';
+import { deleteApiKey, loadApiKey, saveApiKey, saveSupabaseUrl } from './credentials.js';
 
 describe('macOS Keychain credential security', () => {
   beforeEach(() => {
@@ -155,28 +155,30 @@ describe('macOS Keychain credential security', () => {
     );
   });
 
-  it('refuses a file fallback while a stale Keychain value remains readable', async () => {
+  it('retains an existing Keychain value instead of destructively migrating to a file', async () => {
     keyringSetPassword.mockImplementation(() => {
       throw new Error('native write unavailable');
     });
-    keyringDeletePassword.mockReturnValue(false);
     keyringGetPassword.mockReturnValue(null);
     execFileSync.mockImplementation((_command, args: string[]) => {
-      if (args[0] === 'delete-generic-password') return '';
       if (args[0] === 'find-generic-password') return 'snk_test_stale_legacy_key\n';
       throw new Error('unexpected command');
     });
 
     await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
-      /Unable to verify removal of the existing Social Neuron Keychain credential/
+      /existing Social Neuron Keychain credential could not be replaced/
     );
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalledWith(
+      'security',
+      expect.arrayContaining(['delete-generic-password']),
+      expect.anything()
+    );
+    expect(existsSync(TEST_CREDENTIALS_FILE)).toBe(false);
   });
 
-  it('fails closed when Keychain cleanup cannot distinguish absence from unavailability', async () => {
+  it('fails closed when Keychain inspection cannot distinguish absence from unavailability', async () => {
     keyringSetPassword.mockImplementation(() => {
-      throw new Error('keychain locked');
-    });
-    keyringDeletePassword.mockImplementation(() => {
       throw new Error('keychain locked');
     });
     keyringGetPassword.mockImplementation(() => {
@@ -187,22 +189,78 @@ describe('macOS Keychain credential security', () => {
     });
 
     await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
-      /Unable to verify removal of the existing Social Neuron Keychain credential/
+      /Unable to verify absence of an existing Social Neuron Keychain credential/
     );
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
   });
 
   it('does not classify an unavailable Keychain as a missing item', async () => {
     keyringSetPassword.mockImplementation(() => {
       throw new Error('keychain unavailable');
     });
-    keyringDeletePassword.mockReturnValue(false);
     execFileSync.mockImplementation(() => {
       throw Object.assign(new Error('The default keychain could not be found.'), { status: 45 });
     });
 
     await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(
-      /Unable to verify removal of the existing Social Neuron Keychain credential/
+      /Unable to verify absence of an existing Social Neuron Keychain credential/
     );
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
+  });
+
+  it('writes the file fallback only after Keychain absence is verified', async () => {
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('native write unavailable');
+    });
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockImplementation(() => {
+      throw keychainItemNotFound();
+    });
+
+    await saveApiKey('snk_test_file_replacement');
+
+    expect(JSON.parse(readFileSync(TEST_CREDENTIALS_FILE, 'utf8'))).toMatchObject({
+      apiKey: 'snk_test_file_replacement',
+    });
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
+  });
+
+  it('applies the same non-destructive fallback contract to the Supabase URL', async () => {
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('native write unavailable');
+    });
+    keyringGetPassword.mockReturnValue(null);
+    execFileSync.mockImplementation(() => {
+      throw keychainItemNotFound();
+    });
+
+    await saveSupabaseUrl('https://test.supabase.co');
+
+    expect(keyringConstructor).toHaveBeenCalledWith(
+      'socialneuron-supabase-url',
+      'socialneuron'
+    );
+    expect(JSON.parse(readFileSync(TEST_CREDENTIALS_FILE, 'utf8'))).toMatchObject({
+      supabaseUrl: 'https://test.supabase.co',
+    });
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
+  });
+
+  it('validates an unsafe fallback before touching an existing Keychain credential', async () => {
+    mkdirSync(TEST_CONFIG_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(`${TEST_HOME}/victim.json`, '{"unchanged":true}\n');
+    symlinkSync(`${TEST_HOME}/victim.json`, TEST_CREDENTIALS_FILE);
+    keyringSetPassword.mockImplementation(() => {
+      throw new Error('native write unavailable');
+    });
+    keyringGetPassword.mockReturnValue('snk_test_existing_key');
+
+    await expect(saveApiKey('snk_test_replacement_key')).rejects.toThrow(/Unsafe/);
+
+    expect(keyringGetPassword).not.toHaveBeenCalled();
+    expect(keyringDeletePassword).not.toHaveBeenCalled();
+    expect(execFileSync).not.toHaveBeenCalled();
+    expect(readFileSync(`${TEST_HOME}/victim.json`, 'utf8')).toBe('{"unchanged":true}\n');
   });
 
   it('removes the file credential even when Keychain logout remains inconclusive', async () => {
