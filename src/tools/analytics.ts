@@ -98,7 +98,11 @@ export function registerAnalyticsTools(server: McpServer): void {
         action: 'analytics',
         platform,
         days: lookbackDays,
-        limit: maxPosts,
+        // Fetch extra snapshots, then deduplicate to the requested post count.
+        // The backend understands latestOnly after the paired application
+        // deployment; older deployments safely ignore the hint.
+        limit: Math.min(maxPosts * 5, 100),
+        latestOnly: true,
         contentId: content_id,
         ...(resolvedProjectId
           ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
@@ -112,7 +116,19 @@ export function registerAnalyticsTools(server: McpServer): void {
         };
       }
 
-      const rows = result?.rows ?? [];
+      // post_analytics stores cumulative snapshots. A post refreshed every day
+      // must not count as a new post or have its lifetime views summed again.
+      const snapshotRows = result?.rows ?? [];
+      const seenSnapshots = new Set<string>();
+      const rows = [...snapshotRows]
+        .sort((a, b) => b.captured_at.localeCompare(a.captured_at))
+        .filter(row => {
+          const key = `${row.post_id}:${row.platform.toLowerCase()}`;
+          if (seenSnapshots.has(key)) return false;
+          seenSnapshots.add(key);
+          return true;
+        })
+        .slice(0, maxPosts);
 
       if (rows.length === 0) {
         if (format === 'json') {

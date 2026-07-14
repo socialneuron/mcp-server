@@ -76,7 +76,7 @@ export async function checkUrlReachability(url: string): Promise<{
   } catch (error) {
     return {
       ok: false,
-      error: error instanceof Error ? error.message : String(error),
+      error: 'Network request failed.',
     };
   } finally {
     clearTimeout(timer);

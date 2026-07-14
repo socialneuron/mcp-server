@@ -61,10 +61,10 @@ export function registerIdeationTools(server: McpServer): void {
           'Tone directive (e.g. "direct, no jargon, second person" or "witty Gen-Z energy with emoji"). Leave blank to auto-load from project brand profile if project_id is set.'
         ),
       model: z
-        .enum(['gemini-2.0-flash', 'gemini-2.5-flash', 'gemini-2.5-pro'])
+        .enum(['gemini-2.5-flash', 'gemini-2.5-pro'])
         .optional()
         .describe(
-          'AI model to use. Defaults to gemini-2.5-flash. Use gemini-2.5-pro for highest quality.'
+          'AI model to use. Defaults to gemini-2.5-flash. Use gemini-2.5-pro for highest quality. Retired provider models are intentionally not accepted.'
         ),
       project_id: z
         .string()
@@ -78,7 +78,7 @@ export function registerIdeationTools(server: McpServer): void {
       // Rate limit content generation (30 req/min per user)
       try {
         const userId = await getDefaultUserId();
-        const rl = checkRateLimit('posting', userId);
+        const rl = checkRateLimit('generation', `generate_content:${userId}`);
         if (!rl.allowed) {
           return {
             content: [
@@ -420,7 +420,7 @@ export function registerIdeationTools(server: McpServer): void {
       // Rate limit content adaptation (30 req/min per user)
       try {
         const userId = await getDefaultUserId();
-        const rl = checkRateLimit('posting', userId);
+        const rl = checkRateLimit('generation', `adapt_content:${userId}`);
         if (!rl.allowed) {
           return {
             content: [

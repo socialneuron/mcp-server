@@ -86,7 +86,7 @@ export function registerConnectionTools(server: McpServer): void {
       const format = response_format ?? 'text';
 
       const userId = await getDefaultUserId();
-      const rl = checkRateLimit('read', `start_platform_connection:${userId}`);
+      const rl = checkRateLimit('posting', `start_platform_connection:${userId}`);
       if (!rl.allowed) {
         return {
           content: [

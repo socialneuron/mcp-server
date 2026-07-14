@@ -33,6 +33,7 @@ import {
 } from '@modelcontextprotocol/sdk/server/auth/errors.js';
 import { createTokenVerifier, evictFromCache } from './token-verifier.js';
 import { getSupabaseClient } from './supabase.js';
+import { sanitizeError } from './sanitize-error.js';
 
 // ── Allowed redirect URIs ───────────────────────────────────────────
 
@@ -179,6 +180,7 @@ export interface OAuthProviderOptions {
   supabaseUrl: string;
   supabaseAnonKey: string;
   appBaseUrl?: string; // Default: https://www.socialneuron.com
+  resource?: string;
 }
 
 // ── Supabase-backed client store with in-memory fallback ─────────────
@@ -256,7 +258,7 @@ function createClientsStore(): OAuthRegisteredClientsStore {
   function markUnavailable(reason: string): void {
     if (supabaseAvailable) {
       console.error(
-        `[oauth] persistent client store unavailable: ${reason}. ` +
+        `[oauth] persistent client store unavailable: ${sanitizeError(reason)} ` +
           `Falling back to in-memory only for this process. Run the ` +
           `mcp_oauth_clients migration to enable persistence.`
       );
@@ -305,7 +307,7 @@ function createClientsStore(): OAuthRegisteredClientsStore {
             .eq('client_id', clientId);
           if (deleteError) {
             console.error(
-              `[oauth] failed to remove client with disallowed redirect URI: ${deleteError.message}`
+              `[oauth] failed to remove client with disallowed redirect URI: ${sanitizeError(deleteError)}`
             );
           }
           return undefined;
@@ -404,7 +406,11 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
   const appBaseUrl = options.appBaseUrl ?? 'https://www.socialneuron.com';
   const clientsStore = createClientsStore();
 
-  const tokenVerifier = createTokenVerifier({ supabaseUrl, supabaseAnonKey });
+  const tokenVerifier = createTokenVerifier({
+    supabaseUrl,
+    supabaseAnonKey,
+    resource: options.resource,
+  });
 
   return {
     get clientsStore() {
@@ -507,8 +513,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       clearTimeout(timer);
 
       if (!response.ok) {
-        const err = await response.json().catch(() => ({ error: 'Exchange failed' }));
-        throw new Error((err as { error?: string }).error ?? `HTTP ${response.status}`);
+        throw new Error(`Authorization code exchange failed (HTTP ${response.status})`);
       }
 
       const data = (await response.json()) as {
@@ -521,7 +526,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       };
 
       if (!data.access_token) {
-        throw new Error(data.error ?? 'No access token returned from exchange');
+        throw new Error('No access token returned from exchange');
       }
 
       return {
@@ -562,8 +567,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         );
 
         if (!response.ok) {
-          const err = await response.json().catch(() => ({ error: 'Refresh failed' }));
-          throw new Error((err as { error?: string }).error ?? `HTTP ${response.status}`);
+          throw new Error(`Refresh token exchange failed (HTTP ${response.status})`);
         }
 
         const data = (await response.json()) as {
@@ -575,7 +579,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         };
 
         if (!data.access_token) {
-          throw new Error(data.error ?? 'No access token returned from refresh');
+          throw new Error('No access token returned from refresh');
         }
 
         return {
@@ -636,8 +640,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
           throw new Error(`Token revocation failed: HTTP ${response.status}`);
         }
       } catch (err) {
-        const msg = err instanceof Error ? err.message : 'unknown';
-        console.error(`[oauth] Token revocation call failed: ${msg}`);
+        console.error(`[oauth] Token revocation call failed: ${sanitizeError(err)}`);
       } finally {
         clearTimeout(timer);
       }

@@ -3,6 +3,7 @@ import { z } from 'zod';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { getDefaultUserId } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { sanitizeError } from '../lib/sanitize-error.js';
 
 /**
  * F4 Hyperframes — MCP tool surface.
@@ -214,6 +215,10 @@ export function registerHyperframesTools(server: McpServer): void {
         .string()
         .optional()
         .describe('Project ID to associate the Hyperframes render with.'),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Response format. Use json for a stable job_id handoff.'),
     },
     async ({
       composition_html,
@@ -224,6 +229,7 @@ export function registerHyperframesTools(server: McpServer): void {
       fps,
       quality,
       project_id,
+      response_format,
     }) => {
       const userId = await getDefaultUserId();
 
@@ -285,19 +291,35 @@ export function registerHyperframesTools(server: McpServer): void {
           throw new Error(error || data?.error || 'Failed to create Hyperframes render job');
         }
 
+        const payload = {
+          job_id: data.jobId,
+          jobId: data.jobId,
+          status: data.status,
+          credits_cost: data.creditsCost,
+          credits: data.creditsCost,
+          duration_sec,
+          fps: fps || 30,
+          aspect_ratio: aspect_ratio || '9:16',
+          quality: quality || 'standard',
+          project_id: project_id || null,
+        };
+
         return {
           content: [
             {
               type: 'text' as const,
-              text: [
-                `Hyperframes render job queued.`,
-                `  Job ID: ${data.jobId}`,
-                `  Credits: ${data.creditsCost}`,
-                `  Duration: ${duration_sec}s @ ${fps || 30}fps (${aspect_ratio || '9:16'})`,
-                `  Quality: ${quality || 'standard'}`,
-                ``,
-                `Poll with check_status.`,
-              ].join('\n'),
+              text:
+                response_format === 'json'
+                  ? JSON.stringify({ data: payload })
+                  : [
+                      `Hyperframes render job queued.`,
+                      `  Job ID: ${data.jobId}`,
+                      `  Credits: ${data.creditsCost}`,
+                      `  Duration: ${duration_sec}s @ ${fps || 30}fps (${aspect_ratio || '9:16'})`,
+                      `  Quality: ${quality || 'standard'}`,
+                      ``,
+                      `Poll with check_status.`,
+                    ].join('\n'),
             },
           ],
         };
@@ -306,7 +328,7 @@ export function registerHyperframesTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: `Failed to queue Hyperframes render: ${err instanceof Error ? err.message : 'Unknown error'}`,
+              text: `Failed to queue Hyperframes render: ${sanitizeError(err)}`,
             },
           ],
           isError: true,

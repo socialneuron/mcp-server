@@ -68,6 +68,9 @@ export const TOOL_SCOPES: Record<string, string> = {
   generate_carousel: 'mcp:write',
   create_carousel: 'mcp:write',
   upload_media: 'mcp:write',
+  cancel_async_job: 'mcp:write',
+  delete_carousel: 'mcp:write',
+  delete_content_plan: 'mcp:write',
 
   // mcp:read (media)
   get_media_url: 'mcp:read',
@@ -78,6 +81,8 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:distribute
   schedule_post: 'mcp:distribute',
+  reschedule_post: 'mcp:distribute',
+  cancel_scheduled_post: 'mcp:distribute',
   start_platform_connection: 'mcp:distribute',
 
   // mcp:analytics
@@ -95,6 +100,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   list_autopilot_configs: 'mcp:autopilot',
   update_autopilot_config: 'mcp:autopilot',
   get_autopilot_status: 'mcp:autopilot',
+  delete_autopilot_config: 'mcp:autopilot',
 
   // Recipes
   list_recipes: 'mcp:read',
@@ -148,6 +154,7 @@ export const TOOL_SCOPES: Record<string, string> = {
 
   // mcp:read (Apps — entry tool for the Content Calendar MCP App; reads recent posts)
   open_content_calendar: 'mcp:read',
+  open_analytics_pulse: 'mcp:read',
 
   // mcp:write (Agentic harness — learning loop write-back)
   write_agent_reflection: 'mcp:write',

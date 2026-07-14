@@ -5,17 +5,23 @@
  * Respects DO_NOT_TRACK and SOCIALNEURON_NO_TELEMETRY env vars.
  */
 
-import { createHash } from 'node:crypto';
+import { createHmac, randomBytes } from 'node:crypto';
 import { PostHog } from 'posthog-node';
 import { isTelemetryDisabled, getDefaultUserId } from './supabase.js';
 import { resolveSurface } from './request-context.js';
 
-// Hash userId before sending to PostHog to avoid PII leakage.
-// Uses a static salt so the same user produces the same distinctId across sessions.
-const POSTHOG_SALT = 'socialneuron-mcp-ph-v1';
+// Hash userId before sending to PostHog to avoid PII leakage. Production can
+// provide a dedicated rotation-capable secret; local installs fall back to an
+// ephemeral per-process key, preventing cross-session correlation by default.
+const POSTHOG_PSEUDONYMIZATION_KEY =
+  process.env.POSTHOG_PSEUDONYMIZATION_KEY || randomBytes(32).toString('hex');
 
 function hashUserId(userId: string): string {
-  return createHash('sha256').update(`${POSTHOG_SALT}:${userId}`).digest('hex').substring(0, 32);
+  const hmac = createHmac('sha256', POSTHOG_PSEUDONYMIZATION_KEY);
+  // This is keyed pseudonymization of a non-secret database identifier, not password storage.
+  // codeql[js/insufficient-password-hash]
+  hmac.update(userId);
+  return hmac.digest('hex').substring(0, 32);
 }
 
 let client: PostHog | null = null;

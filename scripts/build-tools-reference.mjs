@@ -15,8 +15,8 @@ const ROOT = resolve(__dirname, '..');
 const SCOPE_SECTIONS = [
   ['mcp:read', 'Read & Discovery', 'Available on **Pro** and above.'],
   ['mcp:analytics', 'Analytics', 'Available on **Pro** and above.'],
-  ['mcp:write', 'Content Creation & Management', 'Requires **Team** or **Agency** (full MCP).'],
-  ['mcp:distribute', 'Publishing & Scheduling', 'Requires **Team** or **Agency** (full MCP).'],
+  ['mcp:write', 'Content Creation & Management', 'Available on **Pro** and above.'],
+  ['mcp:distribute', 'Publishing & Scheduling', 'Available on **Pro** and above.'],
   ['mcp:comments', 'Engagement', 'Requires **Team** or **Agency** (full MCP).'],
   ['mcp:autopilot', 'Autopilot & Automation', 'Requires **Team** or **Agency** (full MCP).'],
 ];

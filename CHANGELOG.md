@@ -2,6 +2,26 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## Unreleased
+
+### Added
+
+- **Five project-scoped lifecycle tools.** `cancel_async_job`, `cancel_scheduled_post`, `delete_carousel`, `delete_content_plan`, and `delete_autopilot_config` require explicit confirmation, carry destructive annotations, and are exposed consistently through MCP, REST/OpenAPI, CLI discovery, and typed SDK helpers.
+- **Analytics Pulse and corrected Content Calendar MCP Apps.** Both use scoped backing tools and conversational fallbacks; Calendar quick-create uses a stable idempotency key and rescheduling uses an optimistic concurrency precondition.
+- **Structured async-job billing.** Status and carousel responses expose server-derived reserved, charged, and refunded amounts plus `billing_status` and a stable failure reason.
+
+### Security
+
+- Failed-job refunds now require explicit debit authority, inspect returned ledger errors, and report `refund_pending` rather than inventing success. Provider/database error strings are removed from public polling responses.
+- Hardened OAuth resource binding, CLI credential-file access, SDK endpoint validation, output scanning, strict base64 handling, publishing provenance/idempotency, and model-visible tool metadata sealing.
+- Added CodeQL, npm OIDC-only publication, and an exact-tag dependency cooldown exception for this audited release.
+
+### Changed
+
+- Public transport count is 90 tools (103 sealed surfaces including internal, local-only, and App entries).
+- Analytics keeps the newest cumulative snapshot for each `(post_id, platform)` pair before aggregation.
+- The release workflow creates a matching formal GitHub release after npm succeeds and verifies npm/GitHub latest-version consistency.
+
 ## [1.8.1] - 2026-07-14
 
 ### Fixed

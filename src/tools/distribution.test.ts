@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerDistributionTools } from './distribution.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 
 // Stub SSRF so tests against fictional hosts (example.com variants, r2-signed.example.com)
@@ -40,12 +40,15 @@ vi.mock('../lib/ssrf.js', async () => {
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
+const mockGetProjectId = vi.mocked(getDefaultProjectId);
 
 describe('distribution tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockGetUserId.mockResolvedValue('user-1');
+    mockGetProjectId.mockResolvedValue('11111111-1111-4111-8111-111111111111');
     server = createMockServer();
     registerDistributionTools(server as any);
   });
@@ -89,6 +92,7 @@ describe('distribution tools', () => {
       const callArgs = mockCallEdge.mock.calls[1];
       expect(callArgs[0]).toBe('schedule-post');
       expect(callArgs[1].platforms).toEqual(['YouTube', 'TikTok']);
+      expect(callArgs[1].mediaType).toBe('VIDEO');
     });
 
     it('maps snake_case params to camelCase in edge function body', async () => {
@@ -115,6 +119,7 @@ describe('distribution tools', () => {
       expect(body).toEqual(
         expect.objectContaining({
           mediaUrl: 'https://cdn.example.com/img.png',
+          mediaType: 'IMAGE',
           caption: 'Hello world',
           platforms: ['Instagram'],
           title: 'My Post',
@@ -123,6 +128,61 @@ describe('distribution tools', () => {
           projectId: 'proj-123',
         })
       );
+    });
+
+    it('forwards YouTube synthetic-media disclosure and idempotency safely', async () => {
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube']));
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, results: {}, scheduledAt: '2026-08-15T14:00:00Z' },
+        error: null,
+      });
+
+      const handler = server.getHandler('schedule_post')!;
+      await handler({
+        media_url: 'https://cdn.example.com/audit.mp4',
+        media_type: 'VIDEO',
+        caption: 'Audit upload',
+        platforms: ['youtube'],
+        schedule_at: '2026-08-15T14:00:00Z',
+        idempotency_key: 'audit-youtube-20260815',
+        platform_metadata: {
+          youtube: {
+            privacy_status: 'private',
+            made_for_kids: false,
+            notify_subscribers: false,
+            contains_synthetic_media: true,
+          },
+        },
+        auto_rehost: false,
+      });
+
+      const body = mockCallEdge.mock.calls[1][1];
+      expect(body.idempotencyKey).toBe('audit-youtube-20260815');
+      expect(body.platformMetadata).toEqual({
+        youtube: {
+          privacyStatus: 'private',
+          madeForKids: false,
+          notifySubscribers: false,
+          containsSyntheticMedia: true,
+        },
+      });
+      expect(body).not.toHaveProperty('visualGateResult');
+      expect(body).not.toHaveProperty('origin');
+      expect(body).not.toHaveProperty('hermesRunId');
+    });
+
+    it('rejects ambiguous media instead of bypassing the visual gate with an undefined type', async () => {
+      const handler = server.getHandler('schedule_post')!;
+      const result = await handler({
+        media_url: 'https://cdn.example.com/download',
+        caption: 'Ambiguous media',
+        platforms: ['youtube'],
+        auto_rehost: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('media_type is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('scopes account preflight by project_id and rejects account IDs outside that brand', async () => {
@@ -293,8 +353,18 @@ describe('distribution tools', () => {
         );
       });
 
-      it('skips rehost when the URL is already an R2 signed URL', async () => {
+      it('does not trust an X-Amz-Signature query parameter as R2 provenance', async () => {
         mockCallEdge
+          .mockResolvedValueOnce({
+            data: {
+              success: true,
+              url: 'https://r2-signed.example.com/org_1/user_1/rehosted.png?X-Amz-Signature=server',
+              key: 'org_1/user_1/images/2026-04-21/rehosted.png',
+              size: 512000,
+              contentType: 'image/png',
+            },
+            error: null,
+          })
           .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
           .mockResolvedValueOnce({
             data: {
@@ -313,8 +383,14 @@ describe('distribution tools', () => {
         });
 
         expect(result.isError).toBe(false);
-        // No upload-to-r2 call — only preflight + schedule-post
-        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
+        expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(true);
+        const scheduleCall = mockCallEdge.mock.calls.find(c => c[0] === 'schedule-post');
+        expect(scheduleCall?.[1]).toEqual(
+          expect.objectContaining({
+            mediaUrl:
+              'https://r2-signed.example.com/org_1/user_1/rehosted.png?X-Amz-Signature=server',
+          })
+        );
       });
 
       it('skips rehost entirely when auto_rehost=false', async () => {
@@ -569,7 +645,7 @@ describe('distribution tools', () => {
       it('does not rehost when r2_key is already provided', async () => {
         mockCallEdge
           .mockResolvedValueOnce({
-            data: { signedUrl: 'https://r2.example.com/k.png?X-Amz-Signature=sig' },
+            data: { signedUrl: 'https://r2.example.com/object?X-Amz-Signature=sig' },
             error: null,
           })
           .mockResolvedValueOnce(mockPreflightAccounts(['YouTube']))
@@ -592,6 +668,11 @@ describe('distribution tools', () => {
         expect(result.isError).toBe(false);
         expect(mockCallEdge.mock.calls.some(c => c[0] === 'upload-to-r2')).toBe(false);
         expect(mockCallEdge.mock.calls[0][0]).toBe('get-signed-url');
+        expect(mockCallEdge).toHaveBeenLastCalledWith(
+          'schedule-post',
+          expect.objectContaining({ mediaType: 'IMAGE' }),
+          { timeoutMs: 30_000 },
+        );
       });
     });
   });
@@ -723,6 +804,36 @@ describe('distribution tools', () => {
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Failed to list connected accounts');
     });
+
+    it('allowlists public fields instead of relaying OAuth secrets or new backend fields', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: 'a-secret-test',
+              platform: 'Instagram',
+              status: 'active',
+              username: 'brand',
+              created_at: '2026-07-14T00:00:00Z',
+              access_token: 'must-not-leak',
+              refresh_token: 'must-not-leak-either',
+              provider_diagnostics: { raw: true },
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('list_connected_accounts')!({
+        response_format: 'json',
+      });
+      const text = result.content[0].text;
+      expect(text).toContain('a-secret-test');
+      expect(text).not.toContain('must-not-leak');
+      expect(text).not.toContain('provider_diagnostics');
+      expect(result.structuredContent).toBeDefined();
+    });
   });
 
   // =========================================================================
@@ -754,7 +865,11 @@ describe('distribution tools', () => {
 
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
-        expect.objectContaining({ action: 'recent-posts', days: 14 })
+        expect.objectContaining({
+          action: 'recent-posts',
+          days: 14,
+          project_id: '11111111-1111-4111-8111-111111111111',
+        })
       );
     });
 
@@ -841,6 +956,92 @@ describe('distribution tools', () => {
       expect(text).toContain('on linkedin');
       expect(text).toContain('with status "published"');
       expect(result.isError).toBeUndefined();
+    });
+
+    it('allowlists post fields and drops captions, tenant ids, and backend metadata', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          posts: [
+            {
+              id: 'post-public',
+              platform: 'instagram',
+              status: 'scheduled',
+              title: 'Public title',
+              external_post_id: null,
+              published_at: null,
+              scheduled_at: '2099-07-14T12:00:00Z',
+              created_at: '2026-07-14T00:00:00Z',
+              caption: 'private caption not requested',
+              user_id: 'private-user-id',
+              metadata: { provider_task_id: 'private-provider-id' },
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('list_recent_posts')!({ response_format: 'json' });
+      const text = result.content[0].text;
+      expect(text).toContain('post-public');
+      expect(text).not.toContain('private caption');
+      expect(text).not.toContain('private-user-id');
+      expect(text).not.toContain('private-provider-id');
+    });
+  });
+
+  describe('reschedule_post', () => {
+    it('calls the atomic project-scoped backend action with optimistic concurrency', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          post_id: '22222222-2222-4222-8222-222222222222',
+          project_id: '11111111-1111-4111-8111-111111111111',
+          previous_scheduled_at: '2099-07-14T12:00:00.000Z',
+          scheduled_at: '2099-07-15T12:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('reschedule_post')!({
+        post_id: '22222222-2222-4222-8222-222222222222',
+        project_id: '11111111-1111-4111-8111-111111111111',
+        scheduled_at: '2099-07-15T12:00:00Z',
+        expected_scheduled_at: '2099-07-14T12:00:00Z',
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBeUndefined();
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'reschedule-scheduled-post',
+          post_id: '22222222-2222-4222-8222-222222222222',
+          project_id: '11111111-1111-4111-8111-111111111111',
+          scheduled_at: '2099-07-15T12:00:00.000Z',
+          expected_scheduled_at: '2099-07-14T12:00:00.000Z',
+        })
+      );
+    });
+
+    it('reports stale-calendar conflicts without exposing backend details', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: false,
+          error: 'schedule_conflict',
+          current_scheduled_at: '2099-07-16T09:00:00Z',
+          internal_sql: 'must-not-leak',
+        },
+        error: null,
+      });
+      const result = await server.getHandler('reschedule_post')!({
+        post_id: '22222222-2222-4222-8222-222222222222',
+        scheduled_at: '2099-07-15T12:00:00Z',
+        expected_scheduled_at: '2099-07-14T12:00:00Z',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('changed in another client');
+      expect(result.content[0].text).not.toContain('must-not-leak');
     });
   });
 

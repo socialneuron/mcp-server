@@ -2,7 +2,7 @@
 
 Interactive drag-drop calendar that renders inside Claude Desktop / claude.ai when the user invokes the `open_content_calendar` tool on the Social Neuron MCP server.
 
-Built per the [MCP Apps spec](https://modelcontextprotocol.io/extensions/apps/build) — single self-contained HTML bundled via `vite-plugin-singlefile`, served by the parent `mcp-server` as a `ui://content-calendar/mcp-app.html` resource.
+Built per the [MCP Apps spec](https://modelcontextprotocol.io/extensions/apps/build) — single self-contained HTML bundled via `vite-plugin-singlefile`, served by the parent `mcp-server` as a versioned `ui://content-calendar/v1/mcp-app.html` resource.
 
 The parent server also exposes `socialneuron://apps/content-calendar/metadata`,
 a compact JSON resource for model-readable inspection. Use that metadata resource
@@ -13,7 +13,7 @@ rendering the app in an isolated UI frame.
 
 ```bash
 # From the mcp-server root, just one command:
-npm run build:app
+npm run build:apps
 
 # Or directly:
 cd apps/content-calendar
@@ -23,7 +23,7 @@ npm run build
 
 Produces `apps/content-calendar/dist/mcp-app.html` (~340KB, ~80KB gzip).
 
-The mcp-server's resource handler reads this file at request time. If the file is missing, the handler returns a readable error page instead of crashing — but the App won't render. Always run `build:app` before deploying.
+The mcp-server's resource handler reads this file at request time. If the file is missing, the handler returns a readable error page instead of crashing — but the App won't render. Always run `build:apps` before deploying.
 
 ## Local dev loop (no Claude paid plan needed)
 
@@ -79,12 +79,13 @@ Fields in the payload from `open_content_calendar`:
 
 ```ts
 {
-  posts: ScheduledPost[];   // current week + 14d window
-  scopes: string[];         // user's session scopes — drives canSchedule
+  posts: ScheduledPost[];   // current week + 14d window, project scoped
+  project_id: string | null;
+  can_reschedule: boolean;  // derived server-side from the authenticated scopes
 }
 ```
 
-The App calls back to the server via `app.callServerTool({ name: 'schedule_post' | 'find_next_slots' | 'open_content_calendar', arguments: ... })`. Scope-denied responses arrive as success-shaped tool calls with a `Permission denied:` content prefix; the App detects this via `isScopeDenied()` and shows the upgrade CTA instead of throwing.
+The App calls back to the server via `app.callServerTool({ name: 'reschedule_post' | 'schedule_post' | 'find_next_slots' | 'open_content_calendar', arguments: ... })`. The server re-checks authentication, plan scopes, project ownership, optimistic concurrency, and posting policy for every call; UI state is never treated as authorization.
 
 ## State scope
 

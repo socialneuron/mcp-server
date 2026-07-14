@@ -39,6 +39,11 @@ export interface CheckStatusAsyncJobLike {
   result_url: string | null;
   error_message: string | null;
   credits_cost: number | null;
+  credits_reserved?: number | null;
+  credits_charged?: number | null;
+  credits_refunded?: number | null;
+  billing_status?: string | null;
+  failure_reason?: string | null;
   created_at: string;
   completed_at: string | null;
   result_metadata?: {
@@ -69,6 +74,11 @@ export interface CheckStatusPayload {
   all_urls: string[] | null;
   error: string | null;
   credits_cost: number | null;
+  credits_reserved: number | null;
+  credits_charged: number | null;
+  credits_refunded: number | null;
+  billing_status: string;
+  failure_reason: string | null;
   created_at: string;
   completed_at: string | null;
   model_requested: string | null;
@@ -104,11 +114,19 @@ export function buildCheckStatusPayload(
   const progress = liveStatus?.progress ?? null;
   const resultUrl = liveStatus?.resultUrl ?? job.result_url ?? null;
   const r2Key = resultUrl && !resultUrl.startsWith('http') ? resultUrl : null;
-  const errorMessage = liveStatus?.error ?? job.error_message ?? null;
+  const rawError = liveStatus?.error ?? job.error_message ?? null;
+  const errorMessage =
+    rawError && status === 'failed'
+      ? 'Generation failed. Retry or choose another model.'
+      : rawError && (status === 'cancelled' || status === 'canceled')
+        ? 'Cancelled by user.'
+        : null;
   const allUrls = job.result_metadata?.all_urls ?? null;
   const modelRequested = job.result_metadata?.model_requested ?? null;
   const modelDelivered = job.result_metadata?.model_delivered ?? null;
-  const fallbackReason = job.result_metadata?.fallback_reason ?? null;
+  const fallbackReason = job.result_metadata?.fallback_reason
+    ? 'Requested model was unavailable; a fallback model was used.'
+    : null;
 
   return {
     job_id: job.id,
@@ -121,6 +139,11 @@ export function buildCheckStatusPayload(
     all_urls: allUrls,
     error: errorMessage,
     credits_cost: job.credits_cost,
+    credits_reserved: job.credits_reserved ?? null,
+    credits_charged: job.credits_charged ?? null,
+    credits_refunded: job.credits_refunded ?? null,
+    billing_status: job.billing_status ?? 'unknown',
+    failure_reason: job.failure_reason ?? null,
     created_at: job.created_at,
     completed_at: job.completed_at,
     model_requested: modelRequested,

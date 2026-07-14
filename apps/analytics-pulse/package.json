@@ -1,0 +1,24 @@
+{
+  "name": "@socialneuron/analytics-pulse-app",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "INPUT=mcp-app.html vite build",
+    "dev": "vite",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "1.7.4"
+  },
+  "devDependencies": {
+    "@types/node": "26.1.1",
+    "typescript": "^7.0.2",
+    "vite": "8.1.4",
+    "vite-plugin-singlefile": "^2.3.0"
+  },
+  "overrides": {
+    "hono": "4.12.27",
+    "esbuild": "0.28.1"
+  }
+}

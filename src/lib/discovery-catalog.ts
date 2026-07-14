@@ -28,11 +28,7 @@ export type DiscoveryTool = {
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
 };
 
-const PUBLIC_SCHEMA_OMIT_PROPERTIES: Record<string, string[]> = {
-  // Internal lineage fields are accepted by the runtime for Social Neuron's own
-  // automation, but should not be advertised in public MCP/OpenAPI discovery.
-  schedule_post: ['origin', 'hermes_run_id'],
-};
+const PUBLIC_SCHEMA_OMIT_PROPERTIES: Record<string, string[]> = {};
 
 const cached = new Map<ToolProfile, Promise<DiscoveryTool[]>>();
 

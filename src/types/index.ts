@@ -71,6 +71,12 @@ export interface GenerateImageResponse {
   asyncJobId: string | null;
   status: string;
   model: string;
+  creditsDeducted?: number;
+  credits_reserved?: number;
+  credits_charged?: number;
+  credits_refunded?: number;
+  billing_status?: string;
+  failure_reason?: string | null;
 }
 
 export interface JobStatusResponse {
@@ -81,6 +87,11 @@ export interface JobStatusResponse {
   allImageUrls: string[] | null;
   creditsUsed: number | null;
   error: string | null;
+  credits_reserved?: number;
+  credits_charged?: number;
+  credits_refunded?: number;
+  billing_status?: string;
+  failure_reason?: string | null;
 }
 
 export interface TrendItem {

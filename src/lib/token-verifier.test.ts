@@ -56,6 +56,16 @@ function mockFetchAbort() {
   globalThis.fetch = vi.fn().mockRejectedValue(err);
 }
 
+function mockJwtEntitlements(overrides: Record<string, unknown> = {}) {
+  mockFetchResponse(200, {
+    valid: true,
+    userId: 'user-jwt-123',
+    scopes: ['mcp:read'],
+    tier: 'pro',
+    ...overrides,
+  });
+}
+
 /** Build a jose-compatible JWT verify result. */
 function jwtPayload(overrides: Record<string, unknown> = {}) {
   return {
@@ -91,6 +101,7 @@ describe('createTokenVerifier', () => {
   const verifier = createTokenVerifier({
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
+    allowSupabaseSessionTokens: true,
   });
 
   // =========================================================================
@@ -98,6 +109,19 @@ describe('createTokenVerifier', () => {
   // =========================================================================
 
   describe('routing', () => {
+    it('rejects general Supabase session tokens by default', async () => {
+      globalThis.fetch = vi.fn();
+      const hardenedVerifier = createTokenVerifier({
+        supabaseUrl: SUPABASE_URL,
+        supabaseAnonKey: SUPABASE_ANON_KEY,
+      });
+
+      await expect(hardenedVerifier.verifyAccessToken('eyJhbGciOiJSUzI1NiJ9.fake.jwt'))
+        .rejects.toThrow('Unsupported access token');
+      expect(mockJwtVerify).not.toHaveBeenCalled();
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+    });
+
     it('routes tokens starting with snk_ to API key verification', async () => {
       mockFetchResponse(200, {
         valid: true,
@@ -126,16 +150,15 @@ describe('createTokenVerifier', () => {
       expect(result.clientId).toBe('api-key');
     });
 
-    it('routes non-snk_ tokens to JWT verification', async () => {
+    it('routes non-prefixed tokens through JWT verification and live entitlement lookup', async () => {
       mockJwtVerify.mockResolvedValue(jwtPayload());
-      const fetchSpy = vi.spyOn(globalThis, 'fetch');
+      mockJwtEntitlements();
 
       const result = await verifier.verifyAccessToken('eyJhbGciOiJSUzI1NiJ9.fake.jwt');
 
       expect(mockJwtVerify).toHaveBeenCalledOnce();
-      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(globalThis.fetch).toHaveBeenCalledOnce();
       expect(result.clientId).toBe('supabase-oauth');
-      fetchSpy.mockRestore();
     });
 
     it('routes opaque connector tokens to connector-token verification', async () => {
@@ -160,6 +183,10 @@ describe('createTokenVerifier', () => {
   // =========================================================================
 
   describe('JWT verification', () => {
+    beforeEach(() => {
+      mockJwtEntitlements();
+    });
+
     it('verifies JWT using JWKS keyset and correct issuer', async () => {
       mockJwtVerify.mockResolvedValue(jwtPayload());
 
@@ -177,61 +204,52 @@ describe('createTokenVerifier', () => {
 
     it('returns AuthInfo with sub as userId', async () => {
       mockJwtVerify.mockResolvedValue(jwtPayload({ sub: 'user-sub-456' }));
+      mockJwtEntitlements({ userId: 'user-sub-456', tier: 'team' });
 
       const result = await verifier.verifyAccessToken('jwt-token');
 
-      expect(result.extra).toEqual({ userId: 'user-sub-456' });
+      expect(result.extra).toEqual({ userId: 'user-sub-456', tier: 'team' });
       expect(result.token).toBe('jwt-token');
     });
 
-    it('defaults scopes to ["mcp:read"] when mcp_scopes missing', async () => {
-      mockJwtVerify.mockResolvedValue(jwtPayload({ app_metadata: {} }));
-
-      const result = await verifier.verifyAccessToken('jwt-no-scopes');
-
-      expect(result.scopes).toEqual(['mcp:read']);
-    });
-
-    it('defaults scopes to ["mcp:read"] when app_metadata missing', async () => {
-      mockJwtVerify.mockResolvedValue(
-        jwtPayload() // no app_metadata at all
-      );
-
-      const result = await verifier.verifyAccessToken('jwt-no-metadata');
-
-      expect(result.scopes).toEqual(['mcp:read']);
-    });
-
-    it('defaults scopes to ["mcp:read"] when mcp_scopes is not an array', async () => {
-      mockJwtVerify.mockResolvedValue(jwtPayload({ app_metadata: { mcp_scopes: 'not-an-array' } }));
-
-      const result = await verifier.verifyAccessToken('jwt-bad-scopes');
-
-      expect(result.scopes).toEqual(['mcp:read']);
-    });
-
-    it('uses explicit mcp_scopes when present', async () => {
-      mockJwtVerify.mockResolvedValue(
-        jwtPayload({
-          app_metadata: { mcp_scopes: ['mcp:read', 'mcp:write', 'mcp:admin'] },
-        })
-      );
+    it('uses live tier-capped scopes and filters unknown values', async () => {
+      mockJwtVerify.mockResolvedValue(jwtPayload());
+      mockJwtEntitlements({ scopes: ['mcp:read', 'mcp:write', 'mcp:admin', 42] });
 
       const result = await verifier.verifyAccessToken('jwt-with-scopes');
 
-      expect(result.scopes).toEqual(['mcp:read', 'mcp:write', 'mcp:admin']);
+      expect(result.scopes).toEqual(['mcp:read', 'mcp:write']);
     });
 
-    it('converts non-string scope values to strings', async () => {
-      mockJwtVerify.mockResolvedValue(
-        jwtPayload({
-          app_metadata: { mcp_scopes: [42, true, 'mcp:read'] },
+    it('grants no scopes when the live entitlement response is empty', async () => {
+      mockJwtVerify.mockResolvedValue(jwtPayload());
+      mockJwtEntitlements({ scopes: [], tier: 'free' });
+
+      const result = await verifier.verifyAccessToken('jwt-free-tier');
+
+      expect(result.scopes).toEqual([]);
+    });
+
+    it('calls the entitlement endpoint with the signed token', async () => {
+      mockJwtVerify.mockResolvedValue(jwtPayload());
+      await verifier.verifyAccessToken('jwt-entitlement-check');
+
+      expect(globalThis.fetch).toHaveBeenCalledWith(
+        `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-user-token`,
+        expect.objectContaining({
+          method: 'POST',
+          body: JSON.stringify({ access_token: 'jwt-entitlement-check' }),
         })
       );
+    });
 
-      const result = await verifier.verifyAccessToken('jwt-mixed-scopes');
+    it('fails closed when the entitlement user does not match the verified JWT subject', async () => {
+      mockJwtVerify.mockResolvedValue(jwtPayload());
+      mockJwtEntitlements({ userId: 'different-user' });
 
-      expect(result.scopes).toEqual(['42', 'true', 'mcp:read']);
+      await expect(verifier.verifyAccessToken('jwt-user-mismatch')).rejects.toThrow(
+        'JWT is not authorized for MCP'
+      );
     });
 
     it('throws when sub claim is missing', async () => {
@@ -319,10 +337,7 @@ describe('createTokenVerifier', () => {
       expect(result.token).toBe('snk_live_full');
       expect(result.clientId).toBe('api-key');
       expect(result.scopes).toEqual(['mcp:read', 'mcp:write']);
-      expect(result.extra).toEqual({
-        userId: 'user-full',
-        email: 'admin@socialneuron.ai',
-      });
+      expect(result.extra).toEqual({ userId: 'user-full' });
       // expiresAt should be epoch seconds
       const expectedExp = Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000);
       expect(result.expiresAt).toBe(expectedExp);
@@ -345,7 +360,6 @@ describe('createTokenVerifier', () => {
 
       expect(result.extra).toEqual({
         userId: 'user-project-scoped',
-        email: undefined,
         projectId: 'proj-abc-123',
       });
     });
@@ -372,11 +386,11 @@ describe('createTokenVerifier', () => {
 
       const result = await verifier.verifyAccessToken('snk_live_unscoped');
 
-      expect(result.extra).toEqual({ userId: 'user-unscoped', email: undefined });
+      expect(result.extra).toEqual({ userId: 'user-unscoped' });
       expect(Object.prototype.hasOwnProperty.call(result.extra!, 'projectId')).toBe(false);
     });
 
-    it('defaults scopes to ["mcp:read"] when scopes missing from response', async () => {
+    it('fails closed to no scopes when scopes are missing from response', async () => {
       mockFetchResponse(200, {
         valid: true,
         userId: 'user-no-scopes',
@@ -385,7 +399,7 @@ describe('createTokenVerifier', () => {
 
       const result = await verifier.verifyAccessToken('snk_live_noscopes');
 
-      expect(result.scopes).toEqual(['mcp:read']);
+      expect(result.scopes).toEqual([]);
     });
 
     it('throws "API key expired" when expiresAt is in the past', async () => {
@@ -585,7 +599,6 @@ describe('createTokenVerifier', () => {
       expect(result.scopes).toEqual(['mcp:read', 'mcp:analytics']);
       expect(result.extra).toEqual({
         userId: 'user-connector-full',
-        email: 'connector@socialneuron.ai',
         resource: 'https://mcp.socialneuron.com',
       });
       expect(result.expiresAt).toBe(Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000));
@@ -650,6 +663,31 @@ describe('createTokenVerifier', () => {
         'Connector token audience/resource mismatch'
       );
     });
+
+    it('binds connector tokens to the full protected-resource URL, including path', async () => {
+      const pathVerifier = createTokenVerifier({
+        supabaseUrl: SUPABASE_URL,
+        supabaseAnonKey: SUPABASE_ANON_KEY,
+        resource: 'https://mcp.socialneuron.com/mcp/',
+      });
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-path-bound',
+        resource: 'https://mcp.socialneuron.com',
+      });
+      await expect(pathVerifier.verifyAccessToken('sno_connector_origin_only')).rejects.toThrow(
+        'Connector token audience/resource mismatch'
+      );
+
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-path-bound',
+        resource: 'https://mcp.socialneuron.com/mcp',
+      });
+      await expect(pathVerifier.verifyAccessToken('sno_connector_exact_path')).resolves.toMatchObject({
+        extra: { resource: 'https://mcp.socialneuron.com/mcp' },
+      });
+    });
   });
 
   // =========================================================================
@@ -657,6 +695,9 @@ describe('createTokenVerifier', () => {
   // =========================================================================
 
   describe('JWKS caching', () => {
+    beforeEach(() => {
+      mockJwtEntitlements();
+    });
     it('creates JWKS only once across multiple JWT verifications', async () => {
       // Reset the module-level jwks cache by re-importing
       // Since jose.createRemoteJWKSet is mocked, just count calls

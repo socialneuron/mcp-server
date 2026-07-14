@@ -73,29 +73,29 @@ describe('callEdgeFunction', () => {
   });
 
   // 3. HTTP error with JSON body containing "error" field
-  it('extracts error field from JSON error response', async () => {
+  it('preserves only allowlisted machine error codes from JSON error responses', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'bad request' })))
+      vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'DAILY_LIMIT_REACHED' })))
     );
 
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('bad request');
+    expect(result.error).toBe('daily_limit_reached');
   });
 
   // 4. HTTP error with plain text body
-  it('returns plain text as error on non-JSON error response', async () => {
+  it('does not relay plain-text upstream error bodies', async () => {
     vi.stubGlobal(
       'fetch',
-      vi.fn(async () => mockResponse(500, 'Internal error'))
+      vi.fn(async () => mockResponse(500, 'SQL at private.internal: password=secret'))
     );
 
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('Internal error');
+    expect(result.error).toBe('Backend request failed (HTTP 500).');
   });
 
   // 5. HTTP error with empty body
@@ -108,7 +108,7 @@ describe('callEdgeFunction', () => {
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('HTTP 502');
+    expect(result.error).toBe('Backend request failed (HTTP 502).');
   });
 
   // 6. Timeout / AbortError
@@ -129,18 +129,18 @@ describe('callEdgeFunction', () => {
   });
 
   // 7. Network error
-  it('returns error message on generic network failure', async () => {
+  it('does not relay raw network failure details', async () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () => {
-        throw new Error('ECONNREFUSED');
+        throw new Error('ECONNREFUSED private.internal:5432 token=secret');
       })
     );
 
     const result = await callEdgeFunction('test-fn', {});
 
     expect(result.data).toBeNull();
-    expect(result.error).toBe('ECONNREFUSED');
+    expect(result.error).toBe('Network request failed. Please retry.');
   });
 
   // 8. Auto-injects userId and user_id when body has neither
@@ -262,7 +262,7 @@ describe('callEdgeFunction', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        mockResponse(403, JSON.stringify({ error: 'forbidden: scope mcp:write required' }))
+        mockResponse(403, JSON.stringify({ error: { error_type: 'permission_denied', message: 'private detail' } }))
       )
     );
 
@@ -270,8 +270,66 @@ describe('callEdgeFunction', () => {
 
     expect(result.data).toBeNull();
     expect(result.error).toContain('HTTP 403');
-    expect(result.error).toContain('forbidden: scope mcp:write required');
+    expect(result.error).toContain('permission_denied');
+    expect(result.error).not.toContain('private detail');
     expect(result.error).not.toMatch(/re-authenticate/i);
     expect(result.error).toMatch(/still valid/i);
+  });
+
+  it('preserves only allowlisted billing evidence from a failed generation response', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          500,
+          JSON.stringify({
+            status: 'failed',
+            credits_reserved: 30,
+            credits_charged: 30,
+            credits_refunded: 30,
+            billing_status: 'refunded',
+            failure_reason: 'generation_failed',
+            error: 'SQL at private.internal: password=secret',
+            internal_trace: 'secret',
+          }),
+        ),
+      ),
+    );
+
+    const result = await callEdgeFunction<Record<string, unknown>>('test-fn', {});
+
+    expect(result.error).toBe('Backend request failed (HTTP 500).');
+    expect(result.data).toEqual({
+      status: 'failed',
+      credits_reserved: 30,
+      credits_charged: 30,
+      credits_refunded: 30,
+      billing_status: 'refunded',
+      failure_reason: 'generation_failed',
+    });
+    expect(result.data).not.toHaveProperty('error');
+    expect(result.data).not.toHaveProperty('internal_trace');
+  });
+
+  it('rejects untrusted billing fields instead of relaying them', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          500,
+          JSON.stringify({
+            status: 'private_debug_state',
+            credits_charged: -1,
+            billing_status: 'internal_manual_override',
+            failure_reason: 'database_host_private.internal',
+          }),
+        ),
+      ),
+    );
+
+    const result = await callEdgeFunction<Record<string, unknown>>('test-fn', {});
+
+    expect(result.data).toBeNull();
+    expect(result.error).toBe('Backend request failed (HTTP 500).');
   });
 });

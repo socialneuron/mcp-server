@@ -80,6 +80,43 @@ describe('analytics tools', () => {
       expect(text).toContain('Reel Post');
     });
 
+    it('uses only the latest cumulative snapshot for each post and platform', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          rows: [
+            {
+              id: 'new',
+              post_id: 'p1',
+              platform: 'youtube',
+              views: 100,
+              likes: 10,
+              comments: 2,
+              shares: 1,
+              captured_at: '2026-02-02T12:00:00Z',
+            },
+            {
+              id: 'old',
+              post_id: 'p1',
+              platform: 'youtube',
+              views: 40,
+              likes: 4,
+              comments: 1,
+              shares: 0,
+              captured_at: '2026-02-01T12:00:00Z',
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('fetch_analytics')!({});
+      const text = result.content[0].text;
+      expect(text).toContain('Total Views: 100');
+      expect(text).toContain('Total Engagement: 13');
+      expect(text).toContain('Posts Analyzed: 1');
+    });
+
     it('calls mcp-data with correct params', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: { success: true, rows: [] },
@@ -95,7 +132,8 @@ describe('analytics tools', () => {
           action: 'analytics',
           platform: 'youtube',
           days: 7,
-          limit: 10,
+          limit: 50,
+          latestOnly: true,
           contentId: 'c1',
         })
       );

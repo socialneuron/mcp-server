@@ -1,17 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { sanitizeDbError, sanitizeError } from './sanitize-error.js';
 
 describe('sanitizeDbError', () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-    vi.unstubAllEnvs();
-  });
 
   // ── Permission denied ───────────────────────────────────────────────
 
@@ -97,38 +87,16 @@ describe('sanitizeDbError', () => {
   // ── Console logging by environment ─────────────────────────────────
 
   describe('console logging', () => {
-    it('calls console.error with raw message in development mode', () => {
-      vi.stubEnv('NODE_ENV', 'development');
-      sanitizeDbError({ message: 'relation "users" does not exist' });
-      expect(consoleErrorSpy).toHaveBeenCalledWith('[DB Error]', 'relation "users" does not exist');
-    });
-
-    it('calls console.error when NODE_ENV is undefined (non-production)', () => {
-      vi.stubEnv('NODE_ENV', '');
-      sanitizeDbError({ message: 'some error' });
-      expect(consoleErrorSpy).toHaveBeenCalledWith('[DB Error]', 'some error');
-    });
-
-    it('does NOT call console.error in production mode', () => {
-      vi.stubEnv('NODE_ENV', 'production');
-      sanitizeDbError({ message: 'relation "users" does not exist' });
+    it('never writes raw database errors to process logs', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      sanitizeDbError({ message: 'relation "users" contains password_hash=secret' });
       expect(consoleErrorSpy).not.toHaveBeenCalled();
+      consoleErrorSpy.mockRestore();
     });
   });
 });
 
 describe('sanitizeError', () => {
-  let consoleErrorSpy: ReturnType<typeof vi.spyOn>;
-
-  beforeEach(() => {
-    consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
-  });
-
-  afterEach(() => {
-    consoleErrorSpy.mockRestore();
-    vi.unstubAllEnvs();
-  });
-
   // ── Gemini / Google AI ────────────────────────────────────────────
 
   describe('Gemini / Google AI errors', () => {
@@ -180,7 +148,7 @@ describe('sanitizeError', () => {
 
   describe('Stripe errors', () => {
     it('sanitizes stripe API key leaks', () => {
-      const result = sanitizeError(new Error('Invalid API Key: sk_live_abc123'));
+      const result = sanitizeError(new Error('Invalid API Key: sk_live_abc123')); // gitleaks:allow — synthetic regression fixture
       expect(result).toBe('Payment processing error. Please try again.');
       expect(result).not.toContain('sk_live_');
     });

@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 80+ public MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 90 public MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -94,7 +94,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-The hosted endpoint advertises **83 public tools** (live count: [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json)); the npm stdio server exposes **84 public tools**, including 2 local screen-capture tools. A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
+The hosted endpoint and npm stdio server each expose **90 public tools**. Their surfaces differ intentionally: hosted HTTP includes the Content Calendar and Analytics Pulse MCP Apps, while stdio includes 2 local screen-capture tools instead. The live hosted count is published by the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json). A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
@@ -104,7 +104,7 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 |----------|-------|-------------|
 | Ideation | generate_content, fetch_trends, adapt_content, get_ideation_context | AI-powered content ideas and trend research |
 | Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 20+ AI models |
-| Distribution | schedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Multi-platform publishing, scheduling, and slot optimization |
+| Distribution | schedule_post, reschedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Project-scoped multi-platform publishing, scheduling, rescheduling, and slot optimization |
 | Analytics | fetch_analytics, refresh_platform_analytics | Performance tracking across all platforms |
 | Insights | get_performance_insights, get_best_posting_times | Data-driven content optimization |
 
@@ -114,6 +114,7 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 |----------|-------|-------------|
 | Brand | extract_brand, get_brand_profile, save_brand_profile, update_platform_voice | Brand identity and voice management |
 | Comments | list_comments, reply_to_comment, post_comment, moderate_comment, delete_comment | Social engagement management |
+| Lifecycle | cancel_async_job, cancel_scheduled_post, delete_carousel, delete_content_plan, delete_autopilot_config | Confirmed, project-scoped cancellation and cleanup with explicit refund status |
 | Planning | plan_content_week, save_content_plan, get_content_plan, update_content_plan, submit_content_plan_for_approval | Content calendar and approval workflows |
 | Plan Approvals | create_plan_approvals, respond_plan_approval, list_plan_approvals | Review and approve content plans |
 | Autopilot | list_autopilot_configs, get_autopilot_status, update_autopilot_config | Automated content scheduling |
@@ -131,6 +132,15 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 | Usage | get_mcp_usage | API usage monitoring |
 | YouTube | fetch_youtube_analytics | YouTube-specific deep analytics |
 | Discovery | search_tools | Find tools by keyword with progressive detail levels (saves 98% tokens vs loading all tools) |
+
+### Interactive MCP Apps (hosted HTTP)
+
+| App | Open tool | Purpose |
+|-----|-----------|---------|
+| Content Calendar | `open_content_calendar` | Project-scoped calendar, quick create, and drag-to-reschedule |
+| Analytics Pulse | `open_analytics_pulse` | Project-scoped KPI, platform-mix, and top-post performance dashboard |
+
+Apps render only in MCP hosts that support the MCP Apps extension. All underlying data and write operations remain ordinary scoped tools, so hosts without interactive UI can use the same workflows through text/tool calls.
 
 ## Authentication
 
@@ -160,7 +170,7 @@ npx -y @socialneuron/mcp-server login --paste
 
 Generate a key at socialneuron.com/settings/developer, paste it in.
 
-Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or file fallback.
+Keys are stored in your OS keychain (macOS Keychain, Linux secret-tool) or a file fallback created with owner-only permissions where the operating system supports them.
 
 > **Windows users**: The file fallback (`~/.config/social-neuron/credentials.json`) does not have strong permission enforcement on NTFS. For production use on Windows, set the `SOCIALNEURON_API_KEY` environment variable instead.
 
@@ -259,7 +269,7 @@ See [SECURITY.md](./SECURITY.md) for our vulnerability disclosure policy and cre
 
 ## Telemetry
 
-This package collects anonymous usage metrics (tool name, duration, success/failure) to improve the product. Your user ID is hashed before transmission.
+This package collects operational usage metrics (tool name, duration, success/failure) to improve reliability. It does not send tool inputs, outputs, generated content, API keys, emails, or upstream error bodies. When a deployment configures `POSTHOG_PSEUDONYMIZATION_KEY`, the user identifier is HMAC-pseudonymized; otherwise an ephemeral per-process key prevents stable cross-session correlation.
 
 **To disable**: Set `DO_NOT_TRACK=1` or `SOCIALNEURON_NO_TELEMETRY=1` in your environment.
 

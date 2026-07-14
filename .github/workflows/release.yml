@@ -6,7 +6,7 @@ on:
       - "v*"
 
 permissions:
-  contents: read
+  contents: write # Publish the matching formal GitHub release after npm succeeds.
   id-token: write  # Required for npm provenance attestation (OIDC)
 
 jobs:
@@ -26,6 +26,9 @@ jobs:
           registry-url: "https://registry.npmjs.org"
 
       - run: npm ci --ignore-scripts
+
+      - name: Install MCP App dependencies
+        run: npm run install:apps
 
       - name: Verify version matches tag
         env:
@@ -66,7 +69,9 @@ jobs:
           # video wall, project-scoped creative/analytics routing, storyboard output,
           # and corrected provider pricing. Runtime dependencies remain lockfile-
           # pinned; all other release gates still run.
-          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18' || github.ref_name == 'v1.8.0' || github.ref_name == 'v1.8.1') && '0' || '14' }}
+          # v1.8.2: one-tag executive exception for the audited MCP Apps/security
+          # release. This exact-tag allowlist cannot weaken later releases.
+          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18' || github.ref_name == 'v1.8.0' || github.ref_name == 'v1.8.1' || github.ref_name == 'v1.8.2') && '0' || '14' }}
         # Release is stricter than CI: young deps block publish.
 
       - name: Lint tool descriptions
@@ -87,8 +92,8 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Build
-        run: npm run build:all
+      - name: Prepare publish artifacts
+        run: npm run clean && npm run build:all
 
       - name: Verify pack contents
         run: |
@@ -98,23 +103,30 @@ jobs:
             exit 1
           fi
 
-      - name: Prepare publish artifacts
-        run: npm run prepublishOnly
-
       - name: Publish
-        # Prefer npm Trusted Publishing (OIDC). npm CLI uses OIDC in eligible
-        # GitHub environments before falling back to traditional token auth.
-        # NPM_TOKEN remains configured only as an emergency fallback for this
-        # security release path.
         # Trust is configured on npmjs.com → package → Access → Trusted Publisher:
         #   org=socialneuron, repo=mcp-server, workflow=release.yml, env=production
         # Requires: permissions.id-token: write (set above) + production environment gate.
-        # --provenance generates SLSA Build L2 attestation, signed via GitHub OIDC.
+        # Deliberately no long-lived NPM_TOKEN fallback: npm authenticates this
+        # exact workflow through short-lived GitHub OIDC Trusted Publishing.
+        # --provenance generates an attestation signed via GitHub OIDC.
         # https://docs.npmjs.com/trusted-publishers
+        run: npm publish --ignore-scripts --access public --provenance
+
+      - name: Publish matching GitHub release
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          --verify-tag
+          --generate-notes
+          --title "${GITHUB_REF_NAME}"
+          --latest
+
+      - name: Verify npm/GitHub release consistency
         run: |
-          if [ -n "${NODE_AUTH_TOKEN:-}" ]; then
-            printf '//registry.npmjs.org/:_authToken=%s\n' "$NODE_AUTH_TOKEN" > ~/.npmrc
-          fi
-          npm publish --ignore-scripts --access public --provenance
+          for attempt in 1 2 3 4 5; do
+            npm run verify:release:live && exit 0
+            sleep 10
+          done
+          exit 1

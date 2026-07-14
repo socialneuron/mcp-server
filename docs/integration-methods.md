@@ -1,6 +1,6 @@
 # Integration Methods
 
-Social Neuron provides four runtime integration methods. Plugins and skills package those runtimes for easier discovery and safer agent use; they are not separate backends. All surfaces must share the same auth system, scopes, rate limits, credit pool, and audit trail. The npm package exposes **84 public tools** over stdio (including 2 local screen-capture tools); the hosted endpoint at `mcp.socialneuron.com` advertises its current public surface through the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json).
+Social Neuron provides four runtime integration methods. Plugins and skills package those runtimes for easier discovery and safer agent use; they are not separate backends. All surfaces must share the same auth system, scopes, rate limits, credit pool, and audit trail. Hosted HTTP and npm stdio each expose **90 public tools**. Hosted includes the Content Calendar and Analytics Pulse MCP Apps; stdio substitutes 2 local screen-capture tools. The hosted endpoint at `mcp.socialneuron.com` advertises its live surface through the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json).
 
 ## Comparison
 
@@ -35,25 +35,22 @@ Then just ask: "Generate 5 content ideas about sustainable fashion"
 
 ```bash
 # Check credits
-curl -X POST \
-  -H "Authorization: Bearer snk_live_..." \
+curl -X POST https://mcp.socialneuron.com/v1/tools/get_credit_balance \
   -H "Content-Type: application/json" \
   -d '{}' \
-  https://mcp.socialneuron.com/v1/tools/get_credit_balance
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
 
 # Generate content
-curl -X POST \
-  -H "Authorization: Bearer snk_live_..." \
+curl -X POST https://mcp.socialneuron.com/v1/tools/generate_content \
   -H "Content-Type: application/json" \
   -d '{"topic": "AI trends", "platforms": ["linkedin"]}' \
-  https://mcp.socialneuron.com/v1/tools/generate_content
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
 
 # Execute any tool by name
-curl -X POST \
-  -H "Authorization: Bearer snk_live_..." \
+curl -X POST https://mcp.socialneuron.com/v1/tools/get_brand_profile \
   -H "Content-Type: application/json" \
   -d '{"response_format": "json"}' \
-  https://mcp.socialneuron.com/v1/tools/get_brand_profile
+  -H "Authorization: Bearer ${SOCIAL_NEURON_API_KEY}" # gitleaks:allow
 ```
 
 Full reference: [REST API docs](rest-api.md)
@@ -90,9 +87,14 @@ Full reference: [CLI guide](cli-guide.md)
 // Preview — surface may change before stable release
 import { SocialNeuron } from '@socialneuron/sdk';
 
-const sn = new SocialNeuron({ apiKey: 'snk_live_...' });
+const sn = new SocialNeuron({ apiKey: process.env.SOCIAL_NEURON_API_KEY! });
 const credits = await sn.account.credits();
-const content = await sn.content.generate({ prompt: '...', platform: 'instagram' });
+const content = await sn.content.generate({
+  prompt: '...',
+  platform: 'instagram',
+  content_type: 'caption',
+  project_id: 'project_uuid',
+});
 ```
 
 ## Plugins and skills (distribution)
@@ -117,6 +119,8 @@ The repo-local Codex plugin is under `.agents/plugins/plugins/social-neuron-com-
 ## Shared Architecture
 
 All four runtime methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio, and SDK-over-REST) are thin layers on top. Plugins and skills sit above MCP as packaging and operating guidance.
+
+Interactive MCP Apps are a presentation layer over the hosted MCP tools. They do not receive bearer tokens, bypass project scoping, or introduce a second business-logic path. Hosts without MCP Apps support still receive the normal tool result and can complete the workflow conversationally.
 
 ```
 Plugin + skill ──→ MCP Client ──→ JSON-RPC ──┐
