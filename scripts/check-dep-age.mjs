@@ -102,6 +102,16 @@ const EXEMPT_PREFIXES = new Set([
   '@socialneuron/',
 ]);
 
+// Executive-reviewed, immutable name@version exceptions. Keep these exact:
+// npm versions cannot be overwritten and the lockfile integrity pins the
+// reviewed artifact. Never use a range or package-only entry here.
+const EXEMPT_EXACT_VERSIONS = new Set([
+  // 2026-07-14: PostHog 5.42.0 only exposes opt-in exception rate-limiter
+  // configuration. CodeQL, secret scan, 1,279 tests, Apps/SDK builds, audits,
+  // package dry-run, and lockfile review passed before this exception.
+  'posthog-node@5.42.0',
+]);
+
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
 // in several manifests is checked once per distinct resolved version.
 const deps = new Map();
@@ -118,7 +128,8 @@ const failures = [];
 const preexisting = [];
 const checked = [];
 
-function isExempt(name) {
+function isExempt(name, version) {
+  if (EXEMPT_EXACT_VERSIONS.has(`${name}@${version}`)) return true;
   for (const prefix of EXEMPT_PREFIXES) {
     if (name.startsWith(prefix)) return true;
   }
@@ -132,14 +143,13 @@ function stripRangeChars(version) {
 }
 
 for (const { name, versionRange, resolved, dir } of deps.values()) {
-  if (isExempt(name)) continue;
-
   // Prefer the locked/installed version; fall back to range floor only if absent.
   const version = resolved ?? stripRangeChars(versionRange);
   if (!version || !/^\d/.test(version)) {
     // Skip non-version specs (git urls, file: deps, etc.) — .npmrc blocks these anyway
     continue;
   }
+  if (isExempt(name, version)) continue;
 
   try {
     // Use default Accept — the abbreviated v1 format omits `time`.
@@ -204,8 +214,8 @@ if (failures.length > 0) {
   console.error(`\nIf this is an intentional emergency patch (e.g. security fix), you can`);
   console.error(`override the cooldown for a single run with:`);
   console.error(`   SN_DEP_MIN_AGE_DAYS=0 npm run check:dep-age`);
-  console.error(`\nOr add the package to EXEMPT_PREFIXES in scripts/check-dep-age.mjs with`);
-  console.error(`an explanatory comment if it is permanently trusted.`);
+  console.error(`\nOr add an immutable package@version to EXEMPT_EXACT_VERSIONS with`);
+  console.error(`an explanatory review comment. Never exempt a version range.`);
   if (ENFORCE) {
     process.exit(1);
   } else {
