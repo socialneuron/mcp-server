@@ -20,7 +20,7 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v6
+      - uses: actions/setup-node@v7
         with:
           # npm Trusted Publishing requires npm >=11.5.1; Node 24 includes it.
           node-version: 24
