@@ -62,7 +62,10 @@ jobs:
           # (remotion/playwright/@types/node) don't ship in the dist bundle. All
           # other release gates (verify:metadata, verify:lock, lint:tools, audit,
           # typecheck, tests) still run.
-          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18') && '0' || '14' }}
+          # v1.8.0: executive-approved customer fix for the paid-plan video wall,
+          # project-scoped video routing, and corrected provider pricing. Runtime
+          # dependencies remain lockfile-pinned; all other release gates still run.
+          SN_DEP_MIN_AGE_DAYS: ${{ (github.ref_name == 'v1.7.9' || github.ref_name == 'v1.7.10' || github.ref_name == 'v1.7.18' || github.ref_name == 'v1.8.0') && '0' || '14' }}
         # Release is stricter than CI: young deps block publish.
 
       - name: Lint tool descriptions
