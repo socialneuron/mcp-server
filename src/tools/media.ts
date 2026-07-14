@@ -568,13 +568,21 @@ export function registerMediaTools(server: McpServer): void {
     },
     async ({ r2_key, response_format }) => {
       const format = response_format ?? 'text';
+      // check_status returns durable storage references with an `r2://` marker
+      // so callers can distinguish them from temporary provider URLs. The
+      // signing Edge Function expects the raw object key, however. Accept the
+      // exact value returned by check_status instead of forcing every agent to
+      // know about and strip this transport marker itself.
+      const normalizedR2Key = r2_key.startsWith('r2://')
+        ? r2_key.slice('r2://'.length)
+        : r2_key;
 
       const { data, error } = await callEdgeFunction<{
         signedUrl?: string;
         url?: string;
         key?: string;
         expiresIn?: number;
-      }>('get-signed-url', { r2Key: r2_key, operation: 'get' }, { timeoutMs: 10_000 });
+      }>('get-signed-url', { r2Key: normalizedR2Key, operation: 'get' }, { timeoutMs: 10_000 });
 
       const signedDownloadUrl = data?.url ?? data?.signedUrl;
 

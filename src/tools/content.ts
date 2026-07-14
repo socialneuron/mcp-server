@@ -607,7 +607,7 @@ export function registerContentTools(server: McpServer): void {
           const filename = segments[segments.length - 1] || "media";
           lines.push(`Media ready: ${filename}`);
           lines.push(
-            "(Pass job_id directly to schedule_post, or use get_media_url with job_id for a download link)",
+            "(Pass job_id directly to schedule_post, or pass response_format=json's r2_key to get_media_url for a download link)",
           );
         } else {
           lines.push(`Result URL: ${job.result_url}`);

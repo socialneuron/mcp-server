@@ -17,6 +17,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Fixed
 
+- **Completed-video download handoff.** `get_media_url` now accepts the exact `r2://...` key returned by `check_status`, normalizing the storage marker before signing. Previously a successfully generated video could appear unusable because the direct handoff returned HTTP 403 unless the caller stripped the prefix itself.
 - **False `PROJECT_SCOPE_MISMATCH` (403) on project-scoped API keys** for tools that take no `project_id` argument (e.g. `get_credit_balance`). The client previously guessed a default project from "most recently created", which can disagree with the key's real scope on multi-project accounts. The key's own server-resolved project scope is now carried per-request (stdio and HTTP modes) and always wins over the guess. Fixes the same class of failure across every project-scoped tool that relied on the default-project lookup.
 
 ## [1.7.18] - 2026-07-06

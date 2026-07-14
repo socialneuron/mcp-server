@@ -399,6 +399,29 @@ describe('media tools', () => {
       expect(parsed.expires_in).toBe(3600);
     });
 
+    it('accepts the r2:// key returned by check_status', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { signedUrl: 'https://signed.example.com/video.mp4', expiresIn: 3600 },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({
+        r2_key: 'r2://org_1/user_1/project_1/videos/generated.mp4',
+        response_format: 'json',
+      });
+
+      expect(result.isError).toBeFalsy();
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'get-signed-url',
+        { r2Key: 'org_1/user_1/project_1/videos/generated.mp4', operation: 'get' },
+        { timeoutMs: 10_000 }
+      );
+      expect(JSON.parse(result.content[0].text).r2_key).toBe(
+        'r2://org_1/user_1/project_1/videos/generated.mp4'
+      );
+    });
+
     it('returns error when signing fails', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: null,
