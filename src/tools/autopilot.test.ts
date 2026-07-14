@@ -294,6 +294,23 @@ describe('autopilot tools', () => {
       expect(text).toContain('Pending Approvals: 3');
     });
 
+    it('surfaces recent runs returned by the backend', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          activeConfigs: 1,
+          pendingApprovals: 0,
+          configs: [{ id: 'c1' }],
+          recentRuns: [{ id: 'run-1', status: 'completed', credits_used: 25 }],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('get_autopilot_status')!({});
+      expect(result.content[0].text).toContain('Recent Runs (1)');
+      expect(result.content[0].text).toContain('run-1: completed (25 credits)');
+    });
+
     it('returns JSON envelope when response_format=json', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {

@@ -1,6 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { getDefaultProjectId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { PerformanceInsight, BestPostingTime, ResponseEnvelope } from '../types/index.js';
 
@@ -35,7 +36,7 @@ export function registerInsightsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'get_performance_insights',
-    'Query performance insights derived from post analytics. Returns metrics ' +
+    'Query project-scoped performance insights derived from post analytics. Returns metrics ' +
       'like engagement rate, view velocity, and click rate aggregated over time. ' +
       'Use this to understand what content is performing well.',
     {
@@ -55,16 +56,21 @@ export function registerInsightsTools(server: McpServer): void {
         .max(50)
         .optional()
         .describe('Maximum number of insights to return. Defaults to 10.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID. Defaults to the active project context.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ insight_type, days, limit, response_format }) => {
+    async ({ insight_type, days, limit, project_id, response_format }) => {
       const format = response_format ?? 'text';
       const lookbackDays = days ?? 30;
       const maxRows = limit ?? 10;
       const effectiveDays = Math.min(lookbackDays, MAX_INSIGHT_AGE_DAYS);
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -82,6 +88,9 @@ export function registerInsightsTools(server: McpServer): void {
         action: 'performance-insights',
         days: effectiveDays,
         limit: maxRows,
+        ...(resolvedProjectId
+          ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
+          : {}),
       });
 
       if (efError || !result?.success) {
@@ -184,7 +193,7 @@ export function registerInsightsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'get_best_posting_times',
-    'Analyze post analytics data to find the best times to post for maximum ' +
+    'Analyze project-scoped post analytics data to find the best times to post for maximum ' +
       'engagement. Returns the top 5 time slots (day of week + hour) ranked ' +
       'by average engagement.',
     {
@@ -195,14 +204,19 @@ export function registerInsightsTools(server: McpServer): void {
         .max(90)
         .optional()
         .describe('Number of days to analyze. Defaults to 30. Max 90.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID. Defaults to the active project context.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ platform, days, response_format }) => {
+    async ({ platform, days, project_id, response_format }) => {
       const format = response_format ?? 'text';
       const lookbackDays = days ?? 30;
+      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -221,6 +235,9 @@ export function registerInsightsTools(server: McpServer): void {
         action: 'best-posting-times',
         days: lookbackDays,
         platform: platform ?? undefined,
+        ...(resolvedProjectId
+          ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
+          : {}),
       });
 
       if (efError || !result?.success) {

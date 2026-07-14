@@ -40,8 +40,29 @@ describe('tools/list schema (P1.6 — SDK serialization emits rich schemas)', ()
     const tool = out.tools.find(t => t.name === 'fetch_analytics');
     expect(tool, 'fetch_analytics should be present').toBeDefined();
     const props = tool!.inputSchema?.properties ?? {};
-    for (const param of ['platform', 'days', 'content_id', 'limit']) {
+    for (const param of ['platform', 'days', 'content_id', 'project_id', 'limit']) {
       expect(props, `fetch_analytics.inputSchema should declare "${param}"`).toHaveProperty(param);
+    }
+  });
+
+  it('project-scopes generated media and analytics tools', async () => {
+    const out = await sdkToolsList();
+    for (const name of [
+      'generate_video',
+      'generate_image',
+      'create_storyboard',
+      'generate_voiceover',
+      'render_hyperframes',
+      'fetch_analytics',
+      'refresh_platform_analytics',
+      'get_performance_insights',
+      'get_best_posting_times',
+    ]) {
+      const tool = out.tools.find(t => t.name === name);
+      expect(tool, `${name} should be present`).toBeDefined();
+      expect(tool!.inputSchema?.properties ?? {}, `${name} should accept project_id`).toHaveProperty(
+        'project_id'
+      );
     }
   });
 

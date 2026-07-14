@@ -173,9 +173,8 @@ export function registerHyperframesTools(server: McpServer): void {
     'Render an HTML video composition (Hyperframes) to MP4. Author the composition ' +
       'as HTML with data-* timing attributes and GSAP timelines — frame-accurate, no ' +
       'React build step. Use list_hyperframes_blocks to see the pre-built block ' +
-      'catalog. Returns a job ID — poll with check_status. ' +
-      'Note: F4 v1 ships the EF + scaffold; the worker container needs the ' +
-      'hyperframes runtime installed (Phase 2) before this returns finished MP4s.',
+      'catalog. Pass project_id to keep the render with the correct brand/project. ' +
+      'Returns a job ID — poll with check_status.',
     {
       composition_html: z
         .string()
@@ -211,6 +210,10 @@ export function registerHyperframesTools(server: McpServer): void {
         .enum(['draft', 'standard', 'high'])
         .optional()
         .describe('draft: fast iteration; standard: production; high: final master.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID to associate the Hyperframes render with.'),
     },
     async ({
       composition_html,
@@ -220,6 +223,7 @@ export function registerHyperframesTools(server: McpServer): void {
       duration_sec,
       fps,
       quality,
+      project_id,
     }) => {
       const userId = await getDefaultUserId();
 
@@ -274,6 +278,7 @@ export function registerHyperframesTools(server: McpServer): void {
           durationSec: duration_sec,
           fps: fps || 30,
           quality: quality || 'standard',
+          ...(project_id && { projectId: project_id }),
         });
 
         if (error || !data?.jobId) {
@@ -291,7 +296,7 @@ export function registerHyperframesTools(server: McpServer): void {
                 `  Duration: ${duration_sec}s @ ${fps || 30}fps (${aspect_ratio || '9:16'})`,
                 `  Quality: ${quality || 'standard'}`,
                 ``,
-                `Poll with check_status. Note: until F4 Phase 2 wires the runtime, the job will fail with a clear "HyperframesNotInstalled" message.`,
+                `Poll with check_status.`,
               ].join('\n'),
             },
           ],
