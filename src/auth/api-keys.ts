@@ -15,6 +15,13 @@ export interface ValidateApiKeyResult {
   expiresAt?: string;
   error?: string;
   /**
+   * The key's own project scope, resolved server-side by mcp-auth's
+   * validate-key-public (server-side). Null/absent
+   * for unscoped keys. Consumed by getDefaultProjectId() in lib/supabase.ts
+   * so a project-scoped key never has its own project guessed incorrectly.
+   */
+  projectId?: string | null;
+  /**
    * True when the failure was TRANSIENT (network blip, 429 rate-limit, 5xx) —
    * the key is not necessarily invalid. Callers should NOT push the user to
    * re-authenticate on a retryable failure.

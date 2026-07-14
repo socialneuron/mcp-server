@@ -278,4 +278,95 @@ describe('supabase module', () => {
       vi.resetModules();
     });
   });
+
+  // ---------------------------------------------------------------------------
+  // Project-scope fix (v1.8.0): a
+  // project-scoped API key calling a tool with no project_id argument of its
+  // own (e.g. get_credit_balance) previously fell through to
+  // getDefaultProjectId()'s "most recently created project" DB lookup, which
+  // can legitimately disagree with the key's own scope on a multi-project
+  // account — producing a false PROJECT_SCOPE_MISMATCH at mcp-gateway.
+  // mcp-auth's validate-key-public response already resolves the key's own
+  // project scope server-side; initializeAuth() must capture it and
+  // getDefaultProjectId() must prefer it over the DB guess.
+  // ---------------------------------------------------------------------------
+  describe('authenticated key project scope (stdio mode)', () => {
+    it('getDefaultProjectId() returns the validated key own scope, never the DB guess', async () => {
+      const validateApiKey = vi.fn().mockResolvedValue({
+        valid: true,
+        userId: 'user-scoped',
+        scopes: ['mcp:read'],
+        projectId: 'proj-key-own-scope',
+      });
+
+      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
+      vi.doMock('../cli/credentials.js', () => ({
+        loadApiKey: vi.fn().mockResolvedValue('snk_live_scopedkey'),
+      }));
+
+      vi.resetModules();
+      const { initializeAuth, getAuthenticatedProjectId, getDefaultProjectId } =
+        await import('./supabase.js');
+
+      await initializeAuth();
+
+      expect(getAuthenticatedProjectId()).toBe('proj-key-own-scope');
+      // Must win over SOCIALNEURON_PROJECT_ID env and the DB "most recent
+      // project" lookup (this describe block's beforeEach sets
+      // SOCIALNEURON_PROJECT_ID='test-project-id', and the mocked Supabase
+      // client would otherwise resolve 'project-db').
+      await expect(getDefaultProjectId()).resolves.toBe('proj-key-own-scope');
+
+      vi.doUnmock('../auth/api-keys.js');
+      vi.doUnmock('../cli/credentials.js');
+      vi.resetModules();
+    });
+
+    it('getAuthenticatedProjectId() is null for an unscoped key', async () => {
+      const validateApiKey = vi.fn().mockResolvedValue({
+        valid: true,
+        userId: 'user-unscoped',
+        scopes: ['mcp:read'],
+        // no projectId — a normal, first-class unscoped key
+      });
+
+      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
+      vi.doMock('../cli/credentials.js', () => ({
+        loadApiKey: vi.fn().mockResolvedValue('snk_live_unscopedkey'),
+      }));
+
+      vi.resetModules();
+      const { initializeAuth, getAuthenticatedProjectId } = await import('./supabase.js');
+
+      await initializeAuth();
+
+      expect(getAuthenticatedProjectId()).toBeNull();
+
+      vi.doUnmock('../auth/api-keys.js');
+      vi.doUnmock('../cli/credentials.js');
+      vi.resetModules();
+    });
+  });
+
+  describe('getDefaultProjectId() HTTP-mode request context precedence', () => {
+    it('prefers the per-request project scope over the module-level authenticated one', async () => {
+      vi.resetModules();
+      const { requestContext } = await import('./request-context.js');
+      const { getDefaultProjectId } = await import('./supabase.js');
+
+      const result = await requestContext.run(
+        {
+          userId: 'user-http',
+          scopes: ['mcp:read'],
+          token: 'snk_live_httpkey',
+          creditsUsed: 0,
+          assetsGenerated: 0,
+          projectId: 'proj-from-request-context',
+        },
+        () => getDefaultProjectId()
+      );
+
+      expect(result).toBe('proj-from-request-context');
+    });
+  });
 });

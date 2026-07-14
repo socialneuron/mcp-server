@@ -58,8 +58,56 @@ describe('content tools', () => {
           model: 'veo3-fast',
           duration: 5,
           aspectRatio: '16:9',
-          enableAudio: true,
+          // 2026-07-13: enable_audio now defaults FALSE (cost control — the old
+          // `?? true` default silently multiplied kling-family costs).
+          enableAudio: false,
         },
+        { timeoutMs: 30_000 }
+      );
+    });
+
+    it('passes project_id through to the EF as projectId', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: 'job-p1',
+          taskId: 'task-p1',
+          model: 'veo3-fast',
+          creditsDeducted: 65,
+          estimatedTime: 60,
+          status: 'pending',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('generate_video')!;
+      await handler({ prompt: 'brand clip', model: 'veo3-fast', project_id: 'proj-123' });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'kie-video-generate',
+        expect.objectContaining({ projectId: 'proj-123' }),
+        { timeoutMs: 30_000 }
+      );
+    });
+
+    it('honors an explicit enable_audio: true', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: 'job-a1',
+          taskId: 'task-a1',
+          model: 'kling-3',
+          creditsDeducted: 150,
+          estimatedTime: 60,
+          status: 'pending',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('generate_video')!;
+      await handler({ prompt: 'test', model: 'kling-3', enable_audio: true });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'kie-video-generate',
+        expect.objectContaining({ enableAudio: true }),
         { timeoutMs: 30_000 }
       );
     });
