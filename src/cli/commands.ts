@@ -14,6 +14,7 @@ import { createInterface } from 'node:readline';
 import { saveApiKey, loadApiKey, deleteApiKey, saveSupabaseUrl } from './credentials.js';
 import { runSetup, getAppBaseUrl } from './setup.js';
 import { validateApiKey } from '../auth/api-keys.js';
+import { maskApiKey } from '../lib/sanitize-error.js';
 import { getSupabaseUrl, CLOUD_SUPABASE_URL } from '../lib/supabase.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -198,7 +199,7 @@ async function runLoginDevice(): Promise<void> {
         } catch (saveErr) {
           console.error('');
           console.error('  Authorized!');
-          console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+          console.error(`  Key prefix: ${maskApiKey(pollData.api_key)}`);
           console.error('');
           console.error('  Warning: API key saved, but could not save the Supabase URL.');
           console.error(`  Error: ${saveErr instanceof Error ? saveErr.message : String(saveErr)}`);
@@ -209,7 +210,7 @@ async function runLoginDevice(): Promise<void> {
 
         console.error('');
         console.error('  Authorized!');
-        console.error(`  Key prefix: ${pollData.api_key.substring(0, 12)}...`);
+        console.error(`  Key prefix: ${maskApiKey(pollData.api_key)}`);
         console.error('');
         return;
       }
@@ -353,7 +354,7 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
       ok: true,
       email: result.email || null,
       userId: result.userId,
-      keyPrefix: apiKey.substring(0, 12) + '...',
+      keyPrefix: maskApiKey(apiKey),
       scopes: result.scopes || ['mcp:full'],
       schema_version: '1',
     };
@@ -363,7 +364,7 @@ export async function runWhoami(options?: { json?: boolean }): Promise<void> {
     console.error('');
     console.error(`  Email:    ${result.email || '(not available)'}`);
     console.error(`  User ID:  ${result.userId}`);
-    console.error(`  Key:      ${apiKey.substring(0, 12)}...`);
+    console.error(`  Key:      ${maskApiKey(apiKey)}`);
     console.error(`  Scopes:   ${result.scopes?.join(', ') || 'mcp:full'}`);
 
     if (result.expiresAt) {
@@ -407,7 +408,7 @@ export async function runHealthCheck(options?: { json?: boolean }): Promise<void
       detail: 'No key stored. Run: socialneuron-mcp login',
     });
   } else {
-    checks.push({ name: 'API Key', ok: true, detail: `${apiKey.substring(0, 12)}...` });
+    checks.push({ name: 'API Key', ok: true, detail: maskApiKey(apiKey) });
 
     // 2. Validate key against server
     try {

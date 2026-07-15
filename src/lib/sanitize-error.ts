@@ -45,6 +45,16 @@ const ERROR_PATTERNS: Array<[RegExp, string]> = [
   [/[a-z0-9]{32,}.*key|Bearer [a-zA-Z0-9._-]+/i, 'An internal error occurred. Please try again.'],
 ];
 
+/**
+ * Mask an API key for display/logging. Keeps only the non-secret type prefix
+ * (e.g. `snk_`) and the last 4 characters for identification — never print
+ * more of a bearer credential than this.
+ */
+export function maskApiKey(apiKey: string): string {
+  if (typeof apiKey !== 'string' || apiKey.length < 12) return '****';
+  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
+}
+
 export function sanitizeDbError(error: { message?: string; code?: string }): string {
   const msg = error.message ?? '';
   const code = error.code ?? '';

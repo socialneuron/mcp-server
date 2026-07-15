@@ -1,6 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { getRequestUserId, getRequestProjectId } from "./request-context.js";
+import { maskApiKey } from "./sanitize-error.js";
 
 const SUPABASE_URL =
   process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || "";
@@ -561,11 +562,7 @@ export async function initializeAuth(): Promise<void> {
       authenticatedProjectId = result.projectId || null;
       if (!_quietAuth) {
         console.error(
-          "[MCP] Authenticated via API key (prefix: " +
-            apiKey.substring(0, 6) +
-            "..." +
-            apiKey.slice(-4) +
-            ")",
+          "[MCP] Authenticated via API key (" + maskApiKey(apiKey) + ")",
         );
         console.error("[MCP] Scopes: " + authenticatedScopes.join(", "));
       }

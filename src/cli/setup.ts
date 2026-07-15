@@ -18,6 +18,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { saveApiKey, saveSupabaseUrl, deleteApiKey } from './credentials.js';
+import { maskApiKey } from '../lib/sanitize-error.js';
 import { CLOUD_SUPABASE_URL } from '../lib/supabase.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -104,15 +105,18 @@ function getConfigPaths(): { path: string; name: string }[] {
 function configureMcpClient(configPath: string): boolean {
   try {
     let config: McpConfig = {};
-    if (existsSync(configPath)) {
+    try {
+      // Read directly and handle ENOENT rather than existsSync() pre-checks,
+      // which race against concurrent writers (CodeQL js/file-system-race).
       const raw = readFileSync(configPath, 'utf-8');
       config = JSON.parse(raw) as McpConfig;
-    } else {
-      // Create parent directory if needed
-      const dir = join(configPath, '..');
-      if (!existsSync(dir)) {
-        mkdirSync(dir, { recursive: true });
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException)?.code !== 'ENOENT') {
+        // Existing config is unreadable or corrupt — don't clobber it.
+        return false;
       }
+      // Create parent directory if needed (idempotent with recursive: true)
+      mkdirSync(join(configPath, '..'), { recursive: true });
     }
 
     if (!config.mcpServers) {
@@ -330,7 +334,7 @@ export async function runSetup(): Promise<void> {
 
   console.error('');
   console.error('  API key stored securely.');
-  console.error(`  Key prefix: ${apiKey.substring(0, 12)}...`);
+  console.error(`  Key prefix: ${maskApiKey(apiKey)}`);
 
   // Auto-configure MCP clients
   const configPaths = getConfigPaths();
