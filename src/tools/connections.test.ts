@@ -2,8 +2,16 @@ import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 import { createMockServer } from "../test-setup.js";
 import { registerConnectionTools } from "./connections.js";
 import { callEdgeFunction } from "../lib/edge-function.js";
+import {
+  getDefaultProjectId,
+  resolveProjectForConnectedAccountTool,
+} from "../lib/supabase.js";
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockGetProjectId = vi.mocked(getDefaultProjectId);
+const mockResolveForAccountTool = vi.mocked(
+  resolveProjectForConnectedAccountTool,
+);
 
 describe("connection tools", () => {
   let server: ReturnType<typeof createMockServer>;
@@ -24,6 +32,7 @@ describe("connection tools", () => {
           success: true,
           nonce: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
           platform: "Instagram",
+          project_id: "test-project-id",
           expires_at: "2026-04-25T20:00:00.000Z",
           deep_link:
             "https://www.socialneuron.com/settings/connections?start=instagram&t=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
@@ -56,6 +65,7 @@ describe("connection tools", () => {
           success: true,
           nonce: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
           platform: "TikTok",
+          project_id: "test-project-id",
           expires_at: "2026-04-25T20:00:00.000Z",
           deep_link:
             "https://www.socialneuron.com/settings/connections?start=tiktok&t=xxx",
@@ -81,6 +91,7 @@ describe("connection tools", () => {
           success: true,
           nonce: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
           platform: "Twitter",
+          project_id: "vpn-project",
           expires_at: "2026-04-25T20:00:00.000Z",
           deep_link:
             "https://www.socialneuron.com/settings/connections?start=twitter&t=xxx",
@@ -114,6 +125,7 @@ describe("connection tools", () => {
           success: true,
           nonce: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee",
           platform: "Twitter",
+          project_id: "vpn-project",
           expires_at: "2026-04-25T20:00:00.000Z",
           deep_link:
             "https://www.socialneuron.com/settings/connections?start=twitter&t=xxx",
@@ -169,6 +181,22 @@ describe("connection tools", () => {
         "Unsupported platform: pinterest",
       );
     });
+
+    // =========================================================================
+    // P1 fix: starting a NEW connection must never auto-bind based on
+    // whichever project happens to already own an unrelated account.
+    // =========================================================================
+    it("requires an explicit project_id when there is no sole accessible project — never uses the accounts-based auto-resolve", async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+
+      const handler = server.getHandler("start_platform_connection")!;
+      const result = await handler({ platform: "instagram" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("project_id is required");
+      expect(mockResolveForAccountTool).not.toHaveBeenCalled();
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
   });
 
   // =========================================================================
@@ -204,6 +232,7 @@ describe("connection tools", () => {
             {
               id: "acc-1",
               platform: "Instagram",
+              project_id: "test-project-id",
               status: "active",
               username: "creator_a",
               created_at: "2026-04-25T19:55:00.000Z",
@@ -234,6 +263,7 @@ describe("connection tools", () => {
             {
               id: "acc-2",
               platform: "YouTube",
+              project_id: "test-project-id",
               status: "active",
               username: null,
               created_at: "2026-04-25T19:55:00.000Z",
@@ -308,6 +338,7 @@ describe("connection tools", () => {
             {
               id: "acc-3",
               platform: "Instagram",
+              project_id: "test-project-id",
               status: "expired",
               username: "creator_b",
               created_at: "2026-04-20T00:00:00.000Z",
@@ -326,6 +357,7 @@ describe("connection tools", () => {
             {
               id: "acc-3",
               platform: "Instagram",
+              project_id: "test-project-id",
               status: "active",
               username: "creator_b",
               created_at: "2026-04-25T19:58:00.000Z",
@@ -382,6 +414,96 @@ describe("connection tools", () => {
       expect(parsed.connected).toBe(false);
       expect(parsed.timed_out).toBe(true);
       expect(parsed.platform).toBe("youtube");
+    });
+
+    it("returns success-with-choice (not an error) when two accounts are already active for the platform", async () => {
+      // F8 (2026-07-15): the OAuth flow succeeded — the platform IS
+      // connected, just to two accounts. Previously this returned
+      // isError:true, masking a successful connect behind an "error".
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: "acc-1",
+              platform: "Instagram",
+              project_id: "test-project-id",
+              status: "active",
+              username: "brand-one",
+              created_at: "2026-04-25T19:55:00.000Z",
+              expires_at: null,
+              has_refresh_token: true,
+            },
+            {
+              id: "acc-2",
+              platform: "Instagram",
+              project_id: "test-project-id",
+              status: "active",
+              username: "brand-two",
+              created_at: "2026-04-25T19:56:00.000Z",
+              expires_at: null,
+              has_refresh_token: true,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler("wait_for_connection")!({
+        platform: "instagram",
+      });
+
+      expect(result.isError).toBe(false);
+      expect(result.content[0].text).toContain("2 active accounts");
+      expect(result.content[0].text).toContain("brand-one");
+      expect(result.content[0].text).toContain("brand-two");
+      expect(result.content[0].text).toContain("acc-1");
+      expect(result.content[0].text).toContain("acc-2");
+    });
+
+    it("success-with-choice JSON format lists both accounts", async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: "acc-1",
+              platform: "Instagram",
+              project_id: "test-project-id",
+              status: "active",
+              username: "brand-one",
+              created_at: "2026-04-25T19:55:00.000Z",
+              expires_at: null,
+              has_refresh_token: true,
+            },
+            {
+              id: "acc-2",
+              platform: "Instagram",
+              project_id: "test-project-id",
+              status: "active",
+              username: "brand-two",
+              created_at: "2026-04-25T19:56:00.000Z",
+              expires_at: null,
+              has_refresh_token: true,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler("wait_for_connection")!({
+        platform: "instagram",
+        response_format: "json",
+      });
+
+      expect(result.isError).toBe(false);
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.connected).toBe(true);
+      expect(parsed.accounts).toHaveLength(2);
+      expect(parsed.accounts.map((a: { id: string }) => a.id)).toEqual([
+        "acc-1",
+        "acc-2",
+      ]);
     });
   });
 });

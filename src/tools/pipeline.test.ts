@@ -1,59 +1,62 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockServer } from '../test-setup.js';
-import { registerPipelineTools } from './pipeline.js';
-import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
-import { callEdgeFunction } from '../lib/edge-function.js';
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { createMockServer } from "../test-setup.js";
+import { registerPipelineTools } from "./pipeline.js";
+import { getDefaultUserId, getDefaultProjectId } from "../lib/supabase.js";
+import { callEdgeFunction } from "../lib/edge-function.js";
 
 const mockGetUserId = vi.mocked(getDefaultUserId);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
 const mockCallEdgeFunction = vi.mocked(callEdgeFunction);
 
-describe('pipeline tools', () => {
+describe("pipeline tools", () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     server = createMockServer();
     registerPipelineTools(server as any);
-    mockGetUserId.mockResolvedValue('test-user-id');
-    mockGetProjectId.mockResolvedValue('test-project-id');
+    mockGetUserId.mockResolvedValue("test-user-id");
+    mockGetProjectId.mockResolvedValue("test-project-id");
   });
 
   // =========================================================================
   // check_pipeline_readiness
   // =========================================================================
-  describe('check_pipeline_readiness', () => {
-    it('returns ready when all checks pass', async () => {
+  describe("check_pipeline_readiness", () => {
+    it("returns ready when all checks pass", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           credits: 500,
           estimated_cost: 25,
-          connected_platforms: ['tiktok'],
+          connected_platforms: ["tiktok"],
           missing_platforms: [],
           has_brand: true,
           pending_approvals: 0,
-          latest_insight: { id: 'i1', generated_at: new Date().toISOString() },
+          latest_insight: { id: "i1", generated_at: new Date().toISOString() },
           insight_age: 1,
           insights_fresh: true,
         },
         error: null,
       } as any);
 
-      const handler = server.getHandler('check_pipeline_readiness')!;
-      const result = await handler({ platforms: ['tiktok'], estimated_posts: 5 });
+      const handler = server.getHandler("check_pipeline_readiness")!;
+      const result = await handler({
+        platforms: ["tiktok"],
+        estimated_posts: 5,
+      });
       const text = result.content[0].text;
-      expect(text).toContain('READY');
-      expect(text).not.toContain('NOT READY');
+      expect(text).toContain("READY");
+      expect(text).not.toContain("NOT READY");
     });
 
-    it('returns not ready with insufficient credits', async () => {
+    it("returns not ready with insufficient credits", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           credits: 5,
           estimated_cost: 25,
-          connected_platforms: ['tiktok'],
+          connected_platforms: ["tiktok"],
           missing_platforms: [],
           has_brand: true,
           pending_approvals: 0,
@@ -64,21 +67,24 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('check_pipeline_readiness')!;
-      const result = await handler({ platforms: ['tiktok'], estimated_posts: 5 });
+      const handler = server.getHandler("check_pipeline_readiness")!;
+      const result = await handler({
+        platforms: ["tiktok"],
+        estimated_posts: 5,
+      });
       const text = result.content[0].text;
-      expect(text).toContain('NOT READY');
-      expect(text).toContain('Insufficient credits');
+      expect(text).toContain("NOT READY");
+      expect(text).toContain("Insufficient credits");
     });
 
-    it('returns not ready with missing platform accounts', async () => {
+    it("returns not ready with missing platform accounts", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           credits: 500,
           estimated_cost: 25,
           connected_platforms: [],
-          missing_platforms: ['tiktok', 'youtube'],
+          missing_platforms: ["tiktok", "youtube"],
           has_brand: false,
           pending_approvals: 0,
           latest_insight: null,
@@ -88,23 +94,23 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('check_pipeline_readiness')!;
+      const handler = server.getHandler("check_pipeline_readiness")!;
       const result = await handler({
-        platforms: ['tiktok', 'youtube'],
+        platforms: ["tiktok", "youtube"],
         estimated_posts: 5,
       });
       const text = result.content[0].text;
-      expect(text).toContain('NOT READY');
-      expect(text).toContain('Missing connected accounts');
+      expect(text).toContain("NOT READY");
+      expect(text).toContain("Missing connected accounts");
     });
 
-    it('returns JSON format when requested', async () => {
+    it("returns JSON format when requested", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           credits: 500,
           estimated_cost: 25,
-          connected_platforms: ['tiktok'],
+          connected_platforms: ["tiktok"],
           missing_platforms: [],
           has_brand: true,
           pending_approvals: 0,
@@ -115,11 +121,11 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('check_pipeline_readiness')!;
+      const handler = server.getHandler("check_pipeline_readiness")!;
       const result = await handler({
-        platforms: ['tiktok'],
+        platforms: ["tiktok"],
         estimated_posts: 5,
-        response_format: 'json',
+        response_format: "json",
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed._meta.version).toBeDefined();
@@ -130,67 +136,132 @@ describe('pipeline tools', () => {
   // =========================================================================
   // run_content_pipeline
   // =========================================================================
-  describe('run_content_pipeline', () => {
-    it('requires topic or source_url', async () => {
-      const handler = server.getHandler('run_content_pipeline')!;
-      const result = await handler({ platforms: ['tiktok'] });
+  describe("run_content_pipeline", () => {
+    it("requires topic or source_url", async () => {
+      const handler = server.getHandler("run_content_pipeline")!;
+      const result = await handler({ platforms: ["tiktok"] });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Either topic or source_url is required');
+      expect(result.content[0].text).toContain(
+        "Either topic or source_url is required",
+      );
     });
 
-    it('aborts with insufficient credits', async () => {
+    it("aborts with insufficient credits", async () => {
+      // Stage 0 preflight: connected-account routing check (must pass so the
+      // budget-check failure below is what actually surfaces).
+      mockCallEdgeFunction.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: "tiktok-account-1",
+              platform: "TikTok",
+              project_id: "test-project-id",
+              status: "active",
+            },
+          ],
+        },
+        error: null,
+      } as any);
       // budget-check call
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, credits: 1 },
         error: null,
       } as any);
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 5,
         posts_per_day: 1,
-        approval_mode: 'auto',
+        approval_mode: "auto",
         auto_approve_threshold: 28,
         dry_run: false,
         schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Insufficient credits');
+      expect(result.content[0].text).toContain("Insufficient credits");
     });
 
-    it('requires explicit confirmation before scheduling', async () => {
-      const handler = server.getHandler('run_content_pipeline')!;
-      const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
-        dry_run: false,
-      });
+    it("fails closed before any credit spend when connected-account routing is ambiguous (F5, 2026-07-15)", async () => {
+      // Stage 0 preflight: two active TikTok accounts for the project — ambiguous.
+      mockCallEdgeFunction.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: "tiktok-account-1",
+              platform: "TikTok",
+              project_id: "test-project-id",
+              status: "active",
+            },
+            {
+              id: "tiktok-account-2",
+              platform: "TikTok",
+              project_id: "test-project-id",
+              status: "active",
+            },
+          ],
+        },
+        error: null,
+      } as any);
 
-      expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Scheduling requires explicit confirmation');
-      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
-    });
-
-    it('rejects scheduling when quality is skipped', async () => {
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
+        days: 5,
+        posts_per_day: 1,
+        approval_mode: "auto",
+        auto_approve_threshold: 28,
         dry_run: false,
         schedule_confirmed: true,
-        skip_stages: ['quality'],
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain(
-        'Scheduling cannot run when the quality stage is skipped'
+        "Cannot run publishing pipeline",
+      );
+      expect(result.content[0].text).toContain("multiple active accounts");
+      // Exactly one call — the routing preflight. Budget-check (which would
+      // spend nothing itself, but gates the real spend in Stage 2) never ran.
+      expect(mockCallEdgeFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it("requires explicit confirmation before scheduling", async () => {
+      const handler = server.getHandler("run_content_pipeline")!;
+      const result = await handler({
+        topic: "AI tips",
+        platforms: ["tiktok"],
+        dry_run: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Scheduling requires explicit confirmation",
       );
       expect(mockCallEdgeFunction).not.toHaveBeenCalled();
     });
 
-    it('runs full pipeline in dry_run mode', async () => {
+    it("rejects scheduling when quality is skipped", async () => {
+      const handler = server.getHandler("run_content_pipeline")!;
+      const result = await handler({
+        topic: "AI tips",
+        platforms: ["tiktok"],
+        dry_run: false,
+        schedule_confirmed: true,
+        skip_stages: ["quality"],
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain(
+        "Scheduling cannot run when the quality stage is skipped",
+      );
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    });
+
+    it("runs full pipeline in dry_run mode", async () => {
       // budget-check
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, credits: 500 },
@@ -206,16 +277,16 @@ describe('pipeline tools', () => {
         data: {
           text: JSON.stringify([
             {
-              id: 'day1-tiktok-1',
+              id: "day1-tiktok-1",
               day: 1,
-              date: '2026-03-19',
-              platform: 'tiktok',
-              content_type: 'caption',
+              date: "2026-03-19",
+              platform: "tiktok",
+              content_type: "caption",
               caption:
-                'How to use AI for content creation — a complete breakdown of the workflow you need to try',
-              hook: 'Stop creating content manually',
-              angle: 'Practical AI workflow',
-              title: 'AI Content Tips',
+                "How to use AI for content creation — a complete breakdown of the workflow you need to try",
+              hook: "Stop creating content manually",
+              angle: "Practical AI workflow",
+              title: "AI Content Tips",
             },
           ]),
         },
@@ -237,27 +308,42 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 5,
         posts_per_day: 1,
-        approval_mode: 'review_low_confidence',
+        approval_mode: "review_low_confidence",
         auto_approve_threshold: 28,
         dry_run: true,
-        response_format: 'json',
+        response_format: "json",
       });
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.posts_generated).toBe(1);
       expect(parsed.data.dry_run).toBe(true);
-      expect(parsed.data.stages_completed).toContain('planning');
-      expect(parsed.data.stages_completed).toContain('quality_check');
-      expect(parsed.data.stages_skipped).toContain('schedule');
+      expect(parsed.data.stages_completed).toContain("planning");
+      expect(parsed.data.stages_completed).toContain("quality_check");
+      expect(parsed.data.stages_skipped).toContain("schedule");
     });
 
-    it('fails gracefully when AI returns bad data', async () => {
+    it("fails gracefully when AI returns bad data", async () => {
+      // Stage 0 preflight: connected-account routing check
+      mockCallEdgeFunction.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: "tiktok-account-1",
+              platform: "TikTok",
+              project_id: "test-project-id",
+              status: "active",
+            },
+          ],
+        },
+        error: null,
+      } as any);
       // budget-check
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, credits: 500 },
@@ -271,7 +357,7 @@ describe('pipeline tools', () => {
       // social-neuron-ai returns error
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: null,
-        error: 'AI unavailable',
+        error: "AI unavailable",
       } as any);
       // update pipeline run (failure)
       mockCallEdgeFunction.mockResolvedValueOnce({
@@ -279,22 +365,22 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 5,
         posts_per_day: 1,
-        approval_mode: 'auto',
+        approval_mode: "auto",
         auto_approve_threshold: 28,
         dry_run: false,
         schedule_confirmed: true,
       });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Planning failed');
+      expect(result.content[0].text).toContain("Planning failed");
     });
 
-    it('skips quality when skip_stages includes quality', async () => {
+    it("skips quality when skip_stages includes quality", async () => {
       // budget-check
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, credits: 500 },
@@ -310,13 +396,13 @@ describe('pipeline tools', () => {
         data: {
           text: JSON.stringify([
             {
-              id: 'day1-tiktok-1',
+              id: "day1-tiktok-1",
               day: 1,
-              platform: 'tiktok',
-              content_type: 'caption',
-              caption: 'Test post',
-              hook: 'Test hook',
-              angle: 'Test angle',
+              platform: "tiktok",
+              content_type: "caption",
+              caption: "Test post",
+              hook: "Test hook",
+              angle: "Test angle",
             },
           ]),
         },
@@ -338,21 +424,21 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 5,
         posts_per_day: 1,
-        approval_mode: 'auto',
+        approval_mode: "auto",
         auto_approve_threshold: 28,
         dry_run: true,
-        skip_stages: ['quality'],
-        response_format: 'json',
+        skip_stages: ["quality"],
+        response_format: "json",
       });
 
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.stages_skipped).toContain('quality_check');
+      expect(parsed.data.stages_skipped).toContain("quality_check");
       expect(parsed.data.posts_approved).toBe(1); // auto-approved when quality skipped
     });
 
@@ -360,30 +446,49 @@ describe('pipeline tools', () => {
     // a `platforms` ARRAY + camelCase keys. The prior bug sent singular `platform` +
     // snake_case media_url/scheduled_at, so every schedule call 400'd
     // ("At least one platform is required") and postsScheduled stayed 0.
-    it('schedules approved posts with a platforms array + camelCase keys (not singular platform)', async () => {
-      mockCallEdgeFunction.mockImplementation((fn: string) => {
-        if (fn === 'social-neuron-ai') {
+    it("schedules approved posts with a platforms array + camelCase keys (not singular platform)", async () => {
+      mockCallEdgeFunction.mockImplementation((fn: string, body: any) => {
+        if (fn === "mcp-data" && body?.action === "connected-accounts") {
+          return Promise.resolve({
+            data: {
+              success: true,
+              accounts: [
+                {
+                  id: "tiktok-account-1",
+                  platform: "TikTok",
+                  project_id: "test-project-id",
+                  status: "active",
+                },
+              ],
+            },
+            error: null,
+          } as any);
+        }
+        if (fn === "social-neuron-ai") {
           return Promise.resolve({
             data: {
               text: JSON.stringify([
                 {
-                  id: 'day1-tiktok-1',
+                  id: "day1-tiktok-1",
                   day: 1,
-                  date: '2026-03-19',
-                  platform: 'tiktok',
-                  content_type: 'caption',
+                  date: "2026-03-19",
+                  platform: "tiktok",
+                  content_type: "caption",
                   caption:
-                    'How to build a repeatable content workflow for your audience - save this practical framework and try it today!',
-                  hook: 'Stop guessing what to post',
-                  angle: 'Practical workflow',
+                    "How to build a repeatable content workflow for your audience - save this practical framework and try it today!",
+                  hook: "Stop guessing what to post",
+                  angle: "Practical workflow",
                 },
               ]),
             },
             error: null,
           } as any);
         }
-        if (fn === 'schedule-post') {
-          return Promise.resolve({ data: { success: true, post_id: 'p1' }, error: null } as any);
+        if (fn === "schedule-post") {
+          return Promise.resolve({
+            data: { success: true, post_id: "p1" },
+            error: null,
+          } as any);
         }
         // mcp-data (budget/create-run/deduct/persist/upsert/finalize) + anything else
         return Promise.resolve({
@@ -392,62 +497,84 @@ describe('pipeline tools', () => {
         } as any);
       });
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 5,
         posts_per_day: 1,
-        approval_mode: 'auto',
+        approval_mode: "auto",
         auto_approve_threshold: 1,
         dry_run: false,
         schedule_confirmed: true,
-        response_format: 'json',
+        response_format: "json",
       });
 
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.posts_scheduled).toBe(1);
 
-      const schedCall = mockCallEdgeFunction.mock.calls.find(c => c[0] === 'schedule-post');
-      expect(schedCall, 'schedule-post should have been called').toBeDefined();
+      const schedCall = mockCallEdgeFunction.mock.calls.find(
+        (c) => c[0] === "schedule-post",
+      );
+      expect(schedCall, "schedule-post should have been called").toBeDefined();
       const body = schedCall![1] as Record<string, unknown>;
       expect(Array.isArray(body.platforms)).toBe(true);
-      expect(body.platforms).toEqual(['tiktok']);
-      expect(typeof body.scheduledAt).toBe('string');
-      expect('mediaUrl' in body).toBe(true);
+      expect(body.platforms).toEqual(["tiktok"]);
+      expect(typeof body.scheduledAt).toBe("string");
+      expect("mediaUrl" in body).toBe(true);
       // The buggy field names must NOT be present
       expect(body.platform).toBeUndefined();
       expect(body.scheduled_at).toBeUndefined();
       expect(body.media_url).toBeUndefined();
+      expect(body.connectedAccountIds).toEqual({ TikTok: "tiktok-account-1" });
     });
 
-    it('caps generated posts, drops unrequested platforms, and accounts for scheduling credits', async () => {
+    it("caps generated posts, drops unrequested platforms, and accounts for scheduling credits", async () => {
       const overflowPost = (id: string, platform: string) => ({
         id,
         day: 1,
         platform,
-        content_type: 'caption',
+        content_type: "caption",
         caption:
-          'How to build a repeatable content workflow for your audience - save this practical framework and try it today!',
-        hook: 'Stop guessing what to post',
-        angle: 'Practical workflow',
-        title: 'Content workflow',
+          "How to build a repeatable content workflow for your audience - save this practical framework and try it today!",
+        hook: "Stop guessing what to post",
+        angle: "Practical workflow",
+        title: "Content workflow",
       });
-      mockCallEdgeFunction.mockImplementation((fn: string) => {
-        if (fn === 'social-neuron-ai') {
+      mockCallEdgeFunction.mockImplementation((fn: string, body: any) => {
+        if (fn === "mcp-data" && body?.action === "connected-accounts") {
+          return Promise.resolve({
+            data: {
+              success: true,
+              accounts: [
+                {
+                  id: "tiktok-account-1",
+                  platform: "TikTok",
+                  project_id: "test-project-id",
+                  status: "active",
+                },
+              ],
+            },
+            error: null,
+          } as any);
+        }
+        if (fn === "social-neuron-ai") {
           return Promise.resolve({
             data: {
               text: JSON.stringify([
-                overflowPost('1', 'tiktok'),
-                overflowPost('2', 'linkedin'),
-                overflowPost('3', 'tiktok'),
+                overflowPost("1", "tiktok"),
+                overflowPost("2", "linkedin"),
+                overflowPost("3", "tiktok"),
               ]),
             },
             error: null,
           } as any);
         }
-        if (fn === 'schedule-post') {
-          return Promise.resolve({ data: { success: true, post_id: 'p1' }, error: null } as any);
+        if (fn === "schedule-post") {
+          return Promise.resolve({
+            data: { success: true, post_id: "p1" },
+            error: null,
+          } as any);
         }
         return Promise.resolve({
           data: { success: true, credits: 500 },
@@ -455,18 +582,18 @@ describe('pipeline tools', () => {
         } as any);
       });
 
-      const handler = server.getHandler('run_content_pipeline')!;
+      const handler = server.getHandler("run_content_pipeline")!;
       const result = await handler({
-        topic: 'AI tips',
-        platforms: ['tiktok'],
+        topic: "AI tips",
+        platforms: ["tiktok"],
         days: 1,
         posts_per_day: 1,
-        approval_mode: 'auto',
+        approval_mode: "auto",
         auto_approve_threshold: 1,
         dry_run: false,
         schedule_confirmed: true,
         max_credits: 16,
-        response_format: 'json',
+        response_format: "json",
       });
 
       const parsed = JSON.parse(result.content[0].text);
@@ -476,78 +603,80 @@ describe('pipeline tools', () => {
       expect(parsed.data.errors).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
-            stage: 'planning',
-            message: expect.stringContaining('truncated'),
+            stage: "planning",
+            message: expect.stringContaining("truncated"),
           }),
           expect.objectContaining({
-            stage: 'planning',
-            message: expect.stringContaining('unrequested or invalid platform'),
+            stage: "planning",
+            message: expect.stringContaining("unrequested or invalid platform"),
           }),
-        ])
+        ]),
       );
 
       const scheduleCalls = mockCallEdgeFunction.mock.calls.filter(
-        call => call[0] === 'schedule-post'
+        (call) => call[0] === "schedule-post",
       );
       expect(scheduleCalls).toHaveLength(1);
-      expect((scheduleCalls[0][1] as Record<string, unknown>).platforms).toEqual(['tiktok']);
+      expect(
+        (scheduleCalls[0][1] as Record<string, unknown>).platforms,
+      ).toEqual(["tiktok"]);
     });
   });
 
   // =========================================================================
   // get_pipeline_status
   // =========================================================================
-  describe('get_pipeline_status', () => {
-    it('returns latest pipeline run', async () => {
+  describe("get_pipeline_status", () => {
+    it("returns latest pipeline run", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           pipeline: {
-            id: 'pipe-111',
-            status: 'completed',
-            started_at: '2026-03-18T10:00:00Z',
-            completed_at: '2026-03-18T10:05:00Z',
-            stages_completed: ['budget_check', 'planning', 'quality_check'],
+            id: "pipe-111",
+            status: "completed",
+            started_at: "2026-03-18T10:00:00Z",
+            completed_at: "2026-03-18T10:05:00Z",
+            stages_completed: ["budget_check", "planning", "quality_check"],
             stages_skipped: [],
             posts_generated: 5,
             posts_approved: 4,
             posts_scheduled: 4,
             posts_flagged: 1,
             credits_used: 15,
-            plan_id: 'plan-222',
+            plan_id: "plan-222",
             errors: [],
           },
         },
         error: null,
       } as any);
 
-      const handler = server.getHandler('get_pipeline_status')!;
+      const handler = server.getHandler("get_pipeline_status")!;
       const result = await handler({});
       const text = result.content[0].text;
-      expect(text).toContain('COMPLETED');
-      expect(text).toContain('5 generated');
-      expect(text).toContain('4 approved');
+      expect(text).toContain("COMPLETED");
+      expect(text).toContain("5 generated");
+      expect(text).toContain("4 approved");
     });
 
-    it('returns no runs found when empty', async () => {
+    it("returns no runs found when empty", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, pipeline: null },
         error: null,
       } as any);
 
-      const handler = server.getHandler('get_pipeline_status')!;
+      const handler = server.getHandler("get_pipeline_status")!;
       const result = await handler({});
-      expect(result.content[0].text).toContain('No pipeline runs found');
+      expect(result.content[0].text).toContain("No pipeline runs found");
     });
 
-    it('returns JSON format', async () => {
+    it("returns JSON format", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           pipeline: {
-            id: 'pipe-111',
-            status: 'completed',
-            started_at: '2026-03-18T10:00:00Z',
+            id: "pipe-111",
+            status: "completed",
+            started_at: "2026-03-18T10:00:00Z",
             completed_at: null,
             stages_completed: [],
             stages_skipped: [],
@@ -563,41 +692,41 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('get_pipeline_status')!;
-      const result = await handler({ response_format: 'json' });
+      const handler = server.getHandler("get_pipeline_status")!;
+      const result = await handler({ response_format: "json" });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed._meta.version).toBeDefined();
-      expect(parsed.data.id).toBe('pipe-111');
+      expect(parsed.data.id).toBe("pipe-111");
     });
   });
 
   // =========================================================================
   // auto_approve_plan
   // =========================================================================
-  describe('auto_approve_plan', () => {
-    const TEST_PLAN_ID = '550e8400-e29b-41d4-a716-446655440000';
+  describe("auto_approve_plan", () => {
+    const TEST_PLAN_ID = "550e8400-e29b-41d4-a716-446655440000";
 
-    it('auto-approves posts meeting quality threshold', async () => {
+    it("auto-approves posts meeting quality threshold", async () => {
       // Load plan
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           plan: {
             id: TEST_PLAN_ID,
-            project_id: 'proj-1',
-            status: 'draft',
+            project_id: "proj-1",
+            status: "draft",
             plan_payload: {
               posts: [
                 {
-                  id: 'p1',
-                  platform: 'tiktok',
+                  id: "p1",
+                  platform: "tiktok",
                   caption:
-                    'How to build a content strategy that scales — 5 steps you need to follow today!',
-                  hook: 'Stop guessing what to post',
-                  angle: 'Strategic approach',
-                  content_type: 'caption',
+                    "How to build a content strategy that scales — 5 steps you need to follow today!",
+                  hook: "Stop guessing what to post",
+                  angle: "Strategic approach",
+                  content_type: "caption",
                   day: 1,
-                  date: '2026-03-19',
+                  date: "2026-03-19",
                 },
               ],
             },
@@ -611,45 +740,48 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('auto_approve_plan')!;
-      const result = await handler({ plan_id: TEST_PLAN_ID, quality_threshold: 15 });
+      const handler = server.getHandler("auto_approve_plan")!;
+      const result = await handler({
+        plan_id: TEST_PLAN_ID,
+        quality_threshold: 15,
+      });
       const text = result.content[0].text;
-      expect(text).toContain('Auto-approved:');
+      expect(text).toContain("Auto-approved:");
     });
 
-    it('returns error for missing plan', async () => {
+    it("returns error for missing plan", async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: { success: true, plan: null },
         error: null,
       } as any);
 
-      const handler = server.getHandler('auto_approve_plan')!;
+      const handler = server.getHandler("auto_approve_plan")!;
       const result = await handler({ plan_id: TEST_PLAN_ID });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('No content plan found');
+      expect(result.content[0].text).toContain("No content plan found");
     });
 
-    it('returns JSON format', async () => {
+    it("returns JSON format", async () => {
       // Load plan
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
           success: true,
           plan: {
             id: TEST_PLAN_ID,
-            project_id: 'proj-1',
-            status: 'draft',
+            project_id: "proj-1",
+            status: "draft",
             plan_payload: {
               posts: [
                 {
-                  id: 'p1',
-                  platform: 'tiktok',
+                  id: "p1",
+                  platform: "tiktok",
                   caption:
-                    'A practical breakdown of the workflow that helped us grow to 50K followers',
-                  hook: 'From 0 to 50K in 6 months',
-                  angle: 'Case study',
-                  content_type: 'caption',
+                    "A practical breakdown of the workflow that helped us grow to 50K followers",
+                  hook: "From 0 to 50K in 6 months",
+                  angle: "Case study",
+                  content_type: "caption",
                   day: 1,
-                  date: '2026-03-19',
+                  date: "2026-03-19",
                 },
               ],
             },
@@ -663,16 +795,16 @@ describe('pipeline tools', () => {
         error: null,
       } as any);
 
-      const handler = server.getHandler('auto_approve_plan')!;
+      const handler = server.getHandler("auto_approve_plan")!;
       const result = await handler({
         plan_id: TEST_PLAN_ID,
         quality_threshold: 15,
-        response_format: 'json',
+        response_format: "json",
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed._meta.version).toBeDefined();
       expect(parsed.data.plan_id).toBe(TEST_PLAN_ID);
-      expect(typeof parsed.data.auto_approved).toBe('number');
+      expect(typeof parsed.data.auto_approved).toBe("number");
     });
   });
 });
