@@ -450,22 +450,26 @@ app.get(PROTECTED_RESOURCE_METADATA_PATHS, (_req, res) => {
 // option (RFC 8414 doesn't define it; this is a Claude-side extension), so we
 // shadow the well-known route with createOAuthMetadata + an extra field.
 // MUST be registered BEFORE app.use(authRouter) so Express matches this first.
-app.get("/.well-known/oauth-authorization-server", (_req, res) => {
-  const metadata = createOAuthMetadata({
+// Built ONCE at startup — the metadata derives only from constants, and this
+// endpoint is exempt from the per-IP limiter (OAuth discovery must never be
+// throttled), so it must not do per-request work.
+const oauthAuthorizationServerMetadata = {
+  ...createOAuthMetadata({
     provider: oauthProvider,
     issuerUrl: new URL(OAUTH_ISSUER_URL),
     serviceDocumentationUrl: new URL("https://socialneuron.com/for-developers"),
     scopesSupported: SCOPES_SUPPORTED,
-  });
-  res.json({
-    ...metadata,
-    // Use the 180×180 PNG (square, ~22KB) instead of the 1024×768 Fabric.js
-    // SVG. The SVG had two render-blockers in claude.ai connector tiles:
-    // (1) non-square 4:3 aspect ratio, and (2) `xmlns:ns0=` namespace-prefixed
-    // elements from the Fabric.js export that some SVG parsers drop. PNG is
-    // universally rendered and matches the tile's expected aspect ratio.
-    logo_uri: "https://socialneuron.com/logo-icon.png",
-  });
+  }),
+  // Use the 180×180 PNG (square, ~22KB) instead of the 1024×768 Fabric.js
+  // SVG. The SVG had two render-blockers in claude.ai connector tiles:
+  // (1) non-square 4:3 aspect ratio, and (2) `xmlns:ns0=` namespace-prefixed
+  // elements from the Fabric.js export that some SVG parsers drop. PNG is
+  // universally rendered and matches the tile's expected aspect ratio.
+  logo_uri: "https://socialneuron.com/logo-icon.png",
+};
+
+app.get("/.well-known/oauth-authorization-server", (_req, res) => {
+  res.json(oauthAuthorizationServerMetadata);
 });
 
 const authRouter = mcpAuthRouter({
