@@ -2,7 +2,12 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
-import { getSupabaseClient, getDefaultUserId } from "../lib/supabase.js";
+import {
+  getSupabaseClient,
+  getDefaultUserId,
+  getDefaultProjectId,
+  listAccessibleProjectsWithAccountStatus,
+} from "../lib/supabase.js";
 import { sanitizeDbError } from "../lib/sanitize-error.js";
 import type {
   GenerateVideoResponse,
@@ -46,13 +51,17 @@ interface AsyncJob {
   } | null;
 }
 
-function buildFallbackDisclosureLine(meta: AsyncJob['result_metadata']): string | null {
+function buildFallbackDisclosureLine(
+  meta: AsyncJob["result_metadata"],
+): string | null {
   const requested = meta?.model_requested;
   const delivered = meta?.model_delivered;
   if (!requested || !delivered || requested === delivered) return null;
   // Never echo provider diagnostics. The private backend already normalizes
   // this field, but the public projection treats it as untrusted defense-in-depth.
-  const reason = meta?.fallback_reason ? ' because the requested model was unavailable' : '';
+  const reason = meta?.fallback_reason
+    ? " because the requested model was unavailable"
+    : "";
   return `Note: requested "${requested}" but delivered "${delivered}"${reason} — cost never exceeds the requested model's price.`;
 }
 
@@ -225,7 +234,10 @@ export function registerContentTools(server: McpServer): void {
           isError: true,
         };
       }
-      const rateLimit = checkRateLimit("generation", `generate_video:${userId}`);
+      const rateLimit = checkRateLimit(
+        "generation",
+        `generate_video:${userId}`,
+      );
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -378,7 +390,14 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe("Optional response format. Defaults to text."),
     },
-    async ({ prompt, model, aspect_ratio, image_url, project_id, response_format }) => {
+    async ({
+      prompt,
+      model,
+      aspect_ratio,
+      image_url,
+      project_id,
+      response_format,
+    }) => {
       const format = response_format ?? "text";
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
@@ -396,7 +415,10 @@ export function registerContentTools(server: McpServer): void {
           isError: true,
         };
       }
-      const rateLimit = checkRateLimit("generation", `generate_image:${userId}`);
+      const rateLimit = checkRateLimit(
+        "generation",
+        `generate_image:${userId}`,
+      );
       if (!rateLimit.allowed) {
         return {
           content: [
@@ -555,6 +577,24 @@ export function registerContentTools(server: McpServer): void {
         };
       }
 
+      // Project discovery (F1, 2026-07-15): when the caller's own project
+      // scope is ambiguous (no request/authenticated/env scope AND no sole
+      // accessible project), attach the user's project list so an agent that
+      // hit a "project_id is required" error elsewhere can self-recover
+      // in-band instead of asking the human. Only computed when actually
+      // ambiguous — a well-scoped key never pays this extra DB round-trip.
+      let projectsDisclosure:
+        | Awaited<ReturnType<typeof listAccessibleProjectsWithAccountStatus>>
+        | undefined;
+      const ownScopedProjectId = await getDefaultProjectId();
+      if (!ownScopedProjectId) {
+        const ownUserId = await getDefaultUserId().catch(() => null);
+        if (ownUserId) {
+          const list = await listAccessibleProjectsWithAccountStatus(ownUserId);
+          if (list.length > 0) projectsDisclosure = list;
+        }
+      }
+
       // If job is still pending/processing, try to get live status from Kie.ai
       if (
         job.external_id &&
@@ -583,7 +623,9 @@ export function registerContentTools(server: McpServer): void {
           if (livePayload.error) {
             lines.push(`Error: ${livePayload.error}`);
           }
-          const fallbackDisclosure = buildFallbackDisclosureLine(job.result_metadata);
+          const fallbackDisclosure = buildFallbackDisclosureLine(
+            job.result_metadata,
+          );
           if (fallbackDisclosure) lines.push(fallbackDisclosure);
           lines.push(`Credits: ${job.credits_cost}`);
           if (job.billing_status) {
@@ -592,6 +634,18 @@ export function registerContentTools(server: McpServer): void {
             );
           }
           lines.push(`Created: ${job.created_at}`);
+
+          if (projectsDisclosure) {
+            lines.push(
+              "",
+              `Projects (project_id required elsewhere? pick one): ${projectsDisclosure
+                .map(
+                  (p) =>
+                    `${p.name} (${p.id}${p.hasConnectedAccounts ? ", has connected accounts" : ""})`,
+                )
+                .join("; ")}`,
+            );
+          }
 
           if (format === "json") {
             return {
@@ -610,6 +664,9 @@ export function registerContentTools(server: McpServer): void {
                     asEnvelope({
                       ...liveStatus,
                       ...livePayload,
+                      ...(projectsDisclosure
+                        ? { projects: projectsDisclosure }
+                        : {}),
                     }),
                     null,
                     2,
@@ -656,7 +713,9 @@ export function registerContentTools(server: McpServer): void {
       if (job.error_message) {
         lines.push(`Error: ${job.error_message}`);
       }
-      const fallbackDisclosure = buildFallbackDisclosureLine(job.result_metadata);
+      const fallbackDisclosure = buildFallbackDisclosureLine(
+        job.result_metadata,
+      );
       if (fallbackDisclosure) lines.push(fallbackDisclosure);
       lines.push(`Credits: ${job.credits_cost}`);
       if (job.billing_status) {
@@ -667,6 +726,17 @@ export function registerContentTools(server: McpServer): void {
       lines.push(`Created: ${job.created_at}`);
       if (job.completed_at) {
         lines.push(`Completed: ${job.completed_at}`);
+      }
+      if (projectsDisclosure) {
+        lines.push(
+          "",
+          `Projects (project_id required elsewhere? pick one): ${projectsDisclosure
+            .map(
+              (p) =>
+                `${p.name} (${p.id}${p.hasConnectedAccounts ? ", has connected accounts" : ""})`,
+            )
+            .join("; ")}`,
+        );
       }
 
       if (format === "json") {
@@ -679,6 +749,7 @@ export function registerContentTools(server: McpServer): void {
         const enriched = {
           ...job,
           ...buildCheckStatusPayload(job),
+          ...(projectsDisclosure ? { projects: projectsDisclosure } : {}),
         };
         return {
           content: [

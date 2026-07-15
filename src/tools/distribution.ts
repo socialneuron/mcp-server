@@ -5,7 +5,11 @@ import { callEdgeFunction } from "../lib/edge-function.js";
 import { sanitizeError } from "../lib/sanitize-error.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
 import { validateUrlForSSRF } from "../lib/ssrf.js";
-import { getDefaultProjectId, getDefaultUserId } from "../lib/supabase.js";
+import {
+  getDefaultProjectId,
+  getDefaultUserId,
+  resolveProjectForConnectedAccountTool,
+} from "../lib/supabase.js";
 import { evaluateQuality } from "../lib/quality.js";
 import type {
   SchedulePostResult,
@@ -15,6 +19,7 @@ import type {
   ResponseEnvelope,
 } from "../types/index.js";
 import { MCP_VERSION } from "../lib/version.js";
+import { resolveConnectedAccountRouting } from "../lib/connected-account-routing.js";
 
 /** Convert snake_case keys to camelCase (one level deep) */
 function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
@@ -44,6 +49,11 @@ const PLATFORM_CASE_MAP: Record<string, string> = {
   tiktok: "TikTok",
   instagram: "Instagram",
   twitter: "Twitter",
+  // 'x' is the platform's current branding but connected_account_routing.ts
+  // (and the DB convention) still key on 'Twitter' — keep both aliases
+  // resolving to the same case so schedule_content_plan's platform:'x' posts
+  // don't fall through to an undefined binding (F8, 2026-07-15).
+  x: "Twitter",
   linkedin: "LinkedIn",
   facebook: "Facebook",
   threads: "Threads",
@@ -231,33 +241,13 @@ async function validatePublishMediaUrl(url: string): Promise<string | null> {
     return "Media URL is invalid.";
   }
   const check = await validateUrlForSSRF(url);
-  return check.isValid ? null : check.error || "Media URL failed safety validation.";
+  return check.isValid
+    ? null
+    : check.error || "Media URL failed safety validation.";
 }
 
 function accountEffectiveStatus(account: ConnectedAccount): string {
   return account.effective_status || account.status;
-}
-
-function isUsableAccount(account: ConnectedAccount): boolean {
-  const status = accountEffectiveStatus(account);
-  return status === "active" || status === "expires_soon";
-}
-
-function formatAccountChoice(account: ConnectedAccount): string {
-  const name = account.username ? `@${account.username}` : "unnamed";
-  const project = account.project_id ? `project_id=${account.project_id}` : "project_id=unassigned";
-  const refresh = account.has_refresh_token ? "OAuth 2.0 refresh" : "no refresh token";
-  return `${account.id} (${name}, ${project}, ${accountEffectiveStatus(account)}, ${refresh})`;
-}
-
-function requestedAccountIdForPlatform(
-  accountId: string | undefined,
-  accountIds: Record<string, string> | undefined,
-  platform: string,
-): string | undefined {
-  if (accountId) return accountId;
-  if (!accountIds) return undefined;
-  return accountIds[platform] || accountIds[platform.toLowerCase()];
 }
 
 /**
@@ -516,6 +506,7 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       project_id: z
         .string()
+        .uuid()
         .optional()
         .describe(
           "Social Neuron brand/project ID to associate this post with. Provide this when the account has multiple brands so brand voice and connected account routing stay scoped to the right brand.",
@@ -532,17 +523,21 @@ export function registerDistributionTools(server: McpServer): void {
         ),
       account_id: z
         .string()
+        .uuid()
         .optional()
         .describe(
-          "Connected account ID to post from. Use list_connected_accounts to find the right ID. " +
-            "Required when multiple accounts exist for the same platform. If project_id is provided, the account must belong to that project or be unassigned.",
+          "Connected account ID to post from. Optional when the resolved project has exactly " +
+            "one active account for the target platform — it is auto-bound. Required (with a " +
+            "clear error listing candidates) when multiple accounts exist for the same platform. " +
+            "Use list_connected_accounts to find the right ID. The account must be active and " +
+            "bound to the exact project_id.",
         ),
       account_ids: z
-        .record(z.string(), z.string())
+        .record(z.string(), z.string().uuid())
         .optional()
         .describe(
           "Per-platform account IDs when posting to multiple platforms. " +
-          'Example: {"twitter": "abc123", "instagram": "def456"}. ' +
+            'Example: {"twitter": "abc123", "instagram": "def456"}. ' +
             "Use list_connected_accounts with the same project_id to find IDs.",
         ),
       auto_rehost: z
@@ -594,6 +589,51 @@ export function registerDistributionTools(server: McpServer): void {
             {
               type: "text" as const,
               text: "Either caption or title is required.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      // Platform-aware: only a project with a usable account for one of the
+      // REQUESTED platforms counts as an auto-resolve candidate (F1-followup,
+      // 2026-07-15) — an unrelated platform's account must not manufacture a
+      // false "sole candidate".
+      const projectResolution = await resolveProjectForConnectedAccountTool(
+        project_id,
+        platforms,
+      );
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                projectResolution.error ??
+                "A project_id is required for publishing. Configure an explicit project or use an API key that is scoped to exactly one project.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+      const projectAutoResolvedNote = projectResolution.autoResolvedNote;
+      if (account_id && account_ids) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Pass either account_id or account_ids, not both.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      if (account_id && platforms.length !== 1) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "account_id is valid only for a single target platform. Use account_ids for multi-platform publishing.",
             },
           ],
           isError: true,
@@ -725,9 +765,14 @@ export function registerDistributionTools(server: McpServer): void {
               isError: true,
             };
           }
-          const resolvedJobs = resolved as Array<{ url: string; trustedR2: boolean }>;
+          const resolvedJobs = resolved as Array<{
+            url: string;
+            trustedR2: boolean;
+          }>;
           resolvedMediaUrls = resolvedJobs.map((item) => item.url);
-          resolvedMediaUrlsAreTrustedR2 = resolvedJobs.map((item) => item.trustedR2);
+          resolvedMediaUrlsAreTrustedR2 = resolvedJobs.map(
+            (item) => item.trustedR2,
+          );
         }
 
         // --- Auto-rehost non-R2 URLs into R2 ---
@@ -741,7 +786,10 @@ export function registerDistributionTools(server: McpServer): void {
         // Only URLs signed from an owned R2 key above may skip rehosting.
         const shouldRehost = auto_rehost !== false;
         if (shouldRehost && resolvedMediaUrl && !resolvedMediaUrlIsTrustedR2) {
-          const rehost = await rehostExternalUrl(resolvedMediaUrl, project_id);
+          const rehost = await rehostExternalUrl(
+            resolvedMediaUrl,
+            resolvedProjectId,
+          );
           if ("error" in rehost) {
             return {
               content: [
@@ -766,7 +814,7 @@ export function registerDistributionTools(server: McpServer): void {
             resolvedMediaUrls.map((u, index) =>
               resolvedMediaUrlsAreTrustedR2[index]
                 ? Promise.resolve({ signedUrl: u, r2Key: "" })
-                : rehostExternalUrl(u, project_id),
+                : rehostExternalUrl(u, resolvedProjectId),
             ),
           );
           const failIdx = rehosted.findIndex((r) => "error" in r);
@@ -826,7 +874,8 @@ export function registerDistributionTools(server: McpServer): void {
       // Validate every final media URL even when auto_rehost=false. Otherwise
       // the persistence opt-out would also become an SSRF-validation bypass.
       const finalUrls = [resolvedMediaUrl, ...(resolvedMediaUrls ?? [])].filter(
-        (value): value is string => typeof value === "string" && value.length > 0,
+        (value): value is string =>
+          typeof value === "string" && value.length > 0,
       );
       for (const url of finalUrls) {
         const validationError = await validatePublishMediaUrl(url);
@@ -868,114 +917,27 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      // --- Pre-flight: validate connected accounts before posting ---
-      const { data: accountsData } = await callEdgeFunction<{
-        accounts?: ConnectedAccount[];
-      }>(
-        "mcp-data",
-        {
-          action: "connected-accounts",
-          ...(project_id ? { projectId: project_id, project_id } : {}),
-        },
-        { timeoutMs: 10_000 },
-      );
-
-      if (accountsData?.accounts) {
-        const accounts = accountsData.accounts;
-        const issues: string[] = [];
-
-        for (const platform of normalizedPlatforms) {
-          const platformAccounts = accounts.filter(
-            (a) =>
-              a.platform.toLowerCase() === platform.toLowerCase() &&
-              isUsableAccount(a),
-          );
-          const requestedAccountId = requestedAccountIdForPlatform(
-            account_id,
-            account_ids,
-            platform,
-          );
-
-          if (requestedAccountId) {
-            const selected = accounts.find((a) => a.id === requestedAccountId);
-            if (!selected) {
-              issues.push(
-                `${platform}: Account "${requestedAccountId}" is not available${project_id ? ` for project_id ${project_id}` : ""}. Call \`list_connected_accounts\`${project_id ? " with the same project_id" : ""} and choose one of the returned IDs.`,
-              );
-            } else if (selected.platform.toLowerCase() !== platform.toLowerCase()) {
-              issues.push(
-                `${platform}: Account "${requestedAccountId}" belongs to ${selected.platform}, not ${platform}.`,
-              );
-            } else if (!isUsableAccount(selected)) {
-              issues.push(
-                `${platform}: Account "${selected.username || selected.id}" is ${accountEffectiveStatus(selected)}. Reconnect at socialneuron.com/settings/connections.`,
-              );
-            } else if (
-              project_id &&
-              selected.project_id &&
-              selected.project_id !== project_id
-            ) {
-              issues.push(
-                `${platform}: Account "${selected.username || selected.id}" is bound to project_id ${selected.project_id}, not ${project_id}. Use the selected brand's account or reconnect/assign it in Settings > Integrations.`,
-              );
-            }
-            continue;
-          }
-
-          if (platformAccounts.length === 0) {
-            issues.push(
-              `${platform}: not connected yet. This is a one-time browser setup on socialneuron.com — NOT another OAuth in Claude. ` +
-                `Call \`start_platform_connection\` with platform="${platform.toLowerCase()}"${project_id ? ` and project_id="${project_id}"` : ""} to get a deep link, ask the user to open it in their browser and approve on the platform, then call \`wait_for_connection\` before retrying schedule_post.`,
-            );
-          } else if (platformAccounts.length > 1) {
-            const accountList = platformAccounts
-              .map((a) => `  - ${formatAccountChoice(a)}`)
-              .join("\n");
-            issues.push(
-              `${platform}: Multiple accounts found. Specify account_id or account_ids to choose:\n${accountList}`,
-            );
-          } else if (platformAccounts.length === 1) {
-            const acct = platformAccounts[0];
-            if (
-              acct.expires_at &&
-              new Date(acct.expires_at) < new Date() &&
-              !acct.has_refresh_token
-            ) {
-              issues.push(
-                `${platform}: Account "${acct.username || acct.id}" has expired OAuth and no refresh token. Reconnect at socialneuron.com/settings/connections.`,
-              );
-            }
-          }
-        }
-
-        if (issues.length > 0) {
-          return {
-            content: [
-              {
-                type: "text" as const,
-                text: `Cannot post — account issues found:\n\n${issues.join("\n\n")}`,
-              },
-            ],
-            isError: true,
-          };
-        }
-      }
-
-      // Build connectedAccountIds map for the EF
-      let connectedAccountIds: Record<string, string> | undefined;
+      let requestedAccountIds: Record<string, string> | undefined;
       if (account_id) {
-        // Single account_id applies to all platforms
-        connectedAccountIds = {};
-        for (const p of normalizedPlatforms) {
-          connectedAccountIds[p] = account_id;
-        }
+        requestedAccountIds = { [normalizedPlatforms[0]]: account_id };
       } else if (account_ids) {
-        // Per-platform mapping — normalize keys to DB convention
-        connectedAccountIds = {};
-        for (const [key, val] of Object.entries(account_ids)) {
-          const normalizedKey = PLATFORM_CASE_MAP[key.toLowerCase()] || key;
-          connectedAccountIds[normalizedKey] = val;
-        }
+        requestedAccountIds = account_ids;
+      }
+      const routing = await resolveConnectedAccountRouting({
+        projectId: resolvedProjectId,
+        platforms: normalizedPlatforms,
+        requestedAccountIds,
+      });
+      if (routing.error || !routing.connectedAccountIds) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Cannot post — ${routing.error ?? "exact connected-account routing could not be established."}`,
+            },
+          ],
+          isError: true,
+        };
       }
 
       // Optional viral attribution (opt-in only, default false)
@@ -1010,7 +972,10 @@ export function registerDistributionTools(server: McpServer): void {
       // MCP is an AI-assisted publishing surface, so enable each platform's
       // native AI disclosure by default. Explicit false remains available for
       // verified human-shot/non-AI media.
-      const defaultAiDisclosure = (platformKey: string, field: string): void => {
+      const defaultAiDisclosure = (
+        platformKey: string,
+        field: string,
+      ): void => {
         const existing = normalizedPlatformMetadata?.[platformKey];
         if (existing && existing[field] !== undefined) return;
         normalizedPlatformMetadata = {
@@ -1042,8 +1007,9 @@ export function registerDistributionTools(server: McpServer): void {
           title,
           hashtags,
           scheduledAt: schedule_at,
-          projectId: project_id,
-          ...(connectedAccountIds ? { connectedAccountIds } : {}),
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
+          connectedAccountIds: routing.connectedAccountIds,
           ...(normalizedPlatformMetadata
             ? {
                 platformMetadata: convertPlatformMetadata(
@@ -1083,12 +1049,19 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
+      const responseData = projectAutoResolvedNote
+        ? { ...data, project_auto_resolved: projectAutoResolvedNote }
+        : data;
+
       const lines: string[] = [
         data.success
           ? "Post scheduled successfully."
           : "Post scheduling had errors.",
         `Scheduled for: ${data.scheduledAt}`,
       ];
+      if (projectAutoResolvedNote) {
+        lines.push("", `Note: ${projectAutoResolvedNote}`);
+      }
       if (tiktokAutoInboxApplied) {
         lines.push(
           "",
@@ -1108,7 +1081,7 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       if (format === "json") {
-        const structuredContent = asEnvelope(data);
+        const structuredContent = asEnvelope(responseData);
         return {
           structuredContent,
           content: [
@@ -1121,7 +1094,7 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
       return {
-        structuredContent: asEnvelope(data),
+        structuredContent: asEnvelope(responseData),
         content: [{ type: "text" as const, text: lines.join("\n") }],
         isError: !data.success,
       };
@@ -1135,7 +1108,10 @@ export function registerDistributionTools(server: McpServer): void {
     "reschedule_post",
     "Move an existing pending or scheduled post to a new future time without creating a duplicate. Pass project_id for the post's brand. expected_scheduled_at is recommended: it prevents overwriting a change made in another client after the calendar was loaded.",
     {
-      post_id: z.string().uuid().describe("Post ID returned by list_recent_posts."),
+      post_id: z
+        .string()
+        .uuid()
+        .describe("Post ID returned by list_recent_posts."),
       project_id: z
         .string()
         .uuid()
@@ -1146,7 +1122,9 @@ export function registerDistributionTools(server: McpServer): void {
       scheduled_at: z
         .string()
         .datetime({ offset: true })
-        .describe("New future publish time as an ISO 8601 datetime with timezone."),
+        .describe(
+          "New future publish time as an ISO 8601 datetime with timezone.",
+        ),
       expected_scheduled_at: z
         .string()
         .datetime({ offset: true })
@@ -1176,7 +1154,8 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      const resolvedProjectId =
+        project_id ?? (await getDefaultProjectId()) ?? undefined;
       if (!resolvedProjectId) {
         return {
           content: [
@@ -1219,7 +1198,11 @@ export function registerDistributionTools(server: McpServer): void {
         project_id: resolvedProjectId,
         scheduled_at: next.toISOString(),
         ...(expected_scheduled_at
-          ? { expected_scheduled_at: new Date(expected_scheduled_at).toISOString() }
+          ? {
+              expected_scheduled_at: new Date(
+                expected_scheduled_at,
+              ).toISOString(),
+            }
           : {}),
       });
 
@@ -1273,6 +1256,7 @@ export function registerDistributionTools(server: McpServer): void {
     {
       project_id: z
         .string()
+        .uuid()
         .optional()
         .describe(
           "Brand/project ID to scope connected accounts. Use the same project_id when calling schedule_post.",
@@ -1280,7 +1264,9 @@ export function registerDistributionTools(server: McpServer): void {
       include_all: z
         .boolean()
         .optional()
-        .describe("If true, include expired or inactive accounts as well as usable accounts."),
+        .describe(
+          "If true, include expired or inactive accounts as well as usable accounts.",
+        ),
       response_format: z
         .enum(["text", "json"])
         .optional()
@@ -1288,6 +1274,23 @@ export function registerDistributionTools(server: McpServer): void {
     },
     async ({ project_id, include_all, response_format }) => {
       const format = response_format ?? "text";
+      const projectResolution =
+        await resolveProjectForConnectedAccountTool(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                projectResolution.error ??
+                "A project_id is required to list connected accounts. Configure an explicit project or use an API key scoped to exactly one project.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+      const projectAutoResolvedNote = projectResolution.autoResolvedNote;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -1296,7 +1299,8 @@ export function registerDistributionTools(server: McpServer): void {
         error?: string;
       }>("mcp-data", {
         action: "connected-accounts",
-        ...(project_id ? { projectId: project_id, project_id } : {}),
+        projectId: resolvedProjectId,
+        project_id: resolvedProjectId,
         ...(include_all ? { includeAll: true } : {}),
       });
 
@@ -1312,13 +1316,34 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
-      const accounts = (result.accounts ?? [])
+      const parsedAccounts = (result.accounts ?? [])
         .map(publicConnectedAccount)
         .filter((account): account is ConnectedAccount => account !== null);
+      if (
+        parsedAccounts.some(
+          (account) => account.project_id !== resolvedProjectId,
+        )
+      ) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "Connected-account project attestation failed. No account inventory was returned.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const accounts = parsedAccounts;
 
       if (accounts.length === 0) {
         if (format === "json") {
-          const structuredContent = asEnvelope({ accounts: [] });
+          const structuredContent = asEnvelope({
+            accounts: [],
+            ...(projectAutoResolvedNote
+              ? { project_auto_resolved: projectAutoResolvedNote }
+              : {}),
+          });
           return {
             structuredContent,
             content: [
@@ -1335,14 +1360,17 @@ export function registerDistributionTools(server: McpServer): void {
               type: "text" as const,
               text:
                 "No connected social media accounts found. Connect platforms " +
-                "in Social Neuron Settings > Connections.",
+                "in Social Neuron Settings > Connections." +
+                (projectAutoResolvedNote
+                  ? `\n\nNote: ${projectAutoResolvedNote}`
+                  : ""),
             },
           ],
         };
       }
 
       const lines: string[] = [
-        `${accounts.length} connected account(s)${project_id ? ` for project ${project_id}` : ""}:`,
+        `${accounts.length} connected account(s) for project ${resolvedProjectId}:`,
         "",
       ];
 
@@ -1357,9 +1385,17 @@ export function registerDistributionTools(server: McpServer): void {
           `  ${platformLower}: ${name} | id=${account.id} | ${project} | status=${status} (connected ${account.created_at.split("T")[0]})`,
         );
       }
+      if (projectAutoResolvedNote) {
+        lines.push("", `Note: ${projectAutoResolvedNote}`);
+      }
 
       if (format === "json") {
-        const structuredContent = asEnvelope({ accounts });
+        const structuredContent = asEnvelope({
+          accounts,
+          ...(projectAutoResolvedNote
+            ? { project_auto_resolved: projectAutoResolvedNote }
+            : {}),
+        });
         return {
           structuredContent,
           content: [
@@ -1428,7 +1464,8 @@ export function registerDistributionTools(server: McpServer): void {
     async ({ project_id, platform, status, days, limit, response_format }) => {
       const format = response_format ?? "text";
       const lookbackDays = days ?? 7;
-      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      const resolvedProjectId =
+        project_id ?? (await getDefaultProjectId()) ?? undefined;
       if (!resolvedProjectId) {
         return {
           content: [
@@ -1619,7 +1656,8 @@ export function registerDistributionTools(server: McpServer): void {
       response_format,
     }) => {
       try {
-        const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+        const resolvedProjectId =
+          project_id ?? (await getDefaultProjectId()) ?? undefined;
         if (!resolvedProjectId) {
           return {
             content: [
@@ -1635,7 +1673,10 @@ export function registerDistributionTools(server: McpServer): void {
         if (!Number.isFinite(startDate.getTime())) {
           return {
             content: [
-              { type: "text" as const, text: "start_after must be a valid ISO datetime." },
+              {
+                type: "text" as const,
+                text: "start_after must be a valid ISO datetime.",
+              },
             ],
             isError: true,
           };
@@ -1764,11 +1805,17 @@ export function registerDistributionTools(server: McpServer): void {
     {
       plan: z
         .object({
+          project_id: z.string().uuid().optional(),
+          account_ids: z
+            .record(z.string(), z.string().uuid())
+            .optional()
+            .describe("Exact connected-account ID per platform."),
           posts: z.array(
             z.object({
               id: z.string(),
               caption: z.string(),
               platform: z.string(),
+              connected_account_id: z.string().uuid().optional(),
               title: z.string().optional(),
               media_url: z.string().optional(),
               schedule_at: z.string().optional(),
@@ -1778,6 +1825,19 @@ export function registerDistributionTools(server: McpServer): void {
         })
         .passthrough()
         .optional(),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Exact brand/project ID. Defaults only when the authenticated user has one project.",
+        ),
+      account_ids: z
+        .record(z.string(), z.string().uuid())
+        .optional()
+        .describe(
+          "Exact connected-account ID per platform for every post in the plan.",
+        ),
       plan_id: z
         .string()
         .uuid()
@@ -1823,6 +1883,8 @@ export function registerDistributionTools(server: McpServer): void {
     async ({
       plan,
       plan_id,
+      project_id,
+      account_ids,
       auto_slot,
       dry_run,
       response_format,
@@ -1832,9 +1894,14 @@ export function registerDistributionTools(server: McpServer): void {
       idempotency_seed,
     }) => {
       try {
+        // Zod applies this default over the MCP transport, but unit/direct
+        // callers invoke handlers without parsing. Keep runtime behaviour safe
+        // and deterministic at the actual batching boundary too.
+        const effectiveBatchSize = batch_size ?? 4;
         let workingPlan = plan;
         let effectivePlanId = plan_id;
-        let effectiveProjectId: string | undefined;
+        let effectiveProjectId: string | undefined = project_id;
+        let projectAutoResolvedNote: string | undefined;
         let approvalSummary:
           | {
               total: number;
@@ -1905,7 +1972,22 @@ export function registerDistributionTools(server: McpServer): void {
             posts: postsFromPayload,
           } as typeof plan;
           effectivePlanId = stored.id;
-          effectiveProjectId = stored.project_id ?? undefined;
+          if (
+            effectiveProjectId &&
+            stored.project_id &&
+            effectiveProjectId !== stored.project_id
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `project_id ${effectiveProjectId} does not own plan ${plan_id}.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+          effectiveProjectId = stored.project_id ?? effectiveProjectId;
         }
 
         if (!workingPlan) {
@@ -1920,11 +2002,48 @@ export function registerDistributionTools(server: McpServer): void {
           };
         }
 
+        const planProjectId = (workingPlan as Record<string, unknown>)
+          .project_id;
+        if (
+          effectiveProjectId &&
+          typeof planProjectId === "string" &&
+          planProjectId.length > 0 &&
+          effectiveProjectId !== planProjectId
+        ) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Conflicting project_id values were supplied for the plan (${planProjectId}) and request (${effectiveProjectId}).`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        if (
+          !effectiveProjectId &&
+          typeof planProjectId === "string" &&
+          planProjectId.length > 0
+        ) {
+          effectiveProjectId = planProjectId;
+        }
         if (!effectiveProjectId) {
-          const planProjectId = (workingPlan as Record<string, unknown>)
-            .project_id;
-          if (typeof planProjectId === "string" && planProjectId.length > 0) {
-            effectiveProjectId = planProjectId;
+          const projectResolution =
+            await resolveProjectForConnectedAccountTool();
+          effectiveProjectId = projectResolution.projectId;
+          projectAutoResolvedNote = projectResolution.autoResolvedNote;
+          if (!effectiveProjectId) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text:
+                    projectResolution.error ??
+                    "A project_id is required to schedule a content plan. Configure an explicit project or use an API key scoped to exactly one project.",
+                },
+              ],
+              isError: true,
+            };
           }
         }
 
@@ -2210,6 +2329,72 @@ export function registerDistributionTools(server: McpServer): void {
           };
         }
 
+        const embeddedAccountIds =
+          ((workingPlan as Record<string, unknown>).account_ids as
+            Record<string, string> | undefined) ?? {};
+        for (const [platform, accountId] of Object.entries(account_ids ?? {})) {
+          if (
+            embeddedAccountIds[platform] &&
+            embeddedAccountIds[platform] !== accountId
+          ) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text: `Conflicting account_ids values were supplied for ${platform}.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+        const requestedPlanAccountIds: Record<string, string> = {
+          ...embeddedAccountIds,
+          ...(account_ids ?? {}),
+        };
+        for (const post of workingPlan.posts) {
+          if (!post.connected_account_id) continue;
+          const key =
+            post.platform.toLowerCase() === "x"
+              ? "twitter"
+              : post.platform.toLowerCase();
+          const existing = requestedPlanAccountIds[key];
+          if (existing && existing !== post.connected_account_id) {
+            return {
+              content: [
+                {
+                  type: "text" as const,
+                  text:
+                    `Plan contains conflicting connected_account_id values for ${post.platform}. ` +
+                    "Use separate plans when scheduling the same platform through different accounts.",
+                },
+              ],
+              isError: true,
+            };
+          }
+          requestedPlanAccountIds[key] = post.connected_account_id;
+        }
+        const planPlatforms = Array.from(
+          new Set(workingPlan.posts.map((post) => post.platform)),
+        );
+        const planRouting = await resolveConnectedAccountRouting({
+          projectId: effectiveProjectId,
+          platforms: planPlatforms,
+          requestedAccountIds: requestedPlanAccountIds,
+        });
+        if (planRouting.error || !planRouting.connectedAccountIds) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: `Cannot schedule plan — ${planRouting.error ?? "exact connected-account routing could not be established."}`,
+              },
+            ],
+            isError: true,
+          };
+        }
+        const verifiedPlanAccountIds = planRouting.connectedAccountIds;
+
         // Live scheduling
         let scheduled = 0;
         let failed = 0;
@@ -2281,6 +2466,16 @@ export function registerDistributionTools(server: McpServer): void {
               mediaUrl: post.media_url,
               scheduledAt: post.schedule_at,
               hashtags: post.hashtags,
+              ...(effectiveProjectId
+                ? {
+                    projectId: effectiveProjectId,
+                    project_id: effectiveProjectId,
+                  }
+                : {}),
+              connectedAccountIds: {
+                [normalizedPlatform]:
+                  verifiedPlanAccountIds[normalizedPlatform],
+              },
               ...(effectivePlanId ? { planId: effectivePlanId } : {}),
               idempotencyKey,
             },
@@ -2360,7 +2555,7 @@ export function registerDistributionTools(server: McpServer): void {
         const platformBatches = Array.from(grouped.entries()).map(
           async ([platform, platformPosts]) => {
             const platformResults: typeof results = [];
-            const batches = chunk(platformPosts, batch_size);
+            const batches = chunk(platformPosts, effectiveBatchSize);
             for (const batch of batches) {
               const settled = await Promise.allSettled(
                 batch.map((post) => scheduleOne(post)),
@@ -2429,6 +2624,9 @@ export function registerDistributionTools(server: McpServer): void {
                       scheduled,
                       failed,
                     },
+                    ...(projectAutoResolvedNote
+                      ? { project_auto_resolved: projectAutoResolvedNote }
+                      : {}),
                   }),
                   null,
                   2,
@@ -2453,6 +2651,9 @@ export function registerDistributionTools(server: McpServer): void {
         lines.push(
           `Scheduled: ${scheduled}/${workingPlan.posts.length} | Failed: ${failed}/${workingPlan.posts.length}`,
         );
+        if (projectAutoResolvedNote) {
+          lines.push("", `Note: ${projectAutoResolvedNote}`);
+        }
 
         return {
           content: [{ type: "text" as const, text: lines.join("\n") }],
