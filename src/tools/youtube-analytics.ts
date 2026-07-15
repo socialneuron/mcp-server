@@ -1,13 +1,15 @@
-import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { z } from 'zod';
-import { callEdgeFunction } from '../lib/edge-function.js';
-import { MCP_VERSION } from '../lib/version.js';
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { z } from "zod";
+import { callEdgeFunction } from "../lib/edge-function.js";
+import { getDefaultProjectId } from "../lib/supabase.js";
+import { resolveConnectedAccountRouting } from "../lib/connected-account-routing.js";
+import { MCP_VERSION } from "../lib/version.js";
 import type {
   YouTubeChannelAnalytics,
   YouTubeDailyAnalytics,
   YouTubeTopVideo,
   ResponseEnvelope,
-} from '../types/index.js';
+} from "../types/index.js";
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
@@ -24,24 +26,24 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
   // fetch_youtube_analytics
   // ---------------------------------------------------------------------------
   server.tool(
-    'fetch_youtube_analytics',
-    'Fetch YouTube channel analytics. Supports channel overview, daily breakdown, ' +
-      'video-specific metrics, and top-performing videos. Requires a connected YouTube account.',
+    "fetch_youtube_analytics",
+    "Fetch YouTube channel analytics. Supports channel overview, daily breakdown, " +
+      "video-specific metrics, and top-performing videos. Requires a connected YouTube account.",
     {
       action: z
-        .enum(['channel', 'daily', 'video', 'topVideos'])
+        .enum(["channel", "daily", "video", "topVideos"])
         .describe(
           'Type of analytics to fetch: "channel" for overview, "daily" for day-by-day, ' +
-            '"video" for a specific video, "topVideos" for best performers.'
+            '"video" for a specific video, "topVideos" for best performers.',
         ),
       start_date: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .describe('Start date in YYYY-MM-DD format.'),
+        .describe("Start date in YYYY-MM-DD format."),
       end_date: z
         .string()
         .regex(/^\d{4}-\d{2}-\d{2}$/)
-        .describe('End date in YYYY-MM-DD format.'),
+        .describe("End date in YYYY-MM-DD format."),
       video_id: z
         .string()
         .optional()
@@ -51,35 +53,113 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
         .min(1)
         .max(50)
         .optional()
-        .describe('Max videos to return for "topVideos" action. Defaults to 10.'),
-      response_format: z
-        .enum(['text', 'json'])
+        .describe(
+          'Max videos to return for "topVideos" action. Defaults to 10.',
+        ),
+      connected_account_id: z
+        .string()
+        .uuid()
         .optional()
-        .describe('Optional response format. Defaults to text.'),
+        .describe(
+          "Exact YouTube connected-account ID from list_connections. Optional when exactly " +
+            "one active YouTube account is bound to the resolved project — auto-resolved. " +
+            "Required (with a clear list of candidates) when the project has multiple " +
+            "YouTube accounts.",
+        ),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          "Exact brand/project ID. Defaults only when the authenticated user has one project.",
+        ),
+      response_format: z
+        .enum(["text", "json"])
+        .optional()
+        .describe("Optional response format. Defaults to text."),
     },
-    async ({ action, start_date, end_date, video_id, max_results, response_format }) => {
-      const format = response_format ?? 'text';
+    async ({
+      action,
+      start_date,
+      end_date,
+      video_id,
+      max_results,
+      connected_account_id,
+      project_id,
+      response_format,
+    }) => {
+      const format = response_format ?? "text";
 
-      if (action === 'video' && !video_id) {
+      if (action === "video" && !video_id) {
         return {
           content: [
-            { type: 'text' as const, text: 'Error: video_id is required when action is "video".' },
+            {
+              type: "text" as const,
+              text: 'Error: video_id is required when action is "video".',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId =
+        project_id ?? (await getDefaultProjectId()) ?? undefined;
+      if (!resolvedProjectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: "project_id is required. Configure an explicit project or use an API key scoped to exactly one project.",
+            },
           ],
           isError: true,
         };
       }
 
-      const { data, error } = await callEdgeFunction('youtube-analytics', {
+      // Optional connected_account_id: auto-resolve via the shared routing
+      // lib when exactly one active YouTube account is bound to the
+      // resolved project (F3, 2026-07-15). Ambiguous → fails closed with
+      // the routing lib's clear error listing candidates.
+      const routing = await resolveConnectedAccountRouting({
+        projectId: resolvedProjectId,
+        platforms: ["youtube"],
+        requestedAccountIds: connected_account_id
+          ? { youtube: connected_account_id }
+          : undefined,
+      });
+      const resolvedAccountId = routing.connectedAccountIds?.YouTube;
+      if (routing.error || !resolvedAccountId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                routing.error ??
+                "YouTube: exact connected-account routing could not be established.",
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { data, error } = await callEdgeFunction("youtube-analytics", {
         action,
         startDate: start_date,
         endDate: end_date,
         videoId: video_id,
         maxResults: max_results ?? 10,
+        projectId: resolvedProjectId,
+        project_id: resolvedProjectId,
+        connectedAccountId: resolvedAccountId,
       });
 
       if (error) {
         return {
-          content: [{ type: 'text' as const, text: `YouTube Analytics error: ${error}` }],
+          content: [
+            {
+              type: "text" as const,
+              text: `YouTube Analytics error: ${error}`,
+            },
+          ],
           isError: true,
         };
       }
@@ -87,17 +167,22 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
       const result = data as Record<string, unknown>;
 
       // Format based on action
-      if (action === 'channel') {
+      if (action === "channel") {
         const a = (result.analytics ?? {}) as YouTubeChannelAnalytics;
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
-                  asEnvelope({ action, startDate: start_date, endDate: end_date, analytics: a }),
+                  asEnvelope({
+                    action,
+                    startDate: start_date,
+                    endDate: end_date,
+                    analytics: a,
+                  }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
@@ -105,7 +190,7 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
         }
         const lines = [
           `YouTube Channel Analytics (${start_date} to ${end_date}):`,
-          '',
+          "",
           `  Views:              ${(a.views ?? 0).toLocaleString()}`,
           `  Watch Time:         ${(a.watchTimeMinutes ?? 0).toLocaleString()} min`,
           `  Subscribers Gained: +${(a.subscribersGained ?? 0).toLocaleString()}`,
@@ -115,23 +200,26 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
           `  Comments:           ${(a.comments ?? 0).toLocaleString()}`,
           `  Shares:             ${(a.shares ?? 0).toLocaleString()}`,
         ];
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       }
 
-      if (action === 'daily') {
+      if (action === "daily") {
         const days = (result.dailyAnalytics ?? []) as YouTubeDailyAnalytics[];
         if (days.length === 0) {
           return {
             content: [
-              { type: 'text' as const, text: 'No daily analytics data found for this period.' },
+              {
+                type: "text" as const,
+                text: "No daily analytics data found for this period.",
+              },
             ],
           };
         }
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
                   asEnvelope({
                     action,
@@ -140,31 +228,34 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
                     dailyAnalytics: days,
                   }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
           };
         }
-        const lines = [`YouTube Daily Analytics (${start_date} to ${end_date}):`, ''];
+        const lines = [
+          `YouTube Daily Analytics (${start_date} to ${end_date}):`,
+          "",
+        ];
         for (const d of days) {
           lines.push(
             `  ${d.date}: ${d.views.toLocaleString()} views, ` +
               `${d.watchTimeMinutes.toLocaleString()} min watch, ` +
               `+${d.subscribersGained} subs, ` +
-              `${d.likes} likes, ${d.comments} comments`
+              `${d.likes} likes, ${d.comments} comments`,
           );
         }
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       }
 
-      if (action === 'video') {
+      if (action === "video") {
         const a = (result.analytics ?? {}) as Record<string, number>;
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
                   asEnvelope({
                     action,
@@ -174,7 +265,7 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
                     analytics: a,
                   }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
@@ -182,7 +273,7 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
         }
         const lines = [
           `YouTube Video Analytics for ${video_id} (${start_date} to ${end_date}):`,
-          '',
+          "",
           `  Views:              ${(a.views ?? 0).toLocaleString()}`,
           `  Watch Time:         ${(a.watchTimeMinutes ?? 0).toLocaleString()} min`,
           `  Avg View Duration:  ${a.averageViewDuration ?? 0}s`,
@@ -191,21 +282,26 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
           `  Comments:           ${(a.comments ?? 0).toLocaleString()}`,
           `  Shares:             ${(a.shares ?? 0).toLocaleString()}`,
         ];
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       }
 
-      if (action === 'topVideos') {
+      if (action === "topVideos") {
         const videos = (result.topVideos ?? []) as YouTubeTopVideo[];
         if (videos.length === 0) {
           return {
-            content: [{ type: 'text' as const, text: 'No top videos found for this period.' }],
+            content: [
+              {
+                type: "text" as const,
+                text: "No top videos found for this period.",
+              },
+            ],
           };
         }
-        if (format === 'json') {
+        if (format === "json") {
           return {
             content: [
               {
-                type: 'text' as const,
+                type: "text" as const,
                 text: JSON.stringify(
                   asEnvelope({
                     action,
@@ -214,13 +310,16 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
                     topVideos: videos,
                   }),
                   null,
-                  2
+                  2,
                 ),
               },
             ],
           };
         }
-        const lines = [`Top ${videos.length} YouTube Videos (${start_date} to ${end_date}):`, ''];
+        const lines = [
+          `Top ${videos.length} YouTube Videos (${start_date} to ${end_date}):`,
+          "",
+        ];
         for (let i = 0; i < videos.length; i++) {
           const v = videos[i];
           lines.push(
@@ -228,21 +327,28 @@ export function registerYouTubeAnalyticsTools(server: McpServer): void {
               `\n     ${v.views.toLocaleString()} views, ` +
               `${v.watchTimeMinutes.toLocaleString()} min watch, ` +
               `${v.likes} likes, ${v.comments} comments` +
-              `\n     ID: ${v.videoId}`
+              `\n     ID: ${v.videoId}`,
           );
         }
-        return { content: [{ type: 'text' as const, text: lines.join('\n') }] };
+        return { content: [{ type: "text" as const, text: lines.join("\n") }] };
       }
 
       // Fallback - return raw data
-      if (format === 'json') {
+      if (format === "json") {
         return {
-          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(result), null, 2) }],
+          content: [
+            {
+              type: "text" as const,
+              text: JSON.stringify(asEnvelope(result), null, 2),
+            },
+          ],
         };
       }
       return {
-        content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
+        content: [
+          { type: "text" as const, text: JSON.stringify(result, null, 2) },
+        ],
       };
-    }
+    },
   );
 }

@@ -4,13 +4,28 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## [Unreleased]
 
+## [1.9.0] - 2026-07-15
+
+### Added
+
+- **Project discovery in `check_status`.** When the caller's project scope is ambiguous, the response now discloses the authenticated user's accessible projects (name, ID, whether connected accounts exist) so an agent that hit a `project_id is required` error elsewhere can self-recover in-band instead of asking the human.
+- **Sole-account auto-bind for `schedule_post`, `schedule_content_plan`, and the YouTube comment tools.** `account_id`/`connected_account_id` are now optional whenever exactly one active account is bound to the resolved project for the target platform — it's auto-selected. Ambiguous cases (multiple candidates) still fail closed with the exact candidate list.
+- **Platform-aware project resolution.** Auto-resolving a project from an unscoped multi-project API key now only counts a project as a candidate when it owns an active account for one of the *requested* platforms, so an unrelated platform's account can no longer manufacture a false "sole candidate."
+
 ### Security
 
 - macOS Keychain writes now use a native Security.framework binding, keeping API keys out of subprocess argument lists; installations without the optional native module use the owner-only file fallback.
 - The release lockfile gate now validates the root, SDK, Content Calendar, and Analytics Pulse lockfiles.
 
+### Changed
+
+- **Stricter project requirements for multi-project API keys, with in-band recovery.** Tools that touch connected accounts or publishing no longer silently fall back to a DB-guessed "most recent project" when the key/user has more than one project — they fail closed with the caller's project list attached (see `check_status` discovery above) so the caller can retry with an explicit `project_id`.
+- **`run_content_pipeline` validates connected-account routing before spending credits.** The publishing route for every target platform is now verified in a Stage 0 pre-budget check; a routing failure blocks the run before any planning credits are deducted, instead of discarding already-paid-for content at the scheduling stage.
+
 ### Fixed
 
+- **`x` platform alias.** Posts targeting `platform: "x"` now resolve to the same connected-account binding as `twitter` instead of falling through to an undefined binding.
+- **`wait_for_connection` multi-account success.** Detecting more than one active account for the polled platform/project now returns success with the list of candidates to choose from, instead of incorrectly reporting the connection attempt as failed.
 - Durable OAuth client reads now execute the `last_used_at` update, preventing active connector registrations from being pruned as stale after 90 days.
 - Authentication and security documentation now matches the `/mcp` connector URL, current 1.8 support policy, service-role boundary, and connector-token cache behavior.
 

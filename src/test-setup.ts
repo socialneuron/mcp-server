@@ -1,42 +1,42 @@
-import { vi } from 'vitest';
+import { vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Global mocks for supabase helpers
 // ---------------------------------------------------------------------------
 
-vi.mock('./lib/supabase.js', async importOriginal => {
-  const actual = await importOriginal<typeof import('./lib/supabase.js')>();
+vi.mock("./lib/supabase.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("./lib/supabase.js")>();
 
   /** Build a chainable Supabase query mock that resolves to { data, error }. */
   function createQueryMock(resolvedValue = { data: [], error: null }) {
     const chain: Record<string, any> = {};
     const methods = [
-      'select',
-      'insert',
-      'update',
-      'delete',
-      'upsert',
-      'eq',
-      'neq',
-      'gt',
-      'gte',
-      'lt',
-      'lte',
-      'like',
-      'ilike',
-      'in',
-      'or',
-      'not',
-      'is',
-      'order',
-      'limit',
-      'range',
-      'single',
-      'maybeSingle',
-      'filter',
-      'match',
-      'contains',
-      'containedBy',
+      "select",
+      "insert",
+      "update",
+      "delete",
+      "upsert",
+      "eq",
+      "neq",
+      "gt",
+      "gte",
+      "lt",
+      "lte",
+      "like",
+      "ilike",
+      "in",
+      "or",
+      "not",
+      "is",
+      "order",
+      "limit",
+      "range",
+      "single",
+      "maybeSingle",
+      "filter",
+      "match",
+      "contains",
+      "containedBy",
     ];
 
     for (const m of methods) {
@@ -47,22 +47,56 @@ vi.mock('./lib/supabase.js', async importOriginal => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     chain.then = (resolve: Function) => resolve(resolvedValue);
     // Allow await
-    (chain as any)[Symbol.toStringTag] = 'Promise';
+    (chain as any)[Symbol.toStringTag] = "Promise";
     chain.catch = (_: any) => chain;
     chain.finally = (_: any) => chain;
 
     return chain;
   }
 
+  // Local consts (not the exported vi.fn below) so
+  // resolveProjectForConnectedAccountTool's mock can call through to
+  // getDefaultProjectId's mock and stay in sync with per-test overrides
+  // (e.g. `vi.mocked(getDefaultProjectId).mockResolvedValue(...)`).
+  const getDefaultUserId = vi.fn(async () => "test-user-id");
+  const getDefaultProjectId = vi.fn(async () => "test-project-id");
+  const resolveProjectForConnectedAccountTool = vi.fn(
+    async (explicitProjectId?: string, _platform?: string | string[]) => {
+      if (explicitProjectId) return { projectId: explicitProjectId };
+      const projectId = await getDefaultProjectId();
+      if (projectId) return { projectId };
+      return {
+        error:
+          "project_id is required. Configure an explicit project or use an API key scoped to exactly one project.",
+      };
+    },
+  );
+  // Same shape as resolveProjectForConnectedAccountTool's mock — the two
+  // diverge only in production (accounts-based auto-resolve vs strict), and
+  // the mock never exercises that DB path, so a single simple defer-to-
+  // getDefaultProjectId behavior covers both mocks.
+  const resolveProjectStrict = vi.fn(async (explicitProjectId?: string) => {
+    if (explicitProjectId) return { projectId: explicitProjectId };
+    const projectId = await getDefaultProjectId();
+    if (projectId) return { projectId };
+    return {
+      error:
+        "project_id is required. Configure an explicit project or use an API key scoped to exactly one project.",
+    };
+  });
+
   return {
     ...actual,
     getSupabaseClient: vi.fn(() => ({
       from: vi.fn(() => createQueryMock()),
     })),
-    getDefaultUserId: vi.fn(async () => 'test-user-id'),
-    getDefaultProjectId: vi.fn(async () => 'test-project-id'),
-    getSupabaseUrl: vi.fn(() => 'https://test.supabase.co'),
-    getServiceKey: vi.fn(() => 'test-service-key'),
+    getDefaultUserId,
+    getDefaultProjectId,
+    resolveProjectForConnectedAccountTool,
+    resolveProjectStrict,
+    listAccessibleProjectsWithAccountStatus: vi.fn(async () => []),
+    getSupabaseUrl: vi.fn(() => "https://test.supabase.co"),
+    getServiceKey: vi.fn(() => "test-service-key"),
     initializeAuth: vi.fn(async () => {}),
     logMcpToolInvocation: vi.fn(async () => {}),
     // Export the helper so tests can build custom query chains
@@ -74,7 +108,7 @@ vi.mock('./lib/supabase.js', async importOriginal => {
 // Global mock for rate limiter
 // ---------------------------------------------------------------------------
 
-vi.mock('./lib/rate-limit.js', () => ({
+vi.mock("./lib/rate-limit.js", () => ({
   checkRateLimit: vi.fn(() => ({ allowed: true, retryAfter: 0 })),
   getRateLimiter: vi.fn(() => ({ consume: () => true, retryAfter: () => 0 })),
   RateLimiter: vi.fn(),
@@ -84,7 +118,7 @@ vi.mock('./lib/rate-limit.js', () => ({
 // Global mock for callEdgeFunction
 // ---------------------------------------------------------------------------
 
-vi.mock('./lib/edge-function.js', () => ({
+vi.mock("./lib/edge-function.js", () => ({
   callEdgeFunction: vi.fn(async () => ({ data: null, error: null })),
 }));
 
@@ -126,20 +160,22 @@ export function createMockServer(): MockServer {
       // McpServer.tool() has two overloads:
       //   tool(name, desc, schema, handler)
       //   tool(name, desc, handler)         ← no schema (e.g. list_connected_accounts)
-      if (typeof schemaOrHandler === 'function') {
+      if (typeof schemaOrHandler === "function") {
         handlers.set(name, schemaOrHandler);
       } else if (handler) {
         handlers.set(name, handler);
       }
-    }
+    },
   );
 
   // McpServer.registerTool(name, config, handler) — current SDK API. ext-apps' registerAppTool
   // wraps this. Mock just records the handler under the tool name.
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
-  const registerTool = vi.fn((name: string, _config: any, handler: Function) => {
-    handlers.set(name, handler);
-  });
+  const registerTool = vi.fn(
+    (name: string, _config: any, handler: Function) => {
+      handlers.set(name, handler);
+    },
+  );
 
   // McpServer.registerResource(name, uri, metadata, handler) — current SDK API. ext-apps'
   // registerAppResource wraps this. Mock records the handler under the URI.
@@ -147,7 +183,7 @@ export function createMockServer(): MockServer {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type, @typescript-eslint/no-explicit-any
     (_name: string, uri: string, _metadata: any, handler: Function) => {
       resources.set(uri, handler);
-    }
+    },
   );
 
   return {
