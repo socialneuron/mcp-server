@@ -110,6 +110,20 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // configuration. CodeQL, secret scan, 1,279 tests, Apps/SDK builds, audits,
   // package dry-run, and lockfile review passed before this exception.
   'posthog-node@5.42.0',
+  // 2026-07-15: v1.9.0 security release (per-project connection isolation)
+  // blocked by six baseline deps inside the 14-day window - none introduced
+  // by the release PR (#247). Publisher verification performed per-package:
+  // vitest + vite published by GitHub Actions WITH npm provenance
+  // attestations; typescript by Microsoft's canonical publisher; @types/node
+  // by the DefinitelyTyped bot; @remotion/* by the project's canonical
+  // maintainer. Founder-approved exemption 2026-07-15. Exact pins only -
+  // all six age out of the window by 2026-07-26.
+  '@remotion/bundler@4.0.489',
+  '@remotion/renderer@4.0.489',
+  '@types/node@26.1.1',
+  'typescript@7.0.2',
+  'vitest@4.1.10',
+  'vite@8.1.4',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
