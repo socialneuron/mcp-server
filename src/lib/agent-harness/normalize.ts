@@ -7,7 +7,13 @@ export function normalize(text: string): string {
   if (typeof text !== 'string') return '';
   let out = text.normalize('NFKC');
   out = out.replace(OVERRIDE_CHARS, '');
-  out = out.replace(HTML_COMMENT, '');
+  // Re-run until stable: a single pass can splice fragments into a fresh
+  // "<!--...-->" (CodeQL js/incomplete-multi-character-sanitization).
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(HTML_COMMENT, '');
+  } while (out !== prev);
   out = out.replace(EXCESSIVE_WHITESPACE, ' ');
   return out;
 }
