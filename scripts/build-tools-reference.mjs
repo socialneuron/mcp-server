@@ -63,7 +63,7 @@ for (const [scope, title, tier] of SCOPE_SECTIONS) {
   lines.push(`## ${title}`, '', `_Scope: \`${scope}\` — ${tier}_`, '', '| Tool | Description |', '|------|-------------|');
   for (const [name, t] of tools) {
     seen.add(name);
-    const desc = t.description.replace(/\n+/g, ' ').replace(/\|/g, '\\|').slice(0, 240);
+    const desc = t.description.replace(/\n+/g, ' ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').slice(0, 240);
     lines.push(`| \`${name}\` | ${desc} |`);
   }
   lines.push('');
@@ -71,7 +71,7 @@ for (const [scope, title, tier] of SCOPE_SECTIONS) {
 const other = Object.keys(runtime).filter((n) => !seen.has(n)).sort();
 if (other.length) {
   lines.push('## Other', '', '| Tool | Description |', '|------|-------------|');
-  for (const n of other) lines.push(`| \`${n}\` | ${runtime[n].description.replace(/\n+/g, ' ').replace(/\|/g, '\\|').slice(0, 240)} |`);
+  for (const n of other) lines.push(`| \`${n}\` | ${runtime[n].description.replace(/\n+/g, ' ').replace(/\\/g, '\\\\').replace(/\|/g, '\\|').slice(0, 240)} |`);
   lines.push('');
 }
 writeFileSync(resolve(ROOT, 'docs/tools-reference.md'), lines.join('\n'), 'utf8');
