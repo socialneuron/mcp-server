@@ -9,6 +9,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 ### Security
 
 - OAuth authorization-code and refresh exchanges now require short-lived, resource-bound connector tokens, exact RFC 8707 protected-resource matching, canonical public scopes, PKCE, refresh rotation, and revocation support. Hosted startup fails closed when the protected resource is missing or malformed.
+- OAuth registration, authorization, token, and revocation routes now carry an explicit per-IP limiter in addition to the server-wide pre-auth abuse control.
 - Distribution-capable recipes and publishing, rescheduling, autopilot mutation, comment deletion, and other consequential operations require explicit confirmation and the corresponding public MCP scope.
 - Hosted discovery carries the MCP safety annotations, OAuth security schemes, and MCP App metadata used by Claude, Codex, REST, CLI, and SDK clients.
 

@@ -21,6 +21,7 @@
 process.env.MCP_TRANSPORT = "http";
 
 import express from "express";
+import { rateLimit as createExpressRateLimit } from "express-rate-limit";
 import { randomUUID } from "node:crypto";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -283,6 +284,24 @@ const defaultJsonParser = express.json({ limit: "100kb" });
 const authenticatedMcpJsonParser = express.json({ limit: "16mb" });
 const unauthenticatedMcpJsonParser = express.json({ limit: "100kb" });
 
+// Keep an explicit, library-backed limiter on authorization endpoints. The
+// global token bucket below remains the broad pre-auth abuse control; this
+// narrower limiter is deliberately attached to the OAuth routes themselves so
+// registration, authorization-code issuance, exchange, and revocation cannot
+// be brute-forced even if routing changes around the global middleware.
+const OAUTH_MUTATION_PATHS = new Set(["/authorize", "/token", "/register", "/revoke"]);
+const oauthRouteLimiter = createExpressRateLimit({
+  windowMs: 60_000,
+  limit: 30,
+  standardHeaders: "draft-8",
+  legacyHeaders: false,
+  skip: (req) => !OAUTH_MUTATION_PATHS.has(req.path),
+  message: {
+    error: "rate_limited",
+    error_description: "Too many OAuth requests. Please slow down.",
+  },
+});
+
 // Trust Railway's proxy
 app.set("trust proxy", 1);
 
@@ -480,7 +499,7 @@ const authRouter = mcpAuthRouter({
   scopesSupported: SCOPES_SUPPORTED,
 });
 
-app.use((req, res, next) => {
+app.use(oauthRouteLimiter, (req, res, next) => {
   if (
     (req.path === "/authorize" || req.path === "/token") &&
     Array.isArray(req.query.resource)

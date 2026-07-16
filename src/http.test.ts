@@ -29,6 +29,14 @@ describe('HTTP Server Security Patterns', () => {
         )
       ).toBeUndefined();
     });
+
+    it('keeps an explicit library-backed limiter on every OAuth mutation route', () => {
+      const httpSource = readFileSync(fileURLToPath(new URL('./http.ts', import.meta.url)), 'utf8');
+      expect(httpSource).toContain(
+        'new Set(["/authorize", "/token", "/register", "/revoke"])'
+      );
+      expect(httpSource).toContain('app.use(oauthRouteLimiter, (req, res, next) => {');
+    });
   });
 
   describe('Session ownership verification', () => {
