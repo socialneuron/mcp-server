@@ -53,7 +53,9 @@ describe('plan approval tools', () => {
   it('respond_plan_approval requires edited_post for edited decision', async () => {
     const handler = server.getHandler('respond_plan_approval')!;
     const result = await handler({
+      confirm: true,
       approval_id: '33333333-3333-3333-3333-333333333333',
+      project_id: '22222222-2222-2222-2222-222222222222',
       decision: 'edited',
     });
 
@@ -120,12 +122,26 @@ describe('plan approval tools', () => {
 
     const handler = server.getHandler('respond_plan_approval')!;
     const result = await handler({
+      confirm: true,
       approval_id: '55555555-5555-5555-5555-555555555555',
+      project_id: '22222222-2222-2222-2222-222222222222',
       decision: 'approved',
       reason: 'Looks good',
     });
 
     expect(result.isError).toBe(false);
     expect(result.content[0].text).toContain('updated: approved');
+  });
+
+  it('respond_plan_approval fails closed without confirmation', async () => {
+    const result = await server.getHandler('respond_plan_approval')!({
+      approval_id: '66666666-6666-4666-8666-666666666666',
+      project_id: '22222222-2222-2222-2222-222222222222',
+      decision: 'rejected',
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('confirm=true');
+    expect(mockCallEdge).not.toHaveBeenCalled();
   });
 });

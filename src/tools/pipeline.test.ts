@@ -743,6 +743,9 @@ describe("pipeline tools", () => {
       const handler = server.getHandler("auto_approve_plan")!;
       const result = await handler({
         plan_id: TEST_PLAN_ID,
+        project_id: "proj-1",
+        dry_run: false,
+        confirm: true,
         quality_threshold: 15,
       });
       const text = result.content[0].text;
@@ -756,7 +759,7 @@ describe("pipeline tools", () => {
       } as any);
 
       const handler = server.getHandler("auto_approve_plan")!;
-      const result = await handler({ plan_id: TEST_PLAN_ID });
+      const result = await handler({ plan_id: TEST_PLAN_ID, project_id: "proj-1" });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain("No content plan found");
     });
@@ -798,13 +801,28 @@ describe("pipeline tools", () => {
       const handler = server.getHandler("auto_approve_plan")!;
       const result = await handler({
         plan_id: TEST_PLAN_ID,
+        project_id: "proj-1",
         quality_threshold: 15,
         response_format: "json",
       });
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed._meta.version).toBeDefined();
       expect(parsed.data.plan_id).toBe(TEST_PLAN_ID);
+      expect(parsed.data.dry_run).toBe(true);
       expect(typeof parsed.data.auto_approved).toBe("number");
+      expect(mockCallEdgeFunction).toHaveBeenCalledTimes(1);
+    });
+
+    it("requires confirmation before persisting decisions", async () => {
+      const result = await server.getHandler("auto_approve_plan")!({
+        plan_id: TEST_PLAN_ID,
+        project_id: "proj-1",
+        dry_run: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("confirm=true");
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
     });
   });
 });

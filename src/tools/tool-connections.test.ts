@@ -277,7 +277,7 @@ describe("Registration & Scope Coverage", () => {
     // production (the previous hand-mirrored list silently omitted skills /
     // loopPulse / banditState). The standalone registered==scoped==cataloged
     // invariant lives in src/lib/registration-invariant.test.ts (P1.12).
-    registerAllTools(server as any);
+    registerAllTools(server as any, { toolProfile: "internal" });
   });
 
   it("every tool in TOOL_SCOPES is actually registered (no orphaned scope entries)", () => {
@@ -1152,6 +1152,7 @@ describe("Module: autopilot", () => {
     // Pass config_id but no fields to update => "No changes specified"
     const result = await server.getHandler("update_autopilot_config")!({
       config_id: "00000000-0000-4000-8000-000000000001",
+      confirm: true,
     });
     expect(result.content[0].text).toContain("No changes specified");
   });
@@ -1452,7 +1453,9 @@ describe("Module: plan-approvals", () => {
       supabaseWithChain({ data: null, error: null }),
     );
     const result = await server.getHandler("respond_plan_approval")!({
+      confirm: true,
       approval_id: "00000000-0000-4000-8000-000000000001",
+      project_id: "00000000-0000-4000-8000-000000000002",
       decision: "approved",
     });
     expect(result.isError).toBe(true);

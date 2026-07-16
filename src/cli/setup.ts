@@ -18,7 +18,7 @@ import { homedir, platform } from 'node:os';
 import { join } from 'node:path';
 import type { AddressInfo } from 'node:net';
 import { saveApiKey, saveSupabaseUrl, deleteApiKey } from './credentials.js';
-import { maskApiKey } from '../lib/sanitize-error.js';
+import { REDACTED_API_KEY } from '../lib/sanitize-error.js';
 import { CLOUD_SUPABASE_URL } from '../lib/supabase.js';
 
 // ── Helpers ──────────────────────────────────────────────────────────
@@ -334,7 +334,7 @@ export async function runSetup(): Promise<void> {
 
   console.error('');
   console.error('  API key stored securely.');
-  console.error(`  Key prefix: ${maskApiKey(apiKey)}`);
+  console.error(`  Key: ${REDACTED_API_KEY}`);
 
   // Auto-configure MCP clients
   const configPaths = getConfigPaths();

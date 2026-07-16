@@ -1,8 +1,10 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_CATALOG, type ToolEntry } from './tool-catalog.js';
 
-export const TOOL_PROFILES = ['full', 'anthropic-directory'] as const;
+export const TOOL_PROFILES = ['full', 'anthropic-directory', 'internal'] as const;
 export type ToolProfile = (typeof TOOL_PROFILES)[number];
+
+const TOOL_BY_NAME = new Map(TOOL_CATALOG.map(tool => [tool.name, tool]));
 
 /**
  * Anthropic's Connectors Directory does not accept connectors that expose AI
@@ -41,13 +43,18 @@ export const ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS = new Set<string>([
 
 export function resolveToolProfile(value: string | undefined): ToolProfile {
   if (!value || value === 'full') return 'full';
-  if (value === 'anthropic-directory') return value;
+  if (value === 'anthropic-directory' || value === 'internal') return value;
   throw new Error(
     `Unsupported MCP_TOOL_PROFILE '${value}'. Expected one of: ${TOOL_PROFILES.join(', ')}`
   );
 }
 
 export function isToolAllowedByProfile(toolName: string, profile: ToolProfile): boolean {
+  const tool = TOOL_BY_NAME.get(toolName);
+  // Default-deny registrations that are missing from the sealed catalog.
+  if (!tool) return false;
+  if (profile === 'internal') return true;
+  if (tool.internal || tool.hiddenFromPublicCount) return false;
   return profile === 'full' || !ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS.has(toolName);
 }
 
@@ -55,10 +62,27 @@ export function publicToolsForProfile(profile: ToolProfile): ToolEntry[] {
   return TOOL_CATALOG.filter(
     tool =>
       !tool.localOnly &&
-      !tool.internal &&
       !tool.hiddenFromPublicCount &&
       isToolAllowedByProfile(tool.name, profile)
   );
+}
+
+/**
+ * Public catalog for the active transport. HTTP exposes the two MCP Apps and
+ * omits local screenshot tools; stdio does the inverse. Internal tools are
+ * included only when the explicit internal profile is selected.
+ */
+export function toolsForTransport(
+  profile: ToolProfile,
+  transport: 'http' | 'stdio'
+): ToolEntry[] {
+  return TOOL_CATALOG.filter(tool => {
+    if (tool.hiddenFromPublicCount || !isToolAllowedByProfile(tool.name, profile)) {
+      return false;
+    }
+    if (transport === 'http') return !tool.localOnly;
+    return tool.module !== 'apps';
+  });
 }
 
 /**
@@ -66,8 +90,6 @@ export function publicToolsForProfile(profile: ToolProfile): ToolEntry[] {
  * tool groups register. It composes with the existing scope-enforcement wrapper.
  */
 export function applyToolProfile(server: McpServer, profile: ToolProfile): void {
-  if (profile === 'full') return;
-
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const currentTool = server.tool.bind(server) as (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -161,6 +161,8 @@ export interface FetchTrendsParams {
 }
 
 export interface SchedulePostParams {
+  /** Required acknowledgement for an externally visible schedule/publish action. */
+  confirm: true;
   project_id?: string;
   account_id?: string;
   account_ids?: Partial<Record<Platform, string>>;
@@ -196,6 +198,8 @@ export interface SchedulePostParams {
 }
 
 export interface ReschedulePostParams {
+  /** Required acknowledgement for changing an externally visible schedule. */
+  confirm: true;
   post_id: string;
   project_id?: string;
   scheduled_at: string;
@@ -336,15 +340,20 @@ export interface UpdatePlanParams {
   response_format?: "text" | "json";
 }
 
-export interface SchedulePlanParams {
+interface SchedulePlanBaseParams {
   auto_slot?: boolean;
   batch_size?: number;
-  dry_run?: boolean;
   enforce_quality?: boolean;
   quality_threshold?: number;
   idempotency_seed?: string;
   response_format?: "text" | "json";
 }
+
+export type SchedulePlanParams = SchedulePlanBaseParams &
+  (
+    | { dry_run?: true; confirm?: never }
+    | { dry_run: false; confirm: true }
+  );
 
 export interface ListCommentsParams {
   video_id?: string;
@@ -354,18 +363,82 @@ export interface ListCommentsParams {
 }
 
 export interface PostCommentParams {
+  confirm: true;
+  project_id: string;
   video_id: string;
   text: string;
   response_format?: "text" | "json";
 }
 
 export interface ReplyCommentParams {
+  confirm: true;
+  project_id: string;
   text: string;
   response_format?: "text" | "json";
 }
 
 export interface ModerateCommentParams {
+  confirm: true;
+  project_id: string;
   moderation_status: "published" | "rejected";
+  response_format?: "text" | "json";
+}
+
+export interface DeleteCommentParams extends ConfirmedProjectAction {
+  response_format?: "text" | "json";
+}
+
+export interface ExecuteRecipePreviewParams {
+  slug: string;
+  project_id: string;
+  inputs: Record<string, unknown>;
+  dry_run?: true;
+  confirm?: never;
+  response_format?: "text" | "json";
+}
+
+export interface ExecuteRecipeConfirmedParams {
+  slug: string;
+  project_id: string;
+  inputs: Record<string, unknown>;
+  dry_run: false;
+  confirm: true;
+  response_format?: "text" | "json";
+}
+
+export type ExecuteRecipeParams = ExecuteRecipePreviewParams | ExecuteRecipeConfirmedParams;
+
+export interface CreateAutopilotConfigParams {
+  confirm: true;
+  name: string;
+  project_id: string;
+  mode?: "recipe" | "pipeline";
+  schedule_days: Array<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun">;
+  schedule_time: string;
+  timezone?: string;
+  max_credits_per_run?: number;
+  max_credits_per_week?: number;
+  approval_mode?: "auto" | "review_all" | "review_low_confidence";
+  is_active?: boolean;
+  response_format?: "text" | "json";
+}
+
+export interface UpdateAutopilotConfigParams extends ConfirmedProjectAction {
+  project_id: string;
+  config_id: string;
+  is_active?: boolean;
+  schedule_days?: Array<"mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun">;
+  schedule_time?: string;
+  max_credits_per_run?: number;
+  max_credits_per_week?: number;
+}
+
+export interface RespondPlanApprovalParams extends ConfirmedProjectAction {
+  project_id: string;
+  approval_id: string;
+  decision: "approved" | "rejected" | "edited";
+  edited_post?: Record<string, unknown>;
+  reason?: string;
   response_format?: "text" | "json";
 }
 

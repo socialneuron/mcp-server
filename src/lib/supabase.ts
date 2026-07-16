@@ -1,7 +1,7 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
 import { getRequestUserId, getRequestProjectId } from "./request-context.js";
-import { maskApiKey } from "./sanitize-error.js";
+import { REDACTED_API_KEY } from "./sanitize-error.js";
 
 const SUPABASE_URL =
   process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || "";
@@ -528,9 +528,6 @@ export async function initializeAuth(): Promise<void> {
   const apiKey = await loadApiKey();
 
   if (apiKey) {
-    // Store for callEdgeFunction() cloud transport (env var may not be set)
-    authenticatedApiKey = apiKey;
-
     // Suppress the [MCP] auth chatter for CLI invocations so `--json` output
     // pipes clean. Quiet when: the `sn` bin set SN_CLI_QUIET, OR this is a
     // `socialneuron-mcp <cli-command>` call. `--verbose` restores the logs;
@@ -551,6 +548,10 @@ export async function initializeAuth(): Promise<void> {
     const result = await validateApiKey(apiKey);
 
     if (result.valid && result.userId) {
+      // Retain only a remotely validated key for callEdgeFunction() cloud
+      // transport. Assigning before validation also created a circular-module
+      // TDZ race because api-keys imports this module for the Supabase URL.
+      authenticatedApiKey = apiKey;
       _authMode = "api-key";
       authenticatedUserId = result.userId;
       authenticatedScopes =
@@ -561,9 +562,7 @@ export async function initializeAuth(): Promise<void> {
       authenticatedExpiresAt = result.expiresAt || null;
       authenticatedProjectId = result.projectId || null;
       if (!_quietAuth) {
-        console.error(
-          "[MCP] Authenticated via API key (" + maskApiKey(apiKey) + ")",
-        );
+        console.error("[MCP] Authenticated via API key (" + REDACTED_API_KEY + ")");
         console.error("[MCP] Scopes: " + authenticatedScopes.join(", "));
       }
 

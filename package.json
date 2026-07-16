@@ -6,6 +6,7 @@
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "mcp-server": "dist/index.js",
     "socialneuron-mcp": "dist/index.js",
     "sn": "dist/sn.js"
   },
@@ -104,7 +105,7 @@
     "@types/node": "26.1.1",
     "esbuild": "^0.28.1",
     "playwright": "1.61.1",
-    "typescript": "^7.0.2",
+    "typescript": "^6.0.3",
     "vitest": "^4.1.10"
   },
   "overrides": {

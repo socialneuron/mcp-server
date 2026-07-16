@@ -41,6 +41,10 @@ interface CachedValidation {
  * without storing the raw secret on disk.
  */
 export function keyFingerprint(apiKey: string): string {
+  // API keys are uniformly random high-entropy lookup identifiers, not
+  // user-chosen passwords. A deterministic SHA-256 fingerprint is required so
+  // the local cache can find the same entry without retaining the bearer.
+  // codeql[js/insufficient-password-hash]
   return `sha256:${createHash('sha256').update(apiKey, 'utf8').digest('hex')}`;
 }
 

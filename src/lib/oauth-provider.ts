@@ -1,15 +1,17 @@
 /**
  * OAuth 2.0 Server Provider for Anthropic Connectors Directory.
  *
- * Key insight: OAuth access tokens ARE `snk_live_*` API keys. The existing
- * token verifier already handles them — no new token format or DB tables.
+ * Production OAuth access tokens are short-lived `sno_*` connector tokens.
+ * They are bound to the exact MCP protected resource and paired with a rotating
+ * refresh token. Legacy `snk_*` API keys remain valid for explicit API-key and
+ * self-hosted flows, but are rejected from production OAuth code exchange.
  *
  * Flow:
  *   1. Claude calls /authorize → provider creates inactive key via mcp-auth EF
  *   2. User approves on socialneuron.com/mcp/authorize (existing consent page)
  *   3. Consent page stores encrypted key in pending_mcp_exchanges
  *   4. Claude calls /token with code_verifier → provider exchanges via mcp-auth EF
- *   5. Provider decrypts and returns snk_live_* as access_token
+ *   5. Backend returns a resource-bound sno_* access token + refresh token
  *
  * Dynamic client registrations are persisted to public.mcp_oauth_clients
  * (migration 20260425220000_mcp_oauth_clients.sql). Registrations survive
@@ -34,6 +36,7 @@ import {
 import { createTokenVerifier, evictFromCache } from './token-verifier.js';
 import { getSupabaseClient } from './supabase.js';
 import { sanitizeError } from './sanitize-error.js';
+import { getAllScopes } from '../auth/scopes.js';
 
 // ── Allowed redirect URIs ───────────────────────────────────────────
 
@@ -186,6 +189,34 @@ export interface OAuthProviderOptions {
   supabaseAnonKey: string;
   appBaseUrl?: string; // Default: https://www.socialneuron.com
   resource?: string;
+}
+
+const PUBLIC_MCP_SCOPES = new Set(getAllScopes());
+
+function normalizeOAuthResource(value: string | URL | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = value instanceof URL ? new URL(value.href) : new URL(value);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return undefined;
+    if (parsed.hash || parsed.search) return undefined;
+    if (parsed.pathname !== '/') parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function assertCanonicalPublicScopes(scopes: unknown): asserts scopes is string[] {
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    throw new Error('Connector token response is missing public MCP scopes');
+  }
+  if (
+    scopes.some(
+      scope => typeof scope !== 'string' || !PUBLIC_MCP_SCOPES.has(scope)
+    )
+  ) {
+    throw new Error('Connector token response contains a non-public MCP scope');
+  }
 }
 
 // ── Supabase-backed client store with in-memory fallback ─────────────
@@ -465,6 +496,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
   const { supabaseUrl, supabaseAnonKey } = options;
   const appBaseUrl = options.appBaseUrl ?? 'https://www.socialneuron.com';
   const clientsStore = createClientsStore();
+  const expectedResource = normalizeOAuthResource(options.resource);
 
   const tokenVerifier = createTokenVerifier({
     supabaseUrl,
@@ -504,8 +536,13 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         consentUrl.searchParams.set('redirect_uri', params.redirectUri);
       }
       const resource = (params as AuthorizationParams & { resource?: URL }).resource;
-      if (resource) {
-        consentUrl.searchParams.set('resource', resource.href);
+      if (expectedResource) {
+        if (!resource || normalizeOAuthResource(resource) !== expectedResource) {
+          throw new Error('resource must identify the configured MCP protected resource');
+        }
+        consentUrl.searchParams.set('resource', expectedResource);
+      } else if (resource) {
+        consentUrl.searchParams.set('resource', normalizeOAuthResource(resource) ?? resource.href);
       }
 
       res.redirect(consentUrl.toString());
@@ -534,6 +571,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       if (!codeVerifier) {
         throw new Error('code_verifier is required for PKCE exchange');
       }
+      if (expectedResource && normalizeOAuthResource(resource) !== expectedResource) {
+        throw new Error('resource must identify the configured MCP protected resource');
+      }
 
       // Call mcp-auth EF to complete the PKCE exchange
       // The auth code is the server-generated authorization_code (not client state)
@@ -559,7 +599,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
             ...(redirectUri && { redirect_uri: redirectUri }),
             // ChatGPT sends resource; backend should bind issued connector
             // tokens to that MCP resource/audience.
-            ...(resource && { resource: resource.href }),
+            ...(resource && {
+              resource: normalizeOAuthResource(resource) ?? resource.href,
+            }),
           }),
           signal: controller.signal,
         });
@@ -582,11 +624,32 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         refresh_token?: string;
         scopes?: string[];
         expires_in?: number;
+        resource?: string;
         error?: string;
       };
 
       if (!data.access_token) {
         throw new Error('No access token returned from exchange');
+      }
+
+      if (expectedResource) {
+        if (!data.access_token.startsWith('sno_')) {
+          throw new Error('OAuth exchange returned a legacy API key instead of a connector token');
+        }
+        if (!data.refresh_token) {
+          throw new Error('OAuth exchange returned no refresh token');
+        }
+        if (normalizeOAuthResource(data.resource) !== expectedResource) {
+          throw new Error('OAuth exchange returned a token for the wrong resource');
+        }
+        if (
+          !Number.isFinite(data.expires_in) ||
+          (data.expires_in as number) <= 0 ||
+          (data.expires_in as number) > 3_600
+        ) {
+          throw new Error('OAuth exchange returned an invalid connector-token lifetime');
+        }
+        assertCanonicalPublicScopes(data.scopes);
       }
 
       return {
@@ -604,6 +667,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       scopes?: string[],
       resource?: URL
     ): Promise<OAuthTokens> {
+      if (expectedResource && normalizeOAuthResource(resource) !== expectedResource) {
+        throw new Error('resource must identify the configured MCP protected resource');
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -620,7 +686,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
               client_id: client.client_id,
               refresh_token: refreshToken,
               ...(scopes && scopes.length > 0 ? { scopes } : {}),
-              ...(resource ? { resource: resource.href } : {}),
+              ...(resource
+                ? { resource: normalizeOAuthResource(resource) ?? resource.href }
+                : {}),
             }),
             signal: controller.signal,
           }
@@ -635,11 +703,29 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
           refresh_token?: string;
           scopes?: string[];
           expires_in?: number;
+          resource?: string;
           error?: string;
         };
 
         if (!data.access_token) {
           throw new Error('No access token returned from refresh');
+        }
+
+        if (expectedResource) {
+          if (!data.access_token.startsWith('sno_') || !data.refresh_token) {
+            throw new Error('Refresh exchange returned an incomplete connector token pair');
+          }
+          if (normalizeOAuthResource(data.resource) !== expectedResource) {
+            throw new Error('Refresh exchange returned a token for the wrong resource');
+          }
+          if (
+            !Number.isFinite(data.expires_in) ||
+            (data.expires_in as number) <= 0 ||
+            (data.expires_in as number) > 3_600
+          ) {
+            throw new Error('Refresh exchange returned an invalid connector-token lifetime');
+          }
+          assertCanonicalPublicScopes(data.scopes);
         }
 
         return {

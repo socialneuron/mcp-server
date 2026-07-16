@@ -43,10 +43,16 @@ describe('search_tools', () => {
   it('returns all tools at summary detail level by default', async () => {
     const result = await server.getHandler('search_tools')!({});
     const parsed = JSON.parse(result.content[0].text);
-    expect(parsed.toolCount).toBeGreaterThanOrEqual(50);
+    expect(parsed.toolCount).toBe(91);
     // summary level should have name + description
     expect(parsed.tools[0]).toHaveProperty('name');
     expect(parsed.tools[0]).toHaveProperty('description');
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).not.toContain(
+      'capture_screenshot'
+    );
+    expect(parsed.tools.map((tool: { name: string }) => tool.name)).toContain(
+      'open_content_calendar'
+    );
   });
 
   it('filters by module', async () => {

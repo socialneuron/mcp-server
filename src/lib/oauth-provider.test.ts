@@ -547,8 +547,110 @@ describe('createOAuthProvider', () => {
         client_id: client.client_id,
         refresh_token: 'refresh-token',
         scopes: ['mcp:read'],
-        resource: 'https://mcp.socialneuron.com/',
+        resource: 'https://mcp.socialneuron.com',
       });
+    });
+  });
+
+  describe('resource-bound production connector tokens', () => {
+    const resourceOptions = {
+      ...TEST_OPTIONS,
+      resource: 'https://mcp.socialneuron.com/mcp',
+    };
+
+    it('requires the exact protected resource during authorization', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      const client = makeClient();
+      const res = { redirect: vi.fn() } as unknown as import('express').Response;
+
+      await expect(
+        provider.authorize(client, { state: 'missing-resource' }, res)
+      ).rejects.toThrow('configured MCP protected resource');
+      await expect(
+        provider.authorize(
+          client,
+          { state: 'wrong-resource', resource: new URL('https://mcp.socialneuron.com') } as any,
+          res
+        )
+      ).rejects.toThrow('configured MCP protected resource');
+    });
+
+    it('rejects the legacy long-lived snk API-key exchange lane', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'snk_test_legacy_oauth_token', // gitleaks:allow (test fixture)
+          scopes: ['mcp:read'],
+          expires_in: 7_776_000,
+        }),
+      });
+
+      await expect(
+        provider.exchangeAuthorizationCode(
+          makeClient(),
+          'code',
+          'verifier',
+          'http://localhost:6274/oauth/callback',
+          new URL('https://mcp.socialneuron.com/mcp')
+        )
+      ).rejects.toThrow('legacy API key');
+    });
+
+    it('accepts only a short-lived resource-bound token pair with public scopes', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'sno_test_connector_access',
+          refresh_token: 'snr_test_connector_refresh',
+          scopes: ['mcp:read', 'mcp:write'],
+          expires_in: 3_600,
+          resource: 'https://mcp.socialneuron.com/mcp',
+        }),
+      });
+
+      const tokens = await provider.exchangeAuthorizationCode(
+        makeClient(),
+        'code',
+        'verifier',
+        'http://localhost:6274/oauth/callback',
+        new URL('https://mcp.socialneuron.com/mcp')
+      );
+
+      expect(tokens).toMatchObject({
+        access_token: 'sno_test_connector_access',
+        refresh_token: 'snr_test_connector_refresh',
+        expires_in: 3_600,
+        scope: 'mcp:read mcp:write',
+      });
+      expect(JSON.parse(mockFetch.mock.calls[0][1].body)).toMatchObject({
+        resource: 'https://mcp.socialneuron.com/mcp',
+      });
+    });
+
+    it('rejects undocumented scopes from the connector issuer', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      mockFetch.mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          access_token: 'sno_test_connector_access',
+          refresh_token: 'snr_test_connector_refresh',
+          scopes: ['mcp:read', 'mcp:internal'],
+          expires_in: 3_600,
+          resource: 'https://mcp.socialneuron.com/mcp',
+        }),
+      });
+
+      await expect(
+        provider.exchangeAuthorizationCode(
+          makeClient(),
+          'code',
+          'verifier',
+          'http://localhost:6274/oauth/callback',
+          new URL('https://mcp.socialneuron.com/mcp')
+        )
+      ).rejects.toThrow('non-public MCP scope');
     });
   });
 

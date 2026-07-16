@@ -52,10 +52,11 @@ The client accepts only Social Neuron `snk_live_…` or `snk_test_…` API keys.
 | `sn.posts` | `schedule()`, `reschedule()`, `list()`, `accounts()`, `cancel()` |
 | `sn.analytics` | `fetch()`, `refresh()`, `youtube()`, `insights()`, `postingTimes()` |
 | `sn.brand` | `get()`, `save()`, `extract()` |
-| `sn.plans` | `create()`, `save()`, `get()`, `update()`, `schedule()`, `submitForApproval()`, `approvals()`, `delete()` |
+| `sn.plans` | `create()`, `save()`, `get()`, `update()`, `schedule()`, `submitForApproval()`, `approvals()`, `respondApproval()`, `delete()` |
 | `sn.comments` | `list()`, `post()`, `reply()`, `moderate()`, `delete()` |
 | `sn.jobs` | `check()`, `waitForCompletion()`, `cancel()` |
-| `sn.autopilot` | `deleteConfiguration()` |
+| `sn.autopilot` | `createConfiguration()`, `updateConfiguration()`, `deleteConfiguration()` |
+| `sn.recipes` | `list()`, `get()`, `execute()`, `status()` |
 | `sn.tools` | `list()`, `execute()` |
 | `sn.account` | `credits()`, `usage()` |
 
@@ -82,6 +83,10 @@ try {
 ```
 
 Do not place API keys in browser bundles or commit them to source control. Use this SDK from a trusted server process and keep every customer workflow scoped with `project_id` where the tool accepts it.
+Externally visible, destructive, approval, and automation methods require a
+literal `confirm: true`. Recipe and content-plan execution types distinguish
+safe previews from confirmed live runs so a preview cannot become a side effect
+through an omitted default.
 
 ## Documentation
 

@@ -35,7 +35,7 @@ function getJWKS(supabaseUrl: string): jose.JWTVerifyGetKey {
 // against mcp-auth to observe revocation and scope changes immediately.
 const tokenValidationCache = new Map<string, { authInfo: AuthInfo; expiresAt: number }>();
 const CONNECTOR_TOKEN_VALIDATION_CACHE_TTL_MS = 60_000;
-const DEFAULT_MCP_RESOURCE = 'https://mcp.socialneuron.com';
+const DEFAULT_MCP_RESOURCE = 'https://mcp.socialneuron.com/mcp';
 const VALID_MCP_SCOPES = new Set(getAllScopes());
 
 function validScopes(value: unknown): string[] {
@@ -138,12 +138,12 @@ function normalizeResource(value: string | undefined): string | undefined {
   if (!value) return undefined;
   try {
     const parsed = new URL(value);
-    parsed.hash = '';
-    parsed.search = '';
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return undefined;
+    if (parsed.hash || parsed.search) return undefined;
     if (parsed.pathname !== '/') parsed.pathname = parsed.pathname.replace(/\/+$/, '');
     return parsed.toString().replace(/\/$/, '');
   } catch {
-    return value.replace(/\/$/, '');
+    return undefined;
   }
 }
 
@@ -341,6 +341,8 @@ async function verifyConnectorToken(
       resource?: string;
       audience?: string | string[];
       aud?: string | string[];
+      projectId?: string | null;
+      project_id?: string | null;
       error?: string;
     };
 
@@ -361,12 +363,19 @@ async function verifyConnectorToken(
       throw new Error('Connector token audience/resource mismatch');
     }
 
+    const extra: Record<string, unknown> = {
+      userId: data.userId,
+      resource: expectedResource,
+    };
+    const projectId = data.projectId ?? data.project_id ?? null;
+    if (projectId) extra.projectId = projectId;
+
     return {
       token: accessToken,
       clientId: data.clientId ?? 'connector-oauth',
       scopes: validScopes(data.scopes),
       expiresAt,
-      extra: { userId: data.userId, resource: expectedResource },
+      extra,
     };
   } catch (err) {
     if (err instanceof Error && err.name === 'AbortError') {

@@ -33,6 +33,7 @@ import { registerResources } from './resources.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { initializeAuth, getAuthenticatedScopes } from './lib/supabase.js';
 import { runSnCli } from './cli/sn.js';
+import { resolveToolProfile } from './lib/tool-profile.js';
 
 /** Flush stdout/stderr before exiting to prevent truncated pipe output. */
 function flushAndExit(code: number): void {
@@ -243,7 +244,10 @@ applyScopeEnforcement(server, getAuthenticatedScopes);
 // Stdio mode: skip MCP Apps. The package includes their HTML so the hosted
 // deployment is self-contained, but interactive iframe resources require an
 // Apps-capable HTTP host. Stdio retains the normal text/tool workflows.
-registerAllTools(server, { skipApps: true });
+registerAllTools(server, {
+  skipApps: true,
+  toolProfile: resolveToolProfile(process.env.MCP_TOOL_PROFILE),
+});
 
 // ── Prompts & Resources ──────────────────────────────────────────────
 registerPrompts(server);

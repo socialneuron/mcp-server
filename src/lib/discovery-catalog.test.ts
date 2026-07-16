@@ -45,7 +45,71 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     for (const t of tools) {
       expect(t.inputSchema.type, `${t.name} inputSchema.type`).toBe('object');
       expect(t.inputSchema.properties, `${t.name} inputSchema.properties`).toBeTypeOf('object');
+      expect(t.annotations, `${t.name} annotations`).toMatchObject({
+        readOnlyHint: expect.any(Boolean),
+        destructiveHint: expect.any(Boolean),
+        idempotentHint: expect.any(Boolean),
+        openWorldHint: expect.any(Boolean),
+      });
+      expect(t.securitySchemes, `${t.name} securitySchemes`).toEqual([
+        { type: 'oauth2', scopes: [expect.stringMatching(/^mcp:/)] },
+      ]);
     }
+  });
+
+  it('preserves MCP App discovery metadata from SDK serialization', async () => {
+    const tools = await buildDiscoveryCatalog();
+    const calendar = tools.find(t => t.name === 'open_content_calendar');
+    const analytics = tools.find(t => t.name === 'open_analytics_pulse');
+
+    expect(calendar?._meta).toMatchObject({
+      ui: { resourceUri: 'ui://content-calendar/v1/mcp-app.html' },
+    });
+    expect(analytics?._meta).toMatchObject({
+      ui: { resourceUri: 'ui://analytics-pulse/v1/mcp-app.html' },
+    });
+  });
+
+  it('advertises host-independent confirmation on every audited external effect', async () => {
+    const tools = await buildDiscoveryCatalog();
+    const requiredConfirm = [
+      'schedule_post',
+      'reschedule_post',
+      'cancel_scheduled_post',
+      'reply_to_comment',
+      'post_comment',
+      'moderate_comment',
+      'delete_comment',
+      'respond_plan_approval',
+      'create_autopilot_config',
+      'update_autopilot_config',
+    ];
+
+    for (const name of requiredConfirm) {
+      const tool = tools.find(t => t.name === name);
+      expect(tool, `${name} present`).toBeDefined();
+      expect(tool!.inputSchema.required, `${name} requires confirm`).toContain('confirm');
+      expect(tool!.inputSchema.properties.confirm, `${name} confirm is literal true`).toMatchObject({
+        type: 'boolean',
+        const: true,
+      });
+    }
+
+    const plan = tools.find(t => t.name === 'schedule_content_plan');
+    expect(plan?.inputSchema.properties).toHaveProperty('confirm');
+    expect(plan?.inputSchema.properties).toHaveProperty('dry_run');
+
+    const recipe = tools.find(t => t.name === 'execute_recipe');
+    expect(recipe?.inputSchema.required).toContain('project_id');
+    expect(recipe?.inputSchema.properties).toHaveProperty('confirm');
+    expect(recipe?.inputSchema.properties).toHaveProperty('dry_run');
+
+    const autoApprove = tools.find(t => t.name === 'auto_approve_plan');
+    expect(autoApprove?.inputSchema.required).toEqual(
+      expect.arrayContaining(['plan_id', 'project_id'])
+    );
+    expect(autoApprove?.inputSchema.properties).toHaveProperty('confirm');
+    expect(autoApprove?.inputSchema.properties).toHaveProperty('dry_run');
   });
 
   it('does not expose caller-controlled provenance attestations', async () => {

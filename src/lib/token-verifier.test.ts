@@ -102,6 +102,7 @@ describe('createTokenVerifier', () => {
     supabaseUrl: SUPABASE_URL,
     supabaseAnonKey: SUPABASE_ANON_KEY,
     allowSupabaseSessionTokens: true,
+    resource: 'https://mcp.socialneuron.com/mcp',
   });
 
   // =========================================================================
@@ -167,7 +168,7 @@ describe('createTokenVerifier', () => {
         userId: 'user-connector-route',
         clientId: 'chatgpt-client',
         scopes: ['mcp:read'],
-        resource: 'https://mcp.socialneuron.com',
+        resource: 'https://mcp.socialneuron.com/mcp',
       });
 
       const result = await verifier.verifyAccessToken('sno_route_test_token');
@@ -564,7 +565,7 @@ describe('createTokenVerifier', () => {
         userId: 'user-connector-1',
         clientId: 'client-connector-1',
         scopes: ['mcp:read', 'mcp:write'],
-        resource: 'https://mcp.socialneuron.com',
+        resource: 'https://mcp.socialneuron.com/mcp',
       });
 
       await verifier.verifyAccessToken('sno_connector_test_1');
@@ -577,7 +578,7 @@ describe('createTokenVerifier', () => {
       expect(options.method).toBe('POST');
       expect(JSON.parse(options.body as string)).toEqual({
         access_token: 'sno_connector_test_1',
-        resource: 'https://mcp.socialneuron.com',
+        resource: 'https://mcp.socialneuron.com/mcp',
       });
     });
 
@@ -589,7 +590,7 @@ describe('createTokenVerifier', () => {
         scopes: ['mcp:read', 'mcp:analytics'],
         email: 'connector@socialneuron.ai',
         expiresAt: '2027-06-15T00:00:00Z',
-        audience: ['https://mcp.socialneuron.com'],
+        audience: ['https://mcp.socialneuron.com/mcp'],
       });
 
       const result = await verifier.verifyAccessToken('sno_connector_full');
@@ -599,9 +600,28 @@ describe('createTokenVerifier', () => {
       expect(result.scopes).toEqual(['mcp:read', 'mcp:analytics']);
       expect(result.extra).toEqual({
         userId: 'user-connector-full',
-        resource: 'https://mcp.socialneuron.com',
+        resource: 'https://mcp.socialneuron.com/mcp',
       });
       expect(result.expiresAt).toBe(Math.floor(new Date('2027-06-15T00:00:00Z').getTime() / 1000));
+    });
+
+    it('carries the connector project binding into tool authorization context', async () => {
+      mockFetchResponse(200, {
+        valid: true,
+        userId: 'user-connector-project',
+        clientId: 'codex',
+        scopes: ['mcp:read'],
+        resource: 'https://mcp.socialneuron.com/mcp',
+        project_id: 'project-connector-123',
+      });
+
+      const result = await verifier.verifyAccessToken('sno_connector_project');
+
+      expect(result.extra).toEqual({
+        userId: 'user-connector-project',
+        resource: 'https://mcp.socialneuron.com/mcp',
+        projectId: 'project-connector-123',
+      });
     });
 
     it('does not serve cached connector AuthInfo after the token expires', async () => {
@@ -617,7 +637,7 @@ describe('createTokenVerifier', () => {
             clientId: 'chatgpt',
             scopes: ['mcp:full'],
             expiresAt: new Date(1_002_000).toISOString(),
-            resource: 'https://mcp.socialneuron.com',
+            resource: 'https://mcp.socialneuron.com/mcp',
           }),
         })
         .mockResolvedValueOnce({

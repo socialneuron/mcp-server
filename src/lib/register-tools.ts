@@ -279,7 +279,11 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
   }
 }
 
-function scopeDeniedResult(name: string, requiredScope: string | undefined, userScopes: string[]) {
+export function scopeDeniedResult(
+  name: string,
+  requiredScope: string | undefined,
+  userScopes: string[]
+) {
   const challenge = requiredScope
     ? buildWwwAuthenticateHeader({
         issuerUrl: getChallengeIssuerUrl(),

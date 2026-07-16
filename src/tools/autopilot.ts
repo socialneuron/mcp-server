@@ -114,10 +114,13 @@ export function registerAutopilotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'update_autopilot_config',
-    'Update an existing autopilot configuration. Can enable/disable, change schedule, ' +
-      'or modify credit budgets.',
+    'Update an existing project-bound autopilot configuration. This can change future autonomous runs or spend and requires confirm=true. Can enable/disable, change schedule, or modify credit budgets.',
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact project, config, activation state, schedule, and credit budgets.'),
       config_id: z.string().uuid().describe('The autopilot config ID to update.'),
+      project_id: z.string().uuid().describe('Exact project that owns the autopilot config.'),
       is_active: z.boolean().optional().describe('Enable or disable this autopilot config.'),
       schedule_days: z
         .array(z.enum(['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun']))
@@ -131,13 +134,21 @@ export function registerAutopilotTools(server: McpServer): void {
       max_credits_per_week: z.number().optional().describe('Maximum credits per week.'),
     },
     async ({
+      confirm,
       config_id,
+      project_id,
       is_active,
       schedule_days,
       schedule_time,
       max_credits_per_run,
       max_credits_per_week,
     }) => {
+      if (confirm !== true) {
+        return {
+          content: [{ type: 'text' as const, text: 'confirm=true is required to update an autopilot config.' }],
+          isError: true,
+        };
+      }
       if (
         is_active === undefined &&
         !schedule_days &&
@@ -167,6 +178,9 @@ export function registerAutopilotTools(server: McpServer): void {
       }>('mcp-data', {
         action: 'update-autopilot-config',
         config_id,
+        projectId: project_id,
+        project_id,
+        confirm: true,
         is_active,
         schedule_days,
         schedule_time,
@@ -286,9 +300,11 @@ export function registerAutopilotTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'create_autopilot_config',
-    'Create a new autopilot configuration for automated content pipeline execution. ' +
-      'Defines schedule, credit budgets, and approval mode.',
+    'Create a new project-bound autopilot configuration for automated content pipeline execution. This creates a persistent automation and requires confirm=true after reviewing the schedule, activation state, credit budgets, and approval mode. New configs default to inactive.',
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact project, schedule, activation state, credit budgets, and approval mode.'),
       name: z.string().min(1).max(100).describe('Name for this autopilot config'),
       project_id: z.string().uuid().describe('Project to run autopilot for'),
       mode: z
@@ -310,13 +326,14 @@ export function registerAutopilotTools(server: McpServer): void {
         .enum(['auto', 'review_all', 'review_low_confidence'])
         .default('review_low_confidence')
         .describe('How to handle post approvals'),
-      is_active: z.boolean().default(true).describe('Whether to activate immediately'),
+      is_active: z.boolean().default(false).describe('Whether to activate immediately. Defaults to false.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Response format. Defaults to text.'),
     },
     async ({
+      confirm,
       name,
       project_id,
       mode,
@@ -329,7 +346,14 @@ export function registerAutopilotTools(server: McpServer): void {
       is_active,
       response_format,
     }) => {
+      if (confirm !== true) {
+        return {
+          content: [{ type: 'text' as const, text: 'confirm=true is required to create an autopilot config.' }],
+          isError: true,
+        };
+      }
       const format = response_format ?? 'text';
+      const effectiveIsActive = is_active ?? false;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
@@ -351,7 +375,8 @@ export function registerAutopilotTools(server: McpServer): void {
         max_credits_per_run,
         max_credits_per_week,
         approval_mode,
-        is_active,
+        is_active: effectiveIsActive,
+        confirm: true,
       });
 
       if (efError) {
@@ -389,7 +414,7 @@ export function registerAutopilotTools(server: McpServer): void {
               `Name: ${name}\n` +
               `Mode: ${mode}\n` +
               `Schedule: ${schedule_days.join(', ')} @ ${schedule_time}\n` +
-              `Active: ${is_active}`,
+              `Active: ${effectiveIsActive}`,
           },
         ],
       };

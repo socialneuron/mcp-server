@@ -52,10 +52,15 @@ function makeClient(
 /** Generate a PKCE code_verifier (43-128 unreserved chars per RFC 7636). */
 function generateCodeVerifier(length = 64): string {
   const unreserved = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~';
-  const bytes = randomBytes(length);
-  return Array.from(bytes)
-    .map(b => unreserved[b % unreserved.length])
-    .join('');
+  const rejectionCeiling = Math.floor(256 / unreserved.length) * unreserved.length;
+  let verifier = '';
+  while (verifier.length < length) {
+    for (const byte of randomBytes(length - verifier.length)) {
+      if (byte >= rejectionCeiling) continue;
+      verifier += unreserved[byte % unreserved.length];
+    }
+  }
+  return verifier;
 }
 
 /** Compute S256 code_challenge from a code_verifier. */

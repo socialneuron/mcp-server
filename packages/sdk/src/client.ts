@@ -4,10 +4,13 @@ import type {
   CancelAsyncJobParams,
   CancelScheduledPostParams,
   CreatePlanParams,
+  CreateAutopilotConfigParams,
+  DeleteCommentParams,
   DeleteAutopilotConfigParams,
   DeleteCarouselParams,
   DeleteContentPlanParams,
   ExtractBrandParams,
+  ExecuteRecipeParams,
   FetchAnalyticsParams,
   FetchTrendsParams,
   GenerateCarouselParams,
@@ -25,6 +28,7 @@ import type {
   PostCommentParams,
   PostingTimesParams,
   ReplyCommentParams,
+  RespondPlanApprovalParams,
   ReschedulePostParams,
   SaveBrandParams,
   SavePlanParams,
@@ -33,6 +37,7 @@ import type {
   ToolContentBlock,
   ToolResponse,
   UpdatePlanParams,
+  UpdateAutopilotConfigParams,
   YouTubeAnalyticsParams,
 } from "./types.js";
 
@@ -344,6 +349,12 @@ class PlansResource {
       json({ plan_id: planId, ...(status ? { status } : {}) }),
     );
   }
+  respondApproval(params: RespondPlanApprovalParams) {
+    return this.http.callTool(
+      "respond_plan_approval",
+      json(params as unknown as Record<string, unknown>),
+    );
+  }
   delete(params: DeleteContentPlanParams) {
     return this.http.callTool<LifecycleResult>(
       "delete_content_plan",
@@ -372,8 +383,11 @@ class CommentsResource {
       json({ comment_id: commentId, ...(params as unknown as Record<string, unknown>) }),
     );
   }
-  delete(commentId: string) {
-    return this.http.callTool("delete_comment", json({ comment_id: commentId }));
+  delete(commentId: string, params: DeleteCommentParams) {
+    return this.http.callTool(
+      "delete_comment",
+      json({ comment_id: commentId, ...(params as unknown as Record<string, unknown>) }),
+    );
   }
 }
 
@@ -424,11 +438,42 @@ class JobsResource {
 
 class AutopilotResource {
   constructor(private readonly http: HttpClient) {}
+  createConfiguration(params: CreateAutopilotConfigParams) {
+    return this.http.callTool(
+      "create_autopilot_config",
+      json(params as unknown as Record<string, unknown>),
+    );
+  }
+  updateConfiguration(params: UpdateAutopilotConfigParams) {
+    return this.http.callTool(
+      "update_autopilot_config",
+      json(params as unknown as Record<string, unknown>),
+    );
+  }
   deleteConfiguration(params: DeleteAutopilotConfigParams) {
     return this.http.callTool<LifecycleResult>(
       "delete_autopilot_config",
       params as unknown as Record<string, unknown>,
     );
+  }
+}
+
+class RecipesResource {
+  constructor(private readonly http: HttpClient) {}
+  list(params: { category?: string; featured_only?: boolean } = {}) {
+    return this.http.callTool("list_recipes", json(params));
+  }
+  get(slug: string) {
+    return this.http.callTool("get_recipe_details", json({ slug }));
+  }
+  execute(params: ExecuteRecipeParams) {
+    return this.http.callTool(
+      "execute_recipe",
+      json(params as unknown as Record<string, unknown>),
+    );
+  }
+  status(runId: string) {
+    return this.http.callTool("get_recipe_run_status", json({ run_id: runId }));
   }
 }
 
@@ -463,6 +508,7 @@ export class SocialNeuron {
   readonly tools: ToolsResource;
   readonly account: AccountResource;
   readonly autopilot: AutopilotResource;
+  readonly recipes: RecipesResource;
 
   constructor(config: SocialNeuronConfig) {
     const http = new HttpClient(config);
@@ -476,5 +522,6 @@ export class SocialNeuron {
     this.tools = new ToolsResource(http);
     this.account = new AccountResource(http);
     this.autopilot = new AutopilotResource(http);
+    this.recipes = new RecipesResource(http);
   }
 }

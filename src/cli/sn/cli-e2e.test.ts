@@ -1,7 +1,7 @@
 /**
  * E2E tests for the CLI binary.
  *
- * These tests spawn `node dist/index.js` with various arguments and verify
+ * These tests spawn the current Node runtime with `dist/index.js` and verify
  * outputs. Only commands that work WITHOUT authentication are tested here.
  *
  * Run: cd mcp-server && npm run build:stdio && npx vitest run src/cli/sn/cli-e2e.test.ts
@@ -35,7 +35,9 @@ function run(
     env.SOCIALNEURON_SUPABASE_URL = 'http://127.0.0.1:1';
     env.SUPABASE_URL = 'http://127.0.0.1:1';
   }
-  const result = spawnSync('node', [BINARY, ...args], {
+  // Use the exact runtime that launched Vitest. Relying on a `node` PATH alias
+  // makes the CLI suite fail in otherwise valid packaged/desktop runtimes.
+  const result = spawnSync(process.execPath, [BINARY, ...args], {
     encoding: 'utf-8',
     timeout: 10_000,
     maxBuffer: 1024 * 1024,
@@ -184,6 +186,55 @@ describeE2E('error handling', () => {
     expect(json.ok).toBe(false);
     expect(json.errorType).toBe('NOT_FOUND');
     expect(json.retryable).toBe(false);
+  });
+});
+
+describeE2E('sn publish', () => {
+  it('provides a deterministic no-auth dry run and never calls the hosted tool', () => {
+    const { stdout, exitCode } = run(
+      [
+        'sn',
+        'publish',
+        '--media-url',
+        'https://example.com/acceptance-image.png',
+        '--caption',
+        '[ACCEPTANCE TEST] CLI dry run',
+        '--platforms',
+        'instagram,youtube',
+        '--dry-run',
+        '--json',
+      ],
+      { stripAuth: true }
+    );
+
+    expect(exitCode).toBe(0);
+    const json = parseJson(stdout);
+    expect(json).toMatchObject({
+      ok: true,
+      command: 'publish',
+      dryRun: true,
+      wouldInvoke: 'schedule_post',
+      requiresConfirm: true,
+      schema_version: '1',
+    });
+    expect(json.idempotencyKey).toMatch(/^sn_[a-f0-9]{24}$/);
+  });
+
+  it('still requires literal confirmation for a live publish', () => {
+    const { stdout, exitCode } = run([
+      'sn',
+      'publish',
+      '--media-url',
+      'https://example.com/acceptance-image.png',
+      '--caption',
+      '[ACCEPTANCE TEST] no confirmation',
+      '--platforms',
+      'instagram',
+      '--json',
+    ]);
+
+    expect(exitCode).toBe(1);
+    expect(parseJson(stdout).error).toMatch(/--confirm/);
   });
 });
 

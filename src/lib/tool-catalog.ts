@@ -124,7 +124,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // media
   {
     name: 'upload_media',
-    description: 'Upload local file or external URL to R2 storage',
+    description: 'Upload a local file, inline base64, or trusted-provider URL to R2 storage',
     module: 'media',
     scope: 'mcp:write',
   },
@@ -138,7 +138,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // distribution
   {
     name: 'schedule_post',
-    description: 'Schedule content for publishing to social platforms',
+    description:
+      'Confirm and publish/schedule content; live on YouTube, TikTok, X, and Bluesky, with clearly marked limited Meta lanes',
     module: 'distribution',
     scope: 'mcp:distribute',
   },
@@ -308,31 +309,31 @@ export const TOOL_CATALOG: ToolEntry[] = [
   // comments
   {
     name: 'list_comments',
-    description: 'List comments on published posts',
+    description: 'List YouTube comments for the connected channel',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'reply_to_comment',
-    description: 'Reply to a comment on a post',
+    description: 'Confirm and publish a public reply to a YouTube comment',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'post_comment',
-    description: 'Post a new comment',
+    description: 'Confirm and publish a new top-level YouTube comment',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'moderate_comment',
-    description: 'Moderate a comment (approve/hide/flag)',
+    description: 'Confirm approval or hiding of a YouTube comment',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'delete_comment',
-    description: 'Delete a comment',
+    description: 'Confirm permanent deletion of an owned YouTube comment',
     module: 'comments',
     scope: 'mcp:comments',
   },
@@ -641,7 +642,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'execute_recipe',
-    description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
+    description:
+      'Preview or execute a project-scoped recipe with effect-derived scopes, credit estimate, dry-run, and explicit confirmation',
     module: 'recipes',
     scope: 'mcp:write',
   },

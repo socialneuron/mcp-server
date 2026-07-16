@@ -46,14 +46,13 @@ const ERROR_PATTERNS: Array<[RegExp, string]> = [
 ];
 
 /**
- * Mask an API key for display/logging. Keeps only the non-secret type prefix
- * (e.g. `snk_`) and the last 4 characters for identification — never print
- * more of a bearer credential than this.
+ * Constant marker for CLI fields that historically exposed a key prefix.
+ *
+ * Do not derive this value from the credential. Even a short suffix remains
+ * bearer-token material, makes logs linkable, and is correctly treated as
+ * sensitive by CodeQL's clear-text logging analysis.
  */
-export function maskApiKey(apiKey: string): string {
-  if (typeof apiKey !== 'string' || apiKey.length < 12) return '****';
-  return `${apiKey.slice(0, 4)}...${apiKey.slice(-4)}`;
-}
+export const REDACTED_API_KEY = '[redacted]';
 
 export function sanitizeDbError(error: { message?: string; code?: string }): string {
   const msg = error.message ?? '';

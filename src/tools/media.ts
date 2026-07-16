@@ -6,7 +6,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
 const MAX_BASE64_SIZE = 10 * 1024 * 1024;
@@ -75,7 +75,8 @@ export function registerMediaTools(server: McpServer): void {
   server.tool(
     'upload_media',
     'Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to ' +
-      'schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL ' +
+      'schedule_post. Three input modes: (1) local file path (stdio mode only), (2) supported ' +
+      'trusted-provider HTTPS URL ' +
       'fetched by the server, (3) inline base64 via file_data (remote agents, ≤10MB decoded). ' +
       'AGENT ROUTING GUIDE: If the media was produced by another tool here (generate_image, ' +
       'generate_video, create_carousel, etc.), use the returned job_id or r2_key directly with ' +
@@ -88,7 +89,7 @@ export function registerMediaTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'Local file path (e.g. "/Users/me/image.png") or public URL (e.g. "https://example.com/photo.jpg"). ' +
+          'Local file path (e.g. "/Users/me/image.png") or supported trusted-provider HTTPS URL. ' +
             'Leave empty when passing file_data instead.'
         ),
       file_data: z
@@ -114,7 +115,12 @@ export function registerMediaTools(server: McpServer): void {
             'paths/URLs, or from the data: prefix on file_data. Required when passing raw ' +
             'base64 with no prefix.'
         ),
-      project_id: z.string().optional().describe('Project ID for R2 path organization.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID for ownership, quota, and R2 path isolation. May be omitted only when the authenticated connection resolves to exactly one project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -145,6 +151,21 @@ export function registerMediaTools(server: McpServer): void {
               text: 'upload_media requires either `source` (path or URL) or `file_data` (base64).',
             },
           ],
+          isError: true,
+        };
+      }
+
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (projectResolution.error) {
+        return {
+          content: [{ type: 'text' as const, text: projectResolution.error }],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+      if (!resolvedProjectId) {
+        return {
+          content: [{ type: 'text' as const, text: 'project_id could not be resolved.' }],
           isError: true,
         };
       }
@@ -228,7 +249,7 @@ export function registerMediaTools(server: McpServer): void {
           fileData: `data:${ct};base64,${stripped}`,
           contentType: ct,
           fileName: safeName,
-          projectId: project_id,
+          projectId: resolvedProjectId,
         };
 
         const { data, error } = await callEdgeFunction<{
@@ -322,7 +343,7 @@ export function registerMediaTools(server: McpServer): void {
           url: safeSrc,
           contentType: ct,
           fileName: basename(file_name ?? new URL(safeSrc).pathname) || 'upload',
-          projectId: project_id,
+          projectId: resolvedProjectId,
         };
       } else {
         // Local file — read, check size, base64 encode.
@@ -379,7 +400,8 @@ export function registerMediaTools(server: McpServer): void {
               operation: 'put',
               contentType: ct,
               filename: basename(file_name ?? src),
-              projectId: project_id,
+              fileSize: fileBuffer.length,
+              projectId: resolvedProjectId,
             },
             { timeoutMs: 10_000 }
           );
@@ -399,6 +421,11 @@ export function registerMediaTools(server: McpServer): void {
 
           // Upload directly to R2 via presigned PUT
           try {
+            // The destination is a short-lived presigned URL returned by the
+            // authenticated Social Neuron storage service, never caller input.
+            // Sending the user-selected local file is the explicit stdio upload
+            // feature and is blocked entirely on HTTP/server transport above.
+            // codeql[js/file-access-to-http]
             const putResp = await fetch(putUrl, {
               method: 'PUT',
               headers: { 'Content-Type': ct },
@@ -486,7 +513,7 @@ export function registerMediaTools(server: McpServer): void {
           fileData: base64,
           contentType: ct,
           fileName: basename(file_name ?? src),
-          projectId: project_id,
+          projectId: resolvedProjectId,
         };
       }
 

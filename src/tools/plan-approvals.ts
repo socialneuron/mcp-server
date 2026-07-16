@@ -210,15 +210,25 @@ export function registerPlanApprovalTools(server: McpServer): void {
 
   server.tool(
     'respond_plan_approval',
-    'Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an error. Once decided, an item cannot be re-decided (immutable transition). reason is optional but recommended for "rejected" or "edited" to leave a paper trail. After all items are decided, schedule_content_plan publishes only the approved (and edited) ones.',
+    'Approve, reject, or edit a single pending plan approval item. This changes a team workflow decision and requires confirm=true plus the exact project_id. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an error. Once decided, an item cannot be re-decided (immutable transition). reason is optional but recommended for "rejected" or "edited" to leave a paper trail. After all items are decided, schedule_content_plan publishes only the approved (and edited) ones.',
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact approval item, project, decision, and edited content.'),
       approval_id: z.string().uuid().describe('Approval item ID'),
+      project_id: z.string().uuid().describe('Exact project that owns the approval item.'),
       decision: z.enum(['approved', 'rejected', 'edited']),
       edited_post: z.record(z.string(), z.unknown()).optional(),
       reason: z.string().max(1000).optional(),
       response_format: z.enum(['text', 'json']).optional(),
     },
-    async ({ approval_id, decision, edited_post, reason, response_format }) => {
+    async ({ confirm, approval_id, project_id, decision, edited_post, reason, response_format }) => {
+      if (confirm !== true) {
+        return {
+          content: [{ type: 'text' as const, text: 'confirm=true is required to change an approval decision.' }],
+          isError: true,
+        };
+      }
       if (decision === 'edited' && !edited_post) {
         return {
           content: [
@@ -245,6 +255,8 @@ export function registerPlanApprovalTools(server: McpServer): void {
         {
           action: 'respond-plan-approval',
           approval_id,
+          projectId: project_id,
+          project_id,
           decision,
           ...(edited_post ? { edited_post } : {}),
           ...(reason ? { reason } : {}),

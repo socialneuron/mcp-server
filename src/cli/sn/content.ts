@@ -1,6 +1,14 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
 import { evaluateQuality } from '../../lib/quality.js';
-import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
+import {
+  initializeAuth,
+  getDefaultUserId,
+  getAuthenticatedApiKey,
+  getAuthenticatedProjectId,
+  getAuthenticatedScopes,
+} from '../../lib/supabase.js';
+import { requestContext } from '../../lib/request-context.js';
+import { extractRestError, invokeToolRest } from '../../lib/rest-invoke.js';
 import {
   isEnabledFlag,
   emitSnResult,
@@ -29,16 +37,24 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
   ) {
     throw new Error('Missing required flags for publish: --media-url, --caption, --platforms');
   }
+  const dryRun = isEnabledFlag(args['dry-run']);
   const confirmed = isEnabledFlag(args.confirm);
-  if (!confirmed) {
-    throw new Error(
-      'Missing required flag: --confirm. Re-run with --confirm to execute schedule-post.'
-    );
-  }
 
-  const platforms = normalizePlatforms(platformsRaw);
+  const platforms = platformsRaw
+    .split(',')
+    .map(platform => platform.trim().toLowerCase())
+    .filter(Boolean);
+  if (!isValidHttpsUrl(mediaUrl)) {
+    throw new Error('--media-url must be a valid HTTPS URL');
+  }
+  if (platforms.length === 0) {
+    throw new Error('--platforms must contain at least one platform');
+  }
   const title = typeof args.title === 'string' ? args.title : undefined;
   const scheduledAt = typeof args['schedule-at'] === 'string' ? args['schedule-at'] : undefined;
+  if (scheduledAt && !Number.isFinite(Date.parse(scheduledAt))) {
+    throw new Error('--schedule-at must be a valid ISO-8601 timestamp');
+  }
   const idempotencyKey =
     typeof args['idempotency-key'] === 'string'
       ? args['idempotency-key']
@@ -50,31 +66,92 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
           scheduledAt,
         });
 
+  if (dryRun) {
+    const preview = {
+      ok: true,
+      command: 'publish',
+      dryRun: true,
+      wouldInvoke: 'schedule_post',
+      requiresConfirm: true,
+      idempotencyKey,
+      request: {
+        media_url: mediaUrl,
+        caption,
+        platforms,
+        title: title ?? null,
+        schedule_at: scheduledAt ?? null,
+      },
+    };
+    if (asJson) {
+      emitSnResult(preview, true);
+    } else {
+      console.error('DRY RUN: schedule_post was not called.');
+      console.error(`Idempotency key: ${idempotencyKey}`);
+      console.error(`Platforms: ${platforms.join(', ')}`);
+    }
+    process.exit(0);
+  }
+
+  if (!confirmed) {
+    throw new Error(
+      'Missing required flag: --confirm. Re-run with --confirm to execute schedule-post.'
+    );
+  }
+
   // Auth only after all flag validation passes
   const userId = await ensureAuth();
 
-  const { data, error } = await callEdgeFunction<{
-    success: boolean;
-    results: Record<string, { success: boolean; jobId?: string; postId?: string; error?: string }>;
-    scheduledAt: string;
-  }>('schedule-post', {
-    mediaUrl,
-    caption,
-    platforms,
-    title,
-    scheduledAt,
-    idempotencyKey,
-    userId,
-  });
+  const token = getAuthenticatedApiKey();
+  if (!token) throw new Error('Publish failed: authenticated API key is unavailable');
+  const result = await requestContext.run(
+    {
+      userId,
+      scopes: getAuthenticatedScopes(),
+      token,
+      projectId: getAuthenticatedProjectId(),
+      creditsUsed: 0,
+      assetsGenerated: 0,
+      surface: 'cli',
+    },
+    () =>
+      invokeToolRest('schedule_post', {
+        confirm: confirmed,
+        media_url: mediaUrl,
+        caption,
+        platforms,
+        title,
+        schedule_at: scheduledAt,
+        idempotency_key: idempotencyKey,
+        response_format: 'json',
+      })
+  );
 
-  if (error || !data) {
-    throw new Error(`Publish failed: ${error ?? 'Unknown error'}`);
+  if (result.isError) {
+    const error = extractRestError(result);
+    throw new Error(`Publish failed: ${error.message}`);
+  }
+
+  const envelope = result.structuredContent as
+    | {
+        data?: {
+          success?: boolean;
+          results?: Record<
+            string,
+            { success: boolean; jobId?: string; postId?: string; error?: string }
+          >;
+          scheduledAt?: string;
+        };
+      }
+    | undefined;
+  const data = envelope?.data;
+  if (!data?.results || !data.scheduledAt) {
+    throw new Error('Publish failed: schedule_post returned an invalid response');
   }
 
   if (asJson) {
     emitSnResult(
       {
-        ok: data.success,
+        ok: data.success === true,
         command: 'publish',
         idempotencyKey,
         scheduledAt: data.scheduledAt,
@@ -98,7 +175,7 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
       }
     }
   }
-  process.exit(data.success ? 0 : 1);
+  process.exit(data.success === true ? 0 : 1);
 }
 
 export async function handleQualityCheck(args: SnArgs, asJson: boolean): Promise<void> {

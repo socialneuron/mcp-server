@@ -9,8 +9,8 @@
  * symmetric add+drop drift; this asserts membership, not just cardinality, and
  * prints the offending names on failure.
  *
- * The registered set is built from the REAL registerAllTools (no options = the
- * full ships-on-HTTP superset) so the test can never drift from production the
+ * The registered set is built from the REAL registerAllTools internal profile,
+ * which is the complete operational superset, so the test cannot drift from production the
  * way a hand-maintained registration list does.
  */
 import { describe, it, expect } from 'vitest';
@@ -21,7 +21,9 @@ import { TOOL_CATALOG } from './tool-catalog.js';
 
 const registered = (() => {
   const server = createMockServer();
-  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0]);
+  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0], {
+    toolProfile: 'internal',
+  });
   return new Set<string>(server._handlers.keys());
 })();
 const scoped = new Set(Object.keys(TOOL_SCOPES));

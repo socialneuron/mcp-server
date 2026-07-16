@@ -126,7 +126,7 @@ export function printSnUsage(): void {
   console.error('');
   console.error('Content:');
   console.error(
-    '  publish --media-url <url> --caption <text> --platforms <comma-list> --confirm [--title <text>] [--schedule-at <iso8601>] [--idempotency-key <key>] [--json]'
+    '  publish --media-url <https-url> --caption <text> --platforms <comma-list> (--confirm | --dry-run) [--title <text>] [--schedule-at <iso8601>] [--idempotency-key <key>] [--json]'
   );
   console.error(
     '  quality-check --caption <text> [--title <text>] [--platforms <comma-list>] [--threshold <0-35>] [--json]'

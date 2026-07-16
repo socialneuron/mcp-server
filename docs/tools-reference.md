@@ -80,7 +80,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `create_storyboard` | Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profil |
 | `delete_carousel` | Delete an owned carousel content-history record from one project. Stored media is retained until the normal retention cleanup; this does not delete already-published platform posts. |
 | `delete_content_plan` | Permanently delete an owned content plan in one project. This does not cancel posts that were already scheduled from the plan. |
-| `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. |
+| `execute_recipe` | Preview or execute a project-scoped recipe. Defaults to dry_run=true and returns estimated credits, step effects, required scopes, and approval requirements without creating a run. To execute, pass dry_run=false and confirm=true. Recipes th |
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_ch |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 5-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (im |
@@ -90,14 +90,14 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `render_demo_video` | Render a Remotion composition to an MP4 or GIF file locally. Uses the Remotion bundler and renderer from the root project. This can take 30-120 seconds depending on composition length. Output is saved to public/videos/. |
 | `render_hyperframes` | Render an HTML video composition (Hyperframes) to MP4 — frame-accurate, no React build step. The page MUST expose window.__hf = { duration: <seconds>, seek: (t) => void }; the renderer calls seek(t) per frame (GSAP timelines work when drive |
 | `render_template_video` | Render a Remotion template video in the cloud. Creates an async render job that is processed by the production worker, uploaded to R2, and tracked via async_jobs. Returns a job ID that can be polled with check_status. Costs credits based on |
-| `respond_plan_approval` | Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an  |
+| `respond_plan_approval` | Approve, reject, or edit a single pending plan approval item. This changes a team workflow decision and requires confirm=true plus the exact project_id. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_ |
 | `run_skill` | Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the exact step plan, credit cost, and a deep-link to launch the run in the SN dashboard. A future release executes in-pro |
 | `save_brand_profile` | Save (or replace) the active brand profile for a project — voice, target audience, content pillars, claims, etc. Use after extract_brand has produced a draft AND the user has reviewed it, or when the user explicitly edits the profile. brand |
 | `save_content_plan` | Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan. |
 | `submit_content_plan_for_approval` | Create pending approval items for each post in a plan and mark plan status as in_review. |
 | `update_content_plan` | Edit individual posts in a persisted content plan — change caption, title, hashtags, hook, or angle. Use after get_content_plan when the user wants to revise drafts before scheduling. Each post_updates entry must include post_id from the lo |
 | `update_platform_voice` | Update platform-specific voice overrides (samples, tone/style, CTA/hashtag strategy). |
-| `upload_media` | Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL fetched by the server, (3) inline base64 via file_data (remote age |
+| `upload_media` | Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to schedule_post. Three input modes: (1) local file path (stdio mode only), (2) supported trusted-provider HTTPS URL fetched by the server, (3) inline base64 |
 
 ## Publishing & Scheduling
 
@@ -106,9 +106,9 @@ _Scope: `mcp:distribute` — Available on **Pro** and above._
 | Tool | Description |
 |------|-------------|
 | `cancel_scheduled_post` | Cancel an owned draft, pending, or scheduled post before publishing starts. This closes its pending schedule job first; it refuses once a worker has claimed the publication. |
-| `reschedule_post` | Move an existing pending or scheduled post to a new future time without creating a duplicate. Pass project_id for the post's brand. expected_scheduled_at is recommended: it prevents overwriting a change made in another client after the cale |
-| `schedule_content_plan` | Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode. |
-| `schedule_post` | Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete |
+| `reschedule_post` | Move an existing pending or scheduled post to a new future time without creating a duplicate. Requires confirm=true. Pass project_id for the post's brand and expected_scheduled_at to prevent overwriting a change made in another client. |
+| `schedule_content_plan` | Preview or schedule all approved posts in exactly one inline or persisted content plan. Defaults to dry_run=true. Live scheduling requires dry_run=false and confirm=true after reviewing project, accounts, quality results, times, and platfor |
+| `schedule_post` | Publish or schedule a post to connected social platforms. This is externally visible and always requires confirm=true. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` t |
 | `start_platform_connection` | Begin connecting a social platform (Instagram, TikTok, YouTube, etc.). Returns a single-use deep link the user opens in a browser to complete the one-time OAuth handshake on socialneuron.com. This is NOT another OAuth in Claude — platform c |
 
 ## Engagement
@@ -117,11 +117,11 @@ _Scope: `mcp:comments` — Requires **Team** or **Agency** (full MCP)._
 
 | Tool | Description |
 |------|-------------|
-| `delete_comment` | Delete a YouTube comment. Only works for comments owned by the authenticated channel. |
+| `delete_comment` | Permanently delete a YouTube comment owned by the connected channel. This is irreversible and requires confirm=true after reviewing the exact comment, project, and channel. |
 | `list_comments` | List YouTube comments — pass video_id (11-char string, e.g. "dQw4w9WgXcQ") for a specific video, or omit for recent comments across all channel videos. Returns comment text, author, like count, and reply count. Use page_token from previous  |
-| `moderate_comment` | Moderate a YouTube comment on your channel — set status to "published" (approve) or "rejected" (hide from public view but kept in moderation queue). Use after list_comments surfaces a comment that needs action. For permanent removal use del |
-| `post_comment` | Post a new top-level comment on a YouTube video, authored as the connected channel. Use for proactive engagement on your own videos. For replies to existing comments use reply_to_comment instead — this tool only creates top-level comments.  |
-| `reply_to_comment` | Reply to a YouTube comment. Get the parent_id from list_comments results. Reply appears as the authenticated channel. Use for community engagement after checking list_comments for questions or feedback. |
+| `moderate_comment` | Moderate a YouTube comment on your channel. This changes public visibility and requires confirm=true. Set status to "published" (approve) or "rejected" (hide but retain in the moderation queue). Use delete_comment for permanent removal. |
+| `post_comment` | Post a new public top-level YouTube comment as the connected channel. This is external speech and requires confirm=true. Use reply_to_comment for replies. Review the exact video, text, project, and connected account before confirming. |
+| `reply_to_comment` | Reply publicly to a YouTube comment as the connected channel. This is external speech and requires confirm=true. Get parent_id from list_comments after reviewing the exact comment, project, and connected account. |
 
 ## Autopilot & Automation
 
@@ -129,10 +129,10 @@ _Scope: `mcp:autopilot` — Requires **Team** or **Agency** (full MCP)._
 
 | Tool | Description |
 |------|-------------|
-| `auto_approve_plan` | Batch auto-approve posts in a content plan that meet quality thresholds. Posts below the threshold are flagged for manual review. |
-| `create_autopilot_config` | Create a new autopilot configuration for automated content pipeline execution. Defines schedule, credit budgets, and approval mode. |
+| `auto_approve_plan` | Preview or batch auto-approve posts in a project-bound content plan that meet quality thresholds. Defaults to dry_run=true. Persisting approval decisions requires dry_run=false and confirm=true; posts below the threshold are flagged for man |
+| `create_autopilot_config` | Create a new project-bound autopilot configuration for automated content pipeline execution. This creates a persistent automation and requires confirm=true after reviewing the schedule, activation state, credit budgets, and approval mode. N |
 | `delete_autopilot_config` | Permanently delete an owned autopilot configuration in one project. Historical runs and already-published posts are retained. |
 | `get_autopilot_status` | Get autopilot system overview: active config count, recent execution results, credits consumed, and next scheduled run time. Use as a dashboard check before modifying autopilot settings. |
 | `list_autopilot_configs` | List autopilot configurations showing schedules, credit budgets, last run times, and active/inactive status. Use to check what is automated before creating new configs, or to find config_id for update_autopilot_config. |
 | `run_content_pipeline` | Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts |
-| `update_autopilot_config` | Update an existing autopilot configuration. Can enable/disable, change schedule, or modify credit budgets. |
+| `update_autopilot_config` | Update an existing project-bound autopilot configuration. This can change future autonomous runs or spend and requires confirm=true. Can enable/disable, change schedule, or modify credit budgets. |

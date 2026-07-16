@@ -35,6 +35,12 @@ if (!pkg.mcpName) {
   failures.push('package.json is missing "mcpName" (required for MCP Registry ownership verification)');
 }
 
+// Bare `npx @socialneuron/mcp-server` resolves the unscoped package-name bin.
+// Keep that alias alongside the long-form and `sn` executables.
+if (pkg.bin?.['mcp-server'] !== 'dist/index.js') {
+  failures.push('package.json must expose bin["mcp-server"] = "dist/index.js" for bare npx');
+}
+
 // 3. Forbidden strings — retired claims, internal codenames, dead endpoints
 const FORBIDDEN = [
   // stale public-contract claims

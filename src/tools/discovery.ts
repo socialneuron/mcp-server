@@ -1,15 +1,11 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import {
-  TOOL_CATALOG,
-  getToolsByModule,
-  getToolsByScope,
-  searchTools,
-} from '../lib/tool-catalog.js';
+import { searchTools } from '../lib/tool-catalog.js';
 import { hasScope } from '../auth/scopes.js';
 import { getAuthenticatedScopes } from '../lib/supabase.js';
 import { getRequestScopes } from '../lib/request-context.js';
 import type { ToolEntry } from '../lib/tool-catalog.js';
+import { resolveToolProfile, toolsForTransport } from '../lib/tool-profile.js';
 
 interface KnowledgeDocument {
   id: string;
@@ -58,8 +54,9 @@ const STATIC_KNOWLEDGE_DOCUMENTS: KnowledgeDocument[] = [
     url: 'https://socialneuron.com/integrations',
     text: [
       'Social Neuron tracks platform availability on the integrations page.',
-      'YouTube, TikTok, Instagram, LinkedIn, X, and Facebook are live for supported posting workflows.',
-      'Threads and Bluesky are supported surfaces where live availability depends on the current integration status.',
+      'General live posting is available for YouTube, TikTok, X, and Bluesky.',
+      'Instagram currently uses the bridge/tester lane; Facebook is tester-only; Threads is a tester/code path; LinkedIn posting is not live and schedule_post rejects it.',
+      'Shopify and Etsy can appear as integrations but are not schedule_post destinations.',
     ].join('\n'),
     metadata: { source: 'public-integrations-page', category: 'integrations' },
   },
@@ -116,10 +113,14 @@ function toolKnowledgeDocument(tool: ToolEntry): KnowledgeDocument {
 function getKnowledgeDocuments(): KnowledgeDocument[] {
   return [
     ...STATIC_KNOWLEDGE_DOCUMENTS,
-    ...TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).map(
-      toolKnowledgeDocument
-    ),
+    ...getDiscoverableTools().map(toolKnowledgeDocument),
   ];
+}
+
+function getDiscoverableTools(): ToolEntry[] {
+  const profile = resolveToolProfile(process.env.MCP_TOOL_PROFILE);
+  const transport = process.env.MCP_TRANSPORT === 'stdio' ? 'stdio' : 'http';
+  return toolsForTransport(profile, transport);
 }
 
 function tokenize(input: string): string[] {
@@ -267,20 +268,18 @@ export function registerDiscoveryTools(server: McpServer): void {
       const isAvailable = (tool: ToolEntry) =>
         !hasKnownScopes || hasScope(currentScopes, tool.scope);
 
-      let results: ToolEntry[] = [...TOOL_CATALOG];
+      const discoverable = getDiscoverableTools();
+      const discoverableNames = new Set(discoverable.map(tool => tool.name));
+      let results: ToolEntry[] = discoverable;
 
       if (query) {
-        results = searchTools(query);
+        results = searchTools(query).filter(tool => discoverableNames.has(tool.name));
       }
-      // Internal operations tools are runtime-registered but not discoverable.
-      results = results.filter(t => !t.internal && !t.hiddenFromPublicCount);
       if (module) {
-        const moduleTools = getToolsByModule(module);
-        results = results.filter(t => moduleTools.some(mt => mt.name === t.name));
+        results = results.filter(tool => tool.module === module);
       }
       if (scope) {
-        const scopeTools = getToolsByScope(scope);
-        results = results.filter(t => scopeTools.some(st => st.name === t.name));
+        results = results.filter(tool => tool.scope === scope);
       }
       if (available_only) {
         results = results.filter(isAvailable);

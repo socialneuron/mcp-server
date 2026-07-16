@@ -159,6 +159,7 @@ describe('autopilot tools', () => {
   // =========================================================================
   describe('update_autopilot_config', () => {
     const TEST_CONFIG_ID = '550e8400-e29b-41d4-a716-446655440000';
+    const TEST_PROJECT_ID = '660e8400-e29b-41d4-a716-446655440000';
 
     it('toggles is_active', async () => {
       mockCallEdge.mockResolvedValueOnce({
@@ -175,7 +176,12 @@ describe('autopilot tools', () => {
       });
 
       const handler = server.getHandler('update_autopilot_config')!;
-      const result = await handler({ config_id: TEST_CONFIG_ID, is_active: false });
+      const result = await handler({
+        confirm: true,
+        config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
+        is_active: false,
+      });
       const text = result.content[0].text;
       expect(text).toContain(`Autopilot config ${TEST_CONFIG_ID} updated successfully`);
       expect(text).toContain('Active: false');
@@ -198,7 +204,9 @@ describe('autopilot tools', () => {
 
       const handler = server.getHandler('update_autopilot_config')!;
       const result = await handler({
+        confirm: true,
         config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
         schedule_time: '14:00',
       });
       const text = result.content[0].text;
@@ -207,7 +215,11 @@ describe('autopilot tools', () => {
 
     it('returns no changes message when no fields provided', async () => {
       const handler = server.getHandler('update_autopilot_config')!;
-      const result = await handler({ config_id: TEST_CONFIG_ID });
+      const result = await handler({
+        confirm: true,
+        config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
+      });
       expect(result.content[0].text).toContain('No changes specified');
       expect(result.content[0].text).toContain('Provide at least one field to update');
     });
@@ -220,7 +232,9 @@ describe('autopilot tools', () => {
 
       const handler = server.getHandler('update_autopilot_config')!;
       const result = await handler({
+        confirm: true,
         config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
         is_active: true,
       });
       expect(result.isError).toBe(true);
@@ -243,15 +257,33 @@ describe('autopilot tools', () => {
       });
 
       const handler = server.getHandler('update_autopilot_config')!;
-      await handler({ config_id: TEST_CONFIG_ID, max_credits_per_run: 200 });
+      await handler({
+        confirm: true,
+        config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
+        max_credits_per_run: 200,
+      });
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({
           action: 'update-autopilot-config',
           config_id: TEST_CONFIG_ID,
+          project_id: TEST_PROJECT_ID,
           max_credits_per_run: 200,
         })
       );
+    });
+
+    it('fails closed before the backend without confirmation', async () => {
+      const result = await server.getHandler('update_autopilot_config')!({
+        config_id: TEST_CONFIG_ID,
+        project_id: TEST_PROJECT_ID,
+        is_active: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('confirm=true');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 
@@ -374,6 +406,7 @@ describe('autopilot tools', () => {
 
       const handler = server.getHandler('create_autopilot_config')!;
       const result = await handler({
+        confirm: true,
         name: 'Weekly Pipeline',
         project_id: TEST_PROJECT_ID,
         mode: 'pipeline',
@@ -405,6 +438,7 @@ describe('autopilot tools', () => {
 
       const handler = server.getHandler('create_autopilot_config')!;
       const result = await handler({
+        confirm: true,
         name: 'Test Config',
         project_id: TEST_PROJECT_ID,
         schedule_days: ['tue'],
@@ -425,6 +459,7 @@ describe('autopilot tools', () => {
 
       const handler = server.getHandler('create_autopilot_config')!;
       const result = await handler({
+        confirm: true,
         name: 'Duplicate',
         project_id: TEST_PROJECT_ID,
         schedule_days: ['mon'],
@@ -433,6 +468,20 @@ describe('autopilot tools', () => {
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('Error creating autopilot config');
+    });
+
+    it('fails closed before creating an automation without confirmation', async () => {
+      const result = await server.getHandler('create_autopilot_config')!({
+        name: 'Unconfirmed',
+        project_id: TEST_PROJECT_ID,
+        schedule_days: ['mon'],
+        schedule_time: '09:00',
+        approval_mode: 'review_all',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('confirm=true');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 });

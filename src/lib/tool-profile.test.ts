@@ -12,6 +12,7 @@ describe('tool profiles', () => {
     expect(resolveToolProfile(undefined)).toBe('full');
     expect(resolveToolProfile('full')).toBe('full');
     expect(resolveToolProfile('anthropic-directory')).toBe('anthropic-directory');
+    expect(resolveToolProfile('internal')).toBe('internal');
     expect(() => resolveToolProfile('typo')).toThrow(/Unsupported MCP_TOOL_PROFILE/);
   });
 
@@ -43,5 +44,34 @@ describe('tool profiles', () => {
     expect(registered.execute_recipe).toBeUndefined();
     expect(registered.generate_content).toBeDefined();
     expect(registered.schedule_post).toBeDefined();
+  });
+
+  it('keeps operations-only tools out of the default stdio registry', () => {
+    const server = new McpServer({ name: 'stdio-profile-test', version: '0.0.0' });
+    registerAllTools(server, {
+      skipApps: true,
+      toolProfile: 'full',
+    });
+
+    const registered = (server as unknown as { _registeredTools: Record<string, unknown> })
+      ._registeredTools;
+    expect(Object.keys(registered)).toHaveLength(91);
+    expect(registered.capture_screenshot).toBeDefined();
+    expect(registered.write_agent_reflection).toBeUndefined();
+    expect(registered.get_loop_pulse).toBeUndefined();
+  });
+
+  it('registers operations-only tools only under the explicit internal profile', () => {
+    const server = new McpServer({ name: 'internal-profile-test', version: '0.0.0' });
+    registerAllTools(server, {
+      skipApps: true,
+      toolProfile: 'internal',
+    });
+
+    const registered = (server as unknown as { _registeredTools: Record<string, unknown> })
+      ._registeredTools;
+    expect(Object.keys(registered)).toHaveLength(102);
+    expect(registered.write_agent_reflection).toBeDefined();
+    expect(registered.get_loop_pulse).toBeDefined();
   });
 });

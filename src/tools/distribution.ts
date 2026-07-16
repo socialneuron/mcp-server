@@ -20,6 +20,7 @@ import type {
 } from "../types/index.js";
 import { MCP_VERSION } from "../lib/version.js";
 import { resolveConnectedAccountRouting } from "../lib/connected-account-routing.js";
+import { toolError } from "../lib/tool-error.js";
 
 /** Convert snake_case keys to camelCase (one level deep) */
 function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
@@ -297,8 +298,13 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "schedule_post",
-    'Publish or schedule a post to connected social platforms. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete the platform OAuth (this is a one-time setup on socialneuron.com, not another OAuth in Claude). After they approve, call `wait_for_connection` and only then call schedule_post. For Instagram carousels: use media_type=CAROUSEL_ALBUM with 2-10 media_urls. For YouTube: title is required. schedule_at uses ISO 8601 (e.g. "2026-03-20T14:00:00Z") — omit to post immediately.',
+    'Publish or schedule a post to connected social platforms. This is externally visible and always requires confirm=true. ALWAYS call `list_connected_accounts` FIRST — if the target platform is not connected, call `start_platform_connection` to get a one-time browser deep link the user opens to complete the platform OAuth. General live posting: YouTube, TikTok, X/Twitter, and Bluesky. Instagram uses the current bridge/tester lane; Facebook is tester-only; Threads is a tester/code path; LinkedIn is not live and is rejected. For Instagram carousels: use media_type=CAROUSEL_ALBUM with 2-10 media_urls. For YouTube: title is required. schedule_at uses ISO 8601 — omit to post immediately.',
     {
+      confirm: z
+        .literal(true)
+        .describe(
+          'Required. Confirms the exact project, connected accounts, platforms, content, media, and publish/schedule time.'
+        ),
       media_url: z
         .string()
         .optional()
@@ -486,7 +492,7 @@ export function registerDistributionTools(server: McpServer): void {
         )
         .min(1)
         .describe(
-          "Target platforms (array). Each must have active OAuth — check list_connected_accounts first. Values: youtube, tiktok, instagram, twitter, linkedin, facebook, threads, bluesky.",
+          "Target platforms (array). Each must have active OAuth — check list_connected_accounts first. Live: youtube, tiktok, twitter, bluesky. Limited: instagram bridge/tester; facebook tester-only; threads tester/code path. linkedin is retained for schema compatibility but rejected until its connector is live.",
         ),
       title: z
         .string()
@@ -1106,8 +1112,11 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "reschedule_post",
-    "Move an existing pending or scheduled post to a new future time without creating a duplicate. Pass project_id for the post's brand. expected_scheduled_at is recommended: it prevents overwriting a change made in another client after the calendar was loaded.",
+    "Move an existing pending or scheduled post to a new future time without creating a duplicate. Requires confirm=true. Pass project_id for the post's brand and expected_scheduled_at to prevent overwriting a change made in another client.",
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact post, project, and new publication time.'),
       post_id: z
         .string()
         .uuid()
@@ -1801,8 +1810,14 @@ export function registerDistributionTools(server: McpServer): void {
   // ── schedule_content_plan ───────────────────────────────────────────
   server.tool(
     "schedule_content_plan",
-    "Schedule all posts in a content plan. Optionally auto-assigns time slots and runs quality checks before scheduling. Supports dry-run mode.",
+    "Preview or schedule all approved posts in exactly one inline or persisted content plan. Defaults to dry_run=true. Live scheduling requires dry_run=false and confirm=true after reviewing project, accounts, quality results, times, and platforms.",
     {
+      confirm: z
+        .literal(true)
+        .optional()
+        .describe(
+          "Required when dry_run=false. Confirms the exact plan, project, connected accounts, platforms, and schedule times.",
+        ),
       plan: z
         .object({
           project_id: z.string().uuid().optional(),
@@ -1849,8 +1864,8 @@ export function registerDistributionTools(server: McpServer): void {
         .describe("Auto-assign time slots for posts without schedule_at"),
       dry_run: z
         .boolean()
-        .default(false)
-        .describe("Preview without actually scheduling"),
+        .default(true)
+        .describe("Preview without scheduling or changing plan state (default: true)."),
       response_format: z.enum(["text", "json"]).default("text"),
       enforce_quality: z
         .boolean()
@@ -1881,6 +1896,7 @@ export function registerDistributionTools(server: McpServer): void {
         .describe("Optional stable seed used when building idempotency keys."),
     },
     async ({
+      confirm,
       plan,
       plan_id,
       project_id,
@@ -1894,6 +1910,20 @@ export function registerDistributionTools(server: McpServer): void {
       idempotency_seed,
     }) => {
       try {
+        if ((plan !== undefined) === (plan_id !== undefined)) {
+          return toolError(
+            "validation_error",
+            "Provide exactly one of plan (inline) or plan_id (persisted).",
+          );
+        }
+        const effectiveDryRun = dry_run ?? true;
+        if (!effectiveDryRun && confirm !== true) {
+          return toolError(
+            "policy_block",
+            "Live plan scheduling requires dry_run=false and confirm=true after reviewing the dry-run result.",
+          );
+        }
+
         // Zod applies this default over the MCP transport, but unit/direct
         // callers invoke handlers without parsing. Keep runtime behaviour safe
         // and deterministic at the actual batching boundary too.
@@ -2260,19 +2290,8 @@ export function registerDistributionTools(server: McpServer): void {
               : 0,
         };
 
-        if (dry_run) {
+        if (effectiveDryRun) {
           const passed = qualitySummary.passed;
-          if (effectivePlanId) {
-            try {
-              await callEdgeFunction("mcp-data", {
-                action: "update-plan-status",
-                plan_id: effectivePlanId,
-                quality_summary: qualitySummary,
-              });
-            } catch {
-              // Non-fatal in dry-run path
-            }
-          }
 
           if (response_format === "json") {
             return {

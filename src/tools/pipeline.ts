@@ -8,6 +8,7 @@ import { evaluateQuality } from "../lib/quality.js";
 import { MCP_VERSION } from "../lib/version.js";
 import { extractJsonArray } from "../lib/parse-utils.js";
 import { resolveConnectedAccountRouting } from "../lib/connected-account-routing.js";
+import { toolError } from "../lib/tool-error.js";
 import type {
   ResponseEnvelope,
   PipelineReadinessCheck,
@@ -1059,10 +1060,19 @@ export function registerPipelineTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "auto_approve_plan",
-    "Batch auto-approve posts in a content plan that meet quality thresholds. " +
-      "Posts below the threshold are flagged for manual review.",
+    "Preview or batch auto-approve posts in a project-bound content plan that meet quality thresholds. " +
+      "Defaults to dry_run=true. Persisting approval decisions requires dry_run=false and confirm=true; posts below the threshold are flagged for manual review.",
     {
       plan_id: z.string().uuid().describe("Content plan ID"),
+      project_id: z.string().uuid().describe("Exact project that owns the content plan"),
+      dry_run: z
+        .boolean()
+        .default(true)
+        .describe("Preview decisions without changing the plan or approval rows (default: true)"),
+      confirm: z
+        .literal(true)
+        .optional()
+        .describe("Required with dry_run=false. Confirms the exact project, plan, threshold, and approval decisions."),
       quality_threshold: z
         .number()
         .min(0)
@@ -1071,8 +1081,15 @@ export function registerPipelineTools(server: McpServer): void {
         .describe("Minimum quality score to auto-approve"),
       response_format: z.enum(["text", "json"]).default("json"),
     },
-    async ({ plan_id, quality_threshold, response_format }) => {
+    async ({ plan_id, project_id, dry_run, confirm, quality_threshold, response_format }) => {
       try {
+        const effectiveDryRun = dry_run ?? true;
+        if (!effectiveDryRun && confirm !== true) {
+          return toolError(
+            "policy_block",
+            "Persisting auto-approval decisions requires dry_run=false and confirm=true after reviewing the preview.",
+          );
+        }
         // Load the plan via mcp-data
         const { data: loadResult, error: loadError } = await callEdgeFunction<{
           success: boolean;
@@ -1084,7 +1101,13 @@ export function registerPipelineTools(server: McpServer): void {
           } | null;
         }>(
           "mcp-data",
-          { action: "auto-approve-plan", plan_id },
+          {
+            action: "auto-approve-plan",
+            plan_id,
+            projectId: project_id,
+            project_id,
+            dry_run: true,
+          },
           { timeoutMs: 10_000 },
         );
 
@@ -1111,6 +1134,12 @@ export function registerPipelineTools(server: McpServer): void {
             ],
             isError: true,
           };
+        }
+        if (stored.project_id !== project_id) {
+          return toolError(
+            "not_found",
+            `Plan ${plan_id} was not found in project ${project_id}.`,
+          );
         }
 
         const plan = stored.plan_payload;
@@ -1181,7 +1210,7 @@ export function registerPipelineTools(server: McpServer): void {
           }
         }
 
-        // Save results via mcp-data
+        // Save results via mcp-data only after an explicit live confirmation.
         const newStatus =
           flagged === 0 && rejected === 0 ? "approved" : "in_review";
 
@@ -1201,20 +1230,28 @@ export function registerPipelineTools(server: McpServer): void {
           auto_approved: post.status === "approved",
         }));
 
-        await callEdgeFunction(
-          "mcp-data",
-          {
-            action: "auto-approve-plan",
-            plan_id,
-            plan_status: newStatus,
-            plan_payload: { ...plan, posts },
-            posts: resolvedRows,
-          },
-          { timeoutMs: 10_000 },
-        );
+        if (!effectiveDryRun) {
+          await callEdgeFunction(
+            "mcp-data",
+            {
+              action: "auto-approve-plan",
+              plan_id,
+              projectId: project_id,
+              project_id,
+              dry_run: false,
+              confirm: true,
+              plan_status: newStatus,
+              plan_payload: { ...plan, posts },
+              posts: resolvedRows,
+            },
+            { timeoutMs: 10_000 },
+          );
+        }
 
         const resultPayload = {
           plan_id,
+          project_id,
+          dry_run: effectiveDryRun,
           auto_approved: autoApproved,
           flagged_for_review: flagged,
           rejected,

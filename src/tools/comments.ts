@@ -206,8 +206,11 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "reply_to_comment",
-    "Reply to a YouTube comment. Get the parent_id from list_comments results. Reply appears as the authenticated channel. Use for community engagement after checking list_comments for questions or feedback.",
+    "Reply publicly to a YouTube comment as the connected channel. This is external speech and requires confirm=true. Get parent_id from list_comments after reviewing the exact comment, project, and connected account.",
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact public reply text, parent comment, project, and YouTube channel.'),
       parent_id: z
         .string()
         .describe(
@@ -307,8 +310,11 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "post_comment",
-    "Post a new top-level comment on a YouTube video, authored as the connected channel. Use for proactive engagement on your own videos. For replies to existing comments use reply_to_comment instead — this tool only creates top-level comments. video_id comes from list_recent_posts (platform_post_id field) or any YouTube URL (the v= parameter, 11 chars). Subject to YouTube anti-spam rate limits; calls return rate_limited if exceeded.",
+    "Post a new public top-level YouTube comment as the connected channel. This is external speech and requires confirm=true. Use reply_to_comment for replies. Review the exact video, text, project, and connected account before confirming.",
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact public comment text, video, project, and YouTube channel.'),
       video_id: z.string().describe("The YouTube video ID to comment on."),
       text: z.string().min(1).describe("The comment text."),
       connected_account_id: z
@@ -401,8 +407,11 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "moderate_comment",
-    'Moderate a YouTube comment on your channel — set status to "published" (approve) or "rejected" (hide from public view but kept in moderation queue). Use after list_comments surfaces a comment that needs action. For permanent removal use delete_comment instead. comment_id comes from list_comments results.',
+    'Moderate a YouTube comment on your channel. This changes public visibility and requires confirm=true. Set status to "published" (approve) or "rejected" (hide but retain in the moderation queue). Use delete_comment for permanent removal.',
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms the exact moderation action, comment, project, and YouTube channel.'),
       comment_id: z.string().describe("The comment ID to moderate."),
       moderation_status: z
         .enum(["published", "rejected"])
@@ -507,8 +516,11 @@ export function registerCommentsTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     "delete_comment",
-    "Delete a YouTube comment. Only works for comments owned by the authenticated channel.",
+    "Permanently delete a YouTube comment owned by the connected channel. This is irreversible and requires confirm=true after reviewing the exact comment, project, and channel.",
     {
+      confirm: z
+        .literal(true)
+        .describe('Required. Confirms permanent deletion of the exact YouTube comment.'),
       comment_id: z.string().describe("The comment ID to delete."),
       connected_account_id: z
         .string()

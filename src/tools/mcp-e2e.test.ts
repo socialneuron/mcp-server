@@ -10,6 +10,10 @@ import { TOOL_SCOPES } from '../auth/scopes.js';
 import { registerAllTools } from '../lib/register-tools.js';
 import { registerDiscoveryTools } from './discovery.js';
 
+const PUBLIC_HOSTED_CATALOG = TOOL_CATALOG.filter(
+  tool => !tool.internal && !tool.hiddenFromPublicCount && tool.module !== 'apps'
+);
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -43,7 +47,7 @@ describe('Tool catalog integrity', () => {
 
   it('registerAllTools registers same count as TOOL_CATALOG', () => {
     const server = createMockServer();
-    registerAllTools(server as any);
+    registerAllTools(server as any, { toolProfile: 'internal' });
     // Tools may register via the legacy .tool() API or the current
     // .registerTool() API (used by @modelcontextprotocol/ext-apps for MCP Apps).
     // _handlers unifies both; count it instead of the individual spies.
@@ -63,7 +67,7 @@ describe('search_tools detail levels', () => {
   it('"name" returns string array', async () => {
     const result = parseResult(await handler({ detail: 'name' }));
     expect(result.toolCount).toBe(
-      TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).length
+      PUBLIC_HOSTED_CATALOG.length
     );
     expect(typeof result.tools[0]).toBe('string');
   });
@@ -155,7 +159,7 @@ describe('search_tools combined filters', () => {
   it('empty query returns all discoverable tools', async () => {
     const result = parseResult(await handler({ detail: 'name' }));
     expect(result.toolCount).toBe(
-      TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).length
+      PUBLIC_HOSTED_CATALOG.length
     );
   });
 });

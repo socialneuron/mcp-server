@@ -1369,6 +1369,7 @@ describe("distribution tools", () => {
 
       const handler = server.getHandler("schedule_content_plan")!;
       const result = await handler({
+        confirm: true,
         plan_id: planId,
         auto_slot: false,
         dry_run: true,
@@ -1394,6 +1395,39 @@ describe("distribution tools", () => {
         (c) => c[0] === "schedule-post",
       );
       expect(schedulePostCalls).toHaveLength(0);
+      const updateStatusCalls = mockCallEdge.mock.calls.filter(
+        (c) => c[0] === "mcp-data" && c[1]?.action === "update-plan-status",
+      );
+      expect(updateStatusCalls).toHaveLength(0);
+    });
+
+    it("requires exactly one inline or persisted plan", async () => {
+      const handler = server.getHandler("schedule_content_plan")!;
+
+      const missing = await handler({ dry_run: true });
+      expect(missing.isError).toBe(true);
+      expect(missing.content[0].text).toContain("exactly one");
+
+      const ambiguous = await handler({
+        plan_id: "66666666-6666-4666-8666-666666666666",
+        plan: { posts: [] },
+        dry_run: true,
+      });
+      expect(ambiguous.isError).toBe(true);
+      expect(ambiguous.content[0].text).toContain("exactly one");
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it("requires explicit confirmation before live scheduling", async () => {
+      const handler = server.getHandler("schedule_content_plan")!;
+      const result = await handler({
+        plan_id: "77777777-7777-4777-8777-777777777777",
+        dry_run: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("confirm=true");
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it("returns error when approvals exist but none are approved/edited", async () => {
@@ -1436,6 +1470,7 @@ describe("distribution tools", () => {
 
       const handler = server.getHandler("schedule_content_plan")!;
       const result = await handler({
+        confirm: true,
         plan_id: planId,
         auto_slot: false,
         dry_run: false,
@@ -1477,6 +1512,7 @@ describe("distribution tools", () => {
 
       const handler = server.getHandler("schedule_content_plan")!;
       const result = await handler({
+        confirm: true,
         plan_id: planId,
         auto_slot: false,
         dry_run: false,

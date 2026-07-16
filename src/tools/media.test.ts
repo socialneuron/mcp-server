@@ -2,6 +2,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerMediaTools } from './media.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
+import { readFile } from 'node:fs/promises';
+
+vi.mock('node:fs/promises', () => ({ readFile: vi.fn() }));
 
 // Stub SSRF so upload_media URL-mode tests don't hit real DNS for fictional hosts.
 vi.mock('../lib/ssrf.js', async () => {
@@ -32,12 +36,21 @@ vi.mock('../lib/ssrf.js', async () => {
 });
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockResolveProject = vi.mocked(resolveProjectStrict);
+const mockReadFile = vi.mocked(readFile);
 
 describe('media tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockCallEdge.mockReset();
+    mockCallEdge.mockResolvedValue({ data: null, error: null });
+    mockReadFile.mockReset();
+    mockResolveProject.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
+    mockReadFile.mockRejectedValue(new Error('not found'));
     server = createMockServer();
     registerMediaTools(server as any);
   });
@@ -166,6 +179,19 @@ describe('media tools', () => {
         expect.objectContaining({ projectId: 'proj-123' }),
         expect.any(Object)
       );
+    });
+
+    it('fails before storage when a multi-project connection omits project_id', async () => {
+      mockResolveProject.mockResolvedValueOnce({
+        error: 'project_id is required. Configure an explicit project.',
+      });
+
+      const handler = server.getHandler('upload_media')!;
+      const result = await handler({ source: 'https://example.com/img.png' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     // -----------------------------------------------------------------------
@@ -340,6 +366,49 @@ describe('media tools', () => {
           expect(result.content[0].text).toContain('File not found');
           expect(result.content[0].text).toContain('file_data');
         } finally {
+          if (prior === undefined) delete process.env.MCP_TRANSPORT;
+          else process.env.MCP_TRANSPORT = prior;
+        }
+      });
+
+      it('binds a large stdio presigned PUT to its exact size and project', async () => {
+        const prior = process.env.MCP_TRANSPORT;
+        process.env.MCP_TRANSPORT = 'stdio';
+        const fetchSpy = vi
+          .spyOn(globalThis, 'fetch')
+          .mockResolvedValue(new Response(null, { status: 200 }));
+        mockReadFile.mockResolvedValueOnce(Buffer.alloc(11 * 1024 * 1024));
+        mockCallEdge
+          .mockResolvedValueOnce({
+            data: { url: 'https://put.example.com', key: 'org/u/project/videos/large.mp4' },
+            error: null,
+          })
+          .mockResolvedValueOnce({
+            data: { url: 'https://get.example.com' },
+            error: null,
+          });
+
+        try {
+          const handler = server.getHandler('upload_media')!;
+          const result = await handler({
+            source: '/tmp/large.mp4',
+            project_id: 'project-exact',
+            response_format: 'json',
+          });
+
+          expect(result.isError).toBe(false);
+          expect(mockCallEdge).toHaveBeenNthCalledWith(
+            1,
+            'get-signed-url',
+            expect.objectContaining({
+              operation: 'put',
+              fileSize: 11 * 1024 * 1024,
+              projectId: 'project-exact',
+            }),
+            expect.any(Object)
+          );
+        } finally {
+          fetchSpy.mockRestore();
           if (prior === undefined) delete process.env.MCP_TRANSPORT;
           else process.env.MCP_TRANSPORT = prior;
         }

@@ -17,6 +17,12 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAllTools } from './register-tools.js';
 import {
+  buildAnnotationsMap,
+  buildToolSecuritySchemes,
+  type ToolAnnotation,
+  type ToolSecurityScheme,
+} from './tool-annotations.js';
+import {
   publicToolsForProfile,
   type ToolProfile,
 } from './tool-profile.js';
@@ -26,6 +32,11 @@ export type DiscoveryTool = {
   name: string;
   description: string;
   inputSchema: { type: 'object'; properties: Record<string, unknown>; required?: string[] };
+  outputSchema?: Record<string, unknown>;
+  annotations?: ToolAnnotation;
+  securitySchemes?: ToolSecurityScheme[];
+  _meta?: Record<string, unknown>;
+  [key: string]: unknown;
 };
 
 const PUBLIC_SCHEMA_OMIT_PROPERTIES: Record<string, string[]> = {};
@@ -47,7 +58,8 @@ export function __resetDiscoveryCatalogCache(): void {
 }
 
 async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryTool[]> {
-  const schemaByName = new Map<string, DiscoveryTool['inputSchema']>();
+  const serializedByName = new Map<string, DiscoveryTool>();
+  const annotationsByName = buildAnnotationsMap();
   try {
     // Throwaway server — mirrors the HTTP-mode registration (skipScreenshots:true,
     // as http.ts does for the live transport). No user context, no session.
@@ -62,14 +74,7 @@ async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryT
               req: unknown,
               ctx: unknown
             ) => Promise<{
-              tools: Array<{
-                name: string;
-                inputSchema?: {
-                  type?: 'object';
-                  properties?: Record<string, unknown>;
-                  required?: string[];
-                };
-              }>;
+              tools: DiscoveryTool[];
             }>
           >;
         };
@@ -79,14 +84,7 @@ async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryT
     if (listHandler) {
       const out = await listHandler({ method: 'tools/list', params: {} }, {});
       for (const t of out.tools) {
-        const props = t.inputSchema?.properties;
-        if (props && Object.keys(props).length > 0) {
-          schemaByName.set(t.name, {
-            type: 'object',
-            properties: props,
-            ...(t.inputSchema?.required ? { required: t.inputSchema.required } : {}),
-          });
-        }
+        serializedByName.set(t.name, t);
       }
     }
   } catch (err) {
@@ -99,14 +97,28 @@ async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryT
   // localOnly tools (e.g. screenshots needing Playwright) aren't registered on
   // the HTTP transport — don't advertise them in HTTP discovery. Internal
   // operations tools are registered but likewise not advertised.
-  return publicToolsForProfile(profile).map(t => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: sanitizePublicInputSchema(
-      t.name,
-      schemaByName.get(t.name) ?? { type: 'object' as const, properties: {} }
-    ),
-  }));
+  return publicToolsForProfile(profile).map(t => {
+    const serialized = serializedByName.get(t.name);
+    const annotations = serialized?.annotations ?? annotationsByName.get(t.name);
+    const securitySchemes =
+      serialized?.securitySchemes ?? buildToolSecuritySchemes(t.name);
+    const inputSchema = serialized?.inputSchema ?? {
+      type: 'object' as const,
+      properties: {},
+    };
+
+    return {
+      // Preserve every protocol field produced by the SDK. In particular this
+      // retains MCP safety annotations, OAuth securitySchemes, output schemas,
+      // and MCP App `_meta.ui.resourceUri` metadata.
+      ...(serialized ?? {}),
+      name: t.name,
+      description: t.description,
+      inputSchema: sanitizePublicInputSchema(t.name, inputSchema),
+      ...(annotations ? { annotations } : {}),
+      ...(securitySchemes.length > 0 ? { securitySchemes } : {}),
+    };
+  });
 }
 
 function sanitizePublicInputSchema(

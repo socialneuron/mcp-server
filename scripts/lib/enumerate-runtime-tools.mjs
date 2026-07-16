@@ -45,7 +45,10 @@ export async function enumerateRuntimeTools() {
         `  return toJsonSchemaCompat(objectSchema, { strictUnions: true, pipeStrategy: 'input' });\n` +
         `}\n` +
         `const server = new McpServer({ name: 'tools-lock', version: '0' });\n` +
-        `registerAllTools(server);\n` +
+        // The integrity seal covers the union of public, local-only, and
+        // internal tools. Runtime defaults intentionally expose only the
+        // public profile, so request the explicit internal superset here.
+        `registerAllTools(server, { toolProfile: 'internal' });\n` +
         `const reg = server._registeredTools ?? {};\n` +
         `const out = {};\n` +
         `for (const [name, t] of Object.entries(reg)) {\n` +

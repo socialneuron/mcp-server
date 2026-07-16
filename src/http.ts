@@ -484,9 +484,10 @@ function normalizeOAuthResourceParam(value: unknown): string | undefined {
   const strings = values.filter(
     (item): item is string => typeof item === "string" && item.length > 0,
   );
-  const issuer = OAUTH_ISSUER_URL.replace(/\/$/, "");
+  const protectedResource = MCP_SERVER_URL.replace(/\/$/, "");
   return (
-    strings.find((item) => item.replace(/\/$/, "") === issuer) ?? strings[0]
+    strings.find((item) => item.replace(/\/$/, "") === protectedResource) ??
+    strings[0]
   );
 }
 

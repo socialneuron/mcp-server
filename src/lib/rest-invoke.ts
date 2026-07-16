@@ -43,7 +43,7 @@ function getCallHandler(): CallHandler | null {
     // exactly as the /mcp route does. Falls back to [] (default-deny) if no
     // request context — never to a permissive default.
     applyScopeEnforcement(server, () => getRequestScopes() ?? []);
-    registerAllTools(server, { skipScreenshots: true });
+    registerAllTools(server, { skipScreenshots: true, toolProfile: 'full' });
 
     const handlers = (
       server as unknown as { server: { _requestHandlers: Map<string, CallHandler> } }

@@ -76,11 +76,17 @@ describe('SDK canonical REST tool contract', () => {
     await sn.content.adapt({ content: 'copy', target_platform: 'linkedin', project_id });
     await sn.content.trends({ source: 'youtube' });
     await sn.content.deleteCarousel({ content_id, project_id, confirm: true });
-    await sn.posts.schedule({ platforms: ['linkedin'], caption: 'post', project_id });
+    await sn.posts.schedule({
+      platforms: ['linkedin'],
+      caption: 'post',
+      project_id,
+      confirm: true,
+    });
     await sn.posts.reschedule({
       post_id: 'post-1',
       project_id,
       scheduled_at: '2030-01-01T12:00:00Z',
+      confirm: true,
     });
     await sn.posts.list({ project_id });
     await sn.posts.accounts({ project_id });
@@ -106,13 +112,50 @@ describe('SDK canonical REST tool contract', () => {
     await sn.plans.approvals(plan_id, 'pending');
     await sn.plans.delete({ plan_id, project_id, confirm: true });
     await sn.comments.list({ video_id: 'abcdefghijk' });
-    await sn.comments.post({ video_id: 'abcdefghijk', text: 'hello' });
-    await sn.comments.reply('comment-1', { text: 'reply' });
-    await sn.comments.moderate('comment-1', { moderation_status: 'rejected' });
-    await sn.comments.delete('comment-1');
+    await sn.comments.post({
+      video_id: 'abcdefghijk',
+      text: 'hello',
+      project_id,
+      confirm: true,
+    });
+    await sn.comments.reply('comment-1', { text: 'reply', project_id, confirm: true });
+    await sn.comments.moderate('comment-1', {
+      moderation_status: 'rejected',
+      project_id,
+      confirm: true,
+    });
+    await sn.comments.delete('comment-1', { project_id, confirm: true });
+    await sn.plans.respondApproval({
+      approval_id: '77777777-7777-4777-8777-777777777777',
+      project_id,
+      decision: 'approved',
+      confirm: true,
+    });
     await sn.jobs.check('job-1');
     await sn.jobs.cancel({ job_id, project_id, confirm: true });
     await sn.autopilot.deleteConfiguration({ config_id, project_id, confirm: true });
+    await sn.autopilot.createConfiguration({
+      name: 'SDK contract',
+      project_id,
+      schedule_days: ['mon'],
+      schedule_time: '09:00',
+      confirm: true,
+    });
+    await sn.autopilot.updateConfiguration({
+      config_id,
+      project_id,
+      is_active: false,
+      confirm: true,
+    });
+    await sn.recipes.list();
+    await sn.recipes.get('weekly-instagram-calendar');
+    await sn.recipes.execute({
+      slug: 'weekly-instagram-calendar',
+      project_id,
+      inputs: {},
+      dry_run: true,
+    });
+    await sn.recipes.status('88888888-8888-4888-8888-888888888888');
     await sn.account.credits();
     await sn.account.usage();
     await sn.tools.execute('quality_check', { content: 'copy', platform: 'linkedin' });
@@ -124,7 +167,7 @@ describe('SDK canonical REST tool contract', () => {
       .map((path) => decodeURIComponent(path.slice('/v1/tools/'.length)));
     const catalogNames = new Set(TOOL_CATALOG.map((tool) => tool.name));
 
-    expect(toolNames).toHaveLength(40);
+    expect(toolNames).toHaveLength(47);
     for (const name of toolNames) expect(catalogNames.has(name), name).toBe(true);
     expect(paths.filter((path) => path !== '/v1/tools' && !path.startsWith('/v1/tools/'))).toEqual(
       []
@@ -142,12 +185,19 @@ describe('SDK canonical REST tool contract', () => {
       project_id,
       scheduled_at: '2030-01-01T12:00:00Z',
       response_format: 'json',
+      confirm: true,
     });
     const cancelJobCall = calls.find(({ url }) => url.endsWith('/v1/tools/cancel_async_job'))!;
     expect(JSON.parse(String(cancelJobCall.init?.body))).toMatchObject({
       job_id,
       project_id,
       confirm: true,
+    });
+    const recipePreviewCall = calls.find(({ url }) => url.endsWith('/v1/tools/execute_recipe'))!;
+    expect(JSON.parse(String(recipePreviewCall.init?.body))).toMatchObject({
+      project_id,
+      dry_run: true,
+      response_format: 'json',
     });
   });
 
