@@ -558,6 +558,17 @@ describe('createOAuthProvider', () => {
       resource: 'https://mcp.socialneuron.com/mcp',
     };
 
+    it('fails closed when the protected resource is missing or invalid in production', () => {
+      process.env.NODE_ENV = 'production';
+
+      expect(() => createOAuthProvider(TEST_OPTIONS)).toThrow(
+        'valid HTTPS protected resource'
+      );
+      expect(() =>
+        createOAuthProvider({ ...TEST_OPTIONS, resource: 'http://mcp.socialneuron.com/mcp' })
+      ).toThrow('valid HTTPS protected resource');
+    });
+
     it('requires the exact protected resource during authorization', async () => {
       const provider = createOAuthProvider(resourceOptions);
       const client = makeClient();

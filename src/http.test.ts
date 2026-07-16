@@ -2,12 +2,35 @@ import { describe, it, expect } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { buildOriginPolicy, validateBrowserOrigin } from './lib/origin-policy.js';
+import { selectExactOAuthResource } from './lib/oauth-resource-param.js';
 
 // Since http.ts starts a server on import (express.listen, process handlers),
 // we test the key security behaviors via isolated unit tests that validate
 // the patterns used in the server without importing the module directly.
 
 describe('HTTP Server Security Patterns', () => {
+  describe('OAuth resource query normalization', () => {
+    const configuredResource = 'https://mcp.socialneuron.com/mcp';
+
+    it('selects the exact configured resource from repeated parameters', () => {
+      expect(
+        selectExactOAuthResource(
+          ['https://attacker.example/mcp', `${configuredResource}/`],
+          configuredResource
+        )
+      ).toBe(configuredResource);
+    });
+
+    it('never falls back to an attacker-controlled resource', () => {
+      expect(
+        selectExactOAuthResource(
+          ['https://attacker.example/mcp', 'not-a-resource'],
+          configuredResource
+        )
+      ).toBeUndefined();
+    });
+  });
+
   describe('Session ownership verification', () => {
     it('should reject session access from wrong user', () => {
       const sessions = new Map();

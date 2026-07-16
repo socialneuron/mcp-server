@@ -64,6 +64,7 @@ import {
   validateBrowserOrigin,
 } from "./lib/origin-policy.js";
 import { findOldestIdleSessionId } from "./lib/session-lru.js";
+import { selectExactOAuthResource } from "./lib/oauth-resource-param.js";
 
 // ── Configuration ────────────────────────────────────────────────────
 
@@ -479,30 +480,27 @@ const authRouter = mcpAuthRouter({
   scopesSupported: SCOPES_SUPPORTED,
 });
 
-function normalizeOAuthResourceParam(value: unknown): string | undefined {
-  const values = Array.isArray(value) ? value : [value];
-  const strings = values.filter(
-    (item): item is string => typeof item === "string" && item.length > 0,
-  );
-  const protectedResource = MCP_SERVER_URL.replace(/\/$/, "");
-  return (
-    strings.find((item) => item.replace(/\/$/, "") === protectedResource) ??
-    strings[0]
-  );
-}
-
-app.use((req, _res, next) => {
+app.use((req, res, next) => {
   if (
     (req.path === "/authorize" || req.path === "/token") &&
     Array.isArray(req.query.resource)
   ) {
-    const normalized = normalizeOAuthResourceParam(req.query.resource);
-    if (normalized) {
-      const normalizedUrl = new URL(req.originalUrl, OAUTH_ISSUER_URL);
-      normalizedUrl.searchParams.delete("resource");
-      normalizedUrl.searchParams.set("resource", normalized);
-      req.url = `${normalizedUrl.pathname}${normalizedUrl.search}`;
+    const normalized = selectExactOAuthResource(
+      req.query.resource,
+      MCP_SERVER_URL,
+    );
+    if (!normalized) {
+      res.status(400).json({
+        error: "invalid_target",
+        error_description:
+          "resource must match the configured MCP protected resource",
+      });
+      return;
     }
+    const normalizedUrl = new URL(req.originalUrl, OAUTH_ISSUER_URL);
+    normalizedUrl.searchParams.delete("resource");
+    normalizedUrl.searchParams.set("resource", normalized);
+    req.url = `${normalizedUrl.pathname}${normalizedUrl.search}`;
   }
   next();
 });

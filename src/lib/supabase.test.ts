@@ -4,6 +4,23 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 vi.unmock('./supabase.js');
 vi.unmock('../lib/supabase.js');
 
+const { validateApiKeyMock, loadApiKeyMock, readValidationCacheMock } = vi.hoisted(() => ({
+  validateApiKeyMock: vi.fn(),
+  loadApiKeyMock: vi.fn(),
+  readValidationCacheMock: vi.fn(),
+}));
+
+// Keep auth dependencies stable for the whole file. Per-test vi.doMock() plus
+// module resets was order-dependent in the full suite and made the
+// credential-retention regression guard intermittently observe a stale mock.
+vi.mock('../auth/api-keys.js', () => ({ validateApiKey: validateApiKeyMock }));
+vi.mock('../cli/credentials.js', () => ({ loadApiKey: loadApiKeyMock }));
+vi.mock('./validation-cache.js', () => ({
+  readValidationCache: readValidationCacheMock,
+  writeValidationCache: vi.fn(),
+  clearValidationCache: vi.fn(),
+}));
+
 // Mock createClient for the real supabase module
 vi.mock('@supabase/supabase-js', () => ({
   createClient: vi.fn(() => ({
@@ -30,6 +47,10 @@ describe('supabase module', () => {
   const ORIGINAL_ENV = { ...process.env };
 
   beforeEach(() => {
+    validateApiKeyMock.mockReset();
+    loadApiKeyMock.mockReset();
+    readValidationCacheMock.mockReset();
+
     // Set env vars that the module reads at load time
     process.env.SOCIALNEURON_SUPABASE_URL = 'https://test.supabase.co';
     process.env.SOCIALNEURON_SERVICE_KEY = 'test-service-key';
@@ -198,29 +219,19 @@ describe('supabase module', () => {
     // would leave it valid for up to 5 min (the hole closed by this PR).
 
     it('always calls validateApiKey remotely even when disk cache would be warm', async () => {
-      const validateApiKey = vi.fn().mockResolvedValue({
+      validateApiKeyMock.mockResolvedValue({
         valid: true,
         userId: 'user-revoke-test',
         scopes: ['mcp:full'],
       });
 
       // Return a "warm" cache hit to prove initializeAuth ignores it.
-      const readValidationCache = vi.fn().mockReturnValue({
+      readValidationCacheMock.mockReturnValue({
         valid: true,
         userId: 'user-stale-cached',
         scopes: ['mcp:full'],
       });
-      const writeValidationCache = vi.fn();
-
-      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
-      vi.doMock('./validation-cache.js', () => ({
-        readValidationCache,
-        writeValidationCache,
-        clearValidationCache: vi.fn(),
-      }));
-      vi.doMock('../cli/credentials.js', () => ({
-        loadApiKey: vi.fn().mockResolvedValue('snk_live_testkey123'),
-      }));
+      loadApiKeyMock.mockResolvedValue('snk_live_testkey123');
 
       // Reset the module so the new mocks take effect.
       vi.resetModules();
@@ -229,39 +240,26 @@ describe('supabase module', () => {
       await initializeAuth();
 
       // The remote validator MUST have been called exactly once.
-      expect(validateApiKey).toHaveBeenCalledTimes(1);
-      expect(validateApiKey).toHaveBeenCalledWith('snk_live_testkey123');
+      expect(validateApiKeyMock).toHaveBeenCalledTimes(1);
+      expect(validateApiKeyMock).toHaveBeenCalledWith('snk_live_testkey123');
 
       // The disk cache MUST NOT have been consulted.
-      expect(readValidationCache).not.toHaveBeenCalled();
-
-      vi.doUnmock('../auth/api-keys.js');
-      vi.doUnmock('./validation-cache.js');
-      vi.doUnmock('../cli/credentials.js');
+      expect(readValidationCacheMock).not.toHaveBeenCalled();
       vi.resetModules();
     });
 
     it('rejects a revoked key immediately without serving a cached result', async () => {
-      const validateApiKey = vi.fn().mockResolvedValue({
+      validateApiKeyMock.mockResolvedValue({
         valid: false,
         error: 'Key has been revoked',
         retryable: false,
       });
-      const readValidationCache = vi.fn().mockReturnValue({
+      readValidationCacheMock.mockReturnValue({
         valid: true,
         userId: 'user-stale',
         scopes: ['mcp:full'],
       });
-
-      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
-      vi.doMock('./validation-cache.js', () => ({
-        readValidationCache,
-        writeValidationCache: vi.fn(),
-        clearValidationCache: vi.fn(),
-      }));
-      vi.doMock('../cli/credentials.js', () => ({
-        loadApiKey: vi.fn().mockResolvedValue('snk_live_revokedkey'),
-      }));
+      loadApiKeyMock.mockResolvedValue('snk_live_revokedkey');
 
       vi.resetModules();
       const { initializeAuth } = await import('./supabase.js');
@@ -269,12 +267,8 @@ describe('supabase module', () => {
       await expect(initializeAuth()).rejects.toThrow(/invalid|expired|revoked/i);
 
       // Remote check was called; disk cache was not served.
-      expect(validateApiKey).toHaveBeenCalledTimes(1);
-      expect(readValidationCache).not.toHaveBeenCalled();
-
-      vi.doUnmock('../auth/api-keys.js');
-      vi.doUnmock('./validation-cache.js');
-      vi.doUnmock('../cli/credentials.js');
+      expect(validateApiKeyMock).toHaveBeenCalledTimes(1);
+      expect(readValidationCacheMock).not.toHaveBeenCalled();
       vi.resetModules();
     });
   });
@@ -292,17 +286,13 @@ describe('supabase module', () => {
   // ---------------------------------------------------------------------------
   describe('authenticated key project scope (stdio mode)', () => {
     it('getDefaultProjectId() returns the validated key own scope, never the DB guess', async () => {
-      const validateApiKey = vi.fn().mockResolvedValue({
+      validateApiKeyMock.mockResolvedValue({
         valid: true,
         userId: 'user-scoped',
         scopes: ['mcp:read'],
         projectId: 'proj-key-own-scope',
       });
-
-      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
-      vi.doMock('../cli/credentials.js', () => ({
-        loadApiKey: vi.fn().mockResolvedValue('snk_live_scopedkey'),
-      }));
+      loadApiKeyMock.mockResolvedValue('snk_live_scopedkey');
 
       vi.resetModules();
       const { initializeAuth, getAuthenticatedProjectId, getDefaultProjectId } =
@@ -317,23 +307,17 @@ describe('supabase module', () => {
       // client would otherwise resolve 'project-db').
       await expect(getDefaultProjectId()).resolves.toBe('proj-key-own-scope');
 
-      vi.doUnmock('../auth/api-keys.js');
-      vi.doUnmock('../cli/credentials.js');
       vi.resetModules();
     });
 
     it('getAuthenticatedProjectId() is null for an unscoped key', async () => {
-      const validateApiKey = vi.fn().mockResolvedValue({
+      validateApiKeyMock.mockResolvedValue({
         valid: true,
         userId: 'user-unscoped',
         scopes: ['mcp:read'],
         // no projectId — a normal, first-class unscoped key
       });
-
-      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
-      vi.doMock('../cli/credentials.js', () => ({
-        loadApiKey: vi.fn().mockResolvedValue('snk_live_unscopedkey'),
-      }));
+      loadApiKeyMock.mockResolvedValue('snk_live_unscopedkey');
 
       vi.resetModules();
       const { initializeAuth, getAuthenticatedProjectId } = await import('./supabase.js');
@@ -342,8 +326,6 @@ describe('supabase module', () => {
 
       expect(getAuthenticatedProjectId()).toBeNull();
 
-      vi.doUnmock('../auth/api-keys.js');
-      vi.doUnmock('../cli/credentials.js');
       vi.resetModules();
     });
   });

@@ -48,6 +48,14 @@ for (const [name, info] of Object.entries(locked)) {
 
 const committedNames = new Set(Object.keys(committed.tools || {}));
 const freshNames = new Set(Object.keys(fresh));
+const expectedCounts = {
+  tool_count: freshNames.size,
+  runtime_tool_count: Object.values(locked).filter(info => info.runtime).length,
+  catalog_tool_count: Object.values(locked).filter(info => info.catalog).length,
+};
+const countMismatches = Object.entries(expectedCounts).filter(
+  ([field, expected]) => committed[field] !== expected
+);
 const added = [...freshNames].filter((n) => !committedNames.has(n)).sort();
 const removed = [...committedNames].filter((n) => !freshNames.has(n)).sort();
 const changed = [...freshNames]
@@ -58,7 +66,8 @@ if (
   manifestContractErrors.length === 0 &&
   added.length === 0 &&
   removed.length === 0 &&
-  changed.length === 0
+  changed.length === 0 &&
+  countMismatches.length === 0
 ) {
   process.stdout.write(
     `✅ tools.lock.json matches model-visible tool metadata (${freshNames.size} tools).\n`
@@ -67,6 +76,12 @@ if (
 }
 
 console.error('❌ tools.lock.json drift detected:');
+if (countMismatches.length) {
+  console.error('\n   Count headers:');
+  for (const [field, expected] of countMismatches) {
+    console.error(`     ~ ${field}: committed ${committed[field]}, current ${expected}`);
+  }
+}
 if (manifestContractErrors.length) {
   console.error(`\n   Manifest contract (${manifestContractErrors.length}):`);
   for (const error of manifestContractErrors) console.error(`     ! ${error}`);

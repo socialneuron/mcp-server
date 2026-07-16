@@ -4,6 +4,24 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-07-16
+
+### Security
+
+- OAuth authorization-code and refresh exchanges now require short-lived, resource-bound connector tokens, exact RFC 8707 protected-resource matching, canonical public scopes, PKCE, refresh rotation, and revocation support. Hosted startup fails closed when the protected resource is missing or malformed.
+- Distribution-capable recipes and publishing, rescheduling, autopilot mutation, comment deletion, and other consequential operations require explicit confirmation and the corresponding public MCP scope.
+- Hosted discovery carries the MCP safety annotations, OAuth security schemes, and MCP App metadata used by Claude, Codex, REST, CLI, and SDK clients.
+
+### Breaking changes
+
+- Consequential MCP tools now require `confirm: true`; `execute_recipe` also requires an explicit `project_id` and server-verified effect scopes. Existing automations must preview, obtain approval where required, and then retry with confirmation.
+- `@socialneuron/sdk` 0.2.0 requires the confirmation parameter for comment deletion and mirrors the stricter REST/MCP contracts.
+
+### Fixed
+
+- Numeric MCP outputs remain numeric while card-like sensitive values are redacted consistently across all scanner runtimes.
+- CLI, REST, SDK, stdio, and hosted HTTP discovery now derive from the same locked 91-tool public catalog.
+
 ## [1.9.0] - 2026-07-15
 
 ### Added

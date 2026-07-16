@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "mcpName": "com.socialneuron/mcp-server",
-  "version": "1.9.0",
+  "version": "2.0.0",
   "description": "Official MCP server, REST API & CLI for Social Neuron — create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
@@ -71,7 +71,7 @@
     "build:lock": "node scripts/build-tools-lock.mjs",
     "install:apps": "npm ci --prefix apps/content-calendar --ignore-scripts --no-audit --no-fund && npm ci --prefix apps/analytics-pulse --ignore-scripts --no-audit --no-fund",
     "build:apps": "npm --prefix apps/content-calendar run typecheck && npm --prefix apps/content-calendar run build && npm --prefix apps/analytics-pulse run typecheck && npm --prefix apps/analytics-pulse run build && node scripts/copy-app-assets.mjs",
-    "build:all": "npm run build:stdio && npm run build && npm run build:sn && npm run build:lock && npm run build:apps",
+    "build:all": "npm run verify:lock && npm run build:stdio && npm run build && npm run build:sn && npm run build:apps",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",

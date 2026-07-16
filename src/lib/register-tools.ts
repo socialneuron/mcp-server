@@ -14,6 +14,8 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
 import { scan } from './agent-harness/scanner.js';
+import { scrubPii } from './agent-harness/detectors/pii.js';
+import { normalize } from './agent-harness/normalize.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -100,11 +102,12 @@ function redactBase64Payloads(args: unknown): unknown {
  *     called. Caller sees a domain error, not a thrown exception.
  *
  * Output pass (mode='sanitize', source='mcp_tool_output'):
- *   - Stringify result, feed to scanner. mcp_tool_output role preserves
- *     UUIDs (anchored PII regex) while redacting email / phone / etc.
- *   - On redaction: re-parse the sanitized JSON and return it. On parse
- *     failure, fail closed with a generic tool error so a scanner failure can
- *     never re-expose the content it just classified for redaction.
+ *   - Stringify the full result for the aggregate size/injection guard.
+ *   - Sanitize normalized string leaves, so Unicode-obfuscated PII is caught
+ *     without rewriting numeric JSON values into invalid syntax.
+ *   - Fail closed when a numeric leaf itself matches a PII pattern because a
+ *     JSON number cannot be replaced with a redaction marker in place.
+ *   - Re-parse the sanitized clone only when a string was actually redacted.
  *
  * Chains INSIDE `applyScopeEnforcement` — scope check runs first, scanner
  * second, original handler third. The scope-denial path (isError result)
@@ -147,12 +150,23 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     // 2. Execute the underlying handler.
     const result = await handler(...handlerArgs);
 
-    // 3. Scan output. Output role keeps UUIDs intact via anchored regex.
-    const outputText = JSON.stringify(result);
+    // 3. Scan the complete output for the aggregate size and injection guard.
+    // PII replacements from this pass are deliberately ignored: rewriting the
+    // serialized envelope can turn numeric JSON tokens into invalid syntax.
+    let outputText: string | undefined;
+    try {
+      outputText = JSON.stringify(result);
+    } catch {
+      return toolError(
+        'server_error',
+        'The response could not be returned safely. Please retry or contact support.'
+      );
+    }
     if (outputText === undefined) {
-      // Result was not JSON-serialisable (e.g. contains a Symbol / BigInt).
-      // Skip output scan rather than crash.
-      return result;
+      return toolError(
+        'server_error',
+        'The response could not be returned safely. Please retry or contact support.'
+      );
     }
     const outputScan = scan(outputText, {
       mode: 'sanitize',
@@ -170,14 +184,59 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
         'The response exceeded the safe output limit and was not returned.'
       );
     }
-    if (outputScan.sanitized_text !== undefined) {
+    let piiRedacted = false;
+    let unsanitizablePii = false;
+    const piiPatterns = new Set<string>();
+    const sanitizedOutputText = JSON.stringify(result, (_key, value: unknown) => {
+      if (typeof value === 'number') {
+        const pii = scrubPii(String(value), 'mcp_tool_output');
+        if (pii.redacted) {
+          unsanitizablePii = true;
+          for (const pattern of pii.patterns) piiPatterns.add(`pii_${pattern}`);
+        }
+        return value;
+      }
+      if (typeof value !== 'string') return value;
+      const pii = scrubPii(normalize(value), 'mcp_tool_output');
+      if (!pii.redacted) return value;
+      piiRedacted = true;
+      for (const pattern of pii.patterns) piiPatterns.add(`pii_${pattern}`);
+      return pii.text;
+    });
+
+    // The aggregate scanner can detect PII that cannot be represented safely
+    // by the leaf-preserving rewrite (notably a bare numeric card/phone token).
+    // Preserve the previous fail-closed posture and retain its audit event.
+    if (unsanitizablePii || (outputScan.pii_redacted && !piiRedacted)) {
       try {
-        ctx?.logScan?.(toolName, 'output', outputScan);
+        ctx?.logScan?.(toolName, 'output', {
+          ...outputScan,
+          flagged_patterns: [...new Set([...outputScan.flagged_patterns, ...piiPatterns])],
+          sanitized_text: undefined,
+          pii_redacted: true,
+        });
+      } catch {
+        // never block on audit log failure
+      }
+      return toolError(
+        'server_error',
+        'The response could not be returned safely. Please retry or contact support.'
+      );
+    }
+
+    if (piiRedacted && sanitizedOutputText !== undefined) {
+      try {
+        ctx?.logScan?.(toolName, 'output', {
+          ...outputScan,
+          flagged_patterns: [...new Set([...outputScan.flagged_patterns, ...piiPatterns])],
+          sanitized_text: undefined,
+          pii_redacted: true,
+        });
       } catch {
         // never block on audit log failure
       }
       try {
-        return JSON.parse(outputScan.sanitized_text);
+        return JSON.parse(sanitizedOutputText);
       } catch {
         return toolError(
           'server_error',

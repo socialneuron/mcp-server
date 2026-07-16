@@ -498,6 +498,15 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
   const clientsStore = createClientsStore();
   const expectedResource = normalizeOAuthResource(options.resource);
 
+  // Resource binding is a security boundary for hosted OAuth. A missing or
+  // malformed production value must stop the process instead of silently
+  // re-enabling the legacy, long-lived API-key exchange path.
+  if (process.env.NODE_ENV === 'production' && !expectedResource) {
+    throw new Error(
+      'MCP OAuth requires a valid HTTPS protected resource in production'
+    );
+  }
+
   const tokenVerifier = createTokenVerifier({
     supabaseUrl,
     supabaseAnonKey,
