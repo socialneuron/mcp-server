@@ -8,7 +8,10 @@ import {
   getDefaultProjectId,
   listAccessibleProjectsWithAccountStatus,
 } from "../lib/supabase.js";
-import { sanitizeDbError } from "../lib/sanitize-error.js";
+import {
+  sanitizeDbError,
+  redactSensitiveIdentifiers,
+} from "../lib/sanitize-error.js";
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
@@ -95,6 +98,16 @@ const VIDEO_CREDIT_ESTIMATES: Record<string, number> = {
   kling: 170,
 };
 
+// The seedance-2 family generates audio natively and its reference credit cost
+// already includes it — so audio defaults ON for these models. A false default
+// silently shipped no-audio mp4s for callers that omitted enable_audio
+// (seedance-2-fast job observed 2026-07-17). Every other model keeps the FALSE
+// default for cost control (audio is a paid multiplier there).
+const AUDIO_NATIVE_DEFAULT_MODELS: ReadonlySet<string> = new Set([
+  "seedance-2-fast",
+  "seedance-2",
+]);
+
 // The MCP-exposed model set, in quality-ladder order (best->worst for steering). Hidden by design: runway-aleph (upstream sunsets
 // 2026-07-30), sora2/sora2-pro (C-tier + OpenAI API shutdown 2026-09-24), luma +
 // midjourney-video (dead kie endpoints). Kept in sync with the server's exposure flags.
@@ -138,7 +151,8 @@ export function registerContentTools(server: McpServer): void {
       "wan-2.6 105 (5s) · gemini-omni-video 126 (multi-reference composites) · " +
       "hailuo-02-standard 180 / seedance-1.5-pro 150 / kling 170 (legacy/budget fallbacks). " +
       "Costs are estimated pre-check and reconciled post-response from the actual charge. " +
-      "audio adds ~1.5x on kling-3/kling-3-pro and ~2.65x on kling (enable_audio defaults to FALSE). " +
+      "audio adds ~1.5x on kling-3/kling-3-pro and ~2.65x on kling; enable_audio defaults to FALSE " +
+      "EXCEPT the seedance-2 family (seedance-2-fast, seedance-2) where audio is ON by default and its cost is already included. " +
       "Check get_credit_balance first for expensive generations.",
     {
       prompt: z
@@ -178,9 +192,11 @@ export function registerContentTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe(
-          "Enable native audio generation. DEFAULTS TO FALSE (cost control). Cost multiplier when true: " +
-            "kling 2.6 ~2.65x (17->45 cr/sec), kling-3 1.5x (20->30 cr/sec), kling-3-pro ~1.5x (27->40 cr/sec). " +
-            "seedance-2/-fast generate audio natively regardless. 5+ languages.",
+          "Enable native audio generation. For most models this DEFAULTS TO FALSE (cost control). " +
+            "EXCEPTION: the seedance-2 family (seedance-2-fast, seedance-2) DEFAULTS TO TRUE — these generate " +
+            "audio natively and their credit cost already includes it, so audio is on unless you explicitly pass false. " +
+            "Cost multiplier when true on other models: kling 2.6 ~2.65x (17->45 cr/sec), kling-3 1.5x (20->30 cr/sec), " +
+            "kling-3-pro ~1.5x (27->40 cr/sec). 5+ languages.",
         ),
       image_url: z
         .string()
@@ -229,10 +245,7 @@ export function registerContentTools(server: McpServer): void {
       const estimatedCost = VIDEO_CREDIT_ESTIMATES[model] ?? 120;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        return {
-          content: [{ type: "text" as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return budgetCheck.error;
       }
       const rateLimit = checkRateLimit(
         "generation",
@@ -257,9 +270,12 @@ export function registerContentTools(server: McpServer): void {
           model,
           duration: duration ?? 5,
           aspectRatio: aspect_ratio ?? "16:9",
-          // Default FALSE (2026-07-13): the old `?? true` default silently multiplied
-          // kling-family costs (2.65x on kling 2.6) for callers that never asked for audio.
-          enableAudio: enable_audio ?? false,
+          // Default FALSE for most models (2026-07-13): the old `?? true` default silently
+          // multiplied kling-family costs (2.65x on kling 2.6) for callers that never asked
+          // for audio. Exception (2026-07-17): the seedance-2 family bills audio into its base
+          // cost and generates it natively, so a false default there shipped silent no-audio
+          // mp4s — those models default TRUE when the caller omits enable_audio.
+          enableAudio: enable_audio ?? AUDIO_NATIVE_DEFAULT_MODELS.has(model),
           ...(image_url && { imageUrl: image_url }),
           ...(end_frame_url && { endFrameUrl: end_frame_url }),
           // The server reads projectId and enforces
@@ -410,10 +426,7 @@ export function registerContentTools(server: McpServer): void {
       const estimatedCost = IMAGE_CREDIT_ESTIMATES[model] ?? 30;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        return {
-          content: [{ type: "text" as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return budgetCheck.error;
       }
       const rateLimit = checkRateLimit(
         "generation",
@@ -711,7 +724,9 @@ export function registerContentTools(server: McpServer): void {
         );
       }
       if (job.error_message) {
-        lines.push(`Error: ${job.error_message}`);
+        // Scrub UUIDs (internal object IDs) and emails (PII) before surfacing —
+        // the same defence-in-depth as the R2-key masking ~20 lines above.
+        lines.push(`Error: ${redactSensitiveIdentifiers(job.error_message)}`);
       }
       const fallbackDisclosure = buildFallbackDisclosureLine(
         job.result_metadata,
@@ -918,10 +933,7 @@ Return ONLY valid JSON in this exact format:
       const estimatedCost = 10;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        return {
-          content: [{ type: "text" as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return budgetCheck.error;
       }
 
       const { data, error } = await callEdgeFunction<{
@@ -1048,10 +1060,7 @@ Return ONLY valid JSON in this exact format:
       const estimatedCost = 15;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        return {
-          content: [{ type: "text" as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return budgetCheck.error;
       }
 
       const rateLimit = checkRateLimit(
@@ -1289,10 +1298,7 @@ Return ONLY valid JSON in this exact format:
       const estimatedCost = 10 + slideCount * 2;
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
-        return {
-          content: [{ type: "text" as const, text: budgetCheck.message }],
-          isError: true,
-        };
+        return budgetCheck.error;
       }
 
       const userId = await getDefaultUserId();
