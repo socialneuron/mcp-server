@@ -17,7 +17,6 @@
  *     table derived from the rendering templates* — if layouts change,
  *     TEMPLATE_FIELD_CONSTRAINTS is the one place to update.
  *
- * Plan ref: a local path internal plan §4–§5
  * Spec:     docs/superpowers/specs/2026-04-19-visual-qa-gate-design.md
  */
 

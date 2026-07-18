@@ -4,6 +4,16 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## [Unreleased]
 
+## [1.9.1] - 2026-07-18
+
+### Fixed
+
+- **`generate_video` seedance audio default.** Seedance requests no longer silently drop audio: the audio flag now defaults on for audio-capable seedance models instead of rendering silent clips.
+- **Budget-limit errors are self-explanatory.** Budget rejections now state the limit, current usage, and what to do next, instead of a generic failure.
+- **`localOnly` tools no longer leak into remote listings.** Local-only tools are filtered from the tool catalogue when the server runs in remote/HTTP mode.
+- **`check_status` error scrubbing.** Internal error details are scrubbed from `check_status` responses; callers get actionable, non-internal messages.
+- **Carousel per-slide images inherit the resolved project.** `create_carousel` now threads the resolved `project_id` to the carousel job and every per-slide image job, so slide uploads carry project/organization context and are no longer rejected at upload ("A verified project or organization is required for uploads").
+
 ## [1.9.0] - 2026-07-15
 
 ### Added
