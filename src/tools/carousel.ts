@@ -265,8 +265,16 @@ export function registerCarouselTools(server: McpServer): void {
 
       // ── Fetch brand visual context (if brand_id or project_id provided) ──
       let brandContext: BrandVisualContext | null = null;
-      const brandProjectId =
-        brand_id || project_id || (await getDefaultProjectId());
+      const defaultProjectId = await getDefaultProjectId();
+      const brandProjectId = brand_id || project_id || defaultProjectId;
+      // Project the carousel + every slide image are associated with. This MUST be
+      // threaded explicitly to both the generate-carousel EF and each per-slide
+      // kie-image-generate call. Without it the worker uploads slide images with no
+      // project/org context and the hardened upload-to-r2 EF rejects them
+      // ("A verified project or organization is required for uploads") — this is the
+      // gap that killed 21 flux-pro slide generations on 2026-07-18. brand_id is
+      // visual-context only, so it is deliberately NOT used for association here.
+      const resolvedProjectId = project_id || defaultProjectId;
       if (brandProjectId) {
         brandContext = await fetchBrandVisualContext(brandProjectId);
       }
@@ -322,7 +330,7 @@ export function registerCarouselTools(server: McpServer): void {
             slideCount,
             aspectRatio: ratio,
             style: resolvedStyle,
-            projectId: project_id,
+            projectId: resolvedProjectId,
             hook,
             hookFamily: hook_family,
             ctaText: cta_text,
@@ -380,6 +388,7 @@ export function registerCarouselTools(server: McpServer): void {
                   prompt: imagePrompt,
                   model: image_model,
                   aspectRatio: ratio,
+                  ...(resolvedProjectId && { projectId: resolvedProjectId }),
                 },
                 { timeoutMs: 30_000 },
               );
