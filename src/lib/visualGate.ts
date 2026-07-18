@@ -17,7 +17,6 @@
  *     table derived from services/carousel/templates/* — if layouts change,
  *     TEMPLATE_FIELD_CONSTRAINTS is the one place to update.
  *
- * Plan ref: /Users/cefc/.claude/plans/okay-super-please-robust-toast.md §4–§5
  * Spec:     docs/superpowers/specs/2026-04-19-visual-qa-gate-design.md
  */
 
