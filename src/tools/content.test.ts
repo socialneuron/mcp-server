@@ -125,6 +125,108 @@ describe("content tools", () => {
       );
     });
 
+    it("defaults enable_audio TRUE for seedance-2-fast when omitted (native audio, cost included)", async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: "job-sd1",
+          taskId: "task-sd1",
+          model: "seedance-2-fast",
+          creditsDeducted: 264,
+          estimatedTime: 60,
+          status: "pending",
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler("generate_video")!;
+      await handler({ prompt: "cinematic reel", model: "seedance-2-fast" });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        "kie-video-generate",
+        expect.objectContaining({
+          model: "seedance-2-fast",
+          enableAudio: true,
+        }),
+        { timeoutMs: 30_000 },
+      );
+    });
+
+    it("defaults enable_audio TRUE for seedance-2 when omitted", async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: "job-sd2",
+          taskId: "task-sd2",
+          model: "seedance-2",
+          creditsDeducted: 328,
+          estimatedTime: 60,
+          status: "pending",
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler("generate_video")!;
+      await handler({ prompt: "premium ad", model: "seedance-2" });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        "kie-video-generate",
+        expect.objectContaining({ model: "seedance-2", enableAudio: true }),
+        { timeoutMs: 30_000 },
+      );
+    });
+
+    it("keeps enable_audio FALSE for non-seedance models when omitted (cost control)", async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: "job-k1",
+          taskId: "task-k1",
+          model: "kling-3",
+          creditsDeducted: 100,
+          estimatedTime: 60,
+          status: "pending",
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler("generate_video")!;
+      await handler({ prompt: "b-roll", model: "kling-3" });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        "kie-video-generate",
+        expect.objectContaining({ model: "kling-3", enableAudio: false }),
+        { timeoutMs: 30_000 },
+      );
+    });
+
+    it("allows disabling seedance audio with an explicit enable_audio: false", async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          asyncJobId: "job-sd3",
+          taskId: "task-sd3",
+          model: "seedance-2-fast",
+          creditsDeducted: 264,
+          estimatedTime: 60,
+          status: "pending",
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler("generate_video")!;
+      await handler({
+        prompt: "silent clip",
+        model: "seedance-2-fast",
+        enable_audio: false,
+      });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        "kie-video-generate",
+        expect.objectContaining({
+          model: "seedance-2-fast",
+          enableAudio: false,
+        }),
+        { timeoutMs: 30_000 },
+      );
+    });
+
     it("returns asyncJobId preferentially over taskId", async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {
@@ -563,6 +665,40 @@ describe("content tools", () => {
       expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.id).toBe("job-abc");
       expect(parsed.data.status).toBe("completed");
+    });
+
+    it("scrubs UUIDs and emails from a failed job's error_message before surfacing it", async () => {
+      const failedJob = {
+        id: "job-fail-1",
+        external_id: null,
+        status: "failed",
+        job_type: "video",
+        model: "seedance-2-fast",
+        result_url: null,
+        error_message:
+          "Provider rejected job for user 550e8400-e29b-41d4-a716-446655440000 (owner ops@example.com): quota exhausted",
+        credits_cost: 0,
+        created_at: "2026-07-17T10:00:00Z",
+        completed_at: "2026-07-17T10:00:05Z",
+      };
+
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, job: failedJob },
+        error: null,
+      });
+
+      const handler = server.getHandler("check_status")!;
+      const result = await handler({ job_id: "job-fail-1" });
+
+      const text = result.content[0].text;
+      // Diagnostic text is preserved…
+      expect(text).toContain("Error:");
+      expect(text).toContain("quota exhausted");
+      // …but the identifiers are redacted.
+      expect(text).toContain("[redacted-id]");
+      expect(text).toContain("[redacted-email]");
+      expect(text).not.toContain("550e8400-e29b-41d4-a716-446655440000");
+      expect(text).not.toContain("example.com");
     });
 
     it("shows R2 Key label when result_url is an R2 key (not http)", async () => {
