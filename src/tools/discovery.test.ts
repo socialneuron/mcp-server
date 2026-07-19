@@ -197,3 +197,37 @@ describe("search_tools localOnly filtering by transport", () => {
     expect(ids).not.toContain("tool:capture_app_page");
   });
 });
+
+
+describe("search_tools profile filtering", () => {
+  let server: MockServer;
+
+  beforeEach(() => {
+    server = createMockServer();
+    registerDiscoveryTools(server as any, { toolProfile: "anthropic-directory" });
+  });
+
+  it("omits excluded tools from search_tools", async () => {
+    const result = await server.getHandler("search_tools")!({
+      query: "generate image",
+      detail: "name",
+    });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed.tools).not.toContain("generate_image");
+  });
+
+  it("omits excluded tools from search and fetch knowledge", async () => {
+    const searchResult = await server.getHandler("search")!({
+      query: "execute_recipe",
+    });
+    const ids = searchResult.structuredContent.results.map(
+      (r: { id: string }) => r.id,
+    );
+    expect(ids).not.toContain("tool:execute_recipe");
+
+    const fetchResult = await server.getHandler("fetch")!({
+      id: "tool:execute_recipe",
+    });
+    expect(fetchResult.isError).toBe(true);
+  });
+});

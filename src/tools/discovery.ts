@@ -10,6 +10,7 @@ import { hasScope } from "../auth/scopes.js";
 import { getAuthenticatedScopes } from "../lib/supabase.js";
 import { getRequestScopes } from "../lib/request-context.js";
 import type { ToolEntry } from "../lib/tool-catalog.js";
+import { isToolAllowedByProfile, type ToolProfile } from "../lib/tool-profile.js";
 
 interface KnowledgeDocument {
   id: string;
@@ -35,8 +36,9 @@ function isHostedTransport(): boolean {
 
 /** Public discovery visibility: internal + hidden tools are never advertised;
  *  localOnly tools are advertised only on the stdio/local transport. */
-function isPubliclyDiscoverable(tool: ToolEntry): boolean {
+function isPubliclyDiscoverable(tool: ToolEntry, profile: ToolProfile = "full"): boolean {
   if (tool.internal || tool.hiddenFromPublicCount) return false;
+  if (!isToolAllowedByProfile(tool.name, profile)) return false;
   if (tool.localOnly && isHostedTransport()) return false;
   return true;
 }
@@ -133,10 +135,10 @@ function toolKnowledgeDocument(tool: ToolEntry): KnowledgeDocument {
   };
 }
 
-function getKnowledgeDocuments(): KnowledgeDocument[] {
+function getKnowledgeDocuments(profile: ToolProfile = "full"): KnowledgeDocument[] {
   return [
     ...STATIC_KNOWLEDGE_DOCUMENTS,
-    ...TOOL_CATALOG.filter(isPubliclyDiscoverable).map(toolKnowledgeDocument),
+    ...TOOL_CATALOG.filter((tool) => isPubliclyDiscoverable(tool, profile)).map(toolKnowledgeDocument),
   ];
 }
 
@@ -163,8 +165,8 @@ function scoreDocument(queryTokens: string[], doc: KnowledgeDocument): number {
   }, 0);
 }
 
-function searchKnowledge(query: string): KnowledgeDocument[] {
-  const docs = getKnowledgeDocuments();
+function searchKnowledge(query: string, profile: ToolProfile = "full"): KnowledgeDocument[] {
+  const docs = getKnowledgeDocuments(profile);
   const tokens = tokenize(query);
   if (tokens.length === 0) {
     return docs.slice(0, KNOWLEDGE_SEARCH_LIMIT);
@@ -178,7 +180,11 @@ function searchKnowledge(query: string): KnowledgeDocument[] {
     .map(({ doc }) => doc);
 }
 
-export function registerDiscoveryTools(server: McpServer): void {
+export function registerDiscoveryTools(
+  server: McpServer,
+  options?: { toolProfile?: ToolProfile },
+): void {
+  const toolProfile = options?.toolProfile ?? "full";
   server.registerTool(
     "search",
     {
@@ -198,7 +204,7 @@ export function registerDiscoveryTools(server: McpServer): void {
     },
     async ({ query }) => {
       const structuredContent = {
-        results: searchKnowledge(query).map((doc) => ({
+        results: searchKnowledge(query, toolProfile).map((doc) => ({
           id: doc.id,
           title: doc.title,
           url: doc.url,
@@ -232,7 +238,7 @@ export function registerDiscoveryTools(server: McpServer): void {
       },
     },
     async ({ id }) => {
-      const doc = getKnowledgeDocuments().find(
+      const doc = getKnowledgeDocuments(toolProfile).find(
         (candidate) => candidate.id === id,
       );
       if (!doc) {
@@ -306,7 +312,7 @@ export function registerDiscoveryTools(server: McpServer): void {
       // Internal operations tools are runtime-registered but not discoverable;
       // localOnly tools (screenshots) are hidden in hosted/HTTP mode where they
       // are never registered.
-      results = results.filter(isPubliclyDiscoverable);
+      results = results.filter((tool) => isPubliclyDiscoverable(tool, toolProfile));
       if (module) {
         const moduleTools = getToolsByModule(module);
         results = results.filter((t) =>
