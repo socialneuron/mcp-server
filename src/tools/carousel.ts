@@ -1,3 +1,4 @@
+import { safePublicBillingStatus, safePublicFailureReason } from "../lib/checkStatusShape.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
@@ -402,8 +403,8 @@ export function registerCarouselTools(server: McpServer): void {
                 creditsReserved: data?.credits_reserved ?? null,
                 creditsCharged: data?.credits_charged ?? null,
                 creditsRefunded: data?.credits_refunded ?? null,
-                billingStatus: data?.billing_status ?? "unknown",
-                failureReason: data?.failure_reason ?? null,
+                billingStatus: safePublicBillingStatus(data?.billing_status),
+                failureReason: safePublicFailureReason(data?.failure_reason),
               };
             }
 
