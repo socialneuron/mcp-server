@@ -11,7 +11,7 @@
  * discovery extension. OpenAPI is not an MCP-specified endpoint. Memoized.
  */
 import { buildDiscoveryCatalog } from './discovery-catalog.js';
-import { TOOL_CATALOG } from './tool-catalog.js';
+import { publicToolsForProfile, type ToolProfile } from './tool-profile.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 import { MCP_VERSION } from './version.js';
 
@@ -80,27 +80,29 @@ const ERROR_RESPONSE = (description: string) => ({
   content: { 'application/json': { schema: { $ref: '#/components/schemas/ToolError' } } },
 });
 
-let cached: Promise<Record<string, unknown>> | null = null;
+const cached = new Map<ToolProfile, Promise<Record<string, unknown>>>();
 
 /** Build (once, memoized) the OpenAPI 3.1 document for the REST surface. */
-export function buildOpenApiDocument(): Promise<Record<string, unknown>> {
-  if (!cached) cached = computeOpenApiDocument();
-  return cached;
+export function buildOpenApiDocument(profile: ToolProfile = 'full'): Promise<Record<string, unknown>> {
+  let doc = cached.get(profile);
+  if (!doc) {
+    doc = computeOpenApiDocument(profile);
+    cached.set(profile, doc);
+  }
+  return doc;
 }
 
 /** Test-only: clear the memoized document. */
 export function __resetOpenApiCache(): void {
-  cached = null;
+  cached.clear();
 }
 
-async function computeOpenApiDocument(): Promise<Record<string, unknown>> {
-  const discovery = await buildDiscoveryCatalog(); // name, description, inputSchema
+async function computeOpenApiDocument(profile: ToolProfile): Promise<Record<string, unknown>> {
+  const discovery = await buildDiscoveryCatalog(profile); // name, description, inputSchema
   const schemaByName = new Map(discovery.map(t => [t.name, t.inputSchema]));
 
   // Public REST surface = the same public catalog projection as the server card.
-  const publicTools = TOOL_CATALOG.filter(
-    t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
-  );
+  const publicTools = publicToolsForProfile(profile);
 
   const paths: Record<string, unknown> = {};
   for (const tool of publicTools) {
@@ -173,6 +175,6 @@ async function computeOpenApiDocument(): Promise<Record<string, unknown>> {
 }
 
 /** Count of REST-exposed operations — used by verify:metadata to guard drift. */
-export function publicRestToolCount(): number {
-  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount).length;
+export function publicRestToolCount(profile: ToolProfile = 'full'): number {
+  return publicToolsForProfile(profile).length;
 }

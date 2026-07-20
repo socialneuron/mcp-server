@@ -736,7 +736,7 @@ app.get(
 // OpenAPI spec — unauthenticated discovery metadata (spec convention).
 app.get("/v1/openapi.json", async (_req, res) => {
   try {
-    const doc = await buildOpenApiDocument();
+    const doc = await buildOpenApiDocument(TOOL_PROFILE);
     res.setHeader("Cache-Control", "public, max-age=3600");
     res.json(doc);
   } catch (err) {

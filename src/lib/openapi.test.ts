@@ -7,6 +7,7 @@ import {
 } from './openapi.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
+import { ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS, publicToolsForProfile } from './tool-profile.js';
 
 describe('buildOpenApiDocument', () => {
   beforeEach(() => __resetOpenApiCache());
@@ -58,6 +59,18 @@ describe('buildOpenApiDocument', () => {
     expect(doc.paths['/tools/write_agent_reflection']).toBeUndefined();
     expect(doc.paths['/tools/get_loop_pulse']).toBeUndefined();
     expect(doc.paths['/tools/get_bandit_state']).toBeUndefined();
+  });
+
+
+  it('applies the active tool profile to the OpenAPI REST surface', async () => {
+    const doc = (await buildOpenApiDocument('anthropic-directory')) as any;
+    const pathKeys = Object.keys(doc.paths);
+    expect(pathKeys.length).toBe(publicRestToolCount('anthropic-directory'));
+    expect(pathKeys.length).toBe(publicToolsForProfile('anthropic-directory').length);
+    for (const name of ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS) {
+      expect(doc.paths[`/tools/${name}`]).toBeUndefined();
+    }
+    expect(doc.paths['/tools/schedule_post']).toBeDefined();
   });
 
   it('carries the required scope on each operation', async () => {

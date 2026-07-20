@@ -412,7 +412,7 @@ export function registerAllTools(
   registerVisualQualityTools(server);
   registerPlanningTools(server);
   registerPlanApprovalTools(server);
-  registerDiscoveryTools(server);
+  registerDiscoveryTools(server, { toolProfile: options?.toolProfile ?? 'full' });
   registerPipelineTools(server);
   registerSuggestTools(server);
   registerDigestTools(server);
