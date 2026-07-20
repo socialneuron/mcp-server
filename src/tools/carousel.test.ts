@@ -264,6 +264,35 @@ describe("carousel tools", () => {
       expect(parsed.data.failedSlides).toHaveLength(2);
     });
 
+
+    it('redacts unsafe backend billing and failure details in failed slide json', async () => {
+      mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(1));
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          credits_reserved: 30,
+          credits_charged: 0,
+          credits_refunded: 30,
+          billing_status: 'internal_manual_override:secret-ledger',
+          failure_reason: 'insert failed on ledger table at private-db.internal (see /srv/app/billing.js:42)',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('create_carousel')!;
+      const result = await handler({
+        topic: 'test',
+        image_model: 'flux-pro',
+        response_format: 'json',
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.failedSlides).toHaveLength(1);
+      expect(parsed.data.failedSlides[0].billing_status).toBe('unknown');
+      expect(parsed.data.failedSlides[0].failure_reason).toBeNull();
+      expect(result.content[0].text).not.toContain('private-db.internal');
+      expect(result.content[0].text).not.toContain('secret-ledger');
+    });
+
     it("includes credit breakdown in json response", async () => {
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(3));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse("j1"));
