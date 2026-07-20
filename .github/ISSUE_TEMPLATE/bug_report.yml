@@ -3,6 +3,15 @@ description: Report a bug with @socialneuron/mcp-server
 labels: [bug]
 
 body:
+  - type: checkboxes
+    id: boundary
+    attributes:
+      label: Repository boundary
+      description: This public tracker covers only the public npm package, SDK, CLI, hosted-MCP public behavior, and reproducible interoperability issues.
+      options:
+        - label: This concerns the public package/SDK/CLI/hosted-MCP surface and contains no private operational, customer, or internal-infrastructure detail.
+          required: true
+
   - type: markdown
     attributes:
       value: |

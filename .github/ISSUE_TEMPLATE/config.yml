@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Private / operational work
+    url: https://github.com/socialneuron/mcp-server/issues/266
+    about: >-
+      Production operations, internal architecture, customer state, Sentry/Linear
+      incidents, and private-repository coordination belong on the internal tracker,
+      not here. See the repository-boundary policy before filing.
