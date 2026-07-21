@@ -70,6 +70,8 @@ describe("content tools", () => {
           // 2026-07-13: enable_audio now defaults FALSE (cost control — the old
           // `?? true` default silently multiplied kling-family costs).
           enableAudio: false,
+          // SOC-5: paid generation always dispatches with resolved project context.
+          projectId: "test-project-id",
         },
         { timeoutMs: 30_000 },
       );
@@ -100,6 +102,19 @@ describe("content tools", () => {
         expect.objectContaining({ projectId: "proj-123" }),
         { timeoutMs: 30_000 },
       );
+    });
+
+    it("refuses to dispatch without resolvable project context (SOC-5)", async () => {
+      // Unscoped multi-project key: no explicit project_id, no default project.
+      mockGetProjectId.mockResolvedValueOnce(null as never);
+
+      const handler = server.getHandler("generate_video")!;
+      const result = await handler({ prompt: "brand clip", model: "veo3-fast" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("project_id is required");
+      // The provider EF must never be reached — no job, no credit reservation.
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it("honors an explicit enable_audio: true", async () => {
@@ -387,9 +402,24 @@ describe("content tools", () => {
           model: "midjourney",
           aspectRatio: "1:1",
           imageUrl: undefined,
+          // SOC-5: paid generation always dispatches with resolved project context.
+          projectId: "test-project-id",
         },
         { timeoutMs: 30_000 },
       );
+    });
+
+    it("refuses to dispatch without resolvable project context (SOC-5)", async () => {
+      // Unscoped multi-project key: no explicit project_id, no default project.
+      mockGetProjectId.mockResolvedValueOnce(null as never);
+
+      const handler = server.getHandler("generate_image")!;
+      const result = await handler({ prompt: "a cat in space", model: "midjourney" });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("project_id is required");
+      // The provider EF must never be reached — no job, no credit reservation.
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it("returns job ID on success", async () => {
