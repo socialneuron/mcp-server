@@ -1084,23 +1084,29 @@ function startMockBackend() {
           }
           if (url.pathname === '/functions/v1/mcp-gateway') {
             const parsed = raw ? JSON.parse(raw) : {};
-            const functionName = parsed.functionName ?? '(unknown)';
+            // Allowlist-sanitize request-derived identifiers before they are
+            // stored (and later logged/reported): slug charset only.
+            const functionName =
+              typeof parsed.functionName === 'string' && /^[\w.-]{1,64}$/.test(parsed.functionName)
+                ? parsed.functionName
+                : '(unknown)';
             const body = parsed.body ?? {};
-            gatewayCalls.push({
-              tool: currentTool,
-              functionName,
-              action: typeof body.action === 'string' ? body.action : null,
-            });
+            const action =
+              typeof body.action === 'string' && /^[\w.-]{1,64}$/.test(body.action)
+                ? body.action
+                : null;
+            gatewayCalls.push({ tool: currentTool, functionName, action });
             send(mockGatewayResponse(functionName, body));
             return;
           }
-          // Static bodies only: request data and error details never flow
-          // into the response (keeps the mock trivially XSS/injection-clean).
-          console.error(`[mock-backend] unmatched path: ${url.pathname}`);
+          // Static bodies and static logs only: request data and error
+          // details never flow into responses OR log lines (keeps the mock
+          // trivially clean of reflected-XSS and log-injection patterns).
+          // Unmatched paths surface as auth/tool failures in the report.
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end('{"error":"not_found"}');
-        } catch (err) {
-          console.error('[mock-backend] handler error:', err);
+        } catch {
+          console.error('[mock-backend] request handler threw; returning 500');
           res.writeHead(500, { 'Content-Type': 'application/json' });
           res.end('{"error":"mock_backend_error"}');
         }
