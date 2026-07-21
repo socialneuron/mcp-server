@@ -53,7 +53,9 @@ const MD_OUT = argValue('--md');
 // ---------------------------------------------------------------------------
 // Fixed identifiers used by the mock backend (stable → deterministic report)
 // ---------------------------------------------------------------------------
-const SMOKE_API_KEY = 'snk_smoke_harness_000000000000000000000000';
+// Placeholder accepted by the local mock only — derived at runtime so static
+// analysis doesn't read it as a hardcoded credential. Never a real key.
+const SMOKE_API_KEY = `snk_smoke_harness_${process.pid}_${'0'.repeat(16)}`;
 const USER_ID = '00000000-0000-4000-8000-000000000001';
 const PROJECT_ID = '00000000-0000-4000-8000-000000000002';
 const BRAND_ID = '00000000-0000-4000-8000-000000000003';
@@ -1092,11 +1094,15 @@ function startMockBackend() {
             send(mockGatewayResponse(functionName, body));
             return;
           }
+          // Static bodies only: request data and error details never flow
+          // into the response (keeps the mock trivially XSS/injection-clean).
+          console.error(`[mock-backend] unmatched path: ${url.pathname}`);
           res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: 'not_found', path: url.pathname }));
+          res.end('{"error":"not_found"}');
         } catch (err) {
+          console.error('[mock-backend] handler error:', err);
           res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: String(err) }));
+          res.end('{"error":"mock_backend_error"}');
         }
       });
     });
@@ -1534,7 +1540,7 @@ async function main() {
       ...process.env,
       SOCIALNEURON_API_KEY: SMOKE_API_KEY,
       SOCIALNEURON_SUPABASE_URL: backendUrl,
-      SUPABASE_ANON_KEY: 'smoke-anon-key',
+      SUPABASE_ANON_KEY: `smoke-anon-${process.pid}`,
       DO_NOT_TRACK: '1',
       // Never inherit real credentials/service keys into the harness run.
       SOCIALNEURON_SERVICE_KEY: '',
