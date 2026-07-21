@@ -258,7 +258,30 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
               error_type: 'server_error',
             },
           });
-          throw err;
+          // Do NOT rethrow: the SDK would surface the raw exception message
+          // ("Cannot read properties of undefined (reading 'slice')") as the
+          // tool result, which is useless to an agent and can happen whenever
+          // the backend returns a shape this server version doesn't expect
+          // (mid-deploy drift, partial outage). Return a clean, classified
+          // error the agent can act on instead. Only the exception CLASS NAME
+          // is included — never the raw message, which could embed request or
+          // response fragments.
+          return toolError(
+            'server_error',
+            `Tool ${name} hit an unexpected internal error while processing the response. ` +
+              'This is usually a transient backend issue or a server/backend version mismatch.',
+            {
+              details: {
+                tool: name,
+                exception: err instanceof Error ? err.name : typeof err,
+              },
+              recover_with: [
+                'Retry the call once.',
+                'If it persists, update to the latest @socialneuron/mcp-server release.',
+                'Still failing? Report it: https://github.com/socialneuron/mcp-server/issues',
+              ],
+            }
+          );
         }
       };
     }
