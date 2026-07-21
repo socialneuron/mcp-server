@@ -318,7 +318,8 @@ const STORYBOARD_JSON = JSON.stringify({
 const EF_RESPONSES = {
   'mcp-data': body => {
     const action = body?.action ?? '(none)';
-    const base = { success: true, action };
+    // Branching key only — request data never flows into the response body.
+    const base = { success: true };
     switch (action) {
       case 'projects':
         return {
@@ -332,7 +333,7 @@ const EF_RESPONSES = {
       case 'save-brand-profile':
         return { ...base, profileId: BRAND_ID };
       case 'update-platform-voice':
-        return { ...base, profileId: BRAND_ID, platform: body?.platform, override: { tone: ['confident'] } };
+        return { ...base, profileId: BRAND_ID, platform: 'youtube', override: { tone: ['confident'] } };
       case 'connected-accounts':
         return {
           ...base,
@@ -402,7 +403,7 @@ const EF_RESPONSES = {
           summary: { approved: 1, flagged: 0, total: 1 },
         };
       case 'create-autopilot-config':
-        return { ...base, created: { id: CONFIG_ID, name: body?.name ?? 'Smoke autopilot' } };
+        return { ...base, created: { id: CONFIG_ID, name: 'Smoke autopilot' } };
       case 'pipeline-readiness':
         return {
           ...base,
@@ -448,7 +449,7 @@ const EF_RESPONSES = {
         return {
           ...base,
           nonce: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
-          platform: body?.platform ?? 'youtube',
+          platform: 'youtube',
           project_id: PROJECT_ID,
           expires_at: new Date(Date.now() + 600_000).toISOString(),
           deep_link: 'https://socialneuron.com/connect?nonce=aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
@@ -589,13 +590,13 @@ const EF_RESPONSES = {
     size: 1024,
     contentType: 'image/png',
   }),
-  'get-signed-url': body => ({
+  'get-signed-url': () => ({
     success: true,
     // Resolvable public host: schedule_post SSRF-validates (DNS-resolves) the
     // signed URL before publishing, so a fake hostname would be blocked.
     signedUrl: 'https://example.com/signed.png',
     url: 'https://example.com/signed.png',
-    key: body?.r2Key ?? 'projects/smoke/upload.png',
+    key: 'projects/smoke/upload.png',
     expiresIn: 3600,
   }),
   'fetch-url-content': () => ({
@@ -771,11 +772,11 @@ const EF_RESPONSES = {
   }),
 
   // --- loop / learning ------------------------------------------------------
-  'mc-bandit-state': body => ({
-    project_id: body?.project_id ?? PROJECT_ID,
-    platform_filter: body?.platform ?? null,
-    arm_type_filter: body?.arm_type ?? null,
-    top_k: body?.top_k ?? 5,
+  'mc-bandit-state': () => ({
+    project_id: PROJECT_ID,
+    platform_filter: null,
+    arm_type_filter: null,
+    top_k: 5,
     groups: [
       {
         arm_type: 'hook_family',
@@ -840,9 +841,8 @@ const EF_RESPONSES = {
   'record-outcome': () => ({ id: DECISION_EVENT_ID, idempotent: false }),
 
   // --- hermes (drafts / lessons / observations / campaigns) -----------------
-  hermes: body => ({
+  hermes: () => ({
     success: true,
-    action: body?.action ?? '(none)',
     id: DECISION_EVENT_ID,
     draft_id: DECISION_EVENT_ID,
     lesson_id: DECISION_EVENT_ID,
