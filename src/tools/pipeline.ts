@@ -527,6 +527,14 @@ export function registerPipelineTools(server: McpServer): void {
                 plan_status: "deduct-credits",
                 credits_used: BASE_PLAN_CREDITS,
                 reason: `Pipeline ${pipelineId.slice(0, 8)}: content plan generation`,
+                // Bill the project the plan was actually created under. Without
+                // this, callEdgeFunction auto-injects the caller's DEFAULT
+                // project, so an explicit project_id != default debits the wrong
+                // pool (same-tenant mis-attribution). Parity with every other
+                // stage in this pipeline, which all pass resolvedProjectId.
+                ...(resolvedProjectId
+                  ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
+                  : {}),
               },
               { timeoutMs: 10_000 },
             );

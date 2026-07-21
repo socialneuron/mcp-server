@@ -34,6 +34,11 @@ const BLOCKED_IP_PATTERNS: RegExp[] = [
   /^100\.(6[4-9]|[7-9][0-9]|1[0-1][0-9]|12[0-7])\./,
 ];
 
+// Legacy dotted-form IPv4-mapped patterns. Kept as a fast path, but they are
+// NOT sufficient on their own: Node's WHATWG URL parser canonicalizes
+// `[::ffff:169.254.169.254]` to the HEX form `[::ffff:a9fe:a9fe]`, which these
+// dotted regexes never match. The authoritative check is the byte-based
+// isBlockedIPv6() below, which expands the address and inspects embedded IPv4.
 const BLOCKED_IPV6_PATTERNS: RegExp[] = [
   /^::1$/i, // loopback
   /^::$/i, // unspecified
@@ -43,6 +48,82 @@ const BLOCKED_IPV6_PATTERNS: RegExp[] = [
   /^::ffff:127\./i, // IPv4-mapped localhost
   /^::ffff:(0|10|127|169\.254|172\.(1[6-9]|2[0-9]|3[0-1])|192\.168)\./i, // IPv4-mapped private
 ];
+
+/**
+ * Expand an IPv6 literal (brackets already stripped) to its 16 bytes, or null
+ * if it isn't a well-formed IPv6 address. Handles `::` compression and a
+ * trailing dotted-IPv4 tail (e.g. `::ffff:169.254.169.254`).
+ */
+function ipv6ToBytes(addr: string): number[] | null {
+  let s = addr.toLowerCase();
+  if (!s.includes(':')) return null;
+
+  // Fold a trailing dotted-IPv4 tail into two hextets so both the dotted
+  // (`::ffff:10.0.0.5`) and hex (`::ffff:a00:5`) spellings expand identically.
+  const dotted = s.match(/^(.*:)(\d{1,3})\.(\d{1,3})\.(\d{1,3})\.(\d{1,3})$/);
+  if (dotted) {
+    const o = [dotted[2], dotted[3], dotted[4], dotted[5]].map(Number);
+    if (o.some(n => n > 255)) return null;
+    s = `${dotted[1]}${((o[0] << 8) | o[1]).toString(16)}:${((o[2] << 8) | o[3]).toString(16)}`;
+  }
+
+  const halves = s.split('::');
+  if (halves.length > 2) return null;
+  const head = halves[0] ? halves[0].split(':') : [];
+  const tail = halves.length === 2 && halves[1] ? halves[1].split(':') : [];
+  let groups: string[];
+  if (halves.length === 2) {
+    const missing = 8 - (head.length + tail.length);
+    if (missing < 0) return null;
+    groups = [...head, ...Array(missing).fill('0'), ...tail];
+  } else {
+    groups = head;
+  }
+  if (groups.length !== 8) return null;
+
+  const bytes: number[] = [];
+  for (const g of groups) {
+    if (!/^[0-9a-f]{1,4}$/.test(g)) return null;
+    const v = parseInt(g, 16);
+    bytes.push((v >> 8) & 0xff, v & 0xff);
+  }
+  return bytes;
+}
+
+/**
+ * Byte-accurate IPv6 blocklist. Catches the forms the string regexes miss:
+ * IPv4-mapped (`::ffff:0:0/96`), deprecated IPv4-compatible (`::/96`), and
+ * NAT64 (`64:ff9b::/96`) embeddings are unwrapped and their embedded IPv4 is
+ * run through the IPv4 blocklist, so a metadata/loopback/RFC-1918 address can't
+ * hide inside an IPv6 literal regardless of hex vs dotted spelling.
+ */
+function isBlockedIPv6(normalized: string): boolean {
+  // Fast path first — cheap and covers the common spellings.
+  if (BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(normalized))) return true;
+
+  const b = ipv6ToBytes(normalized);
+  if (!b) return false;
+
+  const allZero = (from: number, to: number) => b.slice(from, to).every(x => x === 0);
+
+  // loopback ::1 and unspecified ::
+  if (allZero(0, 15) && (b[15] === 0 || b[15] === 1)) return true;
+  // link-local fe80::/10
+  if (b[0] === 0xfe && (b[1] & 0xc0) === 0x80) return true;
+  // unique-local fc00::/7
+  if ((b[0] & 0xfe) === 0xfc) return true;
+
+  // Embedded IPv4: mapped (::ffff:0:0/96), compat (::/96), NAT64 (64:ff9b::/96)
+  const v4mapped = allZero(0, 10) && b[10] === 0xff && b[11] === 0xff;
+  const v4compat = allZero(0, 12);
+  const nat64 =
+    b[0] === 0x00 && b[1] === 0x64 && b[2] === 0xff && b[3] === 0x9b && allZero(4, 12);
+  if (v4mapped || v4compat || nat64) {
+    const v4 = `${b[12]}.${b[13]}.${b[14]}.${b[15]}`;
+    if (BLOCKED_IP_PATTERNS.some(pattern => pattern.test(v4))) return true;
+  }
+  return false;
+}
 
 // Hostnames that should be blocked
 const BLOCKED_HOSTNAMES: string[] = [
@@ -76,7 +157,7 @@ export interface SSRFValidationResult {
 function isBlockedIP(ip: string): boolean {
   const normalized = ip.replace(/^\[/, '').replace(/\]$/, '');
   if (normalized.includes(':')) {
-    return BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(normalized));
+    return isBlockedIPv6(normalized);
   }
   return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(normalized));
 }

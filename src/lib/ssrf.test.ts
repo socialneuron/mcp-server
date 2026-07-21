@@ -167,6 +167,47 @@ describe('SSRF protection', () => {
       expect(result.error).toContain('internal');
     });
 
+    // Regression: Node's URL parser canonicalizes IPv4-mapped/NAT64 IPv6
+    // literals to their HEX form (e.g. [::ffff:169.254.169.254] →
+    // [::ffff:a9fe:a9fe]), which the legacy dotted-decimal regexes never
+    // matched — and because it is an IP literal, DNS resolution is skipped,
+    // so the miss was final. These must all be blocked.
+    it.each([
+      'http://[::ffff:169.254.169.254]/latest/meta-data/', // AWS metadata (mapped, dotted)
+      'http://[::ffff:a9fe:a9fe]/', // same, hex form (what the parser produces)
+      'http://[::ffff:127.0.0.1]:6379/', // loopback (Redis)
+      'http://[::ffff:7f00:1]/', // loopback, hex
+      'http://[::ffff:10.0.0.5]/', // RFC-1918
+      'http://[::ffff:a00:5]/', // RFC-1918, hex
+      'http://[::ffff:192.168.1.1]/', // RFC-1918
+      'http://[::ffff:c0a8:101]/', // RFC-1918, hex
+      'http://[64:ff9b::a9fe:a9fe]/', // NAT64 of 169.254.169.254
+    ])('blocks IPv4-mapped/NAT64 IPv6 literal %s', async url => {
+      const result = await validateUrlForSSRF(url);
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('private/internal');
+    });
+
+    it('blocks fe80:: link-local and fc00:: unique-local', async () => {
+      for (const url of ['http://[fe80::1]/', 'http://[fc00::1]/', 'http://[fd12:3456::1]/']) {
+        const result = await validateUrlForSSRF(url);
+        expect(result.isValid).toBe(false);
+      }
+    });
+
+    it('still allows genuine public IPv6 literals', async () => {
+      // Public v6 (Cloudflare / Google DNS) and NAT64/mapped of a public v4
+      // must NOT be blocked — the fix targets only private/internal embeddings.
+      for (const url of [
+        'https://[2606:4700:4700::1111]/',
+        'https://[2001:4860:4860::8888]/',
+        'https://[::ffff:8.8.8.8]/',
+      ]) {
+        const result = await validateUrlForSSRF(url);
+        expect(result.isValid).toBe(true);
+      }
+    });
+
     it('skips DNS check for direct IP addresses', async () => {
       // A public IP should pass without DNS lookup
       const result = await validateUrlForSSRF('https://93.184.216.34/');

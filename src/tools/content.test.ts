@@ -1,4 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { describe, it, expect, vi, beforeEach, beforeAll, afterAll } from "vitest";
+import { promises as dnsPromises } from "node:dns";
 import { createMockServer } from "../test-setup.js";
 import { registerContentTools } from "./content.js";
 import { callEdgeFunction } from "../lib/edge-function.js";
@@ -9,6 +10,24 @@ import {
   listAccessibleProjectsWithAccountStatus,
 } from "../lib/supabase.js";
 import { MCP_VERSION } from "../lib/version.js";
+
+// generate_image/generate_video now SSRF-validate a reference image_url, which
+// DNS-resolves the hostname. Stub the resolver to a public IP so those checks
+// pass deterministically without real network (same technique as ssrf.test.ts).
+const RealResolver = dnsPromises.Resolver;
+beforeAll(() => {
+  (dnsPromises as { Resolver: unknown }).Resolver = class {
+    async resolve4() {
+      return ["93.184.216.34"];
+    }
+    async resolve6() {
+      return [] as string[];
+    }
+  };
+});
+afterAll(() => {
+  (dnsPromises as { Resolver: unknown }).Resolver = RealResolver;
+});
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetClient = vi.mocked(getSupabaseClient);
@@ -499,6 +518,20 @@ describe("content tools", () => {
 
       const callBody = mockCallEdge.mock.calls[0][1];
       expect(callBody.imageUrl).toBe("https://cdn.example.com/reference.png");
+    });
+
+    it("blocks an internal/private image_url before dispatch (SSRF defense-in-depth)", async () => {
+      const handler = server.getHandler("generate_image")!;
+      const result = await handler({
+        prompt: "enhance this photo",
+        model: "flux-pro",
+        image_url: "http://169.254.169.254/latest/meta-data/",
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("image_url blocked");
+      // The provider EF must never be reached with an internal reference URL.
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it("handles aspect_ratio override (non-default)", async () => {

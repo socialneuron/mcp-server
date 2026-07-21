@@ -2,6 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import { callEdgeFunction } from "../lib/edge-function.js";
 import { checkRateLimit } from "../lib/rate-limit.js";
+import { validateUrlForSSRF } from "../lib/ssrf.js";
 import {
   getSupabaseClient,
   getDefaultUserId,
@@ -77,6 +78,24 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
     },
     data,
   };
+}
+
+/**
+ * Defense-in-depth SSRF guard for a reference-image URL that gets forwarded to
+ * a backend generation edge function. The MCP process does not fetch these
+ * itself (the provider does), but every other URL-taking tool validates at this
+ * layer too — so a caller can't smuggle `http://169.254.169.254/…` or an
+ * internal address through the generation path either. Only http(s) values are
+ * checked; other forms (e.g. inline data) are left to the backend as before.
+ * Returns an error string to surface, or null when the URL is safe / absent.
+ */
+async function ssrfGuardImageUrl(
+  label: string,
+  value: string | undefined
+): Promise<string | null> {
+  if (!value || !/^https?:\/\//i.test(value)) return null;
+  const check = await validateUrlForSSRF(value);
+  return check.isValid ? null : `${label} blocked: ${check.error}`;
 }
 
 // Synced with the platform's video pricing source of truth — 2026-07-13 reprice + MCP-surface expansion.
@@ -283,6 +302,16 @@ export function registerContentTools(server: McpServer): void {
       }
       const resolvedProjectId = projectResolution.projectId;
 
+      for (const [label, url] of [
+        ["image_url", image_url],
+        ["end_frame_url", end_frame_url],
+      ] as const) {
+        const ssrfError = await ssrfGuardImageUrl(label, url);
+        if (ssrfError) {
+          return { content: [{ type: "text" as const, text: ssrfError }], isError: true };
+        }
+      }
+
       const { data, error } = await callEdgeFunction<GenerateVideoResponse>(
         "kie-video-generate",
         {
@@ -485,6 +514,11 @@ export function registerContentTools(server: McpServer): void {
         };
       }
       const resolvedProjectId = projectResolution.projectId;
+
+      const imageUrlSsrfError = await ssrfGuardImageUrl("image_url", image_url);
+      if (imageUrlSsrfError) {
+        return { content: [{ type: "text" as const, text: imageUrlSsrfError }], isError: true };
+      }
 
       const { data, error } = await callEdgeFunction<GenerateImageResponse>(
         "kie-image-generate",
