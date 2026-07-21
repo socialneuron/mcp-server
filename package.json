@@ -78,6 +78,8 @@
     "typecheck": "NODE_OPTIONS='--max-old-space-size=8192' tsc --noEmit",
     "dev": "esbuild src/index.ts --bundle --platform=node --target=es2022 --format=esm --outfile=dist/index.js --sourcemap --banner:js='#!/usr/bin/env node' --packages=external --watch",
     "test": "mkdir -p .tmp-vitest && npm run build:stdio && vitest run --reporter=default --reporter=json --outputFile=.tmp-vitest/results.json && node scripts/verify-vitest-report.mjs .tmp-vitest/results.json",
+    "smoke:tools": "npm run build:stdio && node scripts/smoke-all-tools.mjs",
+    "smoke:tools:chaos": "npm run build:stdio && node scripts/smoke-all-tools.mjs --chaos",
     "test:watch": "vitest",
     "clean": "rm -rf dist/",
     "prepublishOnly": "npm run clean && npm run build:all && npm test",
