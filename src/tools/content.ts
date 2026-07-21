@@ -402,9 +402,12 @@ export function registerContentTools(server: McpServer): void {
           "seedream",
         ])
         .describe(
-          "Image generation model. midjourney for artistic style, imagen4 for " +
-            "photorealistic quality, flux-pro for general purpose, gpt4o-image " +
-            "for creative/illustrated styles.",
+          "Image generation model. seedream (20cr) is the reliable default; " +
+            "nano-banana-pro for premium quality; midjourney for artistic style; " +
+            "gpt4o-image for creative/illustrated styles. AVOID imagen4 and " +
+            "flux-pro for now — provider-side failure rates of 100% and ~69% " +
+            "over the trailing week (observed 2026-07-21) burn credits on " +
+            "retries; they remain callable for when the provider recovers.",
         ),
       aspect_ratio: z
         .enum(["16:9", "9:16", "1:1", "4:3", "3:4"])
