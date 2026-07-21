@@ -7,6 +7,7 @@ import {
   getDefaultUserId,
   getDefaultProjectId,
   listAccessibleProjectsWithAccountStatus,
+  resolveProjectStrict,
 } from "../lib/supabase.js";
 import {
   sanitizeDbError,
@@ -263,6 +264,25 @@ export function registerContentTools(server: McpServer): void {
         };
       }
 
+      // Paid generation never dispatches without verified project context
+      // (SOC-5): unscoped multi-project keys must name a project_id and fail
+      // HERE — before any job row, credit reservation, or provider call.
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                projectResolution.error ??
+                "project_id is required to start a video generation job.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       const { data, error } = await callEdgeFunction<GenerateVideoResponse>(
         "kie-video-generate",
         {
@@ -280,7 +300,7 @@ export function registerContentTools(server: McpServer): void {
           ...(end_frame_url && { endFrameUrl: end_frame_url }),
           // The server reads projectId and enforces
           // ownership via resolveProjectAndContent (index.ts:416-423).
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
         },
         { timeoutMs: 30_000 },
       );
@@ -382,9 +402,12 @@ export function registerContentTools(server: McpServer): void {
           "seedream",
         ])
         .describe(
-          "Image generation model. midjourney for artistic style, imagen4 for " +
-            "photorealistic quality, flux-pro for general purpose, gpt4o-image " +
-            "for creative/illustrated styles.",
+          "Image generation model. seedream (20cr) is the reliable default; " +
+            "nano-banana-pro for premium quality; midjourney for artistic style; " +
+            "gpt4o-image for creative/illustrated styles. AVOID imagen4 and " +
+            "flux-pro for now — provider-side failure rates of 100% and ~69% " +
+            "over the trailing week (observed 2026-07-21) burn credits on " +
+            "retries; they remain callable for when the provider recovers.",
         ),
       aspect_ratio: z
         .enum(["16:9", "9:16", "1:1", "4:3", "3:4"])
@@ -444,6 +467,25 @@ export function registerContentTools(server: McpServer): void {
         };
       }
 
+      // Paid generation never dispatches without verified project context
+      // (SOC-5): unscoped multi-project keys must name a project_id and fail
+      // HERE — before any job row, credit reservation, or provider call.
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text:
+                projectResolution.error ??
+                "project_id is required to start an image generation job.",
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       const { data, error } = await callEdgeFunction<GenerateImageResponse>(
         "kie-image-generate",
         {
@@ -451,7 +493,7 @@ export function registerContentTools(server: McpServer): void {
           model,
           aspectRatio: aspect_ratio ?? "1:1",
           imageUrl: image_url,
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
         },
         { timeoutMs: 30_000 },
       );
