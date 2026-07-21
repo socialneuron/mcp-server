@@ -7,6 +7,14 @@ description: Use Social Neuron's remote MCP server to research social performanc
 
 Use the `socialneuron-http` MCP server registered by this plugin. Let the MCP tool catalogue be the source of truth; do not assume a memorized tool count or invent tool names.
 
+## Focused companion skills
+
+Route deep work to the specialized skills in this plugin instead of improvising:
+
+- **content-quality** — producing, quality-gating, adapting, and scheduling content (the full pipeline with the 7-category gate).
+- **brand-consistency** — brand profile management, voice/color/claims enforcement, and avatar/character consistency across generated media.
+- **learning-loop** — reading loop health and bandit state, applying insights, and writing outcomes/reflections back after publishing.
+
 ## Workflow
 
 1. Discover the smallest set of Social Neuron tools needed for the request.
