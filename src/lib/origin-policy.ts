@@ -50,8 +50,7 @@ export function buildOriginPolicy(input: {
 }): OriginPolicy {
   const envOrigins = parseAllowedOrigins(input.allowedOriginsEnv);
   const source = envOrigins.size > 0 ? 'env' : 'fallback';
-  const allowedOrigins =
-    source === 'env' ? envOrigins : new Set(PRODUCTION_FALLBACK_ORIGINS);
+  const allowedOrigins = source === 'env' ? envOrigins : new Set(PRODUCTION_FALLBACK_ORIGINS);
 
   // Configured service/client URLs are explicit operator trust decisions and
   // must remain additive when ALLOWED_ORIGINS is set. Previously the env value

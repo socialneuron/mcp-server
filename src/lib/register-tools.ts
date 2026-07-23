@@ -148,9 +148,20 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     const result = await handler(...handlerArgs);
 
     // 3. Scan output. Output role keeps UUIDs intact via anchored regex.
-    const outputText = JSON.stringify(result);
+    let outputText: string | undefined;
+    try {
+      outputText = JSON.stringify(result);
+    } catch {
+      // Result was not JSON-serialisable (e.g. contains a BigInt, which
+      // throws rather than returning undefined). Fail closed with a clean
+      // structured error instead of crashing the handler.
+      return toolError(
+        'server_error',
+        'The response could not be returned safely. Please retry or contact support.'
+      );
+    }
     if (outputText === undefined) {
-      // Result was not JSON-serialisable (e.g. contains a Symbol / BigInt).
+      // Result was not JSON-serialisable (e.g. contains a Symbol / function).
       // Skip output scan rather than crash.
       return result;
     }
@@ -405,10 +416,19 @@ function truncateResponse(result: any): any {
  * @param options.skipScreenshots - Skip screenshot tools (requires local Playwright, unavailable on Railway)
  * @param options.skipApps - Skip MCP App registrations. Pass true for stdio mode: the package
  *   ships the HTML, but interactive app resources are registered on the HTTP surface only.
+ * @param options.includeInternalTools - Register the internal ops tool groups (harness, fleet
+ *   telemetry, loop pulse, bandit state). Callers pass hasScope(scopes, 'mcp:internal') so
+ *   customer sessions never even LIST these tools — scope enforcement additionally denies
+ *   invocation as defence-in-depth.
  */
 export function registerAllTools(
   server: McpServer,
-  options?: { skipScreenshots?: boolean; skipApps?: boolean; toolProfile?: ToolProfile }
+  options?: {
+    skipScreenshots?: boolean;
+    skipApps?: boolean;
+    toolProfile?: ToolProfile;
+    includeInternalTools?: boolean;
+  }
 ): void {
   applyToolProfile(server, options?.toolProfile ?? 'full');
   registerIdeationTools(server);
@@ -435,7 +455,7 @@ export function registerAllTools(
   registerVisualQualityTools(server);
   registerPlanningTools(server);
   registerPlanApprovalTools(server);
-  registerDiscoveryTools(server, { toolProfile: options?.toolProfile ?? 'full' });
+  registerDiscoveryTools(server);
   registerPipelineTools(server);
   registerSuggestTools(server);
   registerDigestTools(server);
@@ -444,11 +464,13 @@ export function registerAllTools(
   registerNicheResearchTools(server);
   registerHyperframesTools(server);
   registerConnectionTools(server);
-  registerHarnessTools(server, undefined);
-  registerHermesTools(server);
+  if (options?.includeInternalTools) {
+    registerHarnessTools(server, undefined);
+    registerHermesTools(server);
+    registerLoopPulseTools(server);
+    registerBanditStateTools(server);
+  }
   registerSkillsTools(server);
-  registerLoopPulseTools(server);
-  registerBanditStateTools(server);
   registerLifecycleTools(server);
 
   // MCP Apps (interactive UI rendered inside the host).

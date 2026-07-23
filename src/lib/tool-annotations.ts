@@ -206,8 +206,7 @@ export function applyAnnotations(server: McpServer): void {
   // Access the internal tool registry (plain object since MCP SDK 1.27+)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const registeredTools = (server as any)._registeredTools as
-    | Record<string, { update: (updates: Record<string, unknown>) => void }>
-    | undefined;
+    Record<string, { update: (updates: Record<string, unknown>) => void }> | undefined;
 
   if (!registeredTools || typeof registeredTools !== 'object') {
     console.warn('[annotations] Could not access _registeredTools — annotations not applied');
@@ -233,13 +232,8 @@ export function applyAnnotations(server: McpServer): void {
     }
   }
 
-  // Routine startup line — but the channel matters per transport (SOC-102):
-  // - stdio: MUST be console.error (stderr). process.stdout is the JSON-RPC
-  //   channel the MCP client parses; any stdout write corrupts the stream
-  //   (pydantic "Invalid JSON" / tools-list registers 0 tools).
-  // - http (Railway): stderr is ingested as error-severity and inflates the
-  //   error stream with a per-boot routine line, so use stdout there.
-  const logRoutine =
-    process.env.MCP_TRANSPORT === 'http' ? console.log : console.error;
-  logRoutine(`[annotations] Applied annotations to ${applied}/${entries.length} tools`);
+  // MUST be console.error (stderr), NOT console.log. In stdio transport, process.stdout
+  // is the JSON-RPC channel the MCP client parses from process spawn; any stdout write
+  // here corrupts the stream (pydantic "Invalid JSON" / tools-list registers 0 tools).
+  console.error(`[annotations] Applied annotations to ${applied}/${entries.length} tools`);
 }

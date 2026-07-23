@@ -16,10 +16,7 @@
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAllTools } from './register-tools.js';
-import {
-  publicToolsForProfile,
-  type ToolProfile,
-} from './tool-profile.js';
+import { publicToolsForProfile, type ToolProfile } from './tool-profile.js';
 import { MCP_VERSION } from './version.js';
 
 export type DiscoveryTool = {

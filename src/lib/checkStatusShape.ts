@@ -31,35 +31,6 @@
  * completedAt, modelRequested, modelDelivered, fallbackReason.
  */
 
-
-const SAFE_PUBLIC_BILLING_STATUSES = new Set([
-  'reserved',
-  'charged',
-  'refunded',
-  'failed_no_charge',
-  'refund_pending',
-  'not_charged',
-  'unknown',
-]);
-
-const SAFE_PUBLIC_FAILURE_REASONS = new Set([
-  'generation_failed',
-  'authentication_failed',
-  'cancelled_by_user',
-]);
-
-export function safePublicBillingStatus(value: string | null | undefined): string {
-  if (typeof value !== 'string') return 'unknown';
-  const normalized = value.trim().toLowerCase();
-  return SAFE_PUBLIC_BILLING_STATUSES.has(normalized) ? normalized : 'unknown';
-}
-
-export function safePublicFailureReason(value: string | null | undefined): string | null {
-  if (typeof value !== 'string') return null;
-  const normalized = value.trim().toLowerCase();
-  return SAFE_PUBLIC_FAILURE_REASONS.has(normalized) ? normalized : null;
-}
-
 export interface CheckStatusAsyncJobLike {
   id: string;
   job_type: string;
@@ -171,8 +142,8 @@ export function buildCheckStatusPayload(
     credits_reserved: job.credits_reserved ?? null,
     credits_charged: job.credits_charged ?? null,
     credits_refunded: job.credits_refunded ?? null,
-    billing_status: safePublicBillingStatus(job.billing_status),
-    failure_reason: safePublicFailureReason(job.failure_reason),
+    billing_status: job.billing_status ?? 'unknown',
+    failure_reason: job.failure_reason ?? null,
     created_at: job.created_at,
     completed_at: job.completed_at,
     model_requested: modelRequested,

@@ -91,7 +91,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `render_hyperframes` | Render an HTML video composition (Hyperframes) to MP4 — frame-accurate, no React build step. The page MUST expose window.__hf = { duration: <seconds>, seek: (t) => void }; the renderer calls seek(t) per frame (GSAP timelines work when drive |
 | `render_template_video` | Render a Remotion template video in the cloud. Creates an async render job that is processed by the production worker, uploaded to R2, and tracked via async_jobs. Returns a job ID that can be polled with check_status. Costs credits based on |
 | `respond_plan_approval` | Approve, reject, or edit a single pending plan approval item. Use to act on items surfaced by list_plan_approvals. decision="edited" REQUIRES edited_post containing the modified post fields — passing "edited" without edited_post returns an  |
-| `run_skill` | Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the exact step plan, credit cost, and a deep-link to launch the run in the SN dashboard. A future release executes in-pro |
+| `run_skill` | Preview only: returns a structured run preview, estimated credits, and a dashboard deep link — it does not execute the skill. Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview  |
 | `save_brand_profile` | Save (or replace) the active brand profile for a project — voice, target audience, content pillars, claims, etc. Use after extract_brand has produced a draft AND the user has reviewed it, or when the user explicitly edits the profile. brand |
 | `save_content_plan` | Save a content plan to the database for team review, approval workflows, and scheduled publishing. Creates a plan_id you can reference in get_content_plan, update_content_plan, and schedule_content_plan. |
 | `submit_content_plan_for_approval` | Create pending approval items for each post in a plan and mark plan status as in_review. |
@@ -117,11 +117,11 @@ _Scope: `mcp:comments` — Requires **Team** or **Agency** (full MCP)._
 
 | Tool | Description |
 |------|-------------|
-| `delete_comment` | Delete a YouTube comment. Only works for comments owned by the authenticated channel. |
-| `list_comments` | List YouTube comments — pass video_id (11-char string, e.g. "dQw4w9WgXcQ") for a specific video, or omit for recent comments across all channel videos. Returns comment text, author, like count, and reply count. Use page_token from previous  |
-| `moderate_comment` | Moderate a YouTube comment on your channel — set status to "published" (approve) or "rejected" (hide from public view but kept in moderation queue). Use after list_comments surfaces a comment that needs action. For permanent removal use del |
-| `post_comment` | Post a new top-level comment on a YouTube video, authored as the connected channel. Use for proactive engagement on your own videos. For replies to existing comments use reply_to_comment instead — this tool only creates top-level comments.  |
-| `reply_to_comment` | Reply to a YouTube comment. Get the parent_id from list_comments results. Reply appears as the authenticated channel. Use for community engagement after checking list_comments for questions or feedback. |
+| `delete_comment` | Delete a YouTube comment (YouTube only today). Only works for comments owned by the authenticated channel. |
+| `list_comments` | List YouTube comments (YouTube only today) — pass video_id (11-char string, e.g. "dQw4w9WgXcQ") for a specific video, or omit for recent comments across all channel videos. Returns comment text, author, like count, and reply count. Use page |
+| `moderate_comment` | Moderate a YouTube comment on your channel (YouTube only today) — set status to "published" (approve) or "rejected" (hide from public view but kept in moderation queue). Use after list_comments surfaces a comment that needs action. For perm |
+| `post_comment` | Post a new top-level comment on a YouTube video (YouTube only today), authored as the connected channel. Use for proactive engagement on your own videos. For replies to existing comments use reply_to_comment instead — this tool only creates |
+| `reply_to_comment` | Reply to a YouTube comment (YouTube only today). Get the parent_id from list_comments results. Reply appears as the authenticated channel. Use for community engagement after checking list_comments for questions or feedback. |
 
 ## Autopilot & Automation
 

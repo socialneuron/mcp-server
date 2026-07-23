@@ -316,7 +316,10 @@ export function registerRemotionTools(server: McpServer): void {
       'that is processed by the production worker, uploaded to R2, and tracked ' +
       'via async_jobs. Returns a job ID that can be polled with check_status. ' +
       'Costs credits based on video duration (3 base + 0.1/sec). ' +
-      'Use list_compositions to see available template IDs.',
+      'Use list_compositions to see available template IDs. ' +
+      'Pass project_id to keep the render (and its R2 storage path / brand context) ' +
+      'scoped to the correct project — omitting it on a multi-project account no ' +
+      'longer guesses a project; the render is created unscoped instead.',
     {
       composition_id: z
         .string()
@@ -335,8 +338,20 @@ export function registerRemotionTools(server: McpServer): void {
         .enum(['9:16', '1:1', '16:9'])
         .optional()
         .describe('Output aspect ratio. Defaults to "9:16" (vertical).'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID to associate the render with (brand context + R2 storage path). ' +
+            'Ownership is verified server-side — an inaccessible project_id is rejected ' +
+            'with a 403, never silently reassigned to a different project.'
+        ),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Response format. Use json for a stable job_id handoff.'),
     },
-    async ({ composition_id, input_props, aspect_ratio }) => {
+    async ({ composition_id, input_props, aspect_ratio, project_id, response_format }) => {
       const userId = await getDefaultUserId();
       const rateLimit = checkRateLimit('generation', `render_template:${userId}`);
       if (!rateLimit.allowed) {
@@ -394,10 +409,35 @@ export function registerRemotionTools(server: McpServer): void {
               codec: 'h264',
             },
           ],
+          // The EF verifies ownership via the RLS-scoped user client before
+          // queueing (create-remotion-job/index.ts) — an inaccessible
+          // project_id is rejected with a 403, never silently reassigned.
+          ...(project_id && { projectId: project_id }),
         });
 
         if (error || !data?.success) {
           throw new Error(error || data?.error || 'Failed to create render job');
+        }
+
+        if (response_format === 'json') {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text: JSON.stringify({
+                  data: {
+                    job_id: data.jobId,
+                    jobId: data.jobId,
+                    composition_id,
+                    content_history_id: data.contentHistoryId,
+                    credits_charged: data.creditsCharged,
+                    estimated_duration_seconds: data.estimatedDurationSeconds,
+                    project_id: project_id || null,
+                  },
+                }),
+              },
+            ],
+          };
         }
 
         return {
@@ -411,6 +451,7 @@ export function registerRemotionTools(server: McpServer): void {
                 `  Credits charged: ${data.creditsCharged}`,
                 `  Estimated duration: ${data.estimatedDurationSeconds}s`,
                 `  Content ID: ${data.contentHistoryId}`,
+                `  Project: ${project_id || '(unscoped)'}`,
                 ``,
                 `The video is rendering in the cloud. Use check_status with ` +
                   `job_id="${data.jobId}" to poll for completion. When done, ` +

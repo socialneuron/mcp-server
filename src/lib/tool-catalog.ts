@@ -15,8 +15,7 @@ export type ToolEntry = {
    *  runtime, but excluded from the public server-card, discovery search results, and
    *  knowledge documents. */
   internal?: boolean;
-  /** Operational tool that remains registered for authenticated runtimes but is
-   * omitted from public discovery, REST, OpenAPI, CLI, and documentation. */
+  /** Runtime-callable for authenticated operations, but omitted from public discovery/counts. */
   hiddenFromPublicCount?: boolean;
   /** Human goal this tool is meant to satisfy; used by search_tools for task-intent discovery. */
   task_intent?: string;
@@ -116,8 +115,10 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'lifecycle',
     scope: 'mcp:write',
     task_intent: 'Remove an unwanted carousel record from Social Neuron',
-    use_when: 'The user explicitly confirms deletion and understands stored media follows normal retention.',
-    avoid_when: 'The user expects an already-published social post or retained media object to be removed.',
+    use_when:
+      'The user explicitly confirms deletion and understands stored media follows normal retention.',
+    avoid_when:
+      'The user expects an already-published social post or retained media object to be removed.',
     next_tools: ['list_recent_posts'],
   },
 
@@ -305,34 +306,35 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:analytics',
   },
 
-  // comments
+  // comments (YouTube only today — comment tools route exclusively through YouTube in the
+  // current implementation; see src/tools/comments.ts)
   {
     name: 'list_comments',
-    description: 'List comments on published posts',
+    description: 'List YouTube comments on published videos (YouTube only today)',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'reply_to_comment',
-    description: 'Reply to a comment on a post',
+    description: 'Reply to a YouTube comment (YouTube only today)',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'post_comment',
-    description: 'Post a new comment',
+    description: 'Post a new YouTube comment (YouTube only today)',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'moderate_comment',
-    description: 'Moderate a comment (approve/hide/flag)',
+    description: 'Moderate a YouTube comment (approve/hide/flag) (YouTube only today)',
     module: 'comments',
     scope: 'mcp:comments',
   },
   {
     name: 'delete_comment',
-    description: 'Delete a comment',
+    description: 'Delete a YouTube comment (YouTube only today)',
     module: 'comments',
     scope: 'mcp:comments',
   },
@@ -369,7 +371,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
     task_intent: 'Remove an obsolete saved content plan',
     use_when: 'The user explicitly confirms permanent deletion of a specific plan.',
-    avoid_when: 'The plan has scheduled posts the user also expects to cancel; cancel those posts separately.',
+    avoid_when:
+      'The plan has scheduled posts the user also expects to cancel; cancel those posts separately.',
     next_tools: ['plan_content_week', 'list_recent_posts'],
   },
   {
@@ -479,7 +482,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:autopilot',
     task_intent: 'Remove an autopilot configuration while retaining historical run records',
     use_when: 'The user explicitly confirms deletion of the configuration.',
-    avoid_when: 'The user only wants to pause or edit automation, or expects historical posts to be deleted.',
+    avoid_when:
+      'The user only wants to pause or edit automation, or expects historical posts to be deleted.',
     next_tools: ['list_autopilot_configs'],
   },
 
@@ -614,7 +618,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'open_content_calendar',
     description:
-      "Open a project-scoped interactive calendar inside MCP App-capable hosts. Uses reschedule_post for conflict-safe drag/drop and schedule_post for new posts.",
+      'Open a project-scoped interactive calendar inside MCP App-capable hosts. Uses reschedule_post for conflict-safe drag/drop and schedule_post for new posts.',
     module: 'apps',
     scope: 'mcp:read',
   },
@@ -673,7 +677,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Persist a verbal reflection for an agent loop. Provenance keys are restricted to an allowlist: only content_history_id, outcome_event_id, prm_score_ids, and handoff_ids are accepted.',
     module: 'harness',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
@@ -681,7 +685,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Record an outcome for a published decision event. Idempotent on (decision_event_id, horizon). Only horizon=24h triggers a learning-loop update.',
     module: 'harness',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
 
@@ -692,7 +696,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
       'Read past agent reflections for a brand. Ordered by created_at DESC, id ASC (deterministic tiebreak). ' +
       'Only active reflections returned (superseded_by IS NULL). Optional generated_by_agent filter.',
     module: 'harness',
-    scope: 'mcp:read',
+    scope: 'mcp:internal',
     internal: true,
   },
 
@@ -702,14 +706,14 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Save a draft post to the SN content library for review before publishing. Drafts land in the content library pending approval.',
     module: 'hermes',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
     name: 'record_voice_lesson',
     description: 'Persist a learned voice lesson to the brand voice profile.',
     module: 'hermes',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
@@ -717,7 +721,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Record an agent observation (e.g. "topic X engagement up 23%") for the analytics playbook.',
     module: 'hermes',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
@@ -725,14 +729,14 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Record a research/trend signal (news, competitor, community sources) for niche intelligence. Dedupes by URL.',
     module: 'hermes',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
     name: 'record_campaign_spend',
     description: 'Log a campaign cost line item. Ownership-checked.',
     module: 'hermes',
-    scope: 'mcp:write',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
@@ -740,8 +744,18 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'List currently-running campaigns with thesis, budget, hero format, and current spend.',
     module: 'hermes',
-    scope: 'mcp:read',
+    scope: 'mcp:internal',
     internal: true,
+  },
+  {
+    name: 'record_heartbeat',
+    description:
+      'Report a start/end heartbeat for a Claude cloud routine or scheduled ExO agent into the ' +
+      'admin Agents fleet tracker, authenticated via the existing MCP session (no bearer secret).',
+    module: 'hermes',
+    scope: 'mcp:internal',
+    internal: true,
+    hiddenFromPublicCount: true,
   },
 
   // skills (workflow skills — multi-step brand-locked content pipelines)
@@ -755,14 +769,14 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'get_skill',
     description:
-      'Fetch the full body and current compiled guidance for one Social Neuron skill by slug.',
+      'Fetch the full body of a single Social Neuron skill by slug — hand-maintained strategy/specs plus the machine-maintained "what\'s working now" compiled section. Use after list_skills for the actual platform playbook.',
     module: 'skills',
     scope: 'mcp:read',
   },
   {
     name: 'run_skill',
     description:
-      'Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
+      'Preview only: returns a structured run preview, estimated credits, and a dashboard deep link — it does not execute the skill. Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
     module: 'skills',
     scope: 'mcp:write',
   },
@@ -773,7 +787,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, learning-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
     module: 'loop',
-    scope: 'mcp:read',
+    scope: 'mcp:internal',
     internal: true,
   },
   {
@@ -781,7 +795,7 @@ export const TOOL_CATALOG: ToolEntry[] = [
     description:
       'Read the current content learning state for a project — top-K arms per (arm_type, platform) with expected performance and uncertainty. Use to reason about which hook family / format / timing slot currently performs best per platform.',
     module: 'loop',
-    scope: 'mcp:read',
+    scope: 'mcp:internal',
     internal: true,
   },
 ];

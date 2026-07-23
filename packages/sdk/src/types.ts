@@ -1,61 +1,48 @@
 /** TypeScript types for the hosted Social Neuron tool-proxy API. */
 
 export type Platform =
-  | "youtube"
-  | "tiktok"
-  | "instagram"
-  | "twitter"
-  | "linkedin"
-  | "facebook"
-  | "threads"
-  | "bluesky";
+  'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'linkedin' | 'facebook' | 'threads' | 'bluesky';
 
-export type ContentType = "script" | "caption" | "blog" | "hook";
+export type ContentType = 'script' | 'caption' | 'blog' | 'hook';
 
 /** Models currently exposed by the generate_video MCP/REST tool. */
 export type VideoModel =
-  | "seedance-2-fast"
-  | "kling-3"
-  | "grok-imagine"
-  | "veo3-fast"
-  | "kling-3-pro"
-  | "seedance-2"
-  | "veo3-quality"
-  | "wan-2.6"
-  | "gemini-omni-video"
-  | "hailuo-02-standard"
-  | "seedance-1.5-pro"
-  | "kling";
+  | 'seedance-2-fast'
+  | 'kling-3'
+  | 'grok-imagine'
+  | 'veo3-fast'
+  | 'kling-3-pro'
+  | 'seedance-2'
+  | 'veo3-quality'
+  | 'wan-2.6'
+  | 'gemini-omni-video'
+  | 'hailuo-02-standard'
+  | 'seedance-1.5-pro'
+  | 'kling';
 
 export type ImageModel =
-  | "midjourney"
-  | "nano-banana"
-  | "nano-banana-pro"
-  | "flux-pro"
-  | "flux-max"
-  | "gpt4o-image"
-  | "imagen4"
-  | "imagen4-fast"
-  | "seedream";
+  | 'midjourney'
+  | 'nano-banana'
+  | 'nano-banana-pro'
+  | 'flux-pro'
+  | 'flux-max'
+  | 'gpt4o-image'
+  | 'imagen4'
+  | 'imagen4-fast'
+  | 'seedream';
 
-export type AspectRatio = "16:9" | "9:16" | "1:1" | "4:3" | "3:4";
+export type AspectRatio = '16:9' | '9:16' | '1:1' | '4:3' | '3:4';
 export type JobStatus =
-  | "queued"
-  | "pending"
-  | "processing"
-  | "completed"
-  | "failed"
-  | "cancelled"
-  | "canceled";
+  'queued' | 'pending' | 'processing' | 'completed' | 'failed' | 'cancelled' | 'canceled';
 
 export type BillingStatus =
-  | "reserved"
-  | "charged"
-  | "refunded"
-  | "failed_no_charge"
-  | "refund_pending"
-  | "not_charged"
-  | "unknown";
+  | 'reserved'
+  | 'charged'
+  | 'refunded'
+  | 'failed_no_charge'
+  | 'refund_pending'
+  | 'not_charged'
+  | 'unknown';
 
 export interface ToolContentBlock {
   type: string;
@@ -85,7 +72,7 @@ export interface GenerateContentParams {
   content_type: ContentType;
   platform?: Platform;
   brand_voice?: string;
-  model?: "gemini-2.5-flash" | "gemini-2.5-pro";
+  model?: 'gemini-2.5-flash' | 'gemini-2.5-pro';
   project_id?: string;
 }
 
@@ -93,12 +80,12 @@ export interface GenerateVideoParams {
   prompt: string;
   model: VideoModel;
   duration?: number;
-  aspect_ratio?: Extract<AspectRatio, "16:9" | "9:16" | "1:1">;
+  aspect_ratio?: Extract<AspectRatio, '16:9' | '9:16' | '1:1'>;
   enable_audio?: boolean;
   image_url?: string;
   end_frame_url?: string;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface GenerateImageParams {
@@ -107,41 +94,41 @@ export interface GenerateImageParams {
   aspect_ratio?: AspectRatio;
   image_url?: string;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface GenerateCarouselParams {
   topic: string;
   template_id?:
-    | "educational-series"
-    | "product-showcase"
-    | "story-arc"
-    | "before-after"
-    | "step-by-step"
-    | "quote-collection"
-    | "data-stats"
-    | "myth-vs-reality"
-    | "hormozi-authority";
+    | 'educational-series'
+    | 'product-showcase'
+    | 'story-arc'
+    | 'before-after'
+    | 'step-by-step'
+    | 'quote-collection'
+    | 'data-stats'
+    | 'myth-vs-reality'
+    | 'hormozi-authority';
   slide_count?: number;
-  aspect_ratio?: "1:1" | "4:5" | "9:16";
-  style?: "minimal" | "bold" | "professional" | "playful" | "hormozi";
+  aspect_ratio?: '1:1' | '4:5' | '9:16';
+  style?: 'minimal' | 'bold' | 'professional' | 'playful' | 'hormozi';
   hook?: string;
-  hook_family?: "curiosity" | "authority" | "pain_point" | "contrarian" | "data_driven";
+  hook_family?: 'curiosity' | 'authority' | 'pain_point' | 'contrarian' | 'data_driven';
   cta_text?: string;
   cta_url?: string;
   tone?: string;
   constraints?: string;
-  platform?: "linkedin" | "instagram" | "tiktok" | "x";
+  platform?: 'linkedin' | 'instagram' | 'tiktok' | 'x';
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface GenerateVoiceoverParams {
   text: string;
-  voice?: "rachel" | "domi";
+  voice?: 'rachel' | 'daniel' | 'adam' | 'gigi' | 'charlotte';
   speed?: number;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface AdaptContentParams {
@@ -153,7 +140,7 @@ export interface AdaptContentParams {
 }
 
 export interface FetchTrendsParams {
-  source: "youtube" | "google_trends" | "rss" | "url";
+  source: 'youtube' | 'google_trends' | 'rss' | 'url';
   category?: string;
   niche?: string;
   url?: string;
@@ -170,7 +157,7 @@ export interface SchedulePostParams {
   job_ids?: string[];
   r2_key?: string;
   r2_keys?: string[];
-  media_type?: "VIDEO" | "IMAGE" | "CAROUSEL_ALBUM";
+  media_type?: 'VIDEO' | 'IMAGE' | 'CAROUSEL_ALBUM';
   caption?: string;
   title?: string;
   hashtags?: string[];
@@ -183,7 +170,7 @@ export interface SchedulePostParams {
     youtube?: {
       title?: string;
       description?: string;
-      privacy_status?: "public" | "unlisted" | "private";
+      privacy_status?: 'public' | 'unlisted' | 'private';
       category_id?: string;
       tags?: string[];
       made_for_kids?: boolean;
@@ -192,7 +179,7 @@ export interface SchedulePostParams {
     };
     [platform: string]: Record<string, unknown> | undefined;
   };
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ReschedulePostParams {
@@ -200,7 +187,7 @@ export interface ReschedulePostParams {
   project_id?: string;
   scheduled_at: string;
   expected_scheduled_at?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ConfirmedProjectAction {
@@ -248,7 +235,7 @@ export interface ListPostsParams {
   platform?: Platform;
   status?: string;
   limit?: number;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface FetchAnalyticsParams {
@@ -257,30 +244,30 @@ export interface FetchAnalyticsParams {
   content_id?: string;
   project_id?: string;
   limit?: number;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface YouTubeAnalyticsParams {
-  action: "channel" | "daily" | "video" | "topVideos";
+  action: 'channel' | 'daily' | 'video' | 'topVideos';
   start_date: string;
   end_date: string;
   video_id?: string;
   max_results?: number;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface InsightsParams {
-  insight_type?: "top_hooks" | "optimal_timing" | "best_models" | "competitor_patterns";
+  insight_type?: 'top_hooks' | 'optimal_timing' | 'best_models' | 'competitor_patterns';
   project_id?: string;
   days?: number;
   limit?: number;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface PostingTimesParams {
   platform?: Platform;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface SaveBrandParams {
@@ -288,16 +275,16 @@ export interface SaveBrandParams {
   change_summary?: string;
   changed_paths?: string[];
   source_url?: string;
-  extraction_method?: "manual" | "url_extract" | "business_profiler" | "product_showcase";
+  extraction_method?: 'manual' | 'url_extract' | 'business_profiler' | 'product_showcase';
   overall_confidence?: number;
   extraction_metadata?: Record<string, unknown>;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ExtractBrandParams {
   url: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface CreatePlanParams {
@@ -309,14 +296,14 @@ export interface CreatePlanParams {
   start_date?: string;
   brand_voice?: string;
   project_id?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface SavePlanParams {
   plan: { topic: string; posts: Record<string, unknown>[]; [key: string]: unknown };
   project_id?: string;
-  status?: "draft" | "in_review" | "approved" | "scheduled" | "completed";
-  response_format?: "text" | "json";
+  status?: 'draft' | 'in_review' | 'approved' | 'scheduled' | 'completed';
+  response_format?: 'text' | 'json';
 }
 
 export interface UpdatePlanParams {
@@ -331,9 +318,9 @@ export interface UpdatePlanParams {
     media_url?: string;
     schedule_at?: string;
     platform?: string;
-    status?: "approved" | "rejected" | "needs_edit";
+    status?: 'approved' | 'rejected' | 'needs_edit';
   }>;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface SchedulePlanParams {
@@ -343,30 +330,30 @@ export interface SchedulePlanParams {
   enforce_quality?: boolean;
   quality_threshold?: number;
   idempotency_seed?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ListCommentsParams {
   video_id?: string;
   max_results?: number;
   page_token?: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface PostCommentParams {
   video_id: string;
   text: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ReplyCommentParams {
   text: string;
-  response_format?: "text" | "json";
+  response_format?: 'text' | 'json';
 }
 
 export interface ModerateCommentParams {
-  moderation_status: "published" | "rejected";
-  response_format?: "text" | "json";
+  moderation_status: 'published' | 'rejected';
+  response_format?: 'text' | 'json';
 }
 
 export interface JobResult {

@@ -116,8 +116,9 @@ describe('createTokenVerifier', () => {
         supabaseAnonKey: SUPABASE_ANON_KEY,
       });
 
-      await expect(hardenedVerifier.verifyAccessToken('eyJhbGciOiJSUzI1NiJ9.fake.jwt'))
-        .rejects.toThrow('Unsupported access token');
+      await expect(
+        hardenedVerifier.verifyAccessToken('eyJhbGciOiJSUzI1NiJ9.fake.jwt')
+      ).rejects.toThrow('Unsupported access token');
       expect(mockJwtVerify).not.toHaveBeenCalled();
       expect(globalThis.fetch).not.toHaveBeenCalled();
     });
@@ -684,7 +685,9 @@ describe('createTokenVerifier', () => {
         userId: 'user-path-bound',
         resource: 'https://mcp.socialneuron.com/mcp',
       });
-      await expect(pathVerifier.verifyAccessToken('sno_connector_exact_path')).resolves.toMatchObject({
+      await expect(
+        pathVerifier.verifyAccessToken('sno_connector_exact_path')
+      ).resolves.toMatchObject({
         extra: { resource: 'https://mcp.socialneuron.com/mcp' },
       });
     });

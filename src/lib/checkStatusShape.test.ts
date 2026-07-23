@@ -87,22 +87,6 @@ describe('buildCheckStatusPayload', () => {
     });
   });
 
-
-  it('redacts unsafe backend billing and failure fields from public payloads', () => {
-    const payload = buildCheckStatusPayload({
-      ...completedJob,
-      status: 'failed',
-      result_url: null,
-      billing_status: 'internal_manual_override:ledger-row-991',
-      failure_reason: 'SQLSTATE 23505 on private-db.internal password=secret',
-    });
-
-    expect(payload.billing_status).toBe('unknown');
-    expect(payload.failure_reason).toBeNull();
-    expect(JSON.stringify(payload)).not.toContain('private-db.internal');
-    expect(JSON.stringify(payload)).not.toContain('password=secret');
-  });
-
   it('live-poll branch: populates both canonical and alias fields from liveStatus', () => {
     const payload = buildCheckStatusPayload(pendingJob, liveCompletedStatus);
 

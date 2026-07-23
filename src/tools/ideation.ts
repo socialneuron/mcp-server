@@ -101,109 +101,25 @@ export function registerIdeationTools(server: McpServer): void {
       }
 
       if (project_id) {
+        // Brand injection is owned by the social-neuron-ai EF: mcp-gateway
+        // stamps source:'mcp' (a BRAND_INJECT_SOURCES member) and the EF
+        // loads + compiles the full brand block for the project_id we pass
+        // below. Do NOT hand-build a second brand block here — that produced
+        // two DB reads and two differently-shaped brand blocks in one prompt.
+        // Only performance context is enriched locally.
         try {
-          const [{ data: brandData }, { data: ideationData }] = await Promise.all([
-            callEdgeFunction<{ success?: boolean; profile?: Record<string, unknown> | null }>(
-              'mcp-data',
-              {
-                action: 'brand-profile',
-                projectId: project_id,
-              },
-              { timeoutMs: 30_000 }
-            ),
-            callEdgeFunction<{ success?: boolean; context?: { promptInjection?: string } }>(
-              'mcp-data',
-              {
-                action: 'ideation-context',
-                projectId: project_id,
-                days: 30,
-              },
-              { timeoutMs: 30_000 }
-            ),
-          ]);
-
-          const brandContext = brandData?.profile?.brand_context as
-            | Record<string, unknown>
-            | undefined;
-          const brandName =
-            (brandData?.profile?.brand_name as string | undefined) ||
-            (brandContext?.name as string | undefined);
-          const brandIndustry = brandContext?.industryClassification as string | undefined;
-          const voiceProfile =
-            (brandContext?.voiceProfile as Record<string, unknown> | undefined) ?? {};
-          const platformOverrides =
-            (voiceProfile.platformOverrides as
-              | Record<string, Record<string, unknown>>
-              | undefined) ?? {};
-          const platformOverride = platform ? platformOverrides[platform] : undefined;
-
-          if (brandName || brandIndustry) {
-            enrichedPrompt +=
-              `\n\nPROJECT BRAND CONTEXT:` +
-              `${brandName ? `\n- Brand: ${brandName}` : ''}` +
-              `${brandIndustry ? `\n- Industry: ${brandIndustry}` : ''}`;
-          }
-
-          const tone =
-            Array.isArray(voiceProfile.tone) && voiceProfile.tone.length > 0
-              ? voiceProfile.tone.map(String).join(', ')
-              : '';
-          const style =
-            Array.isArray(voiceProfile.style) && voiceProfile.style.length > 0
-              ? voiceProfile.style.map(String).join(', ')
-              : '';
-          const languagePatterns =
-            Array.isArray(voiceProfile.languagePatterns) && voiceProfile.languagePatterns.length > 0
-              ? voiceProfile.languagePatterns.map(String).join('; ')
-              : '';
-          const avoidPatterns =
-            Array.isArray(voiceProfile.avoidPatterns) && voiceProfile.avoidPatterns.length > 0
-              ? voiceProfile.avoidPatterns.map(String).join(', ')
-              : '';
-          const sampleContent =
-            typeof voiceProfile.sampleContent === 'string' ? voiceProfile.sampleContent : '';
-
-          const voiceParts = [
-            tone ? `Tone: ${tone}` : '',
-            style ? `Style: ${style}` : '',
-            languagePatterns ? `Use these language patterns: ${languagePatterns}` : '',
-            avoidPatterns ? `Avoid these patterns: ${avoidPatterns}` : '',
-            sampleContent ? `Voice samples:\n${sampleContent.slice(0, 1200)}` : '',
-          ].filter(Boolean);
-
-          if (platformOverride) {
-            const platformTone =
-              Array.isArray(platformOverride.tone) && platformOverride.tone.length > 0
-                ? platformOverride.tone.map(String).join(', ')
-                : '';
-            const platformStyle =
-              Array.isArray(platformOverride.style) && platformOverride.style.length > 0
-                ? platformOverride.style.map(String).join(', ')
-                : '';
-            const platformAvoid =
-              Array.isArray(platformOverride.avoidPatterns) &&
-              platformOverride.avoidPatterns.length > 0
-                ? platformOverride.avoidPatterns.map(String).join(', ')
-                : '';
-            voiceParts.push(
-              platformTone ? `Platform tone override: ${platformTone}` : '',
-              platformStyle ? `Platform style override: ${platformStyle}` : '',
-              typeof platformOverride.sampleContent === 'string'
-                ? `Platform samples:\n${platformOverride.sampleContent.slice(0, 900)}`
-                : '',
-              typeof platformOverride.ctaStyle === 'string'
-                ? `CTA style: ${platformOverride.ctaStyle}`
-                : '',
-              typeof platformOverride.hashtagStrategy === 'string'
-                ? `Hashtag strategy: ${platformOverride.hashtagStrategy}`
-                : '',
-              platformAvoid ? `Platform avoid patterns: ${platformAvoid}` : ''
-            );
-          }
-
-          if (voiceParts.filter(Boolean).length > 0) {
-            enrichedPrompt += `\n\nBRAND VOICE GUIDANCE:\n${voiceParts.filter(Boolean).join('\n')}`;
-          }
+          const { data: ideationData } = await callEdgeFunction<{
+            success?: boolean;
+            context?: { promptInjection?: string };
+          }>(
+            'mcp-data',
+            {
+              action: 'ideation-context',
+              projectId: project_id,
+              days: 30,
+            },
+            { timeoutMs: 30_000 }
+          );
 
           const perfInjection = ideationData?.context?.promptInjection;
           if (typeof perfInjection === 'string' && perfInjection.trim().length > 0) {
@@ -221,6 +137,11 @@ export function registerIdeationTools(server: McpServer): void {
           prompt: enrichedPrompt,
           model: model ?? 'gemini-2.5-flash',
           contentType: content_type,
+          // Pass the project through so the EF's compiled brand injection
+          // (source:'mcp' ∈ BRAND_INJECT_SOURCES) fires; mcp-gateway verifies
+          // project membership before forwarding. Both casings — EFs are
+          // inconsistent about which they read.
+          ...(project_id ? { projectId: project_id, project_id } : {}),
           config: {
             temperature: 0.8,
             maxOutputTokens: 4096,

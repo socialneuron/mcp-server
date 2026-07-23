@@ -43,8 +43,7 @@ function validScopes(value: unknown): string[] {
   return Array.from(
     new Set(
       value.filter(
-        (scope): scope is string =>
-          typeof scope === 'string' && VALID_MCP_SCOPES.has(scope)
+        (scope): scope is string => typeof scope === 'string' && VALID_MCP_SCOPES.has(scope)
       )
     )
   );
@@ -100,8 +99,7 @@ async function verifyCachedOpaqueToken(
 export function createTokenVerifier(options: TokenVerifierOptions) {
   const { supabaseUrl, supabaseAnonKey } = options;
   const allowSupabaseSessionTokens =
-    options.allowSupabaseSessionTokens ??
-    process.env.MCP_ALLOW_SUPABASE_SESSION_TOKENS === 'true';
+    options.allowSupabaseSessionTokens ?? process.env.MCP_ALLOW_SUPABASE_SESSION_TOKENS === 'true';
   const expectedResource =
     normalizeResource(
       options.resource ?? process.env.MCP_RESOURCE_URL ?? process.env.MCP_SERVER_URL

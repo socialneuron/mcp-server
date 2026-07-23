@@ -213,6 +213,32 @@ describe('callEdgeFunction', () => {
     expect(body.project_id).toBe('test-project-id');
   });
 
+  // 13b. Per-request token beats the env var (hosted multi-tenant safety)
+  it('per-request token wins over SOCIALNEURON_API_KEY env var', async () => {
+    // Regression for the 2026-07-15 review P1: env-key-before-request-token
+    // meant a Railway-level SOCIALNEURON_API_KEY would execute EVERY hosted
+    // customer's calls as that one account (cross-tenant by configuration).
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(200, JSON.stringify({ ok: true })))
+    );
+    const { requestContext } = await import('./request-context.js');
+    await requestContext.run(
+      {
+        userId: 'user-req',
+        scopes: [],
+        token: 'snk_live_request_token',
+        creditsUsed: 0,
+        assetsGenerated: 0,
+        projectId: null,
+      },
+      async () => {
+        await callEdgeFunction('test-fn', {});
+      }
+    );
+    expect(sentHeaders().Authorization).toBe('Bearer snk_live_request_token');
+  });
+
   // 13. Sets Authorization header with Bearer token
   it('proxies through mcp-gateway with the API key', async () => {
     vi.stubGlobal(
@@ -262,7 +288,10 @@ describe('callEdgeFunction', () => {
     vi.stubGlobal(
       'fetch',
       vi.fn(async () =>
-        mockResponse(403, JSON.stringify({ error: { error_type: 'permission_denied', message: 'private detail' } }))
+        mockResponse(
+          403,
+          JSON.stringify({ error: { error_type: 'permission_denied', message: 'private detail' } })
+        )
       )
     );
 
@@ -291,9 +320,9 @@ describe('callEdgeFunction', () => {
             failure_reason: 'generation_failed',
             error: 'SQL at private.internal: password=secret',
             internal_trace: 'secret',
-          }),
-        ),
-      ),
+          })
+        )
+      )
     );
 
     const result = await callEdgeFunction<Record<string, unknown>>('test-fn', {});
@@ -322,14 +351,206 @@ describe('callEdgeFunction', () => {
             credits_charged: -1,
             billing_status: 'internal_manual_override',
             failure_reason: 'database_host_private.internal',
-          }),
-        ),
-      ),
+          })
+        )
+      )
     );
 
     const result = await callEdgeFunction<Record<string, unknown>>('test-fn', {});
 
     expect(result.data).toBeNull();
     expect(result.error).toBe('Backend request failed (HTTP 500).');
+  });
+});
+
+/**
+ * 1e (2026-07-17 sweep): actionable 4xx bodies with { error, message } relay
+ * code + scrubbed message instead of collapsing to "Backend request failed".
+ */
+describe('actionable 4xx passthrough (1e)', () => {
+  beforeEach(() => {
+    vi.restoreAllMocks();
+    process.env.SOCIALNEURON_API_KEY = 'snk_live_test';
+  });
+
+  it('relays the gateway INJECTION_DETECTED message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({
+            error: 'INJECTION_DETECTED',
+            message:
+              "Request rejected: Shell metacharacter detected in value in field 'topic'. Remove special characters and retry.",
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('test-fn', {});
+    expect(result.error).toContain('INJECTION_DETECTED');
+    expect(result.error).toContain("field 'topic'");
+  });
+
+  it('relays a validation 422 message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          422,
+          JSON.stringify({
+            error: 'validation_error',
+            message: 'platforms must be a non-empty array',
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('test-fn', {});
+    expect(result.error).toContain('platforms must be a non-empty array');
+  });
+
+  it('scrubs PII from a relayed 4xx message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({
+            error: 'validation_error',
+            message: 'user someone@example.com missing project_id',
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('test-fn', {});
+    expect(result.error).not.toContain('someone@example.com');
+    expect(result.error).toContain('project_id');
+  });
+
+  it('does NOT relay 5xx bodies (still collapses)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(500, JSON.stringify({ error: 'internal', message: 'stack at private.table' }))
+      )
+    );
+
+    const result = await callEdgeFunction('test-fn', {});
+    expect(result.error).toBe('Backend request failed (HTTP 500).');
+  });
+
+  it('does NOT relay a sensitive 4xx message (falls back to collapsed code)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({ error: 'weird', message: 'stripe rejected sk_live_abc123' }) // gitleaks:allow — synthetic fixture
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('test-fn', {});
+    expect(result.error).not.toContain('sk_live_');
+  });
+
+  // schedule-post's TikTok compliance gate returns `{ code, error }` (NOT
+  // `{ error, message }`). Before the passthrough recognised this shape the
+  // code was dropped and the 400 collapsed to a generic "Backend request
+  // failed", so agent callers could not self-correct. (Phase 5, 2026-07-18.)
+  it('surfaces the schedule-post TikTok privacy-required code+message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({
+            success: false,
+            code: 'TIKTOK_PRIVACY_LEVEL_REQUIRED',
+            error:
+              'TikTok requires a privacy level to be selected. Please choose a privacy level before posting.',
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('schedule-post', {});
+    expect(result.error).toContain('TIKTOK_PRIVACY_LEVEL_REQUIRED');
+    expect(result.error).toContain('privacy level');
+    expect(result.error).not.toBe('Backend request failed (HTTP 400).');
+  });
+
+  it('surfaces the schedule-post TikTok branded/SELF_ONLY conflict code+message', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({
+            success: false,
+            code: 'TIKTOK_BRANDED_SELF_ONLY_CONFLICT',
+            error:
+              'Branded content visibility cannot be set to private on TikTok. Please select a different privacy level.',
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('schedule-post', {});
+    expect(result.error).toContain('TIKTOK_BRANDED_SELF_ONLY_CONFLICT');
+    expect(result.error).not.toBe('Backend request failed (HTTP 400).');
+  });
+  // Message-less `{ error: "<string>" }` bodies — the generation-EF catch /
+  // reportGenerationFailure 400 shape (kie-image-generate etc). Previously
+  // ALWAYS collapsed to the generic error, which made the 2026-07-20 carousel
+  // per-slide 400s undiagnosable from the client side. Actionable lone strings
+  // now relay (scrubbed); non-actionable / sensitive ones still collapse.
+  it('relays an actionable message-less error string from a generation-EF 400', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({
+            error: 'aspect ratio 4:5 is not allowed for this model',
+            taskId: '',
+            status: 'failed',
+            billing_status: 'failed_no_charge',
+          })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('kie-image-generate', {});
+    expect(result.error).toContain('not allowed');
+    expect(result.error).not.toBe('Backend request failed (HTTP 400).');
+  });
+
+  it('still collapses a non-actionable message-less error string', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(400, JSON.stringify({ error: 'boom', status: 'failed' })))
+    );
+
+    const result = await callEdgeFunction('kie-image-generate', {});
+    expect(result.error).toBe('Backend request failed (HTTP 400).');
+  });
+
+  it('still collapses a sensitive message-less error string (kie internals)', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () =>
+        mockResponse(
+          400,
+          JSON.stringify({ error: 'kie.ai createTask rejected: prompt invalid', status: 'failed' })
+        )
+      )
+    );
+
+    const result = await callEdgeFunction('kie-image-generate', {});
+    expect(result.error).toBe('Backend request failed (HTTP 400).');
   });
 });

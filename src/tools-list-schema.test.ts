@@ -60,9 +60,10 @@ describe('tools/list schema (P1.6 — SDK serialization emits rich schemas)', ()
     ]) {
       const tool = out.tools.find(t => t.name === name);
       expect(tool, `${name} should be present`).toBeDefined();
-      expect(tool!.inputSchema?.properties ?? {}, `${name} should accept project_id`).toHaveProperty(
-        'project_id'
-      );
+      expect(
+        tool!.inputSchema?.properties ?? {},
+        `${name} should accept project_id`
+      ).toHaveProperty('project_id');
     }
   });
 

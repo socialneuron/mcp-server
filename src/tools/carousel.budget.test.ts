@@ -31,11 +31,15 @@ describe('create_carousel budget enforcement', () => {
 
     const callEdgeFunction = vi.fn();
     vi.doMock('../lib/edge-function.js', () => ({ callEdgeFunction }));
-    vi.doMock('../lib/supabase.js', () => ({
-      getSupabaseClient: vi.fn(),
-      getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
-      getDefaultProjectId: vi.fn().mockResolvedValue(null),
-    }));
+    vi.doMock('../lib/supabase.js', async importOriginal => {
+      const actual = await importOriginal<typeof import('../lib/supabase.js')>();
+      return {
+        ...actual,
+        getSupabaseClient: vi.fn(),
+        getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
+        getDefaultProjectId: vi.fn().mockResolvedValue(null),
+      };
+    });
 
     const { registerCarouselTools } = await import('./carousel.js');
     const server = createMockServer();
@@ -81,11 +85,15 @@ describe('create_carousel budget enforcement', () => {
       error: null,
     });
     vi.doMock('../lib/edge-function.js', () => ({ callEdgeFunction }));
-    vi.doMock('../lib/supabase.js', () => ({
-      getSupabaseClient: vi.fn(),
-      getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
-      getDefaultProjectId: vi.fn().mockResolvedValue(null),
-    }));
+    vi.doMock('../lib/supabase.js', async importOriginal => {
+      const actual = await importOriginal<typeof import('../lib/supabase.js')>();
+      return {
+        ...actual,
+        getSupabaseClient: vi.fn(),
+        getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
+        getDefaultProjectId: vi.fn().mockResolvedValue(null),
+      };
+    });
 
     const { registerCarouselTools } = await import('./carousel.js');
     const server = createMockServer();

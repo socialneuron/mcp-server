@@ -4,7 +4,7 @@
  * Run: npx tsx examples/sdk/04-error-handling.ts
  */
 
-import { SocialNeuron, SocialNeuronError } from "@socialneuron/sdk";
+import { SocialNeuron, SocialNeuronError } from '@socialneuron/sdk';
 
 const sn = new SocialNeuron({
   apiKey: process.env.SOCIALNEURON_API_KEY!,
@@ -15,15 +15,17 @@ async function generateWithRetry(prompt: string, maxRetries = 3) {
     try {
       return await sn.content.generate({
         prompt,
-        platform: "tiktok",
-        content_type: "script",
+        platform: 'tiktok',
+        content_type: 'script',
       });
     } catch (err) {
       if (err instanceof SocialNeuronError) {
         // Rate limited — wait and retry
         if (err.status === 429 && err.retryAfter && attempt < maxRetries) {
-          console.log(`Rate limited. Waiting ${err.retryAfter}s (attempt ${attempt}/${maxRetries})`);
-          await new Promise((r) => setTimeout(r, err.retryAfter! * 1000));
+          console.log(
+            `Rate limited. Waiting ${err.retryAfter}s (attempt ${attempt}/${maxRetries})`
+          );
+          await new Promise(r => setTimeout(r, err.retryAfter! * 1000));
           continue;
         }
 
@@ -46,5 +48,5 @@ async function generateWithRetry(prompt: string, maxRetries = 3) {
   }
 }
 
-const result = await generateWithRetry("3 tips for better Instagram reels");
-console.log("Generated:", result?.data);
+const result = await generateWithRetry('3 tips for better Instagram reels');
+console.log('Generated:', result?.data);

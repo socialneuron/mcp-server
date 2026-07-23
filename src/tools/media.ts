@@ -379,6 +379,7 @@ export function registerMediaTools(server: McpServer): void {
               operation: 'put',
               contentType: ct,
               filename: basename(file_name ?? src),
+              fileSize: fileBuffer.length,
               projectId: project_id,
             },
             { timeoutMs: 10_000 }
@@ -558,40 +559,83 @@ export function registerMediaTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'get_media_url',
-    'Get a fresh signed URL for an R2 media key. Use when a previously returned signed URL has ' +
-      'expired (they last 1 hour). Pass the r2_key from upload_media or check_status.',
+    'Get a fresh signed URL for R2 media. Use when a previously returned signed URL has ' +
+      'expired (they last 1 hour). Pass the r2_key from upload_media or check_status, or the ' +
+      'job_id from check_status (the job row resolves the key server-side — works for legacy ' +
+      'key formats too).',
     {
       r2_key: z
         .string()
+        .optional()
         .describe('The R2 object key (e.g. "org_x/user_y/images/2026-04-03/abc.png").'),
+      job_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          'An async job ID from check_status. The server resolves the job to its stored media ' +
+            'key — use this when the raw key fails to sign (legacy key formats).'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Response format. Default: text.'),
     },
-    async ({ r2_key, response_format }) => {
+    async ({ r2_key, job_id, response_format }) => {
       const format = response_format ?? 'text';
       // check_status returns durable storage references with an `r2://` marker
       // so callers can distinguish them from temporary provider URLs. The
       // signing Edge Function expects the raw object key, however. Accept the
       // exact value returned by check_status instead of forcing every agent to
       // know about and strip this transport marker itself.
-      const normalizedR2Key = r2_key.startsWith('r2://')
-        ? r2_key.slice('r2://'.length)
-        : r2_key;
+      const normalizedR2Key = r2_key?.startsWith('r2://') ? r2_key.slice('r2://'.length) : r2_key;
+
+      // 1f (2026-07-17 sweep): check_status tells agents they can pass its
+      // job_id here — accept that handoff. A bare UUID is never a valid R2
+      // object key (keys are paths), so treat it as a job id.
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const effectiveJobId =
+        job_id ?? (normalizedR2Key && UUID_RE.test(normalizedR2Key) ? normalizedR2Key : undefined);
+
+      if (!effectiveJobId && !normalizedR2Key) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Provide r2_key or job_id (both come from upload_media / check_status).',
+            },
+          ],
+          isError: true,
+        };
+      }
 
       const { data, error } = await callEdgeFunction<{
         signedUrl?: string;
         url?: string;
         key?: string;
         expiresIn?: number;
-      }>('get-signed-url', { r2Key: normalizedR2Key, operation: 'get' }, { timeoutMs: 10_000 });
+      }>(
+        'get-signed-url',
+        effectiveJobId
+          ? { jobId: effectiveJobId, operation: 'get' }
+          : { r2Key: normalizedR2Key, operation: 'get' },
+        { timeoutMs: 10_000 }
+      );
 
       const signedDownloadUrl = data?.url ?? data?.signedUrl;
 
       if (error) {
+        // Legacy-format keys can fail path-based ownership validation even
+        // though the media is the user's own — point the agent at the job_id
+        // path, which resolves ownership through the job row instead.
+        const legacyHint =
+          /403|access denied|permission_denied|forbidden/i.test(error) && !effectiveJobId
+            ? ' This media key may predate ownership tracking — retry with the job_id from check_status, or re-upload the file to get a canonical key.'
+            : '';
         return {
-          content: [{ type: 'text' as const, text: `Failed to sign R2 key: ${error}` }],
+          content: [
+            { type: 'text' as const, text: `Failed to sign R2 key: ${error}${legacyHint}` },
+          ],
           isError: true,
         };
       }
@@ -609,7 +653,12 @@ export function registerMediaTools(server: McpServer): void {
             {
               type: 'text' as const,
               text: JSON.stringify(
-                { signed_url: signedDownloadUrl, r2_key, expires_in: data?.expiresIn ?? 3600 },
+                {
+                  signed_url: signedDownloadUrl,
+                  r2_key: r2_key ?? data?.key ?? null,
+                  ...(effectiveJobId ? { job_id: effectiveJobId } : {}),
+                  expires_in: data?.expiresIn ?? 3600,
+                },
                 null,
                 2
               ),
@@ -625,7 +674,7 @@ export function registerMediaTools(server: McpServer): void {
             type: 'text' as const,
             text: [
               `Signed URL: ${signedDownloadUrl}`,
-              `Media key: ${maskR2Key(r2_key)}`,
+              `Media key: ${maskR2Key(r2_key ?? data?.key ?? effectiveJobId ?? '')}`,
               `Expires in: ${data?.expiresIn ?? 3600}s`,
             ].join('\n'),
           },

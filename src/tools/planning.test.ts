@@ -45,6 +45,20 @@ describe('planning tools', () => {
     mockGetProjectId.mockResolvedValue('11111111-1111-1111-1111-111111111111');
   });
 
+  it('plan_content_week marks the social-neuron-ai call as structured output (anti-slop gate skip)', async () => {
+    mockCallEdge.mockResolvedValue({ data: { text: '{"posts": []}' }, error: null });
+    await server.getHandler('plan_content_week')!({
+      topic: 'tiny bakes',
+      platforms: ['instagram'],
+      days: 1,
+    });
+    const aiCall = mockCallEdge.mock.calls.find(c => c[0] === 'social-neuron-ai');
+    expect(aiCall).toBeDefined();
+    expect((aiCall![1] as Record<string, unknown>).config).toEqual({
+      responseMimeType: 'application/json',
+    });
+  });
+
   it('plan_content_week includes insights_applied and persists plan', async () => {
     mockCallEdge.mockResolvedValueOnce({
       data: { success: true, profile: { brand_name: 'Acme', brand_context: { voiceProfile: {} } } },

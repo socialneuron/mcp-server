@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerRemotionTools } from './remotion.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
+import { callEdgeFunction } from '../lib/edge-function.js';
 
 vi.mock('@remotion/bundler', () => ({
   bundle: vi.fn(async () => '/tmp/bundle'),
@@ -23,6 +24,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 const mockRateLimit = vi.mocked(checkRateLimit);
+const mockCallEdge = vi.mocked(callEdgeFunction);
 
 describe('remotion tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -138,6 +140,164 @@ describe('remotion tools', () => {
       expect(text).toContain('Composition: CaptionedClip');
       expect(text).toContain('Format: mp4');
       expect(text).toContain('1080x1920');
+    });
+  });
+
+  // =========================================================================
+  // render_template_video (project scoping — 2026-07-16 multi-brand fix)
+  // =========================================================================
+  describe('render_template_video', () => {
+    it('forwards project_id as projectId to create-remotion-job', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          jobId: 'job-1',
+          contentHistoryId: 'ch-1',
+          creditsCharged: 10,
+          estimatedDurationSeconds: 15,
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: JSON.stringify({
+          title: 't',
+          kpis: [],
+          barData: [],
+          donutData: [],
+          lineData: [],
+        }),
+        project_id: 'project-abc',
+      });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'create-remotion-job',
+        expect.objectContaining({ projectId: 'project-abc' })
+      );
+      expect(result.isError).toBeUndefined();
+      expect(result.content[0].text).toContain('Job ID: job-1');
+      expect(result.content[0].text).toContain('Project: project-abc');
+    });
+
+    it('omits projectId entirely when project_id is not supplied (never guesses a project)', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          jobId: 'job-2',
+          contentHistoryId: 'ch-2',
+          creditsCharged: 10,
+          estimatedDurationSeconds: 15,
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: JSON.stringify({
+          title: 't',
+          kpis: [],
+          barData: [],
+          donutData: [],
+          lineData: [],
+        }),
+      });
+
+      const callArgs = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+      expect(callArgs).not.toHaveProperty('projectId');
+      expect(result.content[0].text).toContain('Project: (unscoped)');
+    });
+
+    it('returns a stable JSON job handoff including project_id', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          jobId: 'job-3',
+          contentHistoryId: 'ch-3',
+          creditsCharged: 10,
+          estimatedDurationSeconds: 15,
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: JSON.stringify({
+          title: 't',
+          kpis: [],
+          barData: [],
+          donutData: [],
+          lineData: [],
+        }),
+        project_id: 'project-xyz',
+        response_format: 'json',
+      });
+
+      expect(JSON.parse(result.content[0].text)).toEqual({
+        data: expect.objectContaining({
+          job_id: 'job-3',
+          jobId: 'job-3',
+          project_id: 'project-xyz',
+        }),
+      });
+    });
+
+    it('surfaces a failure (e.g. project access denied) as an error, never silently reassigning the project', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: null,
+        error: 'Backend request failed (HTTP 403).',
+      });
+
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: JSON.stringify({
+          title: 't',
+          kpis: [],
+          barData: [],
+          donutData: [],
+          lineData: [],
+        }),
+        project_id: 'someone-elses-project',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Failed to create render job');
+    });
+
+    it('returns rate limit error when rate limited', async () => {
+      mockRateLimit.mockReturnValueOnce({ allowed: false, retryAfter: 7 });
+
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: '{}',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Rate limit exceeded');
+    });
+
+    it('returns error for unknown composition_id', async () => {
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({ composition_id: 'NonExistentComp', input_props: '{}' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Unknown composition "NonExistentComp"');
+    });
+
+    it('returns error for invalid input_props JSON', async () => {
+      const handler = server.getHandler('render_template_video')!;
+      const result = await handler({
+        composition_id: 'DataVizDashboard',
+        input_props: 'not-json{{{',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Invalid JSON in input_props');
     });
   });
 });

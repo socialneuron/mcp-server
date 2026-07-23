@@ -7,11 +7,11 @@
  * Schema 2020-12 natively, so the discovery `inputSchema` drops straight into
  * each `requestBody`.
  *
- * Served at `GET /v1/openapi.json` as Social Neuron's unauthenticated REST
- * discovery extension. OpenAPI is not an MCP-specified endpoint. Memoized.
+ * Served at `GET /v1/openapi.json` (unauthenticated — discovery metadata, per
+ * the MCP spec's own `/v1/openapi.json` = no-auth convention). Memoized.
  */
 import { buildDiscoveryCatalog } from './discovery-catalog.js';
-import { publicToolsForProfile, type ToolProfile } from './tool-profile.js';
+import { TOOL_CATALOG } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
 import { MCP_VERSION } from './version.js';
 
@@ -80,29 +80,29 @@ const ERROR_RESPONSE = (description: string) => ({
   content: { 'application/json': { schema: { $ref: '#/components/schemas/ToolError' } } },
 });
 
-const cached = new Map<ToolProfile, Promise<Record<string, unknown>>>();
+let cached: Promise<Record<string, unknown>> | null = null;
 
 /** Build (once, memoized) the OpenAPI 3.1 document for the REST surface. */
-export function buildOpenApiDocument(profile: ToolProfile = 'full'): Promise<Record<string, unknown>> {
-  let doc = cached.get(profile);
-  if (!doc) {
-    doc = computeOpenApiDocument(profile);
-    cached.set(profile, doc);
-  }
-  return doc;
+export function buildOpenApiDocument(): Promise<Record<string, unknown>> {
+  if (!cached) cached = computeOpenApiDocument();
+  return cached;
 }
 
 /** Test-only: clear the memoized document. */
 export function __resetOpenApiCache(): void {
-  cached.clear();
+  cached = null;
 }
 
-async function computeOpenApiDocument(profile: ToolProfile): Promise<Record<string, unknown>> {
-  const discovery = await buildDiscoveryCatalog(profile); // name, description, inputSchema
+async function computeOpenApiDocument(): Promise<Record<string, unknown>> {
+  const discovery = await buildDiscoveryCatalog(); // name, description, inputSchema
   const schemaByName = new Map(discovery.map(t => [t.name, t.inputSchema]));
 
-  // Public REST surface = the same public catalog projection as the server card.
-  const publicTools = publicToolsForProfile(profile);
+  // Public REST surface matches the server card and authenticated REST list.
+  // hiddenFromPublicCount tools remain callable through authenticated MCP
+  // registration only; unauthenticated OpenAPI must not advertise them.
+  const publicTools = TOOL_CATALOG.filter(
+    t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+  );
 
   const paths: Record<string, unknown> = {};
   for (const tool of publicTools) {
@@ -175,6 +175,6 @@ async function computeOpenApiDocument(profile: ToolProfile): Promise<Record<stri
 }
 
 /** Count of REST-exposed operations — used by verify:metadata to guard drift. */
-export function publicRestToolCount(profile: ToolProfile = 'full'): number {
-  return publicToolsForProfile(profile).length;
+export function publicRestToolCount(): number {
+  return TOOL_CATALOG.filter(t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount).length;
 }

@@ -31,11 +31,11 @@ export function registerBrandTools(server: McpServer): void {
       url: z
         .string()
         .min(1)
-        .max(2048)
         .describe(
           'The website URL to analyze for brand identity (e.g. "https://example.com"). ' +
-            'Bare handles are rejected; supply a full profile URL or use ' +
-            '"platform:handle" shorthand (e.g. "instagram:acmefoods").'
+            'Bare handles ("acmefoods") or ambiguous @handles ("@acmefoods") are rejected — ' +
+            'supply a full profile URL, or use "platform:handle" shorthand ' +
+            '(e.g. "instagram:acmefoods", "tiktok:@acmefoods").'
         ),
       response_format: z
         .enum(['text', 'json'])
@@ -43,10 +43,19 @@ export function registerBrandTools(server: McpServer): void {
         .describe('Optional response format. Defaults to text.'),
     },
     async ({ url: rawUrl, response_format }) => {
+      // Handle/URL normalization (2026-07-13 fix): the schema used to require
+      // `.url()`, which forces the CALLING agent to guess a scheme onto a
+      // bare handle before it ever reaches us (e.g. "littleworldloops" ->
+      // "https://littleworldloops") — a syntactically valid but unresolvable
+      // URL that only failed much later with a raw DNS error. Normalizing
+      // here lets us detect and reject that shape with actionable guidance
+      // instead of silently forwarding it to brand-extract.
       const normalized = normalizeBrandUrlInput(rawUrl);
       if (normalized.invalidUrl) {
         return {
-          content: [{ type: 'text' as const, text: `URL blocked: "${rawUrl}" is not a valid URL.` }],
+          content: [
+            { type: 'text' as const, text: `URL blocked: "${rawUrl}" is not a valid URL.` },
+          ],
           isError: true,
         };
       }
@@ -56,8 +65,9 @@ export function registerBrandTools(server: McpServer): void {
             {
               type: 'text' as const,
               text:
-                `"${rawUrl}" looks like a handle, not a full URL. Provide a profile URL ` +
-                'or use "platform:handle" shorthand (for example "instagram:acmefoods").',
+                `"${rawUrl}" looks like a handle, not a full URL — extract_brand needs a real ` +
+                'profile URL. Provide one directly (e.g. "https://instagram.com/acmefoods") or ' +
+                'use "platform:handle" shorthand (e.g. "instagram:acmefoods").',
             },
           ],
           isError: true,
