@@ -137,6 +137,15 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   'vite@8.1.5',
   '@remotion/bundler@4.0.496',
   '@remotion/renderer@4.0.496',
+  // 2026-07-23: security patch, GHSA path traversal, founder drain waiver
+  // 2026-07-23. @hono/node-server 2.0.10 (published 2026-07-15, 8 days old)
+  // fixes GHSA-frvp-7c67-39w9 (Windows serve-static path traversal, <2.0.5)
+  // and GHSA-9mqv-5hh9-4cgg (WS-handshake memory-leak DoS, 2.0.0-2.0.9) —
+  // 2.0.5 alone would still be vulnerable to the second advisory. Transitive
+  // via @modelcontextprotocol/sdk, pinned through package.json "overrides"
+  // in root + both apps; verified npm ci + test + build green on all three
+  // surfaces before this exception.
+  '@hono/node-server@2.0.10',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
