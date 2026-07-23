@@ -173,15 +173,41 @@ describe('brand tools', () => {
       );
     });
 
-    it('delegates default project resolution to mcp-data when local project context is missing', async () => {
+    // Parity with private #2563: on a multi-project key with no default,
+    // get_brand_profile must FAIL CLOSED with the project list instead of
+    // calling mcp-data with no projectId — the path that produced the bare
+    // HTTP 500 and risked returning another brand's profile.
+    it('fails closed (text) when no project resolves on a multi-project key', async () => {
       mockGetProjectId.mockResolvedValueOnce(null);
+
+      const handler = server.getHandler('get_brand_profile')!;
+      const result = await handler({});
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      // The vulnerable path — calling mcp-data with a missing project — must not run.
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('fails closed (json) when no project resolves on a multi-project key', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+
+      const handler = server.getHandler('get_brand_profile')!;
+      const result = await handler({ response_format: 'json' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('returns the profile in json format for an explicit project_id', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {
           success: true,
           profile: {
-            project_id: 'resolved-project',
-            brand_name: 'Resolved Brand',
-            version: 1,
+            project_id: 'proj-json',
+            brand_name: 'JsonBrand',
+            version: 2,
             updated_at: '2026-06-05T00:00:00Z',
             brand_context: {},
           },
@@ -190,12 +216,15 @@ describe('brand tools', () => {
       });
 
       const handler = server.getHandler('get_brand_profile')!;
-      const result = await handler({});
+      const result = await handler({ project_id: 'proj-json', response_format: 'json' });
 
       expect(result.isError).not.toBe(true);
-      expect(result.content[0].text).toContain('Resolved Brand');
-      expect(result.content[0].text).toContain('Project: resolved-project');
-      expect(mockCallEdge).toHaveBeenCalledWith('mcp-data', { action: 'brand-profile' });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed.data.brand_name).toBe('JsonBrand');
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({ action: 'brand-profile', projectId: 'proj-json' })
+      );
     });
   });
 

@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultProjectId, resolveProjectStrict } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { normalizeBrandUrlInput } from '../lib/brandUrlInput.js';
@@ -161,7 +161,23 @@ export function registerBrandTools(server: McpServer): void {
         .describe('Optional response format. Defaults to text.'),
     },
     async ({ project_id, response_format }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      // Strict project resolution (public parity with private #2563): on a
+      // multi-project key with no default, fail closed with the caller's
+      // project list instead of calling mcp-data with no projectId — the path
+      // that produced the bare HTTP 500 and risked cross-brand resolution.
+      const resolution = await resolveProjectStrict(project_id);
+      if (!resolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: resolution.error ?? 'project_id is required to load a brand profile.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const projectId = resolution.projectId;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -170,7 +186,7 @@ export function registerBrandTools(server: McpServer): void {
         error?: string;
       }>('mcp-data', {
         action: 'brand-profile',
-        ...(projectId ? { projectId } : {}),
+        projectId,
       });
 
       if (efError || (result && !result.success)) {
