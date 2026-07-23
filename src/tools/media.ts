@@ -6,6 +6,7 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
+import { checkLocalReadAllowed } from '../lib/local-path-guard.js';
 import { getDefaultUserId } from '../lib/supabase.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
@@ -343,6 +344,16 @@ export function registerMediaTools(server: McpServer): void {
                   `or supply a public URL via \`source\`.`,
               },
             ],
+            isError: true,
+          };
+        }
+        // Path allowlist / secret-location denylist, enforced in the server
+        // (outside the model). Blocks a prompt-injected `source` from reading
+        // SSH keys, cloud credentials, dotenv, etc. before the byte read.
+        const pathDecision = await checkLocalReadAllowed(src);
+        if (!pathDecision.allowed) {
+          return {
+            content: [{ type: 'text' as const, text: pathDecision.reason! }],
             isError: true,
           };
         }

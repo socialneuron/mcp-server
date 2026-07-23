@@ -1,0 +1,41 @@
+# Response to the external privacy & security review — 2026-07-23
+
+This is a point-by-point response to the third-party "SocialNeuron public MCP privacy and security review" (dated 23 July 2026), checked against the **actual source at branch `claude/mcp-tools-social-testing-2y5ky6`** (post-#307 merge) and live database state — not just the public artifacts the reviewer had. It also cross-references the two internal adversarial audits (`2026-07-21-mcp-full-adversarial-audit.md`, `2026-07-14-*`).
+
+**Overall:** the review is well-founded and largely aligns with our own adversarial audit two days earlier — that convergence is a credibility signal, not something to argue with. Several findings were already fixed or are fixed in flight; one concrete code finding (**#4, local filesystem authority**) was fixed in direct response to this review; the privacy/DPA/cookie items are website/legal work that this repo cannot resolve and that need counsel.
+
+## Technical findings
+
+| # | Finding | Verdict vs source | Status |
+|---|---|---|---|
+| 1 | Hosted 2.0.0 vs public 1.9.1 — no parity assertion | **Accurate.** `package.json` is 1.9.1; hosted reports 2.0.0 from the private monorepo. Partial tooling exists (`verify:release:live`, `verify:metadata:live` check the live server-card/metadata against the release) but there is **no build-digest/SBOM/commit attestation** proving the hosted binary is this source. | Open — assurance gap. Needs immutable build provenance for the hosted deploy. |
+| 2 | 30 tools lacked explicit compound project/account binding (14 Jul audit) | **Partly superseded.** At the MCP layer today, identity is *always* the caller's own token (`edge-function.ts:143-170`), `getDefaultProjectId`/`resolveProjectStrict` refuse to guess on ambiguity, and `connected-account-routing.ts` fails closed and is re-checked before spend. The authoritative project↔caller binding is enforced in the out-of-repo gateway/RLS, which is **not publicly verifiable** — the reviewer is right about that. | Open (backend) — MCP-layer controls verified; needs a backend tenant-isolation test per tool. |
+| 3 | Plan-derived scopes are broader than least privilege | **Accurate design critique.** Team/Agency = `mcp:full` incl. `mcp:comments`/`mcp:autopilot` (`docs/auth.md`); scopes aren't incrementally selected. | Open — product/backend (scopes issued by `mcp-auth`). Mitigation below: split credentials. |
+| 4 | Local `upload_media` reads any filesystem path (no allowlist) | **Accurate and confirmed.** stdio `upload_media` did `readFile(src)` with only a transport gate — no directory restriction (`media.ts`). | **FIXED (this change).** New `src/lib/local-path-guard.ts`: realpath-resolved strict allowlist via `SOCIALNEURON_MEDIA_DIRS` **plus** an always-on denylist of secret locations (SSH/cloud/GPG creds, dotenv, private keys, `/proc`, `/sys`, `/etc/shadow`). Symlink/`..` escape is blocked by realpath. 22 tests. |
+| 5 | Prompt injection can reach destructive/public side effects; detector is heuristic | **Accurate; matches our audit.** The scanner is a phrase/zero-width/bidi blocklist, not a semantic boundary — our audit found a Cyrillic-homoglyph bypass (SCANNER-F1) and fail-open secret redaction (SCANNER-F2). MCP destructive annotations are client hints, not authorization. | Partially mitigated: destructive tools require `confirm:true`; #4 closes local file exfil; scanner rework is in PR #249. **Host-side confirmation is still the real control** (see mitigations). |
+| 6 | HyperFrames renders caller-supplied HTML/URL — isolation unproven | **Accurate framing.** The renderer is out-of-repo; egress/credentials/quotas can't be verified from source. | Open (backend) — needs an evidenced renderer sandbox. |
+| 7 | OAuth DCR client secrets stored recoverably | **Confirmed at code level.** `mcp_oauth_clients.client_secret` is persisted and returned verbatim by `getClient` (`oauth-provider.ts` `rowToClient`). This is coupled to the MCP SDK's `OAuthRegisteredClientsStore` contract (the SDK expects the full secret back to compare), so it isn't a trivial swap to hashing. | Open — flagged, not hot-patched (changing it risks breaking live OAuth). Recommend envelope-encryption-at-rest with a separated key, or SDK-level hash-compare. |
+| 8 | Rate-limit & session state are process-local | **Accurate; matches our RATE-F2.** In-memory maps; N replicas → N× limits; bucket key differs per surface (`mcp:` vs `rest:`). Not caller-forgeable (userId is token-derived). | Open — needs shared store or gateway-side ceiling. |
+| 9 | External-media redirect/rehost can cross the validated-fetch boundary | **Accurate, and partly strengthened.** We fixed the IPv4-mapped/NAT64 IPv6 SSRF bypass on 2026-07-21 (metadata/loopback via `[::ffff:169.254.169.254]` now blocked). `capture_screenshot` still follows redirects without per-hop revalidation (SSRF-2, stdio). | Partially fixed; keep auto-rehost mandatory for untrusted media. |
+
+Minor calibration: the "91 tools" the reviewer saw live is the intended **public** count; `tools.lock.json` lists 104 including internal/hidden tools. Not a discrepancy.
+
+## Privacy & compliance findings
+
+These concern the **public website's** privacy notice, DPA page, and cookie notice — **not code in this repository**. This repo can't resolve them; they need the privacy/legal owner. Honestly stated:
+
+- **UK GDPR Art. 13/14 transparency** — the reviewer's gap list (lawful basis per purpose, subprocessor categories, transfer safeguards, retention, ICO complaint route, Art. 14 indirect-collection info, AI-provider recipient mapping) is a legitimate checklist. If the public page is the *complete* notice with no layered disclosure at collection, this is a likely deficiency. **Action: counsel + web team**, not code.
+- **DPA Art. 28** — if the public summary is the *operative* agreement it's likely insufficient, and the blanket "processor for everything" label is probably wrong (we're a controller for billing/security-logging/telemetry/product). **Action: counsel** confirms a full signed DPA exists and corrects the role split.
+- **PECR / cookies (PostHog, Sentry)** — conditional, correctly. Our own telemetry code sends only tool name/status/duration/error-class/HMAC'd userId (no inputs/outputs/keys — verified in `posthog.ts`), but the **website** analytics config (PostHog session/identify, Sentry payloads) is separate and needs a cookie inventory + a real objection mechanism, not just "change your browser settings." **Action: web/privacy team.**
+- **"Human always approves" vs shipped capability** — **confirmed inconsistency.** `auto_approve_plan`, `run_content_pipeline`, and autopilot exist (all `mcp:autopilot`), and `schedule_post` posts immediately when `schedule_at` is omitted. If marketing says approval is always manual, that must be qualified by plan/config. **Action: correct the public copy.**
+
+## Recommended safeguards (agreed — these are the right posture)
+
+The reviewer's "immediate safeguards" are sound and we endorse them for any pilot: project-scoped **`mcp:read`** credentials for agents that read untrusted content; **split capabilities across separate credentials/processes**; **host-side human confirmation** for `schedule_post`/immediate publish/comment reply/moderate/delete/connect/`auto_approve_plan`/`run_content_pipeline`/recipe/autopilot (don't rely on MCP annotations); pin an exact version and sandbox the local package with only a dedicated media dir mounted (now enforceable via `SOCIALNEURON_MEDIA_DIRS`); keep auto-rehost on; `DO_NOT_TRACK=1` for confidential workflows; dedicated test accounts.
+
+## What changed in response
+
+- **Finding #4 fixed** — `src/lib/local-path-guard.ts` + wired into `upload_media`; the filesystem allowlist the reviewer asked for is now enforced in the server, outside the model. Non-breaking (ordinary media paths still work; only secret locations and, when configured, out-of-allowlist paths are refused).
+- Findings #1/#2/#3/#6/#7/#8 and the privacy items are routed above to backend/product/legal owners with specific asks; #5/#9 are mitigated by prior fixes + PR #249 + host confirmation.
+
+Full suite green with the change: 1387 tests, 0 skipped; typecheck clean; `verify:lock` 104/104.
