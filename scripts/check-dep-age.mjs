@@ -146,6 +146,12 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // in root + both apps; verified npm ci + test + build green on all three
   // surfaces before this exception.
   '@hono/node-server@2.0.10',
+  // 2026-07-23 (round 2): dependabot rebase moved #317/#314 to same-day
+  // releases; re-verified locally on the new heads (npm ci + tests + build
+  // green) before pinning. Same founder waiver as above.
+  'posthog-node@5.46.1',
+  '@remotion/bundler@4.0.498',
+  '@remotion/renderer@4.0.498',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
