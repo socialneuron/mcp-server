@@ -147,7 +147,7 @@ A missing/invalid bearer token returns **401** (no body).
 Limiting is layered — a request must clear all of the layers that apply to it:
 
 1. **Per-IP (pre-auth):** 60 requests/min, before credentials are even checked.
-2. **Per-user (post-auth):** 100 requests/min flat across every paid tier — Pro, Team, Agency, and the legacy `business` tier all share the same 100 rpm cap. Trial keys get a deliberately lower **15 requests/min** abuse guard. (`constants/pricing.ts`'s per-tier `mcp.rateLimit` field is set to `100` for pro/team/agency — the old 30/60/120 tier ladder was retired 2026-07-17 as it never matched what the gateway enforces; the flat 100 rpm in `supabase/functions/mcp-gateway/index.ts` is the live behavior and now the pricing constant matches it.)
+2. **Per-user (post-auth):** 100 requests/min flat across every paid tier — Pro, Team, Agency, and the legacy `business` tier all share the same 100 rpm cap. Trial keys get a deliberately lower **15 requests/min** abuse guard.
 3. **Per-tool caps** on expensive operations, regardless of the per-user budget:
 
    | Tool / function | Cap |
@@ -159,7 +159,7 @@ Limiting is layered — a request must clear all of the layers that apply to it:
    | `schedule_post` | 10/min |
    | Brand extraction | 5/min |
 
-4. **Account-wide session cap:** 500 calls/hour across all keys for the account (`MCP_SESSION_HARD_CAP`, raised from 200 on 2026-07-16). Read/poll-heavy calls (`kie-task-status`, `get-signed-url`) are weighted at 0.2x toward this cap since they dominate normal usage volume without representing abuse.
+4. **Account-wide session cap:** 500 calls/hour across all keys for the account. Read/poll-heavy calls (`kie-task-status`, `get-signed-url`) are weighted at 0.2x toward this cap since they dominate normal usage volume without representing abuse.
 
 | Tier | Requests/min (per-user) | Credits/mo |
 |------|-------------|------------|

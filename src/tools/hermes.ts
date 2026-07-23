@@ -9,8 +9,7 @@
  *   - Log per-campaign spend.
  *   - Read currently-live campaigns to bias content drafts.
  *
- * Plan: /docs/12-engineering-log/handover/2026-05-22-hermes-social-action-plan.md §11.
- * Backed by 6 actions added to supabase/functions/mcp-data/index.ts on 2026-05-22.
+ * Backed by dedicated data-layer actions in the backend data function.
  */
 import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -76,11 +75,9 @@ export function registerHermesTools(server: McpServer): void {
       );
 
       if (error) {
-        // Structured error (audit finding #188 pattern, .claude/rules-equivalent
-        // convention already used by lifecycle.ts) instead of the previous bare
-        // `Error: ${error}` text block, which (a) gave the model no
-        // machine-readable code to branch/retry on, and (b) is the tool-side
-        // half of the "[object Object]" bug: `error` here is always the
+        // Structured error (same convention as lifecycle.ts) instead of a bare
+        // `Error: ${error}` text block, which gave the model no
+        // machine-readable code to branch/retry on. `error` here is always the
         // *already-sanitized* string callEdgeFunction/safeGatewayError
         // produced, but the real cause was upstream in mcp-data's own error
         // handler doing `String(nonErrorObject)` on a thrown Postgrest error
@@ -414,7 +411,7 @@ export function registerHermesTools(server: McpServer): void {
   server.tool(
     'record_heartbeat',
     'Report a start/end heartbeat for a Claude cloud routine or scheduled ExO agent into the ' +
-      "SN admin Agents fleet tracker (/admin/agents). Call once with phase='start' when the run " +
+      "operator fleet tracker. Call once with phase='start' when the run " +
       "begins and once with phase='end' when it finishes, reusing the same run_id for both. " +
       'This is telemetry only — never authenticate with a bearer secret to report a heartbeat; ' +
       'this tool uses the MCP session you are already authenticated with.',
@@ -423,7 +420,7 @@ export function registerHermesTools(server: McpServer): void {
         .string()
         .min(1)
         .max(200)
-        .describe('Routine/agent/cron slug, e.g. "cfo-report", "hermes-fleet-digest".'),
+        .describe('Routine/agent/cron slug, e.g. "daily-digest", "weekly-report".'),
       phase: z
         .enum(['start', 'end'])
         .describe("'start' when the run begins, 'end' when it finishes."),
