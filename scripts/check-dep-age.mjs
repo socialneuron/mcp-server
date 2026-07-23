@@ -137,6 +137,12 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   'vite@8.1.5',
   '@remotion/bundler@4.0.496',
   '@remotion/renderer@4.0.496',
+  // 2026-07-23 (round 2): dependabot rebase moved #317/#314 to same-day
+  // releases; re-verified locally on the new heads (npm ci + tests + build
+  // green) before pinning. Same founder waiver as above.
+  'posthog-node@5.46.1',
+  '@remotion/bundler@4.0.498',
+  '@remotion/renderer@4.0.498',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
