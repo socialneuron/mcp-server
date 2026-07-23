@@ -124,6 +124,19 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   'typescript@7.0.2',
   'vitest@4.1.10',
   'vite@8.1.4',
+  // 2026-07-23: founder-directed drain of the dependabot queue (waived the
+  // cooldown for this batch). Verified locally on each PR head before
+  // exemption: npm ci + full test suite + build green (drain log,
+  // private memory-bank/audits/2026-07-23-pr-issue-drain-review.md).
+  // Publishers: jose by panva (canonical), posthog-node by PostHog,
+  // vite by GitHub Actions with npm provenance, @remotion/* by the
+  // project's canonical maintainer. Exact pins only; all age out of the
+  // 14-day window by 2026-08-06.
+  'jose@6.2.4',
+  'posthog-node@5.46.0',
+  'vite@8.1.5',
+  '@remotion/bundler@4.0.496',
+  '@remotion/renderer@4.0.496',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
