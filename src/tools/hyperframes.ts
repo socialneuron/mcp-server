@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 
@@ -216,7 +216,9 @@ export function registerHyperframesTools(server: McpServer): void {
       project_id: z
         .string()
         .optional()
-        .describe('Project ID to associate the Hyperframes render with.'),
+        .describe(
+          'Project ID to associate the Hyperframes render with. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -233,6 +235,22 @@ export function registerHyperframesTools(server: McpServer): void {
       project_id,
       response_format,
     }) => {
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for Hyperframes rendering. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       const userId = await getDefaultUserId();
 
       const rateLimit = checkRateLimit('generation', `render_hyperframes:${userId}`);
@@ -286,7 +304,7 @@ export function registerHyperframesTools(server: McpServer): void {
           durationSec: duration_sec,
           fps: fps || 30,
           quality: quality || 'standard',
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
         });
 
         if (error || !data?.jobId) {
@@ -303,7 +321,7 @@ export function registerHyperframesTools(server: McpServer): void {
           fps: fps || 30,
           aspect_ratio: aspect_ratio || '9:16',
           quality: quality || 'standard',
-          project_id: project_id || null,
+          project_id: resolvedProjectId,
         };
 
         return {

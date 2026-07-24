@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerIdeationTools } from './ideation.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 
 describe('ideation tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
     server = createMockServer();
     registerIdeationTools(server as any);
   });
@@ -19,10 +24,15 @@ describe('ideation tools', () => {
   // =========================================================================
   describe('generate_content', () => {
     it('enriches prompt with platform, brand_voice, and content_type then calls social-neuron-ai', async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: { text: 'Generated script about AI tools' },
-        error: null,
-      });
+      mockCallEdge
+        .mockResolvedValueOnce({
+          data: { success: true, context: { promptInjection: '' } },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { text: 'Generated script about AI tools' },
+          error: null,
+        });
 
       const handler = server.getHandler('generate_content')!;
       const result = await handler({
@@ -32,8 +42,8 @@ describe('ideation tools', () => {
         brand_voice: 'professional and empathetic',
       });
 
-      expect(mockCallEdge).toHaveBeenCalledOnce();
-      const [fnName, body, opts] = mockCallEdge.mock.calls[0];
+      expect(mockCallEdge).toHaveBeenCalledTimes(2);
+      const [fnName, body, opts] = mockCallEdge.mock.calls[1];
       expect(fnName).toBe('social-neuron-ai');
 
       // Prompt should contain all enrichment parts
@@ -46,6 +56,8 @@ describe('ideation tools', () => {
       // Body fields
       expect(body.contentType).toBe('script');
       expect(body.model).toBe('gemini-2.5-flash');
+      expect(body.projectId).toBe('test-project-id');
+      expect(body.project_id).toBe('test-project-id');
       expect(body.config).toEqual({ temperature: 0.8, maxOutputTokens: 4096 });
 
       // Timeout
@@ -56,10 +68,15 @@ describe('ideation tools', () => {
     });
 
     it('returns isError on Edge Function failure', async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: null,
-        error: 'Rate limit exceeded',
-      });
+      mockCallEdge
+        .mockResolvedValueOnce({
+          data: { success: true, context: { promptInjection: '' } },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: null,
+          error: 'Rate limit exceeded',
+        });
 
       const handler = server.getHandler('generate_content')!;
       const result = await handler({
@@ -144,18 +161,36 @@ describe('ideation tools', () => {
       expect(finalBody.projectId).toBe('11111111-1111-4111-8111-111111111111');
     });
 
-    it('omits projectId from the EF body when project_id is not provided', async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: { text: 'Generated without project' },
-        error: null,
-      });
+    it('auto-resolves the sole project and threads it through when project_id is omitted', async () => {
+      mockCallEdge
+        .mockResolvedValueOnce({
+          data: { success: true, context: { promptInjection: '' } },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { text: 'Generated with sole project' },
+          error: null,
+        });
 
       const handler = server.getHandler('generate_content')!;
       await handler({ prompt: 'Write something', content_type: 'caption' });
 
-      const finalBody = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
-      expect(finalBody.projectId).toBeUndefined();
-      expect(finalBody.project_id).toBeUndefined();
+      const finalBody = mockCallEdge.mock.calls[1][1] as Record<string, unknown>;
+      expect(finalBody.projectId).toBe('test-project-id');
+      expect(finalBody.project_id).toBe('test-project-id');
+    });
+
+    it('fails closed before enrichment or generation when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const handler = server.getHandler('generate_content')!;
+      const result = await handler({ prompt: 'Write something', content_type: 'caption' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 
@@ -222,10 +257,15 @@ describe('ideation tools', () => {
   // =========================================================================
   describe('adapt_content', () => {
     it('includes platform guidelines in prompt and calls social-neuron-ai', async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: { text: 'Adapted caption for Twitter' },
-        error: null,
-      });
+      mockCallEdge
+        .mockResolvedValueOnce({
+          data: { success: true, profile: null },
+          error: null,
+        })
+        .mockResolvedValueOnce({
+          data: { text: 'Adapted caption for Twitter' },
+          error: null,
+        });
 
       const handler = server.getHandler('adapt_content')!;
       const result = await handler({
@@ -235,8 +275,9 @@ describe('ideation tools', () => {
         brand_voice: 'playful',
       });
 
-      expect(mockCallEdge).toHaveBeenCalledOnce();
-      const [fnName, body] = mockCallEdge.mock.calls[0];
+      expect(mockCallEdge).toHaveBeenCalledTimes(2);
+      expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data');
+      const [fnName, body] = mockCallEdge.mock.calls[1];
       expect(fnName).toBe('social-neuron-ai');
 
       const sentPrompt = body.prompt as string;
@@ -255,6 +296,8 @@ describe('ideation tools', () => {
       expect(text).toContain('Adapted for twitter');
       expect(text).toContain('from instagram');
       expect(text).toContain('Adapted caption for Twitter');
+      expect(body.projectId).toBe('test-project-id');
+      expect(body.project_id).toBe('test-project-id');
     });
 
     it('injects project platform voice overrides into adaptation prompt', async () => {
@@ -301,7 +344,28 @@ describe('ideation tools', () => {
       expect(sentPrompt).toContain('Match this platform style:');
       expect(sentPrompt).toContain('CTA style: end with a thoughtful question');
       expect(sentPrompt).toContain('Hashtag strategy: 2-4 niche hashtags');
+      expect(mockCallEdge.mock.calls[1][1]).toEqual(
+        expect.objectContaining({
+          projectId: '11111111-1111-4111-8111-111111111111',
+          project_id: '11111111-1111-4111-8111-111111111111',
+        })
+      );
       expect(result.content[0].text).toContain('Adapted with voice overrides');
+    });
+
+    it('fails closed before adaptation spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('adapt_content')!({
+        content: 'Original draft content.',
+        target_platform: 'linkedin',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 });

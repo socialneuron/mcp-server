@@ -7,6 +7,7 @@ import {
   getDefaultUserId,
   getDefaultProjectId,
   listAccessibleProjectsWithAccountStatus,
+  resolveProjectStrict,
 } from '../lib/supabase.js';
 import { sanitizeDbError } from '../lib/sanitize-error.js';
 import type {
@@ -191,7 +192,8 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe(
           'Project ID to associate the video with (brand context is auto-injected from the ' +
-            'project brand profile). Omit to generate without a project association.'
+            'project brand profile). Required when more than one project is accessible; omitted ' +
+            'values auto-resolve only when exactly one project is accessible.'
         ),
       response_format: z
         .enum(['text', 'json'])
@@ -210,6 +212,21 @@ export function registerContentTools(server: McpServer): void {
       response_format,
     }) => {
       const format = response_format ?? 'text';
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for video generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
       if (!assetBudget.ok) {
@@ -258,7 +275,7 @@ export function registerContentTools(server: McpServer): void {
           ...(end_frame_url && { endFrameUrl: end_frame_url }),
           // The server reads projectId and enforces
           // ownership via resolveProjectAndContent (index.ts:416-423).
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
         },
         { timeoutMs: 30_000 }
       );
@@ -380,7 +397,9 @@ export function registerContentTools(server: McpServer): void {
       project_id: z
         .string()
         .optional()
-        .describe('Project ID to associate the generated image with.'),
+        .describe(
+          'Project ID to associate the generated image with. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -388,6 +407,22 @@ export function registerContentTools(server: McpServer): void {
     },
     async ({ prompt, model, aspect_ratio, image_url, project_id, response_format }) => {
       const format = response_format ?? 'text';
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for image generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       const userId = await getDefaultUserId();
       const assetBudget = checkAssetBudget();
       if (!assetBudget.ok) {
@@ -424,7 +459,7 @@ export function registerContentTools(server: McpServer): void {
           model,
           aspectRatio: aspect_ratio ?? '1:1',
           imageUrl: image_url,
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
         },
         { timeoutMs: 30_000 }
       );
@@ -468,7 +503,7 @@ export function registerContentTools(server: McpServer): void {
                   taskId: data.taskId,
                   asyncJobId: data.asyncJobId,
                   model: data.model,
-                  projectId: project_id ?? null,
+                  projectId: resolvedProjectId,
                 }),
                 null,
                 2
@@ -786,7 +821,9 @@ export function registerContentTools(server: McpServer): void {
       project_id: z
         .string()
         .optional()
-        .describe('Project ID for brand-scoped generation and attribution.'),
+        .describe(
+          'Project ID for brand-scoped generation and attribution. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -803,6 +840,21 @@ export function registerContentTools(server: McpServer): void {
       response_format,
     }) => {
       const format = response_format ?? 'json';
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for storyboard generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
 
       const isShortForm = ['tiktok', 'instagram-reels', 'youtube-shorts'].includes(platform);
       const duration = target_duration ?? (isShortForm ? 30 : 60);
@@ -894,7 +946,8 @@ Return ONLY valid JSON in this exact format:
           model: 'gemini-2.5-flash',
           responseFormat: 'json',
           config: { responseMimeType: 'application/json' },
-          ...(project_id && { projectId: project_id }),
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
         },
         { timeoutMs: 60_000 }
       );
@@ -1002,7 +1055,9 @@ Return ONLY valid JSON in this exact format:
       project_id: z
         .string()
         .optional()
-        .describe('Project ID to associate the generated voiceover with.'),
+        .describe(
+          'Project ID to associate a newly generated voiceover with. Required when more than one project is accessible; resume_task_id polling does not create new spend.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -1023,6 +1078,7 @@ Return ONLY valid JSON in this exact format:
       const userId = await getDefaultUserId();
 
       let taskId: string;
+      let resolvedProjectId: string | undefined;
 
       if (resume_task_id) {
         // Resuming a previously-charged job — skip budget/rate-limit/create
@@ -1040,6 +1096,22 @@ Return ONLY valid JSON in this exact format:
             isError: true,
           };
         }
+
+        const projectResolution = await resolveProjectStrict(project_id);
+        if (!projectResolution.projectId) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  projectResolution.error ??
+                  'A project_id is required for voiceover generation. Configure an explicit project or use an API key scoped to exactly one project.',
+              },
+            ],
+            isError: true,
+          };
+        }
+        resolvedProjectId = projectResolution.projectId;
 
         const estimatedCost = 15;
         const budgetCheck = checkCreditBudget(estimatedCost);
@@ -1091,7 +1163,7 @@ Return ONLY valid JSON in this exact format:
             text,
             voice: KIE_TTS_VOICE_NAMES[voice ?? 'rachel'],
             speed: speed ?? 1.0,
-            ...(project_id && { projectId: project_id }),
+            projectId: resolvedProjectId,
           },
           { timeoutMs: 30_000 }
         );
@@ -1265,7 +1337,7 @@ Return ONLY valid JSON in this exact format:
                   audioUrl: data.audioUrl,
                   durationSeconds: data.durationSeconds,
                   voice: voice ?? 'rachel',
-                  projectId: project_id ?? null,
+                  projectId: resolvedProjectId ?? project_id ?? null,
                 }),
                 null,
                 2
@@ -1371,7 +1443,12 @@ Return ONLY valid JSON in this exact format:
         .enum(['linkedin', 'instagram', 'tiktok', 'x'])
         .optional()
         .describe('Target platform. Affects tone and format guardrails.'),
-      project_id: z.string().optional().describe('Project ID to associate the carousel with.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID to associate the carousel with. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -1394,6 +1471,21 @@ Return ONLY valid JSON in this exact format:
       response_format,
     }) => {
       const format = response_format ?? 'json';
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for carousel generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
 
       const templateId = template_id ?? 'hormozi-authority';
       const resolvedStyle =
@@ -1445,7 +1537,7 @@ Return ONLY valid JSON in this exact format:
           slideCount,
           aspectRatio: ratio,
           style: resolvedStyle,
-          projectId: project_id,
+          projectId: resolvedProjectId,
           hook,
           hookFamily: hook_family,
           ctaText: cta_text,

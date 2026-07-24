@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerCarouselTools } from './carousel.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
-const mockGetProjectId = vi.mocked(getDefaultProjectId);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 
 vi.mock('../lib/edge-function.js', () => ({
   callEdgeFunction: vi.fn(),
@@ -18,7 +18,9 @@ vi.mock('../lib/supabase.js', async importOriginal => {
     ...actual,
     getSupabaseClient: vi.fn(),
     getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
-    getDefaultProjectId: vi.fn().mockResolvedValue(null),
+    resolveProjectStrict: vi.fn(async (explicitProjectId?: string) => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    })),
   };
 });
 
@@ -86,13 +88,16 @@ describe('carousel tools', () => {
     // an unexpected brand-profile lookup.
     mockCallEdge.mockReset();
     mockGetUserId.mockReset().mockResolvedValue('user_test_123');
-    mockGetProjectId.mockReset().mockResolvedValue(null);
+    mockResolveProjectStrict.mockReset().mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
     server = createMockServer();
     registerCarouselTools(server as any);
   });
 
   describe('create_carousel', () => {
     it('generates text + kicks off image jobs for each slide', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       // Phase 1: carousel text
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(3));
       // Phase 2: 3 image jobs
@@ -131,6 +136,7 @@ describe('carousel tools', () => {
     });
 
     it('does not send templatePackId when template_pack_id is omitted', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(3));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('img_job_1'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('img_job_2'));
@@ -144,6 +150,7 @@ describe('carousel tools', () => {
     });
 
     it('threads template_pack_id through to generate-carousel and surfaces it in text output', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(5));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('img_a'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('img_b'));
@@ -172,6 +179,7 @@ describe('carousel tools', () => {
     });
 
     it('template_pack_id wins over template_id when both are provided (json output)', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(4));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('job_1'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('job_2'));
@@ -229,6 +237,7 @@ describe('carousel tools', () => {
     });
 
     it('returns json format with slide-level job mapping', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('job_a'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('job_b'));
@@ -251,6 +260,7 @@ describe('carousel tools', () => {
     });
 
     it('handles partial image failures gracefully', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(3));
       // Slide 1: success
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('job_ok'));
@@ -274,6 +284,7 @@ describe('carousel tools', () => {
     });
 
     it('reports full error when carousel text generation fails', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce({
         data: null,
         error: 'Gemini rate limited',
@@ -290,6 +301,7 @@ describe('carousel tools', () => {
     });
 
     it('appends image_style_suffix to each image prompt', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('j1'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('j2'));
@@ -308,6 +320,7 @@ describe('carousel tools', () => {
     });
 
     it('uses custom template and slide count', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(5));
       for (let i = 0; i < 5; i++) {
         mockCallEdge.mockResolvedValueOnce(makeImageResponse(`j${i}`));
@@ -343,6 +356,7 @@ describe('carousel tools', () => {
     });
 
     it('handles all image failures as error status in log', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
       mockCallEdge.mockResolvedValueOnce({ data: null, error: 'fail 1' });
       mockCallEdge.mockResolvedValueOnce({ data: null, error: 'fail 2' });
@@ -360,6 +374,7 @@ describe('carousel tools', () => {
     });
 
     it('includes credit breakdown in json response', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(3));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('j1'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('j2'));
@@ -477,6 +492,7 @@ describe('carousel tools', () => {
     });
 
     it('returns brandApplied=null in json when no brand_id provided', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('nb1'));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('nb2'));
@@ -524,7 +540,7 @@ describe('carousel tools', () => {
     });
 
     it('falls back to the default project id on every image job when project_id omitted', async () => {
-      mockGetProjectId.mockResolvedValue('proj_default_999');
+      mockResolveProjectStrict.mockResolvedValueOnce({ projectId: 'proj_default_999' });
       mockCallEdge.mockResolvedValueOnce({ data: null, error: null });
       mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
       mockCallEdge.mockResolvedValueOnce(makeImageResponse('df1'));
@@ -549,23 +565,20 @@ describe('carousel tools', () => {
       }
     });
 
-    it('omits projectId from image jobs when no project_id and no default project resolves', async () => {
-      mockGetProjectId.mockResolvedValue(null);
-      mockCallEdge.mockResolvedValueOnce(makeCarouselResponse(2));
-      mockCallEdge.mockResolvedValueOnce(makeImageResponse('nn1'));
-      mockCallEdge.mockResolvedValueOnce(makeImageResponse('nn2'));
+    it('fails closed before carousel text or slide generation when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
 
       const handler = server.getHandler('create_carousel')!;
-      await handler({
+      const result = await handler({
         topic: 'no project test',
         image_model: 'flux-pro',
       });
 
-      const imageCalls = mockCallEdge.mock.calls.filter(c => c[0] === 'kie-image-generate');
-      expect(imageCalls).toHaveLength(2);
-      for (const call of imageCalls) {
-        expect(call[1]).not.toHaveProperty('projectId');
-      }
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 });

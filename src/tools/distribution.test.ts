@@ -76,6 +76,21 @@ describe('distribution tools', () => {
       error: null,
     });
 
+    it('fails closed before connected-account lookup or publishing when project scope is ambiguous', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+
+      const result = await server.getHandler('schedule_post')!({
+        media_url: 'https://example.com/video.mp4',
+        caption: 'Do not guess the brand',
+        platforms: ['tiktok'],
+        auto_rehost: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
     it('normalizes platform names to capitalized convention', async () => {
       mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube', 'TikTok']));
       mockCallEdge.mockResolvedValueOnce({
@@ -1353,6 +1368,29 @@ describe('distribution tools', () => {
         return { data: null, error: 'Unknown call' };
       });
     }
+
+    it('fails closed before plan scheduling when project scope is ambiguous', async () => {
+      mockGetProjectId.mockResolvedValueOnce(null);
+
+      const result = await server.getHandler('schedule_content_plan')!({
+        plan: {
+          posts: [
+            {
+              id: 'ambiguous-project-post',
+              caption: 'Never infer a brand from connected-account state.',
+              platform: 'twitter',
+            },
+          ],
+        },
+        auto_slot: false,
+        dry_run: true,
+        enforce_quality: false,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
 
     it('filters to approved/edited posts when plan approvals exist', async () => {
       const planId = '11111111-1111-1111-1111-111111111111';

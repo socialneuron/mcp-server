@@ -2,7 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerPlanningTools } from './planning.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultProjectId, getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 
 vi.mock('../lib/edge-function.js');
 vi.mock('../lib/supabase.js');
@@ -16,6 +16,7 @@ vi.mock('../lib/ssrf.js', () => ({
 const mockCallEdge = vi.mocked(callEdgeFunction);
 const mockGetUserId = vi.mocked(getDefaultUserId);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
+const mockResolveStrict = vi.mocked(resolveProjectStrict);
 
 const MOCK_POSTS = [
   {
@@ -43,6 +44,25 @@ describe('planning tools', () => {
     registerPlanningTools(server as any);
     mockGetUserId.mockResolvedValue('test-user-id');
     mockGetProjectId.mockResolvedValue('11111111-1111-1111-1111-111111111111');
+    mockResolveStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? '11111111-1111-1111-1111-111111111111',
+    }));
+  });
+
+  it('plan_content_week fails closed before extraction or AI spend when project scope is ambiguous', async () => {
+    mockResolveStrict.mockResolvedValueOnce({
+      error: 'project_id is required — your account has 2 projects.',
+    });
+
+    const result = await server.getHandler('plan_content_week')!({
+      topic: 'tiny bakes',
+      platforms: ['instagram'],
+      days: 1,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('project_id is required');
+    expect(mockCallEdge).not.toHaveBeenCalled();
   });
 
   it('plan_content_week marks the social-neuron-ai call as structured output (anti-slop gate skip)', async () => {

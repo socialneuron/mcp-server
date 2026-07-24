@@ -478,7 +478,10 @@ export function registerDistributionTools(server: McpServer): void {
         .uuid()
         .optional()
         .describe(
-          'Social Neuron brand/project ID to associate this post with. Provide this when the account has multiple brands so brand voice and connected account routing stay scoped to the right brand.'
+          'Social Neuron brand/project ID to associate this post with. REQUIRED when the account ' +
+            'has multiple brands/projects — omitting it only auto-resolves when there is exactly ' +
+            'one accessible project. Call list_connected_accounts first to discover the correct ' +
+            'project_id and confirm the platform is connected for that brand.'
         ),
       response_format: z
         .enum(['text', 'json'])
@@ -558,11 +561,9 @@ export function registerDistributionTools(server: McpServer): void {
           isError: true,
         };
       }
-      // Platform-aware: only a project with a usable account for one of the
-      // REQUESTED platforms counts as an auto-resolve candidate (F1-followup,
-      // 2026-07-15) — an unrelated platform's account must not manufacture a
-      // false "sole candidate".
-      const projectResolution = await resolveProjectForConnectedAccountTool(project_id, platforms);
+      // Publishing must never infer brand scope from connected-account state.
+      // Omission is safe only when the caller has exactly one accessible project.
+      const projectResolution = await resolveProjectStrict(project_id);
       if (!projectResolution.projectId) {
         return {
           content: [
@@ -1896,7 +1897,7 @@ export function registerDistributionTools(server: McpServer): void {
           effectiveProjectId = planProjectId;
         }
         if (!effectiveProjectId) {
-          const projectResolution = await resolveProjectForConnectedAccountTool();
+          const projectResolution = await resolveProjectStrict();
           effectiveProjectId = projectResolution.projectId;
           projectAutoResolvedNote = projectResolution.autoResolvedNote;
           if (!effectiveProjectId) {

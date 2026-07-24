@@ -404,20 +404,30 @@ describe('Module: ideation', () => {
   });
 
   it('generate_content: happy path calls social-neuron-ai', async () => {
-    mockCallEdge.mockResolvedValueOnce({
-      data: { text: 'Generated script' },
-      error: null,
-    });
+    mockCallEdge
+      .mockResolvedValueOnce({
+        data: { success: true, context: { promptInjection: '' } },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { text: 'Generated script' },
+        error: null,
+      });
     const result = await server.getHandler('generate_content')!({
       prompt: 'Write a hook',
       content_type: 'script',
     });
     expect(result.content[0].text).toContain('Generated script');
-    expect(mockCallEdge.mock.calls[0][0]).toBe('social-neuron-ai');
+    expect(mockCallEdge.mock.calls[1][0]).toBe('social-neuron-ai');
   });
 
   it('generate_content: error path returns isError', async () => {
-    mockCallEdge.mockResolvedValueOnce({ data: null, error: 'Service down' });
+    mockCallEdge
+      .mockResolvedValueOnce({
+        data: { success: true, context: { promptInjection: '' } },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: null, error: 'Service down' });
     const result = await server.getHandler('generate_content')!({
       prompt: 'Write something',
       content_type: 'caption',

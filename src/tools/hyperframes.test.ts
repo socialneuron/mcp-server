@@ -1,15 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
 import { createMockServer } from '../test-setup.js';
 import { registerHyperframesTools } from './hyperframes.js';
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 
 describe('hyperframes tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
     server = createMockServer();
     registerHyperframesTools(server as never);
   });
@@ -58,5 +63,20 @@ describe('hyperframes tools', () => {
         project_id: 'project-123',
       }),
     });
+  });
+
+  it('fails closed before render spend when project scope is ambiguous', async () => {
+    mockResolveProjectStrict.mockResolvedValueOnce({
+      error: 'project_id is required — your account has 2 projects.',
+    });
+
+    const result = await server.getHandler('render_hyperframes')!({
+      composition_html: '<html><body>Test</body></html>',
+      duration_sec: 1,
+    });
+
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('project_id is required');
+    expect(mockCallEdge).not.toHaveBeenCalled();
   });
 });
