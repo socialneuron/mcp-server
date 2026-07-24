@@ -12,9 +12,9 @@ import {
  * read the canonical (voiceProfile + vocabularyRules) shape, so flat-v26 and
  * url_extract profiles scored as a fleet-wide no-op (F1/F2/F3/F4).
  *
- * Fixtures below mirror the REAL live prod profiles pulled 2026-06-15:
- *   flat  = Social Neuron (89f07e1e, v26, manual)
- *   nested = thevpnmatrix.com (ef8f1fce, v202, url_extract)
+ * Fixtures below mirror the two profile shapes seen in practice:
+ *   flat  = manually-created profile (fields at the top level)
+ *   nested = url_extract-created profile (fields under profile_data)
  */
 
 // flat v26 — voiceTone is a STRING, voiceTags an array, discouragedTerms has 2 hyphenated entries
@@ -49,7 +49,7 @@ function flatRaw(): Record<string, unknown> {
 // nested url_extract — avoidPatterns are PROSE with banned terms buried in parentheticals
 function nestedRaw(): Record<string, unknown> {
   return {
-    name: 'thevpnmatrix.com',
+    name: 'example-brand-two.com',
     voiceProfile: {
       tone: ['Authoritative', 'Direct', 'No-BS', 'Technically Credible'],
       style: ['Punchy', 'Educational'],
@@ -62,7 +62,7 @@ function nestedRaw(): Record<string, unknown> {
     },
     targetAudience: {
       demographics: { ageRange: '25-45' },
-      psychographics: { painPoints: ['Fake VPN reviews everywhere'], interests: ['privacy'] },
+      psychographics: { painPoints: ['Fake reviews everywhere'], interests: ['privacy'] },
     },
   };
 }

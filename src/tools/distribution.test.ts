@@ -321,13 +321,13 @@ describe('distribution tools', () => {
         data: {
           accounts: [
             {
-              id: 'vpn-twitter',
+              id: 'beta-twitter',
               platform: 'Twitter',
               status: 'active',
               effective_status: 'active',
-              username: 'thevpnmatrix',
+              username: 'example-brand-two',
               created_at: '2026-06-01T00:00:00Z',
-              project_id: 'vpn-project',
+              project_id: 'beta-project',
               expires_at: null,
               has_refresh_token: true,
             },
@@ -339,23 +339,23 @@ describe('distribution tools', () => {
       const handler = server.getHandler('schedule_post')!;
       const result = await handler({
         media_url: 'https://example.com/post.png',
-        caption: 'VPN Matrix post',
+        caption: 'Beta brand post',
         platforms: ['twitter'],
-        project_id: 'vpn-project',
+        project_id: 'beta-project',
         account_id: 'social-neuron-twitter',
         auto_rehost: false,
       });
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('social-neuron-twitter');
-      expect(result.content[0].text).toContain('project_id vpn-project');
+      expect(result.content[0].text).toContain('project_id beta-project');
       expect(mockCallEdge).toHaveBeenCalledTimes(1);
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({
           action: 'connected-accounts',
-          projectId: 'vpn-project',
-          project_id: 'vpn-project',
+          projectId: 'beta-project',
+          project_id: 'beta-project',
         }),
         expect.any(Object)
       );
@@ -989,13 +989,13 @@ describe('distribution tools', () => {
           success: true,
           accounts: [
             {
-              id: 'vpn-x',
+              id: 'beta-x',
               platform: 'Twitter',
               status: 'active',
               effective_status: 'active',
-              username: 'thevpnmatrix',
+              username: 'example-brand-two',
               created_at: '2026-06-01T00:00:00Z',
-              project_id: 'vpn-project',
+              project_id: 'beta-project',
               expires_at: null,
               has_refresh_token: true,
             },
@@ -1005,21 +1005,21 @@ describe('distribution tools', () => {
       });
 
       const handler = server.getHandler('list_connected_accounts')!;
-      const result = await handler({ project_id: 'vpn-project' });
+      const result = await handler({ project_id: 'beta-project' });
 
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({
           action: 'connected-accounts',
-          projectId: 'vpn-project',
-          project_id: 'vpn-project',
+          projectId: 'beta-project',
+          project_id: 'beta-project',
         })
       );
       const text = result.content[0].text;
-      expect(text).toContain('1 connected account(s) for project vpn-project');
-      expect(text).toContain('twitter: thevpnmatrix');
-      expect(text).toContain('id=vpn-x');
-      expect(text).toContain('project_id=vpn-project');
+      expect(text).toContain('1 connected account(s) for project beta-project');
+      expect(text).toContain('twitter: example-brand-two');
+      expect(text).toContain('id=beta-x');
+      expect(text).toContain('project_id=beta-project');
     });
 
     it('returns "No connected accounts" message when empty', async () => {

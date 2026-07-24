@@ -388,7 +388,7 @@ export function estimateLineCount(
  *   - URLs
  *   - Hashtags (#foo) and @mentions
  *   - ALLCAPS acronyms ≥3 chars
- *   - CamelCase tokens (brand names like "TheVPNMatrix")
+ *   - CamelCase tokens (brand names like "ExampleBrandTwo")
  *   - Numeric-adjacent tokens ("v2", "24/7", "covid-19")
  *   - Single-char tokens
  *   - Pure punctuation
