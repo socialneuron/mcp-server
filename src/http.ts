@@ -340,7 +340,8 @@ async function reserveSessionSlot(
       const staleEntry = sessions.get(staleId);
       if (!staleEntry) continue;
       await closeSessionEntry(staleId, staleEntry);
-      console.info(`[MCP HTTP] Replaced prior session for same client (${clientKey}).`);
+      // JSON.stringify guards against log injection via client-derived key material.
+      console.info(`[MCP HTTP] Replaced prior session for same client (${JSON.stringify(clientKey)}).`);
     }
 
     const userHasCapacity = await reclaimIdleUntilBelowLimit({
