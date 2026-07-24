@@ -152,6 +152,12 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   'posthog-node@5.46.1',
   '@remotion/bundler@4.0.498',
   '@remotion/renderer@4.0.498',
+  // 2026-07-24 (v2.0.0 sync, #342): both pins arrive from the private SSOT and
+  // have been serving production traffic on the hosted server (2.0.0) since
+  // ~07-17 — a week of de-facto canary. @sentry/node by Sentry's canonical
+  // publisher; @supabase/supabase-js by Supabase. Age out by 2026-07-30.
+  '@sentry/node@10.66.0',
+  '@supabase/supabase-js@2.110.7',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
