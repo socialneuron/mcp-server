@@ -79,7 +79,7 @@ describe('connection tools', () => {
           success: true,
           nonce: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
           platform: 'Twitter',
-          project_id: 'vpn-project',
+          project_id: 'beta-project',
           expires_at: '2026-04-25T20:00:00.000Z',
           deep_link: 'https://www.socialneuron.com/settings/connections?start=twitter&t=xxx',
         },
@@ -87,17 +87,17 @@ describe('connection tools', () => {
       });
 
       const handler = server.getHandler('start_platform_connection')!;
-      const result = await handler({ platform: 'twitter', project_id: 'vpn-project' });
+      const result = await handler({ platform: 'twitter', project_id: 'beta-project' });
 
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('Brand/project: vpn-project');
+      expect(result.content[0].text).toContain('Brand/project: beta-project');
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({
           action: 'mint-connection-nonce',
           platform: 'twitter',
-          projectId: 'vpn-project',
-          project_id: 'vpn-project',
+          projectId: 'beta-project',
+          project_id: 'beta-project',
         }),
         expect.objectContaining({ timeoutMs: 10_000 })
       );
@@ -109,7 +109,7 @@ describe('connection tools', () => {
           success: true,
           nonce: 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee',
           platform: 'Twitter',
-          project_id: 'vpn-project',
+          project_id: 'beta-project',
           expires_at: '2026-04-25T20:00:00.000Z',
           deep_link: 'https://www.socialneuron.com/settings/connections?start=twitter&t=xxx',
         },
@@ -119,12 +119,12 @@ describe('connection tools', () => {
       const handler = server.getHandler('start_platform_connection')!;
       const result = await handler({
         platform: 'twitter',
-        project_id: 'vpn-project',
+        project_id: 'beta-project',
         response_format: 'json',
       });
       const parsed = JSON.parse(result.content[0].text);
 
-      expect(parsed.project_id).toBe('vpn-project');
+      expect(parsed.project_id).toBe('beta-project');
     });
 
     it('surfaces EF errors cleanly', async () => {
@@ -258,8 +258,8 @@ describe('connection tools', () => {
               platform: 'Twitter',
               status: 'active',
               effective_status: 'active',
-              username: 'thevpnmatrix',
-              project_id: 'vpn-project',
+              username: 'example-brand-two',
+              project_id: 'beta-project',
               created_at: '2026-04-25T19:55:00.000Z',
               expires_at: null,
               has_refresh_token: true,
@@ -272,18 +272,18 @@ describe('connection tools', () => {
       const handler = server.getHandler('wait_for_connection')!;
       const result = await handler({
         platform: 'twitter',
-        project_id: 'vpn-project',
+        project_id: 'beta-project',
         poll_interval_s: 2,
       });
 
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain('Brand/project: vpn-project');
+      expect(result.content[0].text).toContain('Brand/project: beta-project');
       expect(mockCallEdge).toHaveBeenCalledWith(
         'mcp-data',
         expect.objectContaining({
           action: 'connected-accounts',
-          projectId: 'vpn-project',
-          project_id: 'vpn-project',
+          projectId: 'beta-project',
+          project_id: 'beta-project',
         }),
         expect.objectContaining({ timeoutMs: 10_000 })
       );
