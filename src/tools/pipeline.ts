@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 import { evaluateQuality } from '../lib/quality.js';
 import { MCP_VERSION } from '../lib/version.js';
 import { extractJsonArray } from '../lib/parse-utils.js';
@@ -43,7 +43,13 @@ export function registerPipelineTools(server: McpServer): void {
     'check_pipeline_readiness',
     'Pre-flight check before run_content_pipeline. Verifies: sufficient credits for estimated_posts, active OAuth on target platforms, brand profile exists, no stale insights. Returns pass/fail with specific issues to fix before running the pipeline.',
     {
-      project_id: z.string().uuid().optional().describe('Project ID (auto-detected if omitted)'),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          'Project ID for the readiness check. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       platforms: z.array(PLATFORM_ENUM).min(1).describe('Target platforms to check'),
       estimated_posts: z.number().min(1).max(50).default(5).describe('Estimated posts to generate'),
       response_format: z.enum(['text', 'json']).optional().describe('Response format'),
@@ -52,7 +58,21 @@ export function registerPipelineTools(server: McpServer): void {
       const format = response_format ?? 'text';
 
       try {
-        const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+        const projectResolution = await resolveProjectStrict(project_id);
+        if (!projectResolution.projectId) {
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  projectResolution.error ??
+                  'A project_id is required for pipeline readiness. Configure an explicit project or use an API key scoped to exactly one project.',
+              },
+            ],
+            isError: true,
+          };
+        }
+        const resolvedProjectId = projectResolution.projectId;
         const estimatedCost = BASE_PLAN_CREDITS + estimated_posts * 2;
 
         const { data: readiness, error: readinessError } = await callEdgeFunction<{
@@ -73,9 +93,8 @@ export function registerPipelineTools(server: McpServer): void {
             action: 'pipeline-readiness',
             platforms,
             estimated_posts,
-            ...(resolvedProjectId
-              ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
-              : {}),
+            projectId: resolvedProjectId,
+            project_id: resolvedProjectId,
           },
           { timeoutMs: 15_000 }
         );
@@ -187,7 +206,13 @@ export function registerPipelineTools(server: McpServer): void {
     'run_content_pipeline',
     'Run the full content pipeline: research trends → generate plan → quality check → auto-approve → schedule posts. Chains all stages in one call for maximum efficiency. Set dry_run=true to preview the plan without publishing. To schedule posts, set schedule_confirmed=true after the user explicitly approves publishing. Check check_pipeline_readiness first to verify credits, OAuth, and brand profile are ready.',
     {
-      project_id: z.string().uuid().optional().describe('Project ID (auto-detected if omitted)'),
+      project_id: z
+        .string()
+        .uuid()
+        .optional()
+        .describe(
+          'Project ID for all generated and scheduled pipeline output. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       topic: z.string().optional().describe('Content topic (required if no source_url)'),
       source_url: z.string().optional().describe('URL to extract content from'),
       platforms: z.array(PLATFORM_ENUM).min(1).describe('Target platforms'),
@@ -286,18 +311,21 @@ export function registerPipelineTools(server: McpServer): void {
       }
 
       try {
-        const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
-        if (schedulingRequested && !resolvedProjectId) {
+        const projectResolution = await resolveProjectStrict(project_id);
+        if (!projectResolution.projectId) {
           return {
             content: [
               {
                 type: 'text' as const,
-                text: 'A project_id is required to schedule pipeline output. Configure an explicit project or use an API key scoped to exactly one project.',
+                text:
+                  projectResolution.error ??
+                  'A project_id is required to run the content pipeline. Configure an explicit project or use an API key scoped to exactly one project.',
               },
             ],
             isError: true,
           };
         }
+        const resolvedProjectId = projectResolution.projectId;
 
         // Stage 0: Pre-budget connected-account routing check (F5, 2026-07-15).
         // Verify — BEFORE any credit is spent — that scheduling (if

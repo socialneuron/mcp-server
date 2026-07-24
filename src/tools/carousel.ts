@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import type { GenerateImageResponse } from '../types/index.js';
 import { MCP_VERSION } from '../lib/version.js';
@@ -116,7 +116,7 @@ async function fetchBrandVisualContext(projectId: string): Promise<BrandVisualCo
 export function registerCarouselTools(server: McpServer): void {
   server.tool(
     'create_carousel',
-    'End-to-end carousel creation: generates slide text + kicks off image generation for each slide in parallel. When brand_id is provided, auto-injects brand colors, logo watermark, and visual mood into every image prompt. Returns carousel data + image job_ids. Poll each job_id with check_status until complete, then call schedule_post with job_ids to publish as Instagram carousel (media_type=CAROUSEL_ALBUM).',
+    'End-to-end carousel creation: generates slide text + kicks off image generation for each slide in parallel. project_id may be omitted only when exactly one project is accessible; multi-project and zero-project accounts fail closed before generation. When brand_id is provided, auto-injects brand colors, logo watermark, and visual mood into every image prompt. Returns carousel data + image job_ids. Poll each job_id with check_status until complete, then call schedule_post with job_ids to publish as Instagram carousel (media_type=CAROUSEL_ALBUM).',
     {
       topic: z
         .string()
@@ -228,9 +228,14 @@ export function registerCarouselTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'Brand/project ID to pull visual context from (colors, logo, mood). Falls back to project_id, then default project.'
+          'Brand/project ID to pull visual context from (colors, logo, mood). Falls back to the resolved project_id.'
         ),
-      project_id: z.string().optional().describe('Project ID to associate the carousel with.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID to associate the carousel with. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -263,10 +268,25 @@ export function registerCarouselTools(server: McpServer): void {
       const slideCount = slide_count ?? 7;
       const ratio = aspect_ratio ?? '1:1';
 
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for carousel generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       // ── Fetch brand visual context (if brand_id or project_id provided) ──
       let brandContext: BrandVisualContext | null = null;
-      const defaultProjectId = await getDefaultProjectId();
-      const brandProjectId = brand_id || project_id || defaultProjectId;
+      const brandProjectId = brand_id || resolvedProjectId;
       // Project the carousel + every slide image are associated with. This MUST be
       // threaded explicitly to both the generate-carousel EF and each per-slide
       // kie-image-generate call. Without it the worker uploads slide images with no
@@ -274,7 +294,6 @@ export function registerCarouselTools(server: McpServer): void {
       // ("A verified project or organization is required for uploads") — this is the
       // gap that killed 21 flux-pro slide generations on 2026-07-18. brand_id is
       // visual-context only, so it is deliberately NOT used for association here.
-      const resolvedProjectId = project_id || defaultProjectId;
       if (brandProjectId) {
         brandContext = await fetchBrandVisualContext(brandProjectId);
       }

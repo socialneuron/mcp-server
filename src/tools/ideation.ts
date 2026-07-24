@@ -2,7 +2,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultUserId, resolveProjectStrict } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type {
   GenerateContentResponse,
@@ -26,7 +26,7 @@ export function registerIdeationTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'generate_content',
-    'Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. Output is draft text ready for quality_check then schedule_post.',
+    'Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. project_id may be omitted only when exactly one project is accessible; multi-project and zero-project accounts fail closed before generation. Output is draft text ready for quality_check then schedule_post.',
     {
       prompt: z
         .string()
@@ -71,10 +71,26 @@ export function registerIdeationTools(server: McpServer): void {
         .uuid()
         .optional()
         .describe(
-          'Project ID to auto-load brand profile and performance context for prompt enrichment.'
+          'Project ID to auto-load brand profile and performance context for prompt enrichment. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
         ),
     },
     async ({ prompt, content_type, platform, brand_voice, model, project_id }) => {
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for content generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       // Rate limit content generation (30 req/min per user)
       try {
         const userId = await getDefaultUserId();
@@ -100,7 +116,7 @@ export function registerIdeationTools(server: McpServer): void {
         enrichedPrompt += `\n\nBrand Voice: ${brand_voice}`;
       }
 
-      if (project_id) {
+      if (resolvedProjectId) {
         // Brand injection is owned by the social-neuron-ai EF: mcp-gateway
         // stamps source:'mcp' (a BRAND_INJECT_SOURCES member) and the EF
         // loads + compiles the full brand block for the project_id we pass
@@ -115,7 +131,7 @@ export function registerIdeationTools(server: McpServer): void {
             'mcp-data',
             {
               action: 'ideation-context',
-              projectId: project_id,
+              projectId: resolvedProjectId,
               days: 30,
             },
             { timeoutMs: 30_000 }
@@ -141,7 +157,8 @@ export function registerIdeationTools(server: McpServer): void {
           // (source:'mcp' ∈ BRAND_INJECT_SOURCES) fires; mcp-gateway verifies
           // project membership before forwarding. Both casings — EFs are
           // inconsistent about which they read.
-          ...(project_id ? { projectId: project_id, project_id } : {}),
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
           config: {
             temperature: 0.8,
             maxOutputTokens: 4096,
@@ -335,9 +352,27 @@ export function registerIdeationTools(server: McpServer): void {
         .string()
         .uuid()
         .optional()
-        .describe('Optional project ID to load platform voice overrides from brand profile.'),
+        .describe(
+          'Project ID to load platform voice overrides and attribute generation spend. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
     },
     async ({ content, source_platform, target_platform, brand_voice, project_id }) => {
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for content adaptation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+
       // Rate limit content adaptation (30 req/min per user)
       try {
         const userId = await getDefaultUserId();
@@ -374,47 +409,45 @@ export function registerIdeationTools(server: McpServer): void {
         : 'Source platform unknown.';
 
       let platformVoiceGuide = '';
-      if (project_id) {
-        try {
-          const { data: brandData } = await callEdgeFunction<{
-            success?: boolean;
-            profile?: Record<string, unknown> | null;
-          }>(
-            'mcp-data',
-            {
-              action: 'brand-profile',
-              projectId: project_id,
-            },
-            { timeoutMs: 20_000 }
-          );
-          const voiceProfile = (
-            brandData?.profile?.brand_context as Record<string, unknown> | undefined
-          )?.voiceProfile as Record<string, unknown> | undefined;
-          const avoidPatterns =
-            Array.isArray(voiceProfile?.avoidPatterns) && voiceProfile.avoidPatterns.length > 0
-              ? voiceProfile.avoidPatterns.map(String).join(', ')
-              : '';
-          const platformOverride = (
-            voiceProfile?.platformOverrides as Record<string, Record<string, unknown>> | undefined
-          )?.[target_platform];
+      try {
+        const { data: brandData } = await callEdgeFunction<{
+          success?: boolean;
+          profile?: Record<string, unknown> | null;
+        }>(
+          'mcp-data',
+          {
+            action: 'brand-profile',
+            projectId: resolvedProjectId,
+          },
+          { timeoutMs: 20_000 }
+        );
+        const voiceProfile = (
+          brandData?.profile?.brand_context as Record<string, unknown> | undefined
+        )?.voiceProfile as Record<string, unknown> | undefined;
+        const avoidPatterns =
+          Array.isArray(voiceProfile?.avoidPatterns) && voiceProfile.avoidPatterns.length > 0
+            ? voiceProfile.avoidPatterns.map(String).join(', ')
+            : '';
+        const platformOverride = (
+          voiceProfile?.platformOverrides as Record<string, Record<string, unknown>> | undefined
+        )?.[target_platform];
 
-          platformVoiceGuide = [
-            avoidPatterns ? `Avoid these patterns: ${avoidPatterns}` : '',
-            typeof platformOverride?.sampleContent === 'string'
-              ? `Match this platform style:\n${platformOverride.sampleContent.slice(0, 900)}`
-              : '',
-            typeof platformOverride?.ctaStyle === 'string'
-              ? `CTA style: ${platformOverride.ctaStyle}`
-              : '',
-            typeof platformOverride?.hashtagStrategy === 'string'
-              ? `Hashtag strategy: ${platformOverride.hashtagStrategy}`
-              : '',
-          ]
-            .filter(Boolean)
-            .join('\n');
-        } catch {
-          // best-effort
-        }
+        platformVoiceGuide = [
+          avoidPatterns ? `Avoid these patterns: ${avoidPatterns}` : '',
+          typeof platformOverride?.sampleContent === 'string'
+            ? `Match this platform style:\n${platformOverride.sampleContent.slice(0, 900)}`
+            : '',
+          typeof platformOverride?.ctaStyle === 'string'
+            ? `CTA style: ${platformOverride.ctaStyle}`
+            : '',
+          typeof platformOverride?.hashtagStrategy === 'string'
+            ? `Hashtag strategy: ${platformOverride.hashtagStrategy}`
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
+      } catch {
+        // best-effort
       }
 
       const systemPrompt =
@@ -434,6 +467,8 @@ export function registerIdeationTools(server: McpServer): void {
           prompt: `${systemPrompt}\n\n---\n\nContent to adapt:\n${content}`,
           model: 'gemini-2.5-flash',
           contentType: 'caption',
+          projectId: resolvedProjectId,
+          project_id: resolvedProjectId,
           config: {
             temperature: 0.7,
             maxOutputTokens: 2048,

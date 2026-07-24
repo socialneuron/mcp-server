@@ -3,6 +3,7 @@ import { createMockServer } from '../test-setup.js';
 import { registerRemotionTools } from './remotion.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
 
 vi.mock('@remotion/bundler', () => ({
   bundle: vi.fn(async () => '/tmp/bundle'),
@@ -25,12 +26,16 @@ vi.mock('node:fs/promises', () => ({
 
 const mockRateLimit = vi.mocked(checkRateLimit);
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 
 describe('remotion tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
     server = createMockServer();
     registerRemotionTools(server as any);
   });
@@ -181,7 +186,7 @@ describe('remotion tools', () => {
       expect(result.content[0].text).toContain('Project: project-abc');
     });
 
-    it('omits projectId entirely when project_id is not supplied (never guesses a project)', async () => {
+    it('auto-resolves the sole accessible project when project_id is omitted', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {
           success: true,
@@ -206,8 +211,29 @@ describe('remotion tools', () => {
       });
 
       const callArgs = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
-      expect(callArgs).not.toHaveProperty('projectId');
-      expect(result.content[0].text).toContain('Project: (unscoped)');
+      expect(callArgs.projectId).toBe('test-project-id');
+      expect(result.content[0].text).toContain('Project: test-project-id');
+    });
+
+    it('fails closed before render spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('render_template_video')!({
+        composition_id: 'DataVizDashboard',
+        input_props: JSON.stringify({
+          title: 't',
+          kpis: [],
+          barData: [],
+          donutData: [],
+          lineData: [],
+        }),
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('returns a stable JSON job handoff including project_id', async () => {

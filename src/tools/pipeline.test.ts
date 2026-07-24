@@ -1,11 +1,12 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerPipelineTools } from './pipeline.js';
-import { getDefaultUserId, getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultUserId, getDefaultProjectId, resolveProjectStrict } from '../lib/supabase.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 
 const mockGetUserId = vi.mocked(getDefaultUserId);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 const mockCallEdgeFunction = vi.mocked(callEdgeFunction);
 
 describe('pipeline tools', () => {
@@ -17,12 +18,36 @@ describe('pipeline tools', () => {
     registerPipelineTools(server as any);
     mockGetUserId.mockResolvedValue('test-user-id');
     mockGetProjectId.mockResolvedValue('test-project-id');
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => {
+      const projectId = explicitProjectId ?? (await mockGetProjectId());
+      return projectId
+        ? { projectId }
+        : {
+            error:
+              'project_id is required. Configure an explicit project or use an API key scoped to exactly one project.',
+          };
+    });
   });
 
   // =========================================================================
   // check_pipeline_readiness
   // =========================================================================
   describe('check_pipeline_readiness', () => {
+    it('fails closed before readiness lookup when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('check_pipeline_readiness')!({
+        platforms: ['tiktok'],
+        estimated_posts: 5,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    });
+
     it('returns ready when all checks pass', async () => {
       mockCallEdgeFunction.mockResolvedValueOnce({
         data: {
@@ -131,6 +156,22 @@ describe('pipeline tools', () => {
   // run_content_pipeline
   // =========================================================================
   describe('run_content_pipeline', () => {
+    it('fails closed before dry-run generation spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('run_content_pipeline')!({
+        topic: 'AI tips',
+        platforms: ['linkedin'],
+        dry_run: true,
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdgeFunction).not.toHaveBeenCalled();
+    });
+
     it('requires topic or source_url', async () => {
       const handler = server.getHandler('run_content_pipeline')!;
       const result = await handler({ platforms: ['tiktok'] });

@@ -29,7 +29,7 @@ describe('create_carousel budget enforcement', () => {
     process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN = '10000';
     process.env.SOCIALNEURON_MAX_ASSETS_PER_RUN = '1';
 
-    const callEdgeFunction = vi.fn();
+    const callEdgeFunction = vi.fn().mockResolvedValue({ data: null, error: null });
     vi.doMock('../lib/edge-function.js', () => ({ callEdgeFunction }));
     vi.doMock('../lib/supabase.js', async importOriginal => {
       const actual = await importOriginal<typeof import('../lib/supabase.js')>();
@@ -37,7 +37,7 @@ describe('create_carousel budget enforcement', () => {
         ...actual,
         getSupabaseClient: vi.fn(),
         getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
-        getDefaultProjectId: vi.fn().mockResolvedValue(null),
+        resolveProjectStrict: vi.fn().mockResolvedValue({ projectId: 'test-project-id' }),
       };
     });
 
@@ -71,19 +71,22 @@ describe('create_carousel budget enforcement', () => {
     process.env.SOCIALNEURON_MAX_CREDITS_PER_RUN = '10000';
     process.env.SOCIALNEURON_MAX_ASSETS_PER_RUN = '1';
 
-    const callEdgeFunction = vi.fn().mockResolvedValueOnce({
-      data: {
-        carousel: {
-          id: 'carousel_extra_slides',
-          slides: [
-            { slideNumber: 1, headline: 'Slide 1' },
-            { slideNumber: 2, headline: 'Slide 2' },
-          ],
-          credits: { estimated: 12, used: 12 },
+    const callEdgeFunction = vi
+      .fn()
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({
+        data: {
+          carousel: {
+            id: 'carousel_extra_slides',
+            slides: [
+              { slideNumber: 1, headline: 'Slide 1' },
+              { slideNumber: 2, headline: 'Slide 2' },
+            ],
+            credits: { estimated: 12, used: 12 },
+          },
         },
-      },
-      error: null,
-    });
+        error: null,
+      });
     vi.doMock('../lib/edge-function.js', () => ({ callEdgeFunction }));
     vi.doMock('../lib/supabase.js', async importOriginal => {
       const actual = await importOriginal<typeof import('../lib/supabase.js')>();
@@ -91,7 +94,7 @@ describe('create_carousel budget enforcement', () => {
         ...actual,
         getSupabaseClient: vi.fn(),
         getDefaultUserId: vi.fn().mockResolvedValue('user_test_123'),
-        getDefaultProjectId: vi.fn().mockResolvedValue(null),
+        resolveProjectStrict: vi.fn().mockResolvedValue({ projectId: 'test-project-id' }),
       };
     });
 

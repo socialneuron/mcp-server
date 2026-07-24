@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { randomUUID } from 'node:crypto';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
-import { getDefaultProjectId } from '../lib/supabase.js';
+import { getDefaultProjectId, resolveProjectStrict } from '../lib/supabase.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
 import { extractUrlContent } from '../lib/urlExtraction.js';
 import type {
@@ -115,7 +115,12 @@ export function registerPlanningTools(server: McpServer): void {
       days: z.number().min(1).max(7).default(5).describe('Number of days to plan'),
       start_date: z.string().optional().describe('ISO date, defaults to tomorrow'),
       brand_voice: z.string().optional().describe('Override brand voice description'),
-      project_id: z.string().optional().describe('Project ID for brand/insights context'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID for brand/insights context and generation spend. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
+        ),
       response_format: z.enum(['text', 'json']).default('json'),
     },
     async ({
@@ -132,12 +137,23 @@ export function registerPlanningTools(server: McpServer): void {
       const planId = randomUUID();
       const resolvedStartDate = start_date ?? tomorrowIsoDate();
       const endDate = addDaysToIsoDate(resolvedStartDate, days - 1);
-      let resolvedProjectId = project_id;
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for content-plan generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
 
       try {
-        if (!resolvedProjectId) {
-          resolvedProjectId = (await getDefaultProjectId()) ?? undefined;
-        }
         // Step 1: Extract source content (non-fatal)
         let sourceContext = '';
         if (source_url) {
