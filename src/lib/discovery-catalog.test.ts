@@ -26,7 +26,7 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     }
   });
 
-  it('advertises only the public TOOL_CATALOG projection (only adds schemas)', async () => {
+  it('advertises TOOL_CATALOG minus localOnly and internal tools (only adds schemas)', async () => {
     const tools = await buildDiscoveryCatalog();
     const expected = TOOL_CATALOG.filter(
       t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
@@ -40,6 +40,7 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     // Internal operations tools stay runtime-registered but undiscoverable.
     expect(tools.map(t => t.name)).not.toContain('write_agent_reflection');
     expect(tools.map(t => t.name)).not.toContain('save_draft_to_library');
+    expect(tools.map(t => t.name)).not.toContain('record_heartbeat');
     expect(tools.map(t => t.name)).not.toContain('get_loop_pulse');
     expect(tools.map(t => t.name)).not.toContain('get_bandit_state');
     for (const t of tools) {

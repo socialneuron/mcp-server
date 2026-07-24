@@ -43,7 +43,7 @@ describe('Tool catalog integrity', () => {
 
   it('registerAllTools registers same count as TOOL_CATALOG', () => {
     const server = createMockServer();
-    registerAllTools(server as any);
+    registerAllTools(server as any, { includeInternalTools: true });
     // Tools may register via the legacy .tool() API or the current
     // .registerTool() API (used by @modelcontextprotocol/ext-apps for MCP Apps).
     // _handlers unifies both; count it instead of the individual spies.

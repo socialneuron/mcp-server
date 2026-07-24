@@ -76,3 +76,36 @@ describe('tool-catalog', () => {
     }
   });
 });
+
+describe('hiddenFromPublicCount (record_heartbeat, #2153/hardening)', () => {
+  const entry = TOOL_CATALOG.find(t => t.name === 'record_heartbeat');
+
+  it('record_heartbeat is flagged hiddenFromPublicCount AND internal (P0-1 scope gate)', () => {
+    // History: #2153 removed `internal: true` because it excluded the tool from
+    // the HTTP-invokable surface entirely, breaking Hermes cloud routines.
+    // Since the 2026-07-15 P0-1 fix, MCP invocation is governed by the
+    // mcp:internal SCOPE (registration + enforcement), not the catalog flag —
+    // internal-ops keys carry the scope and stay fully functional, while the
+    // flag once again correctly hides the tool from every discovery surface.
+    expect(entry?.hiddenFromPublicCount).toBe(true);
+    expect(entry?.internal).toBe(true);
+  });
+
+  it('is excluded from the public server-card count formula', () => {
+    const publicCount = TOOL_CATALOG.filter(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+    );
+    expect(publicCount.some(t => t.name === 'record_heartbeat')).toBe(false);
+  });
+
+  it('is excluded from the REST-servable set — internal ops are authenticated-MCP-only', () => {
+    // restToolNames() (rest-invoke.ts) excludes hiddenFromPublicCount AND
+    // internal, so record_heartbeat was REST-unreachable both before and after
+    // the P0-1 change. internal-ops reachability is via authenticated MCP
+    // sessions carrying the mcp:internal scope (registration-gated + enforced).
+    const servable = TOOL_CATALOG.filter(
+      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
+    );
+    expect(servable.some(t => t.name === 'record_heartbeat')).toBe(false);
+  });
+});

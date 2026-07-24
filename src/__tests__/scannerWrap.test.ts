@@ -28,6 +28,48 @@ describe('wrapToolWithScanner', () => {
     expect(JSON.stringify(r)).not.toContain('jane@example.com');
   });
 
+  it('preserves JSON numeric values that contain 16 fractional digits', async () => {
+    const confidence = 0.8333333333333334;
+    const result = {
+      content: [{ type: 'text', text: JSON.stringify({ confidence }) }],
+      structuredContent: { confidence },
+    };
+    const wrapped = wrapToolWithScanner('test_tool', vi.fn().mockResolvedValue(result));
+
+    const r = await wrapped({ msg: 'safe' }, { userId: 'user-1' } as any);
+
+    expect(r).toEqual(result);
+    expect(JSON.parse((r as any).content[0].text)).toEqual({ confidence });
+  });
+
+  it('preserves non-card identifiers while redacting Luhn-valid cards', async () => {
+    const wrapped = wrapToolWithScanner(
+      'test_tool',
+      vi.fn().mockResolvedValue({
+        content: [{ type: 'text', text: 'trace=8333333333333334 card=4111111111111111' }],
+      })
+    );
+
+    const r = await wrapped({ msg: 'safe' }, { userId: 'user-1' } as any);
+    expect(JSON.stringify(r)).toContain('8333333333333334');
+    expect(JSON.stringify(r)).toContain('[REDACTED:credit_card]');
+    expect(JSON.stringify(r)).not.toContain('4111111111111111');
+  });
+
+  it('fails closed for numeric PII and non-JSON-serializable outputs', async () => {
+    const numeric = wrapToolWithScanner(
+      'test_tool',
+      vi.fn().mockResolvedValue({ structuredContent: { card: 4111111111111111 } })
+    );
+    const bigint = wrapToolWithScanner(
+      'test_tool',
+      vi.fn().mockResolvedValue({ structuredContent: { count: 1n } })
+    );
+
+    expect((await numeric({ msg: 'safe' }, { userId: 'user-1' } as any)).isError).toBe(true);
+    expect((await bigint({ msg: 'safe' }, { userId: 'user-1' } as any)).isError).toBe(true);
+  });
+
   it('still sanitizes PII in legitimate outputs larger than the input limit', async () => {
     const handler = vi.fn().mockResolvedValue({
       content: [{ type: 'text', text: `${'x'.repeat(20_000)} jane@example.com` }],

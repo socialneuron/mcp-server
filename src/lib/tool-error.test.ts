@@ -89,14 +89,18 @@ describe('classifyToolError', () => {
   it('falls back to the mirrored text JSON when structuredContent is absent', () => {
     const textOnly = {
       isError: true as const,
-      content: [{ type: 'text', text: JSON.stringify({ error_type: 'not_found', message: 'gone' }) }],
+      content: [
+        { type: 'text', text: JSON.stringify({ error_type: 'not_found', message: 'gone' }) },
+      ],
     };
     expect(classifyToolError(textOnly)).toBe('not_found');
   });
 
   it('detects SDK input-validation errors from the text', () => {
     expect(
-      classifyToolError({ content: [{ type: 'text', text: 'MCP error -32602: Invalid arguments' }] })
+      classifyToolError({
+        content: [{ type: 'text', text: 'MCP error -32602: Invalid arguments' }],
+      })
     ).toBe('validation_error');
   });
 

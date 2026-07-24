@@ -154,16 +154,16 @@ describe('harness MCP tools', () => {
   });
 
   describe('TOOL_SCOPES', () => {
-    it('write_agent_reflection scope is mcp:write', () => {
-      expect(TOOL_SCOPES['write_agent_reflection']).toBe('mcp:write');
+    it('write_agent_reflection scope is mcp:internal', () => {
+      expect(TOOL_SCOPES['write_agent_reflection']).toBe('mcp:internal');
     });
 
-    it('record_outcome scope is mcp:write', () => {
-      expect(TOOL_SCOPES['record_outcome']).toBe('mcp:write');
+    it('record_outcome scope is mcp:internal', () => {
+      expect(TOOL_SCOPES['record_outcome']).toBe('mcp:internal');
     });
 
-    it('read_agent_reflection scope is mcp:read', () => {
-      expect(TOOL_SCOPES['read_agent_reflection']).toBe('mcp:read');
+    it('read_agent_reflection scope is mcp:internal', () => {
+      expect(TOOL_SCOPES['read_agent_reflection']).toBe('mcp:internal');
     });
   });
 });

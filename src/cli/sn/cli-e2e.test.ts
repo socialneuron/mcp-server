@@ -42,10 +42,9 @@ function run(
     env,
   });
   if (result.error) {
-    throw new Error(
-      `CLI subprocess failed for ${args.join(' ')}: ${result.error.message}`,
-      { cause: result.error }
-    );
+    throw new Error(`CLI subprocess failed for ${args.join(' ')}: ${result.error.message}`, {
+      cause: result.error,
+    });
   }
   return {
     stdout: result.stdout ?? '',

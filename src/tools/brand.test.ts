@@ -93,6 +93,8 @@ describe('brand tools', () => {
       expect(mockCallEdge).toHaveBeenCalledOnce();
       const [fnName, body, opts] = mockCallEdge.mock.calls[0];
       expect(fnName).toBe('brand-extract');
+      // Normalized via normalizeBrandUrlInput (2026-07-13 handle-input fix) —
+      // a plain new URL(...).toString() round-trip adds the trailing slash.
       expect(body).toEqual({ url: 'https://example.com/' });
       expect(opts).toEqual({ timeoutMs: 60_000 });
 
@@ -144,6 +146,71 @@ describe('brand tools', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed._meta.version).toBe(MCP_VERSION);
       expect(parsed.data.brandName).toBe('JsonBrand');
+    });
+
+    // 2026-07-13 fix: the `url` param used to be `z.string().url()`, which
+    // forced the CALLING agent to guess a scheme onto a bare handle before
+    // ever reaching us — the agent's guess (e.g. "https://littleworldloops")
+    // then sailed through unvalidated to brand-extract, failing much later
+    // with a raw DNS error. Both the bare-handle and the already-scheme'd
+    // handle-shaped-hostname case must be rejected with actionable guidance,
+    // never silently forwarded.
+    it('rejects a bare handle with guidance instead of forwarding it to brand-extract', async () => {
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'littleworldloops' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('looks like a handle, not a full URL');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+      expect(mockValidateSSRF).not.toHaveBeenCalled();
+    });
+
+    it('rejects a handle-shaped hostname even when the caller already guessed a scheme', async () => {
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'https://littleworldloops' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('looks like a handle, not a full URL');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('rejects an ambiguous @handle with no platform', async () => {
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: '@littleworldloops' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('looks like a handle, not a full URL');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('flags a scheme-only garbage string as an invalid URL', async () => {
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'https://' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('not a valid URL');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('resolves "platform:handle" shorthand to a canonical URL and proceeds with extraction', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          brandName: 'HandleBrand',
+          description: 'resolved via platform prefix',
+          colors: {},
+          voice: {},
+          audience: {},
+          logoUrl: null,
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('extract_brand')!;
+      const result = await handler({ url: 'instagram:littleworldloops' });
+
+      expect(result.isError).toBeFalsy();
+      const [, body] = mockCallEdge.mock.calls[0];
+      expect(body).toEqual({ url: 'https://instagram.com/littleworldloops' });
     });
   });
 

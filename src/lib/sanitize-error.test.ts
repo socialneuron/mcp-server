@@ -1,105 +1,83 @@
-import { describe, it, expect, vi } from "vitest";
-import {
-  sanitizeDbError,
-  sanitizeError,
-  redactSensitiveIdentifiers,
-} from "./sanitize-error.js";
+import { describe, it, expect, vi } from 'vitest';
+import { sanitizeDbError, sanitizeError, scrubPII } from './sanitize-error.js';
 
-describe("sanitizeDbError", () => {
+describe('sanitizeDbError', () => {
   // ── Permission denied ───────────────────────────────────────────────
 
-  describe("permission denied errors", () => {
-    it("returns access denied message for PGRST301 code", () => {
-      const result = sanitizeDbError({
-        code: "PGRST301",
-        message: "some detail",
-      });
-      expect(result).toBe("Access denied. Check your account permissions.");
+  describe('permission denied errors', () => {
+    it('returns access denied message for PGRST301 code', () => {
+      const result = sanitizeDbError({ code: 'PGRST301', message: 'some detail' });
+      expect(result).toBe('Access denied. Check your account permissions.');
     });
 
     it('returns access denied message when message contains "permission denied"', () => {
       const result = sanitizeDbError({
-        message: "permission denied for table secret_data",
+        message: 'permission denied for table secret_data',
       });
-      expect(result).toBe("Access denied. Check your account permissions.");
+      expect(result).toBe('Access denied. Check your account permissions.');
     });
   });
 
   // ── Table does not exist ────────────────────────────────────────────
 
-  describe("does not exist errors", () => {
-    it("returns service unavailable for 42P01 code", () => {
-      const result = sanitizeDbError({
-        code: "42P01",
-        message: 'relation "users" does not exist',
-      });
-      expect(result).toBe("Service temporarily unavailable. Please try again.");
+  describe('does not exist errors', () => {
+    it('returns service unavailable for 42P01 code', () => {
+      const result = sanitizeDbError({ code: '42P01', message: 'relation "users" does not exist' });
+      expect(result).toBe('Service temporarily unavailable. Please try again.');
     });
 
     it('returns service unavailable when message contains "does not exist"', () => {
       const result = sanitizeDbError({
         message: 'column "password_hash" does not exist',
       });
-      expect(result).toBe("Service temporarily unavailable. Please try again.");
+      expect(result).toBe('Service temporarily unavailable. Please try again.');
     });
   });
 
   // ── Constraint violations ─────────────────────────────────────────
 
-  describe("constraint violations", () => {
-    it("returns duplicate message for unique constraint violation", () => {
-      const result = sanitizeDbError({
-        code: "23505",
-        message: "duplicate key value",
-      });
-      expect(result).toBe("A duplicate record already exists.");
+  describe('constraint violations', () => {
+    it('returns duplicate message for unique constraint violation', () => {
+      const result = sanitizeDbError({ code: '23505', message: 'duplicate key value' });
+      expect(result).toBe('A duplicate record already exists.');
     });
 
-    it("returns not found for foreign key violation", () => {
-      const result = sanitizeDbError({
-        code: "23503",
-        message: "foreign key constraint",
-      });
-      expect(result).toBe("Referenced record not found.");
+    it('returns not found for foreign key violation', () => {
+      const result = sanitizeDbError({ code: '23503', message: 'foreign key constraint' });
+      expect(result).toBe('Referenced record not found.');
     });
   });
 
   // ── Unknown / generic errors ────────────────────────────────────────
 
-  describe("unknown errors", () => {
-    it("returns generic message for unrecognized error code", () => {
-      const result = sanitizeDbError({
-        code: "99999",
-        message: "something broke",
-      });
-      expect(result).toBe("Database operation failed. Please try again.");
+  describe('unknown errors', () => {
+    it('returns generic message for unrecognized error code', () => {
+      const result = sanitizeDbError({ code: '99999', message: 'something broke' });
+      expect(result).toBe('Database operation failed. Please try again.');
     });
 
-    it("returns generic message when error has no code or message", () => {
+    it('returns generic message when error has no code or message', () => {
       const result = sanitizeDbError({});
-      expect(result).toBe("Database operation failed. Please try again.");
+      expect(result).toBe('Database operation failed. Please try again.');
     });
   });
 
   // ── No schema leaks ────────────────────────────────────────────────
 
-  describe("no table/column names leak in any response", () => {
+  describe('no table/column names leak in any response', () => {
     const sensitiveInputs = [
-      { code: "PGRST301", message: "permission denied for table users" },
-      {
-        code: "42P01",
-        message: 'relation "credit_transactions" does not exist',
-      },
+      { code: 'PGRST301', message: 'permission denied for table users' },
+      { code: '42P01', message: 'relation "credit_transactions" does not exist' },
       { message: 'column "password_hash" does not exist' },
-      { message: "permission denied for schema private_data" },
-      { code: "XXXXX", message: 'constraint "fk_org_members" violated' },
+      { message: 'permission denied for schema private_data' },
+      { code: 'XXXXX', message: 'constraint "fk_org_members" violated' },
     ];
 
     for (const input of sensitiveInputs) {
       it(`does not leak schema details from: ${input.message ?? input.code}`, () => {
         const result = sanitizeDbError(input);
         expect(result).not.toMatch(
-          /users|credit_transactions|password_hash|private_data|fk_org_members/i,
+          /users|credit_transactions|password_hash|private_data|fk_org_members/i
         );
       });
     }
@@ -107,166 +85,180 @@ describe("sanitizeDbError", () => {
 
   // ── Console logging by environment ─────────────────────────────────
 
-  describe("console logging", () => {
-    it("never writes raw database errors to process logs", () => {
-      const consoleErrorSpy = vi
-        .spyOn(console, "error")
-        .mockImplementation(() => {});
-      sanitizeDbError({
-        message: 'relation "users" contains password_hash=secret',
-      });
+  describe('console logging', () => {
+    it('never writes raw database errors to process logs', () => {
+      const consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+      sanitizeDbError({ message: 'relation "users" contains password_hash=secret' });
       expect(consoleErrorSpy).not.toHaveBeenCalled();
       consoleErrorSpy.mockRestore();
     });
   });
 });
 
-describe("sanitizeError", () => {
+describe('sanitizeError', () => {
   // ── Gemini / Google AI ────────────────────────────────────────────
 
-  describe("Gemini / Google AI errors", () => {
-    it("sanitizes Gemini API errors", () => {
-      const result = sanitizeError(new Error("gemini error: model not found"));
-      expect(result).toBe("Content generation failed. Please try again.");
+  describe('Gemini / Google AI errors', () => {
+    it('sanitizes Gemini API errors', () => {
+      const result = sanitizeError(new Error('gemini error: model not found'));
+      expect(result).toBe('Content generation failed. Please try again.');
     });
 
-    it("sanitizes Google API quota errors", () => {
-      const result = sanitizeError(new Error("RESOURCE_EXHAUSTED: rate limit"));
-      expect(result).toBe(
-        "AI service rate limit reached. Please wait and retry.",
-      );
+    it('sanitizes Google API quota errors', () => {
+      const result = sanitizeError(new Error('RESOURCE_EXHAUSTED: rate limit'));
+      expect(result).toBe('AI service rate limit reached. Please wait and retry.');
     });
 
-    it("sanitizes safety filter blocks", () => {
-      const result = sanitizeError(new Error("content filter triggered"));
-      expect(result).toBe(
-        "Content was blocked by the AI safety filter. Try rephrasing.",
-      );
+    it('sanitizes safety filter blocks', () => {
+      const result = sanitizeError(new Error('content filter triggered'));
+      expect(result).toBe('Content was blocked by the AI safety filter. Try rephrasing.');
     });
   });
 
   // ── Kie.ai ────────────────────────────────────────────────────────
 
-  describe("Kie.ai errors", () => {
-    it("sanitizes kie.ai errors", () => {
-      const result = sanitizeError(new Error("kie.ai returned 500"));
-      expect(result).toBe("Media generation failed. Please try again.");
+  describe('Kie.ai errors', () => {
+    it('sanitizes kie.ai errors', () => {
+      const result = sanitizeError(new Error('kie.ai returned 500'));
+      expect(result).toBe('Media generation failed. Please try again.');
     });
   });
 
   // ── Network errors ────────────────────────────────────────────────
 
-  describe("network errors", () => {
-    it("sanitizes ECONNREFUSED", () => {
-      const result = sanitizeError(
-        new Error("connect ECONNREFUSED 127.0.0.1:5432"),
-      );
-      expect(result).toBe("External service unavailable. Please try again.");
+  describe('network errors', () => {
+    it('sanitizes ECONNREFUSED', () => {
+      const result = sanitizeError(new Error('connect ECONNREFUSED 127.0.0.1:5432'));
+      expect(result).toBe('External service unavailable. Please try again.');
     });
 
-    it("sanitizes fetch failures", () => {
-      const result = sanitizeError(new Error("fetch failed"));
-      expect(result).toBe("Network request failed. Please try again.");
+    it('sanitizes fetch failures', () => {
+      const result = sanitizeError(new Error('fetch failed'));
+      expect(result).toBe('Network request failed. Please try again.');
     });
 
-    it("sanitizes TLS errors", () => {
-      const result = sanitizeError(new Error("CERT_HAS_EXPIRED"));
-      expect(result).toBe("Secure connection failed. Please try again.");
+    it('sanitizes TLS errors', () => {
+      const result = sanitizeError(new Error('CERT_HAS_EXPIRED'));
+      expect(result).toBe('Secure connection failed. Please try again.');
     });
   });
 
   // ── Stripe errors ─────────────────────────────────────────────────
 
-  describe("Stripe errors", () => {
-    it("sanitizes stripe API key leaks", () => {
-      const result = sanitizeError(
-        new Error("Invalid API Key: sk_live_abc123"),
-      ); // gitleaks:allow — synthetic regression fixture
-      expect(result).toBe("Payment processing error. Please try again.");
-      expect(result).not.toContain("sk_live_");
+  describe('Stripe errors', () => {
+    it('sanitizes stripe API key leaks', () => {
+      const result = sanitizeError(new Error('Invalid API Key: sk_live_abc123')); // gitleaks:allow — synthetic regression fixture
+      expect(result).toBe('Payment processing error. Please try again.');
+      expect(result).not.toContain('sk_live_');
     });
   });
 
   // ── Supabase / JWT errors ─────────────────────────────────────────
 
-  describe("Supabase / JWT errors", () => {
-    it("sanitizes JWT expired errors", () => {
-      const result = sanitizeError(new Error("JWT token expired"));
-      expect(result).toBe("Authentication expired. Please re-authenticate.");
+  describe('Supabase / JWT errors', () => {
+    it('sanitizes JWT expired errors', () => {
+      const result = sanitizeError(new Error('JWT token expired'));
+      expect(result).toBe('Authentication expired. Please re-authenticate.');
     });
 
-    it("sanitizes FunctionsHttpError", () => {
-      const result = sanitizeError(
-        new Error("FunctionsHttpError: non-2xx status code"),
-      );
-      expect(result).toBe("Backend service error. Please try again.");
+    it('sanitizes FunctionsHttpError', () => {
+      const result = sanitizeError(new Error('FunctionsHttpError: non-2xx status code'));
+      expect(result).toBe('Backend service error. Please try again.');
     });
   });
 
   // ── Unknown errors ────────────────────────────────────────────────
 
-  describe("unknown errors", () => {
-    it("returns generic message for unrecognized errors", () => {
-      const result = sanitizeError(
-        new Error("something completely unexpected"),
-      );
-      expect(result).toBe("An unexpected error occurred. Please try again.");
+  describe('unknown errors', () => {
+    it('returns generic message for unrecognized errors', () => {
+      const result = sanitizeError(new Error('something completely unexpected'));
+      expect(result).toBe('An unexpected error occurred. Please try again.');
     });
 
-    it("handles string errors", () => {
-      const result = sanitizeError("a plain string error");
-      expect(result).toBe("An unexpected error occurred. Please try again.");
+    it('handles string errors', () => {
+      const result = sanitizeError('a plain string error');
+      expect(result).toBe('An unexpected error occurred. Please try again.');
     });
 
-    it("handles non-Error objects", () => {
+    it('handles non-Error objects', () => {
       const result = sanitizeError({ code: 42 });
-      expect(result).toBe("An unexpected error occurred. Please try again.");
+      expect(result).toBe('An unexpected error occurred. Please try again.');
     });
   });
 });
 
-describe("redactSensitiveIdentifiers", () => {
-  it("redacts a UUID while preserving surrounding text", () => {
-    const result = redactSensitiveIdentifiers(
-      "Job failed for 550e8400-e29b-41d4-a716-446655440000 during render",
+/**
+ * 1e (2026-07-17 sweep): actionable client (4xx-class) errors — validation,
+ * injection rejections, limit errors — were collapsed into "An unexpected
+ * error occurred", leaving agents unable to self-correct. They now pass
+ * through with PII scrubbing. Sensitive/server patterns still collapse.
+ */
+describe('actionable client-error passthrough (1e)', () => {
+  it('passes through an injection-rejection message', () => {
+    const result = sanitizeError(
+      new Error(
+        "Request rejected: Shell metacharacter detected in value in field 'topic'. Remove special characters and retry."
+      )
     );
-    expect(result).toBe("Job failed for [redacted-id] during render");
-    expect(result).not.toContain("550e8400-e29b-41d4-a716-446655440000");
+    expect(result).toContain("field 'topic'");
+    expect(result).toContain('Remove special characters');
   });
 
-  it("redacts an email address while preserving surrounding text", () => {
-    const result = redactSensitiveIdentifiers(
-      "Notification bounced for alice@example.com after 3 attempts",
-    );
-    expect(result).toBe(
-      "Notification bounced for [redacted-email] after 3 attempts",
-    );
-    expect(result).not.toContain("example.com");
+  it('passes through a validation message', () => {
+    const result = sanitizeError(new Error('validation_error: platform is required'));
+    expect(result).toContain('platform is required');
   });
 
-  it("redacts multiple UUIDs and emails in one message", () => {
-    const result = redactSensitiveIdentifiers(
-      "owner 11111111-1111-4111-8111-111111111111 / 22222222-2222-4222-8222-222222222222 " +
-        "notified a@b.co and c@d.io",
-    );
-    expect(result).not.toMatch(
-      /[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/i,
-    );
-    expect(result).not.toContain("a@b.co");
-    expect(result).not.toContain("c@d.io");
-    expect(result.match(/\[redacted-id\]/g)).toHaveLength(2);
-    expect(result.match(/\[redacted-email\]/g)).toHaveLength(2);
+  it('passes through a limit message', () => {
+    const result = sanitizeError(new Error('Daily credit limit reached for your plan'));
+    expect(result).toContain('limit reached');
   });
 
-  it("leaves an identifier-free message untouched (keeps diagnostics)", () => {
-    const msg = "quota exhausted: retry after cooldown";
-    expect(redactSensitiveIdentifiers(msg)).toBe(msg);
+  it('scrubs emails from passthrough messages', () => {
+    const result = sanitizeError(
+      new Error('validation_error: user someone@example.com is missing project_id')
+    );
+    expect(result).not.toContain('someone@example.com');
+    expect(result).toContain('project_id');
   });
 
-  it("is case-insensitive for uppercase UUIDs", () => {
-    const result = redactSensitiveIdentifiers(
-      "id AABBCCDD-EEFF-4A1B-8C2D-1234567890AB blocked",
+  it('scrubs bearer tokens and long secrets from passthrough messages', () => {
+    const result = sanitizeError(
+      new Error(
+        'validation_error: header Bearer abc.def.ghi rejected, token deadbeefdeadbeefdeadbeefdeadbeefdeadbeef invalid'
+      )
     );
-    expect(result).toBe("id [redacted-id] blocked");
+    expect(result).not.toContain('abc.def.ghi');
+    expect(result).not.toContain('deadbeefdeadbeefdeadbeefdeadbeefdeadbeef');
+  });
+
+  it('a sensitive 500-class message stays collapsed even if it mentions validation words', () => {
+    // ERROR_PATTERNS run first: Stripe key leak must never pass through.
+    const result = sanitizeError(new Error('validation failed for key sk_live_abc123')); // gitleaks:allow — synthetic fixture
+    expect(result).toBe('Payment processing error. Please try again.');
+    expect(result).not.toContain('sk_live_');
+  });
+
+  it('a plain unexpected error still collapses to the generic message', () => {
+    expect(sanitizeError(new Error('kaboom'))).toBe(
+      'An unexpected error occurred. Please try again.'
+    );
+  });
+});
+
+describe('scrubPII', () => {
+  it('scrubs emails, bearer tokens, JWTs, and 32+ char hex tokens', () => {
+    expect(scrubPII('mail a@b.co')).not.toContain('a@b.co');
+    expect(scrubPII('Bearer xyz.123')).not.toContain('xyz.123');
+    expect(scrubPII('jwt eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.x')).not.toContain('eyJhbGci');
+    expect(scrubPII('tok 0123456789abcdef0123456789abcdef')).not.toContain(
+      '0123456789abcdef0123456789abcdef'
+    );
+  });
+
+  it('leaves ordinary prose and UUIDs-free text intact', () => {
+    expect(scrubPII('project_id is required — pass one of: Brand A')).toBe(
+      'project_id is required — pass one of: Brand A'
+    );
   });
 });

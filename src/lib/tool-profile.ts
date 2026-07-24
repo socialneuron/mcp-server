@@ -35,7 +35,6 @@ export const ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS = new Set<string>([
   'list_hyperframes_blocks',
   'render_hyperframes',
   'list_skills',
-  'get_skill',
   'run_skill',
 ]);
 
@@ -72,8 +71,7 @@ export function applyToolProfile(server: McpServer, profile: ToolProfile): void 
   const currentTool = server.tool.bind(server) as (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const currentRegisterTool = (server as any).registerTool?.bind(server) as
-    | ((...args: any[]) => any)
-    | undefined;
+    ((...args: any[]) => any) | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (server as any).tool = function profiledTool(...args: any[]) {

@@ -1,6 +1,7 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
 import { evaluateQuality } from '../../lib/quality.js';
-import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
+import { initializeAuth, getDefaultProjectId, getDefaultUserId } from '../../lib/supabase.js';
+import { resolveConnectedAccountRouting } from '../../lib/connected-account-routing.js';
 import {
   isEnabledFlag,
   emitSnResult,
@@ -16,6 +17,42 @@ import type { SnArgs } from './types.js';
 async function ensureAuth(): Promise<string> {
   await initializeAuth();
   return getDefaultUserId();
+}
+
+function requestedAccountIds(
+  args: SnArgs,
+  platforms: string[]
+): Record<string, string> | undefined {
+  const accountId = typeof args['account-id'] === 'string' ? args['account-id'] : undefined;
+  const accountIdsJson = typeof args['account-ids'] === 'string' ? args['account-ids'] : undefined;
+  if (accountId && accountIdsJson) {
+    throw new Error('Pass either --account-id or --account-ids, not both.');
+  }
+  if (accountId) {
+    if (platforms.length !== 1) {
+      throw new Error(
+        '--account-id is valid only with one platform; use --account-ids for several.'
+      );
+    }
+    return { [platforms[0]]: accountId };
+  }
+  if (!accountIdsJson) return undefined;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(accountIdsJson);
+  } catch {
+    throw new Error('--account-ids must be a JSON object mapping platform names to account IDs.');
+  }
+  if (
+    !parsed ||
+    typeof parsed !== 'object' ||
+    Array.isArray(parsed) ||
+    Object.values(parsed).some(value => typeof value !== 'string')
+  ) {
+    throw new Error('--account-ids must be a JSON object mapping platform names to account IDs.');
+  }
+  return parsed as Record<string, string>;
 }
 
 export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void> {
@@ -39,6 +76,8 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
   const platforms = normalizePlatforms(platformsRaw);
   const title = typeof args.title === 'string' ? args.title : undefined;
   const scheduledAt = typeof args['schedule-at'] === 'string' ? args['schedule-at'] : undefined;
+  const projectId = typeof args['project-id'] === 'string' ? args['project-id'] : undefined;
+  const accountIds = requestedAccountIds(args, platforms);
   const idempotencyKey =
     typeof args['idempotency-key'] === 'string'
       ? args['idempotency-key']
@@ -52,6 +91,20 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
 
   // Auth only after all flag validation passes
   const userId = await ensureAuth();
+  const resolvedProjectId = projectId ?? (await getDefaultProjectId()) ?? undefined;
+  if (!resolvedProjectId) {
+    throw new Error(
+      'Publish requires --project-id unless the authenticated key has exactly one project.'
+    );
+  }
+  const routing = await resolveConnectedAccountRouting({
+    projectId: resolvedProjectId,
+    platforms,
+    requestedAccountIds: accountIds,
+  });
+  if (routing.error || !routing.connectedAccountIds) {
+    throw new Error(`Publish account verification failed: ${routing.error ?? 'unknown error'}`);
+  }
 
   const { data, error } = await callEdgeFunction<{
     success: boolean;
@@ -65,6 +118,9 @@ export async function handlePublish(args: SnArgs, asJson: boolean): Promise<void
     scheduledAt,
     idempotencyKey,
     userId,
+    projectId: resolvedProjectId,
+    project_id: resolvedProjectId,
+    connectedAccountIds: routing.connectedAccountIds,
   });
 
   if (error || !data) {
@@ -178,6 +234,15 @@ export async function handleE2e(args: SnArgs, asJson: boolean): Promise<void> {
 
   // Auth after flag validation
   const userId = await ensureAuth();
+  const projectId =
+    (typeof args['project-id'] === 'string' ? args['project-id'] : undefined) ??
+    (await getDefaultProjectId()) ??
+    undefined;
+  if (!projectId) {
+    throw new Error(
+      'E2E requires --project-id unless the authenticated key has exactly one project.'
+    );
+  }
   const supabase = tryGetSupabaseClient();
   const privacyUrl = process.env.SOCIALNEURON_PRIVACY_POLICY_URL ?? null;
   const termsUrl = process.env.SOCIALNEURON_TERMS_URL ?? null;
@@ -224,8 +289,9 @@ export async function handleE2e(args: SnArgs, asJson: boolean): Promise<void> {
   if (supabase) {
     const { data: accounts, error: accountsError } = await supabase
       .from('connected_accounts')
-      .select('platform, status, username, expires_at')
+      .select('id, platform, project_id, status, username, expires_at')
       .eq('user_id', userId)
+      .eq('project_id', projectId)
       .eq('status', 'active');
 
     if (accountsError) {
@@ -237,7 +303,12 @@ export async function handleE2e(args: SnArgs, asJson: boolean): Promise<void> {
   } else {
     const { data, error } = await callEdgeFunction<{ success: boolean; accounts: any[] }>(
       'mcp-data',
-      { action: 'connected-accounts', userId }
+      {
+        action: 'connected-accounts',
+        userId,
+        projectId,
+        project_id: projectId,
+      }
     );
 
     if (error || !data?.success) {
@@ -338,6 +409,14 @@ export async function handleE2e(args: SnArgs, asJson: boolean): Promise<void> {
     title,
     scheduledAt,
   });
+  const routing = await resolveConnectedAccountRouting({
+    projectId,
+    platforms: platformsNormalized,
+    requestedAccountIds: requestedAccountIds(args, platformsNormalized),
+  });
+  if (routing.error || !routing.connectedAccountIds) {
+    throw new Error(`E2E account verification failed: ${routing.error ?? 'unknown error'}`);
+  }
   const { data, error } = await callEdgeFunction<{
     success: boolean;
     results: Record<string, { success: boolean; jobId?: string; postId?: string; error?: string }>;
@@ -350,6 +429,9 @@ export async function handleE2e(args: SnArgs, asJson: boolean): Promise<void> {
     scheduledAt,
     idempotencyKey,
     userId,
+    projectId,
+    project_id: projectId,
+    connectedAccountIds: routing.connectedAccountIds,
   });
 
   if (error || !data) {

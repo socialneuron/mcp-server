@@ -286,6 +286,11 @@ export function registerPlanningTools(server: McpServer): void {
             prompt,
             model: 'gemini-2.5-flash',
             responseFormat: 'json',
+            // Structured-output flag: without it social-neuron-ai treats the
+            // plan JSON as prose and runs the anti-slop gate over it, which
+            // rejects valid plans (same root cause as create_storyboard,
+            // found live 2026-07-15).
+            config: { responseMimeType: 'application/json' },
             ...(resolvedProjectId
               ? { projectId: resolvedProjectId, project_id: resolvedProjectId }
               : {}),
@@ -624,6 +629,8 @@ export function registerPlanningTools(server: McpServer): void {
         plan_id: string;
         status: string;
         updated_posts: number;
+        submitted_updates?: number;
+        unmatched_post_ids?: string[];
         error?: string;
       }>(
         'mcp-data',
@@ -660,6 +667,9 @@ export function registerPlanningTools(server: McpServer): void {
         plan_id,
         status: result.status,
         updated_posts: result.updated_posts,
+        ...(result.unmatched_post_ids?.length
+          ? { unmatched_post_ids: result.unmatched_post_ids }
+          : {}),
       };
 
       if (response_format === 'json') {
@@ -673,7 +683,11 @@ export function registerPlanningTools(server: McpServer): void {
         content: [
           {
             type: 'text' as const,
-            text: `Updated ${post_updates.length} post(s) in plan ${plan_id}.`,
+            text:
+              `Updated ${result.updated_posts} of ${post_updates.length} submitted post update(s) in plan ${plan_id}.` +
+              (result.unmatched_post_ids?.length
+                ? ` Unmatched post ids: ${result.unmatched_post_ids.join(', ')}.`
+                : ''),
           },
         ],
         isError: false,

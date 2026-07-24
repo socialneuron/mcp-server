@@ -1,5 +1,6 @@
 import { getSupabaseUrl, getDefaultUserId, getAuthenticatedApiKey } from './supabase.js';
 import { getRequestToken } from './request-context.js';
+import { sanitizeUpstreamClientError, sanitizeLoneUpstreamError } from './sanitize-error.js';
 
 const SAFE_GATEWAY_ERROR_CODES = new Set([
   'daily_limit_reached',
@@ -44,6 +45,65 @@ function safeGatewayError(responseText: string, status: number): string {
     // Non-JSON upstream bodies are deliberately not relayed.
   }
   return `Backend request failed (HTTP ${status}).`;
+}
+
+/**
+ * 1e (2026-07-17 sweep): actionable client errors — the gateway's own
+ * validation/injection rejections (INJECTION_DETECTED, UNSAFE_URL, …) and
+ * target-EF 4xx bodies — used to collapse to "Backend request failed (HTTP
+ * 400)." unless their code happened to be in SAFE_GATEWAY_ERROR_CODES,
+ * leaving agents retrying blind. When a 4xx body carries a `{ error, message }`
+ * pair, relay "CODE: message" after PII scrubbing (sensitive messages still
+ * collapse — see sanitizeUpstreamClientError). Applies to 400/402/404/409/422
+ * etc.; 401/403/429 keep their dedicated handling above.
+ */
+function clientErrorPassthrough(responseText: string): string | null {
+  try {
+    const parsed = JSON.parse(responseText) as Record<string, unknown>;
+    const nested =
+      parsed.error && typeof parsed.error === 'object'
+        ? (parsed.error as Record<string, unknown>)
+        : null;
+    const errorIsString = typeof parsed.error === 'string' && parsed.error.trim().length > 0;
+    // Explicit machine-readable code fields, preferred over the `error` string.
+    const explicitCode = [
+      nested?.error_type,
+      nested?.code,
+      parsed.error_type,
+      parsed.error_code,
+      parsed.code,
+    ].find(v => typeof v === 'string' && v.trim().length > 0) as string | undefined;
+    // Message candidates. When a body carries BOTH an explicit code AND a string
+    // `error`, the `error` string is the human message (the `{ code, error }`
+    // shape used by schedule-post's TikTok compliance gate:
+    // { success:false, code:'TIKTOK_PRIVACY_LEVEL_REQUIRED', error:'TikTok requires…' }).
+    // Without this the code was silently dropped and the whole 400 collapsed to a
+    // generic "Backend request failed", leaving agents unable to self-correct.
+    const messageCandidate = [
+      parsed.message,
+      nested?.message,
+      parsed.error_description,
+      explicitCode && errorIsString ? parsed.error : undefined,
+    ].find(v => typeof v === 'string' && v.trim().length > 0) as string | undefined;
+    // Code: explicit field first; otherwise fall back to the `error` string
+    // (the `{ error:'INJECTION_DETECTED', message:'…' }` gateway shape).
+    const codeCandidate = explicitCode ?? (errorIsString ? (parsed.error as string) : undefined);
+    if (!messageCandidate) {
+      // Message-less `{ error: "<string>" }` bodies (the generation-EF catch /
+      // reportGenerationFailure 400 shape) used to always collapse to the
+      // generic error, hiding actionable rejects (prompt/param validation)
+      // from the calling agent. Relay the lone string through the stricter
+      // gate: must match the actionable signature, sensitive patterns still
+      // collapse, PII scrubbed.
+      if (errorIsString && !explicitCode) {
+        return sanitizeLoneUpstreamError(parsed.error as string);
+      }
+      return null;
+    }
+    return sanitizeUpstreamClientError(codeCandidate ?? null, messageCandidate);
+  } catch {
+    return null;
+  }
 }
 
 const SAFE_BILLING_STATUSES = new Set([
@@ -108,12 +168,17 @@ function safeFailureData<T>(responseText: string): T | null {
 }
 
 function getApiKeyOrNull(): string | null {
-  // 1. Env var (explicit override)
-  const envKey = process.env.SOCIALNEURON_API_KEY;
-  if (envKey && envKey.trim().length) return envKey.trim();
-  // 2. Per-request token from HTTP mode (OAuth / API key per-session)
+  // 1. Per-request token from HTTP mode (OAuth / API key per-session).
+  //    This MUST win over the env var: on the hosted multi-tenant server, a
+  //    Railway-level SOCIALNEURON_API_KEY would otherwise execute EVERY
+  //    customer's calls as that one account (cross-tenant by configuration).
+  //    In stdio mode there is no request context, so the env override for
+  //    local/single-user setups is unchanged.
   const requestToken = getRequestToken();
   if (requestToken) return requestToken;
+  // 2. Env var (explicit override — stdio/local only, no request context)
+  const envKey = process.env.SOCIALNEURON_API_KEY;
+  if (envKey && envKey.trim().length) return envKey.trim();
   // 3. Module-level key from stdio mode initializeAuth()
   return getAuthenticatedApiKey();
 }
@@ -243,6 +308,19 @@ export async function callEdgeFunction<T = unknown>(
           data: failureData,
           error: `Rate limit exceeded (HTTP 429). Wait ${retryAfter}s before retrying. Reduce request frequency or upgrade your plan.`,
         };
+      }
+      // Actionable 4xx (validation, injection, limits): relay code+message
+      // (scrubbed) so agents can self-correct — see clientErrorPassthrough.
+      if (response.status >= 400 && response.status < 500) {
+        const passthrough = clientErrorPassthrough(responseText);
+        if (passthrough) return { data: failureData, error: passthrough };
+        // Server-side only (Railway logs): keep the raw reject visible for
+        // operators when the body couldn't be safely relayed to the client.
+        // Debugging evidence: the 2026-07-20 carousel per-slide 400s were
+        // undiagnosable because this body was dropped on the floor.
+        console.warn(
+          `[edge-function] unrelayed ${response.status} from ${functionName}: ${responseText.slice(0, 300)}`
+        );
       }
       return { data: failureData, error: errorCode };
     }

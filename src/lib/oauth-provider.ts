@@ -1,15 +1,16 @@
 /**
  * OAuth 2.0 Server Provider for Anthropic Connectors Directory.
  *
- * Key insight: OAuth access tokens ARE `snk_live_*` API keys. The existing
- * token verifier already handles them — no new token format or DB tables.
+ * Production OAuth access tokens are short-lived `sno_*` connector tokens,
+ * bound to the exact protected resource and paired with rotating refresh
+ * tokens. Legacy `snk_*` keys remain explicit API-key credentials only.
  *
  * Flow:
  *   1. Claude calls /authorize → provider creates inactive key via mcp-auth EF
  *   2. User approves on socialneuron.com/mcp/authorize (existing consent page)
  *   3. Consent page stores encrypted key in pending_mcp_exchanges
  *   4. Claude calls /token with code_verifier → provider exchanges via mcp-auth EF
- *   5. Provider decrypts and returns snk_live_* as access_token
+ *   5. Backend returns a resource-bound sno_* access token + refresh token
  *
  * Dynamic client registrations are persisted to public.mcp_oauth_clients
  * (migration 20260425220000_mcp_oauth_clients.sql). Registrations survive
@@ -34,6 +35,7 @@ import {
 import { createTokenVerifier, evictFromCache } from './token-verifier.js';
 import { getSupabaseClient } from './supabase.js';
 import { sanitizeError } from './sanitize-error.js';
+import { getAllScopes } from '../auth/scopes.js';
 
 // ── Allowed redirect URIs ───────────────────────────────────────────
 
@@ -129,7 +131,6 @@ const MAX_METADATA_BYTES = 8192;
 const MAX_CACHED_CLIENTS = 1000;
 const MAX_PERSISTED_CLIENTS = 5000;
 const OAUTH_CLIENT_RETENTION_DAYS = 90;
-const OAUTH_CLIENT_TOUCH_INTERVAL_MS = 24 * 60 * 60 * 1000;
 
 function byteLength(value: string): number {
   return Buffer.byteLength(value, 'utf8');
@@ -162,8 +163,7 @@ function cacheClient(
   cache: Map<string, OAuthClientInformationFull>,
   clientId: string,
   client: OAuthClientInformationFull
-): string[] {
-  const evictedClientIds: string[] = [];
+): void {
   if (cache.has(clientId)) {
     cache.delete(clientId);
   }
@@ -173,10 +173,7 @@ function cacheClient(
     const oldestClientId = cache.keys().next().value as string | undefined;
     if (!oldestClientId) break;
     cache.delete(oldestClientId);
-    evictedClientIds.push(oldestClientId);
   }
-
-  return evictedClientIds;
 }
 
 // ── Configuration ───────────────────────────────────────────────────
@@ -186,6 +183,30 @@ export interface OAuthProviderOptions {
   supabaseAnonKey: string;
   appBaseUrl?: string; // Default: https://www.socialneuron.com
   resource?: string;
+}
+
+const PUBLIC_MCP_SCOPES = new Set(getAllScopes().filter(scope => scope !== 'mcp:internal'));
+
+function normalizeOAuthResource(value: string | URL | undefined): string | undefined {
+  if (!value) return undefined;
+  try {
+    const parsed = value instanceof URL ? new URL(value.href) : new URL(value);
+    if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return undefined;
+    if (parsed.hash || parsed.search) return undefined;
+    if (parsed.pathname !== '/') parsed.pathname = parsed.pathname.replace(/\/+$/, '');
+    return parsed.toString().replace(/\/$/, '');
+  } catch {
+    return undefined;
+  }
+}
+
+function assertCanonicalPublicScopes(scopes: unknown): asserts scopes is string[] {
+  if (!Array.isArray(scopes) || scopes.length === 0) {
+    throw new Error('Connector token response is missing public MCP scopes');
+  }
+  if (scopes.some(scope => typeof scope !== 'string' || !PUBLIC_MCP_SCOPES.has(scope))) {
+    throw new Error('Connector token response contains a non-public MCP scope');
+  }
 }
 
 // ── Supabase-backed client store with in-memory fallback ─────────────
@@ -255,10 +276,6 @@ function clientToRow(c: OAuthClientInformationFull): OAuthClientRow {
 
 function createClientsStore(): OAuthRegisteredClientsStore {
   const cache = new Map<string, OAuthClientInformationFull>();
-  // Tracks the most recent durable activity refresh for cached clients. The
-  // map is pruned alongside the bounded client cache so long-lived processes
-  // cannot accumulate per-registration state indefinitely.
-  const lastClientTouch = new Map<string, number>();
   // Latches false on first persistent-store failure to avoid log spam and
   // unnecessary Supabase round-trips for the rest of the process lifetime.
   // Reset on process restart, so a redeploy re-attempts the persistent path.
@@ -275,60 +292,6 @@ function createClientsStore(): OAuthRegisteredClientsStore {
     }
   }
 
-  function clearEvictedClientTouches(evictedClientIds: string[]): void {
-    for (const evictedClientId of evictedClientIds) {
-      lastClientTouch.delete(evictedClientId);
-    }
-  }
-
-  function touchClientActivity(clientId: string): void {
-    if (!supabaseAvailable) return;
-
-    const now = Date.now();
-    const lastTouchedAt = lastClientTouch.get(clientId);
-    if (
-      lastTouchedAt !== undefined &&
-      now - lastTouchedAt < OAUTH_CLIENT_TOUCH_INTERVAL_MS
-    ) {
-      return;
-    }
-
-    // Reserve the interval before starting the detached write so concurrent
-    // requests for one client collapse into a single Supabase update.
-    lastClientTouch.set(clientId, now);
-
-    const releaseTouchReservation = (): void => {
-      // A stale detached request must not clear a newer reservation after a
-      // cache eviction/reload or an unusually long-running activity write.
-      if (lastClientTouch.get(clientId) === now) {
-        lastClientTouch.delete(clientId);
-      }
-    };
-
-    // Supabase query builders are lazy thenables, so merely constructing this
-    // chain does not execute it; the detached async task must await the builder.
-    void (async () => {
-      try {
-        const supabase = getSupabaseClient();
-        const { error: touchError } = await supabase
-          .from('mcp_oauth_clients')
-          .update({ last_used_at: new Date().toISOString() })
-          .eq('client_id', clientId);
-        if (touchError) {
-          // Let the next request retry rather than suppressing activity writes
-          // for a full day after a transient failure.
-          releaseTouchReservation();
-          console.error(
-            `[oauth] failed to update client activity: ${sanitizeError(touchError)}`
-          );
-        }
-      } catch (touchError) {
-        releaseTouchReservation();
-        console.error(`[oauth] failed to update client activity: ${sanitizeError(touchError)}`);
-      }
-    })();
-  }
-
   return {
     async getClient(clientId: string): Promise<OAuthClientInformationFull | undefined> {
       const cached = cache.get(clientId);
@@ -337,10 +300,8 @@ function createClientsStore(): OAuthRegisteredClientsStore {
         // non-production escape hatch cannot survive a switch to production.
         if (!hasAllowedRedirectUris(cached)) {
           cache.delete(clientId);
-          lastClientTouch.delete(clientId);
           return undefined;
         }
-        touchClientActivity(clientId);
         return cached;
       }
       if (!supabaseAvailable) return undefined;
@@ -378,8 +339,14 @@ function createClientsStore(): OAuthRegisteredClientsStore {
           return undefined;
         }
 
-        clearEvictedClientTouches(cacheClient(cache, clientId, client));
-        touchClientActivity(clientId);
+        cacheClient(cache, clientId, client);
+
+        // Touch last_used_at fire-and-forget. Failure here doesn't matter for
+        // the request; it only affects the 90-day pruning window.
+        void supabase
+          .from('mcp_oauth_clients')
+          .update({ last_used_at: new Date().toISOString() })
+          .eq('client_id', clientId);
 
         return client;
       } catch (err) {
@@ -452,8 +419,7 @@ function createClientsStore(): OAuthRegisteredClientsStore {
       // Cache is the floor — registration succeeds in-memory whenever the
       // durable store is unavailable, but the cache is bounded so
       // unauthenticated DCR traffic cannot grow process memory without limit.
-      lastClientTouch.delete(client.client_id);
-      clearEvictedClientTouches(cacheClient(cache, client.client_id, client));
+      cacheClient(cache, client.client_id, client);
       return client;
     },
   };
@@ -465,11 +431,16 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
   const { supabaseUrl, supabaseAnonKey } = options;
   const appBaseUrl = options.appBaseUrl ?? 'https://www.socialneuron.com';
   const clientsStore = createClientsStore();
+  const expectedResource = normalizeOAuthResource(options.resource);
+
+  if (process.env.NODE_ENV === 'production' && !expectedResource) {
+    throw new Error('MCP OAuth requires a valid HTTPS protected resource in production');
+  }
 
   const tokenVerifier = createTokenVerifier({
     supabaseUrl,
     supabaseAnonKey,
-    resource: options.resource,
+    resource: expectedResource,
   });
 
   return {
@@ -504,8 +475,13 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         consentUrl.searchParams.set('redirect_uri', params.redirectUri);
       }
       const resource = (params as AuthorizationParams & { resource?: URL }).resource;
-      if (resource) {
-        consentUrl.searchParams.set('resource', resource.href);
+      if (expectedResource) {
+        if (!resource || normalizeOAuthResource(resource) !== expectedResource) {
+          throw new Error('resource must identify the configured MCP protected resource');
+        }
+        consentUrl.searchParams.set('resource', expectedResource);
+      } else if (resource) {
+        consentUrl.searchParams.set('resource', normalizeOAuthResource(resource) ?? resource.href);
       }
 
       res.redirect(consentUrl.toString());
@@ -534,6 +510,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       if (!codeVerifier) {
         throw new Error('code_verifier is required for PKCE exchange');
       }
+      if (expectedResource && normalizeOAuthResource(resource) !== expectedResource) {
+        throw new Error('resource must identify the configured MCP protected resource');
+      }
 
       // Call mcp-auth EF to complete the PKCE exchange
       // The auth code is the server-generated authorization_code (not client state)
@@ -559,7 +538,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
             ...(redirectUri && { redirect_uri: redirectUri }),
             // ChatGPT sends resource; backend should bind issued connector
             // tokens to that MCP resource/audience.
-            ...(resource && { resource: resource.href }),
+            ...(resource && {
+              resource: normalizeOAuthResource(resource) ?? resource.href,
+            }),
           }),
           signal: controller.signal,
         });
@@ -582,11 +563,32 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         refresh_token?: string;
         scopes?: string[];
         expires_in?: number;
+        resource?: string;
         error?: string;
       };
 
       if (!data.access_token) {
         throw new Error('No access token returned from exchange');
+      }
+
+      if (expectedResource) {
+        if (!data.access_token.startsWith('sno_')) {
+          throw new Error('OAuth exchange returned a legacy API key instead of a connector token');
+        }
+        if (!data.refresh_token) {
+          throw new Error('OAuth exchange returned no refresh token');
+        }
+        if (normalizeOAuthResource(data.resource) !== expectedResource) {
+          throw new Error('OAuth exchange returned a token for the wrong resource');
+        }
+        if (
+          !Number.isFinite(data.expires_in) ||
+          (data.expires_in as number) <= 0 ||
+          (data.expires_in as number) > 3_600
+        ) {
+          throw new Error('OAuth exchange returned an invalid connector-token lifetime');
+        }
+        assertCanonicalPublicScopes(data.scopes);
       }
 
       return {
@@ -604,6 +606,9 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
       scopes?: string[],
       resource?: URL
     ): Promise<OAuthTokens> {
+      if (expectedResource && normalizeOAuthResource(resource) !== expectedResource) {
+        throw new Error('resource must identify the configured MCP protected resource');
+      }
       const controller = new AbortController();
       const timer = setTimeout(() => controller.abort(), 10_000);
 
@@ -620,7 +625,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
               client_id: client.client_id,
               refresh_token: refreshToken,
               ...(scopes && scopes.length > 0 ? { scopes } : {}),
-              ...(resource ? { resource: resource.href } : {}),
+              ...(resource ? { resource: normalizeOAuthResource(resource) ?? resource.href } : {}),
             }),
             signal: controller.signal,
           }
@@ -635,11 +640,29 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
           refresh_token?: string;
           scopes?: string[];
           expires_in?: number;
+          resource?: string;
           error?: string;
         };
 
         if (!data.access_token) {
           throw new Error('No access token returned from refresh');
+        }
+
+        if (expectedResource) {
+          if (!data.access_token.startsWith('sno_') || !data.refresh_token) {
+            throw new Error('Refresh exchange returned an incomplete connector token pair');
+          }
+          if (normalizeOAuthResource(data.resource) !== expectedResource) {
+            throw new Error('Refresh exchange returned a token for the wrong resource');
+          }
+          if (
+            !Number.isFinite(data.expires_in) ||
+            (data.expires_in as number) <= 0 ||
+            (data.expires_in as number) > 3_600
+          ) {
+            throw new Error('Refresh exchange returned an invalid connector-token lifetime');
+          }
+          assertCanonicalPublicScopes(data.scopes);
         }
 
         return {

@@ -24,14 +24,67 @@ interface RecipeRow {
   estimated_credits: number;
   estimated_duration_seconds: number;
   is_featured: boolean;
-  inputs_schema: Array<{
-    id: string;
-    label: string;
-    type: string;
-    required: boolean;
-    placeholder?: string;
-  }>;
+  /**
+   * User recipes store an ARRAY of field descriptors; system recipes store a
+   * JSON-Schema OBJECT ({ type: 'object', properties, required }). Treat as
+   * unknown and normalize via {@link normalizeRecipeInputs} — calling `.map`
+   * directly crashed every text-format list_recipes call that included a
+   * system recipe (live sweep 2026-07-17: "r.inputs_schema.map is not a
+   * function").
+   */
+  inputs_schema: unknown;
   steps: Array<{ id: string; type: string; name: string }>;
+  /**
+   * Computed on read by mcp-data (recipeActions.ts computeRecipeSuccessRates)
+   * from recipe_runs over `success_rate_window` — the stored `recipes.success_rate`
+   * column is dead (never updated past its 0.00 default). Optional so old cached
+   * shapes / tests without it don't break rendering.
+   */
+  success_rate?: number;
+  success_rate_window?: string;
+}
+
+export interface RecipeInputField {
+  id: string;
+  label: string;
+  type: string;
+  required: boolean;
+  placeholder?: string;
+}
+
+/** Normalizes either inputs_schema shape (array | JSON-Schema object) to a field list. */
+export function normalizeRecipeInputs(schema: unknown): RecipeInputField[] {
+  if (Array.isArray(schema)) {
+    return schema
+      .filter((f): f is Record<string, unknown> => !!f && typeof f === 'object')
+      .map(f => ({
+        id: typeof f.id === 'string' ? f.id : '',
+        label: typeof f.label === 'string' ? f.label : typeof f.id === 'string' ? f.id : 'input',
+        type: typeof f.type === 'string' ? f.type : 'string',
+        required: f.required === true,
+        ...(typeof f.placeholder === 'string' ? { placeholder: f.placeholder } : {}),
+      }));
+  }
+  if (schema && typeof schema === 'object') {
+    const obj = schema as Record<string, unknown>;
+    const properties = obj.properties;
+    if (properties && typeof properties === 'object') {
+      const required = new Set(
+        Array.isArray(obj.required) ? obj.required.filter(r => typeof r === 'string') : []
+      );
+      return Object.entries(properties as Record<string, unknown>).map(([key, rawDef]) => {
+        const def = rawDef && typeof rawDef === 'object' ? (rawDef as Record<string, unknown>) : {};
+        return {
+          id: key,
+          label: typeof def.title === 'string' ? def.title : key,
+          type: typeof def.type === 'string' ? def.type : 'string',
+          required: required.has(key),
+          ...(typeof def.description === 'string' ? { placeholder: def.description } : {}),
+        };
+      });
+    }
+  }
+  return [];
 }
 
 interface RecipeRunRow {
@@ -123,7 +176,11 @@ export function registerRecipeTools(server: McpServer): void {
 
       const lines = recipes.map(
         r =>
-          `**${r.name}** (${r.slug})\n  ${r.description}\n  Category: ${r.category} | Credits: ~${r.estimated_credits} | Steps: ${r.steps.length}${r.is_featured ? ' | ⭐ Featured' : ''}\n  Inputs: ${r.inputs_schema.map(i => `${i.label}${i.required ? '*' : ''}`).join(', ')}`
+          `**${r.name}** (${r.slug})\n  ${r.description}\n  Category: ${r.category} | Credits: ~${r.estimated_credits} | Steps: ${r.steps.length}${r.is_featured ? ' | ⭐ Featured' : ''}${typeof r.success_rate === 'number' ? ` | Success: ${r.success_rate}% (${r.success_rate_window ?? '30d'})` : ''}\n  Inputs: ${normalizeRecipeInputs(
+            r.inputs_schema
+          )
+            .map(i => `${i.label}${i.required ? '*' : ''}`)
+            .join(', ')}`
       );
 
       return {
@@ -195,7 +252,7 @@ export function registerRecipeTools(server: McpServer): void {
         .map((s, i) => `  ${i + 1}. **${s.name}** (${s.type})`)
         .join('\n');
 
-      const inputsText = recipe.inputs_schema
+      const inputsText = normalizeRecipeInputs(recipe.inputs_schema)
         .map(
           i =>
             `  - **${i.label}**${i.required ? ' (required)' : ''}: ${i.type}${i.placeholder ? ` — e.g., "${i.placeholder}"` : ''}`
@@ -213,6 +270,11 @@ export function registerRecipeTools(server: McpServer): void {
               `**Category:** ${recipe.category}`,
               `**Estimated credits:** ~${recipe.estimated_credits}`,
               `**Estimated time:** ~${Math.round(recipe.estimated_duration_seconds / 60)} minutes`,
+              ...(typeof recipe.success_rate === 'number'
+                ? [
+                    `**Success rate:** ${recipe.success_rate}% (${recipe.success_rate_window ?? '30d'})`,
+                  ]
+                : []),
               '',
               '### Steps',
               stepsText,

@@ -2,72 +2,43 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## [Unreleased]
+## Unreleased
 
-## [1.9.1] - 2026-07-18
-
-### Fixed
-
-- **`generate_video` seedance audio default.** Seedance requests no longer silently drop audio: the audio flag now defaults on for audio-capable seedance models instead of rendering silent clips.
-- **Budget-limit errors are self-explanatory.** Budget rejections now state the limit, current usage, and what to do next, instead of a generic failure.
-- **`localOnly` tools no longer leak into remote listings.** Local-only tools are filtered from the tool catalogue when the server runs in remote/HTTP mode.
-- **`check_status` error scrubbing.** Internal error details are scrubbed from `check_status` responses; callers get actionable, non-internal messages.
-- **Carousel per-slide images inherit the resolved project.** `create_carousel` now threads the resolved `project_id` to the carousel job and every per-slide image job, so slide uploads carry project/organization context and are no longer rejected at upload ("A verified project or organization is required for uploads").
-
-## [1.9.0] - 2026-07-15
-
-### Added
-
-- **Project discovery in `check_status`.** When the caller's project scope is ambiguous, the response now discloses the authenticated user's accessible projects (name, ID, whether connected accounts exist) so an agent that hit a `project_id is required` error elsewhere can self-recover in-band instead of asking the human.
-- **Sole-account auto-bind for `schedule_post`, `schedule_content_plan`, and the YouTube comment tools.** `account_id`/`connected_account_id` are now optional whenever exactly one active account is bound to the resolved project for the target platform — it's auto-selected. Ambiguous cases (multiple candidates) still fail closed with the exact candidate list.
-- **Platform-aware project resolution.** Auto-resolving a project from an unscoped multi-project API key now only counts a project as a candidate when it owns an active account for one of the *requested* platforms, so an unrelated platform's account can no longer manufacture a false "sole candidate."
+## 2.0.0 - 2026-07-16
 
 ### Security
 
-- macOS Keychain writes now use a native Security.framework binding, keeping API keys out of subprocess argument lists; installations without the optional native module use the owner-only file fallback.
-- The release lockfile gate now validates the root, SDK, Content Calendar, and Analytics Pulse lockfiles.
+- OAuth authorization-code and refresh exchanges use short-lived, resource-bound connector tokens with exact protected-resource matching, canonical public scopes, PKCE, refresh rotation, replay-family revocation, and connector-session revocation.
+- Distribution-capable recipes and other consequential operations require explicit confirmation, executable approval boundaries, and the corresponding public MCP scope.
+- Hosted discovery carries MCP safety annotations, OAuth security schemes, and MCP App metadata for Claude, Codex, REST, CLI, and SDK clients.
 
-### Changed
+### Breaking changes
 
-- **Stricter project requirements for multi-project API keys, with in-band recovery.** Tools that touch connected accounts or publishing no longer silently fall back to a DB-guessed "most recent project" when the key/user has more than one project — they fail closed with the caller's project list attached (see `check_status` discovery above) so the caller can retry with an explicit `project_id`.
-- **`run_content_pipeline` validates connected-account routing before spending credits.** The publishing route for every target platform is now verified in a Stage 0 pre-budget check; a routing failure blocks the run before any planning credits are deducted, instead of discarding already-paid-for content at the scheduling stage.
+- Consequential MCP tools require `confirm: true`; `execute_recipe` also requires an explicit `project_id` and server-verified effect scopes.
+- `@socialneuron/sdk` 0.2.0 mirrors the stricter confirmation and REST/MCP contracts.
 
 ### Fixed
 
-- **`x` platform alias.** Posts targeting `platform: "x"` now resolve to the same connected-account binding as `twitter` instead of falling through to an undefined binding.
-- **`wait_for_connection` multi-account success.** Detecting more than one active account for the polled platform/project now returns success with the list of candidates to choose from, instead of incorrectly reporting the connection attempt as failed.
-- Durable OAuth client reads now execute the `last_used_at` update, preventing active connector registrations from being pruned as stale after 90 days.
-- Authentication and security documentation now matches the `/mcp` connector URL, current 1.8 support policy, service-role boundary, and connector-token cache behavior.
-
-## [1.8.2] - 2026-07-14
+- Numeric MCP outputs remain numeric while Luhn-valid card data is redacted consistently across scanner runtimes.
+- The committed tool manifest is verified before builds and cannot be silently regenerated by CI.
 
 ### Added
 
 - **Five project-scoped lifecycle tools.** `cancel_async_job`, `cancel_scheduled_post`, `delete_carousel`, `delete_content_plan`, and `delete_autopilot_config` require explicit confirmation, carry destructive annotations, and are exposed consistently through MCP, REST/OpenAPI, CLI discovery, and typed SDK helpers.
 - **Analytics Pulse and corrected Content Calendar MCP Apps.** Both use scoped backing tools and conversational fallbacks; Calendar quick-create uses a stable idempotency key and rescheduling uses an optimistic concurrency precondition.
 - **Structured async-job billing.** Status and carousel responses expose server-derived reserved, charged, and refunded amounts plus `billing_status` and a stable failure reason.
-- **Living skill retrieval.** `list_skills` merges live guide rows with executable workflows, and `get_skill` returns the full current guide by slug without breaking the existing `run_skill` path.
 
 ### Security
 
 - Failed-job refunds now require explicit debit authority, inspect returned ledger errors, and report `refund_pending` rather than inventing success. Provider/database error strings are removed from public polling responses.
 - Hardened OAuth resource binding, CLI credential-file access, SDK endpoint validation, output scanning, strict base64 handling, publishing provenance/idempotency, and model-visible tool metadata sealing.
-- The version-3 tool manifest now seals every exposure flag, including authenticated-hidden registration, so a tool cannot silently move onto a public surface.
 - Added CodeQL, npm OIDC-only publication, and an exact-tag dependency cooldown exception for this audited release.
-- Hardened hosted connector discovery for Claude/ChatGPT browser origins and both RFC 9728 protected-resource metadata paths. Session caps now reclaim only the least-recently-used idle session and never evict an active request or SSE stream.
 
 ### Changed
 
-- Public transport count is 91 tools (104 sealed surfaces including internal, local-only, and App entries).
-- Brand extraction rejects ambiguous handles instead of guessing DNS names; publishing enables native AI-content disclosures by default while preserving explicit false for verified non-AI media.
-- `check_status` discloses requested-versus-delivered model fallback, and HyperFrames documents the exact `window.__hf` runtime contract.
+- Public transport count is 91 tools (105 sealed surfaces including internal, local-only, hidden-count, and App entries).
 - Analytics keeps the newest cumulative snapshot for each `(post_id, platform)` pair before aggregation.
 - The release workflow creates a matching formal GitHub release after npm succeeds and verifies npm/GitHub latest-version consistency.
-
-### Release acceptance
-
-- Lifecycle deletion/cancellation and failed-job billing are not considered production-verified until the compatible private backend is deployed and the evidence matrix in [`docs/lifecycle-backend-smoke.md`](docs/lifecycle-backend-smoke.md) passes against the hosted authenticated service.
-- Claude/Codex connector compatibility and session reclamation are not considered production-verified until private PR `#2223` is independently approved, deployed, and passes a greater-than-10-session live regression.
 
 ## [1.8.1] - 2026-07-14
 
