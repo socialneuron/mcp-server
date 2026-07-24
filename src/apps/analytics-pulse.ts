@@ -70,14 +70,14 @@ function finiteMetric(value: unknown): number {
 function publicAnalyticsPost(value: unknown): AnalyticsPost | null {
   if (!value || typeof value !== 'object') return null;
   const row = value as Record<string, unknown>;
-  const post = row.posts && typeof row.posts === 'object'
-    ? (row.posts as Record<string, unknown>)
-    : {};
-  const platform = typeof row.platform === 'string'
-    ? row.platform
-    : typeof post.platform === 'string'
-      ? post.platform
-      : null;
+  const post =
+    row.posts && typeof row.posts === 'object' ? (row.posts as Record<string, unknown>) : {};
+  const platform =
+    typeof row.platform === 'string'
+      ? row.platform
+      : typeof post.platform === 'string'
+        ? post.platform
+        : null;
   const capturedAt = typeof row.captured_at === 'string' ? row.captured_at : null;
   if (!platform || !capturedAt) return null;
 
@@ -150,9 +150,17 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
           .string()
           .uuid()
           .optional()
-          .describe("Brand/project ID. Defaults to the authenticated key's project or account default."),
+          .describe(
+            "Brand/project ID. Defaults to the authenticated key's project or account default."
+          ),
         platform: z.enum(PLATFORM_VALUES).optional().describe('Optional platform filter.'),
-        days: z.number().int().min(1).max(365).optional().describe('Lookback window. Defaults to 30 days.'),
+        days: z
+          .number()
+          .int()
+          .min(1)
+          .max(365)
+          .optional()
+          .describe('Lookback window. Defaults to 30 days.'),
       },
       outputSchema: {
         project_id: z.string(),
@@ -180,7 +188,12 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
       const resolvedProjectId = project_id ?? (await getDefaultProjectId());
       if (!resolvedProjectId) {
         return {
-          content: [{ type: 'text' as const, text: 'No project_id was provided and no default project is configured.' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'No project_id was provided and no default project is configured.',
+            },
+          ],
           isError: true,
         };
       }
@@ -206,7 +219,12 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
 
       if (error || !result?.success) {
         return {
-          content: [{ type: 'text' as const, text: 'The analytics dashboard could not load data. Please retry.' }],
+          content: [
+            {
+              type: 'text' as const,
+              text: 'The analytics dashboard could not load data. Please retry.',
+            },
+          ],
           isError: true,
         };
       }
@@ -215,7 +233,10 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
         .map(publicAnalyticsPost)
         .filter((post): post is AnalyticsPost => post !== null)
         .sort((a, b) => b.views - a.views);
-      const totals = new Map<string, { platform: string; views: number; engagement: number; posts: number }>();
+      const totals = new Map<
+        string,
+        { platform: string; views: number; engagement: number; posts: number }
+      >();
       let totalViews = 0;
       let totalEngagement = 0;
       for (const post of posts) {

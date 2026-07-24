@@ -4,14 +4,14 @@ Social Neuron provides four runtime integration methods. Plugins and skills pack
 
 ## Comparison
 
-| Feature       | MCP                               | REST API        | CLI             | SDK                     |
-| ------------- | --------------------------------- | --------------- | --------------- | ----------------------- |
-| **Best for**  | AI agents                         | Any HTTP client | Terminal, CI/CD | TypeScript apps         |
-| **Auth**      | OAuth (remote) or API key (local) | Bearer API key  | API key         | API key                 |
-| **Response**  | SSE streaming                     | JSON            | Text / JSON     | Async/await             |
-| **Setup**     | 1 command                         | 1 curl          | 1 command       | npm install             |
-| **Languages** | Any MCP client                    | Any language    | Bash/shell      | TypeScript              |
-| **Status**    | Stable                            | Stable          | Stable          | [Preview](sdk-guide.md) |
+| Feature | MCP | REST API | CLI | SDK |
+|---------|-----|----------|-----|-----|
+| **Best for** | AI agents | Any HTTP client | Terminal, CI/CD | TypeScript apps |
+| **Auth** | OAuth (remote) or API key (local) | Bearer API key | API key | API key |
+| **Response** | SSE streaming | JSON | Text / JSON | Async/await |
+| **Setup** | 1 command | 1 curl | 1 command | npm install |
+| **Languages** | Any MCP client | Any language | Bash/shell | TypeScript |
+| **Status** | Stable | Stable | Stable | [Preview](sdk-guide.md) |
 
 ## MCP (AI Agents)
 
@@ -21,10 +21,6 @@ Social Neuron provides four runtime integration methods. Plugins and skills pack
 # HTTP transport (recommended — no local process)
 claude mcp add --transport http socialneuron https://mcp.socialneuron.com/mcp
 # The client follows the server's OAuth discovery flow on first connection.
-
-# Codex Desktop/CLI use the same saved MCP configuration
-codex mcp add socialneuron --url https://mcp.socialneuron.com/mcp
-codex mcp login socialneuron
 
 # Local process (alternative)
 npx -y @socialneuron/mcp-server login --device
@@ -89,15 +85,15 @@ Full reference: [CLI guide](cli-guide.md)
 
 ```typescript
 // Preview — surface may change before stable release
-import { SocialNeuron } from "@socialneuron/sdk";
+import { SocialNeuron } from '@socialneuron/sdk';
 
 const sn = new SocialNeuron({ apiKey: process.env.SOCIAL_NEURON_API_KEY! });
 const credits = await sn.account.credits();
 const content = await sn.content.generate({
-  prompt: "...",
-  platform: "instagram",
-  content_type: "caption",
-  project_id: "project_uuid",
+  prompt: '...',
+  platform: 'instagram',
+  content_type: 'caption',
+  project_id: 'project_uuid',
 });
 ```
 
@@ -125,8 +121,6 @@ The repo-local Codex plugin is under `.agents/plugins/plugins/social-neuron-com-
 All four runtime methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio, and SDK-over-REST) are thin layers on top. Plugins and skills sit above MCP as packaging and operating guidance.
 
 Interactive MCP Apps are a presentation layer over the hosted MCP tools. They do not receive bearer tokens, bypass project scoping, or introduce a second business-logic path. Hosts without MCP Apps support still receive the normal tool result and can complete the workflow conversationally.
-
-Do not treat a cached client catalogue as deployment truth. Compare the client-visible schema with the hosted server card/OpenAPI after a release, then reconnect or refresh the client when fields such as `project_id` or model enums are stale.
 
 ```
 Plugin + skill ──→ MCP Client ──→ JSON-RPC ──┐

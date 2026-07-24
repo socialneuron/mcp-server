@@ -129,6 +129,7 @@ describe('TOOL_SCOPES', () => {
     'mcp:analytics',
     'mcp:comments',
     'mcp:autopilot',
+    'mcp:internal',
   ]);
 
   it('maps at least 31 tools', () => {
@@ -238,9 +239,17 @@ describe('TOOL_SCOPES', () => {
 // getAllScopes
 // ---------------------------------------------------------------------------
 describe('getAllScopes', () => {
-  it('returns 7 scopes (mcp:full + 6 children)', () => {
+  it('returns 8 scopes (mcp:full + 6 children + standalone mcp:internal)', () => {
     const scopes = getAllScopes();
-    expect(scopes).toHaveLength(7);
+    expect(scopes).toHaveLength(8);
+  });
+
+  it('mcp:full does NOT include mcp:internal (P0-1: customer keys never reach internal ops tools)', () => {
+    expect(hasScope(['mcp:full'], 'mcp:internal')).toBe(false);
+    expect(hasScope(['mcp:internal'], 'mcp:internal')).toBe(true);
+    expect(hasScope(['mcp:full', 'mcp:internal'], 'mcp:internal')).toBe(true);
+    // mcp:internal grants nothing else
+    expect(hasScope(['mcp:internal'], 'mcp:write')).toBe(false);
   });
 
   it('includes mcp:full', () => {

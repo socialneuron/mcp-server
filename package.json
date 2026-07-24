@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "mcpName": "com.socialneuron/mcp-server",
-  "version": "1.9.1",
+  "version": "2.0.0",
   "description": "Official MCP server, REST API & CLI for Social Neuron — create, schedule, and optimize social content with 35+ AI models across YouTube, TikTok, and more.",
   "type": "module",
   "main": "dist/index.js",
@@ -92,7 +92,8 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.4",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@supabase/supabase-js": "2.109.0",
+    "@sentry/node": "10.66.0",
+    "@supabase/supabase-js": "2.110.7",
     "express": "^5.1.0",
     "jose": "^6.2.1",
     "open": "10.0.0",

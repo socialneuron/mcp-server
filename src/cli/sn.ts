@@ -122,17 +122,17 @@ export function printSnUsage(): void {
   console.error('');
   console.error('Discovery:');
   console.error('  tools [--scope <scope>] [--module <module>] [--json]');
-  console.error('  info [--offline] [--json]');
+  console.error('  info [--json]');
   console.error('');
   console.error('Content:');
   console.error(
-    '  publish --media-url <url> --caption <text> --platforms <comma-list> --confirm [--title <text>] [--schedule-at <iso8601>] [--idempotency-key <key>] [--json]'
+    '  publish --media-url <url> --caption <text> --platforms <comma-list> --confirm [--project-id <uuid>] [--account-id <uuid> | --account-ids <json>] [--title <text>] [--schedule-at <iso8601>] [--idempotency-key <key>] [--json]'
   );
   console.error(
     '  quality-check --caption <text> [--title <text>] [--platforms <comma-list>] [--threshold <0-35>] [--json]'
   );
   console.error(
-    '  e2e --media-url <url> --caption <text> --platforms <comma-list> --confirm [--title <text>] [--schedule-at <iso8601>] [--check-urls] [--threshold <0-35>] [--dry-run] [--force] [--json]'
+    '  e2e --media-url <url> --caption <text> --platforms <comma-list> --confirm [--project-id <uuid>] [--account-id <uuid> | --account-ids <json>] [--title <text>] [--schedule-at <iso8601>] [--check-urls] [--threshold <0-35>] [--dry-run] [--force] [--json]'
   );
   console.error(
     '  plan (list|view|approve) [--plan-id <id>] [--status <draft|submitted|approved>] [--json]'
@@ -142,15 +142,21 @@ export function printSnUsage(): void {
   );
   console.error('');
   console.error('Account:');
-  console.error('  preflight [--privacy-url <url>] [--terms-url <url>] [--check-urls] [--json]');
-  console.error('  oauth-health [--warn-days <1-90>] [--platforms <comma-list>] [--all] [--json]');
-  console.error('  oauth-refresh (--platforms <comma-list> | --all) [--json]');
+  console.error(
+    '  preflight [--project-id <uuid>] [--privacy-url <url>] [--terms-url <url>] [--check-urls] [--json]'
+  );
+  console.error(
+    '  oauth-health [--project-id <uuid>] [--warn-days <1-90>] [--platforms <comma-list>] [--all] [--json]'
+  );
+  console.error(
+    '  oauth-refresh (--platforms <comma-list> | --all) [--project-id <uuid>] [--account-id <uuid> | --account-ids <json>] [--json]'
+  );
   console.error('');
   console.error('Analytics:');
   console.error(
-    '  posts [--days <1-90>] [--platform <name>] [--status <draft|scheduled|published|failed>] [--json]'
+    '  posts [--project-id <uuid>] [--days <1-90>] [--platform <name>] [--status <draft|scheduled|published|failed>] [--json]'
   );
-  console.error('  refresh-analytics [--json]');
+  console.error('  refresh-analytics [--project-id <uuid>] [--json]');
   console.error('  loop [--json]');
   console.error('');
   console.error('System:');

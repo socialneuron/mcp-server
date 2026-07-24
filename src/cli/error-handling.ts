@@ -6,13 +6,7 @@
  */
 
 export type SnErrorType =
-  | 'VALIDATION'
-  | 'AUTH'
-  | 'NETWORK'
-  | 'RATE_LIMIT'
-  | 'NOT_FOUND'
-  | 'UPSTREAM'
-  | 'INTERNAL';
+  'VALIDATION' | 'AUTH' | 'NETWORK' | 'RATE_LIMIT' | 'NOT_FOUND' | 'UPSTREAM' | 'INTERNAL';
 
 export interface SnErrorResponse {
   ok: false;

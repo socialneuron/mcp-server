@@ -1,6 +1,4 @@
-import {
-  TOOL_CATALOG,
-} from '../../lib/tool-catalog.js';
+import { TOOL_CATALOG } from '../../lib/tool-catalog.js';
 import { emitSnResult, isEnabledFlag } from './parse.js';
 import { MCP_VERSION } from '../../lib/version.js';
 import type { SnArgs } from './types.js';
@@ -8,9 +6,7 @@ import type { SnArgs } from './types.js';
 function publicStdioTools() {
   // The deterministic CLI invokes the npm/stdio surface. Interactive Apps are
   // hosted-HTTP UI resources; localOnly screenshot tools remain available.
-  return TOOL_CATALOG.filter(
-    t => !t.internal && !t.hiddenFromPublicCount && t.module !== 'apps'
-  );
+  return TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount && t.module !== 'apps');
 }
 
 /**

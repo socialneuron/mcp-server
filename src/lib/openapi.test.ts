@@ -7,7 +7,6 @@ import {
 } from './openapi.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
 import { TOOL_SCOPES } from '../auth/scopes.js';
-import { ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS, publicToolsForProfile } from './tool-profile.js';
 
 describe('buildOpenApiDocument', () => {
   beforeEach(() => __resetOpenApiCache());
@@ -36,7 +35,7 @@ describe('buildOpenApiDocument', () => {
     const doc = (await buildOpenApiDocument()) as any;
     const pathKeys = Object.keys(doc.paths);
     expect(pathKeys.length).toBe(publicRestToolCount());
-    // Public surface excludes local, internal, and authenticated-hidden tools.
+    // Public surface = catalog minus localOnly, internal, and hidden-count tools.
     const expected = TOOL_CATALOG.filter(
       t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
     ).length;
@@ -47,7 +46,7 @@ describe('buildOpenApiDocument', () => {
     }
   });
 
-  it('never exposes internal, localOnly, or authenticated-hidden tools', async () => {
+  it('never exposes internal, localOnly, or hidden-count tools', async () => {
     const doc = (await buildOpenApiDocument()) as any;
     const internal = TOOL_CATALOG.filter(t => t.internal).map(t => t.name);
     const local = TOOL_CATALOG.filter(t => t.localOnly).map(t => t.name);
@@ -59,25 +58,12 @@ describe('buildOpenApiDocument', () => {
     expect(doc.paths['/tools/write_agent_reflection']).toBeUndefined();
     expect(doc.paths['/tools/get_loop_pulse']).toBeUndefined();
     expect(doc.paths['/tools/get_bandit_state']).toBeUndefined();
-  });
-
-
-  it('applies the active tool profile to the OpenAPI REST surface', async () => {
-    const doc = (await buildOpenApiDocument('anthropic-directory')) as any;
-    const pathKeys = Object.keys(doc.paths);
-    expect(pathKeys.length).toBe(publicRestToolCount('anthropic-directory'));
-    expect(pathKeys.length).toBe(publicToolsForProfile('anthropic-directory').length);
-    for (const name of ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS) {
-      expect(doc.paths[`/tools/${name}`]).toBeUndefined();
-    }
-    expect(doc.paths['/tools/schedule_post']).toBeDefined();
+    expect(doc.paths['/tools/record_heartbeat']).toBeUndefined();
   });
 
   it('carries the required scope on each operation', async () => {
     const doc = (await buildOpenApiDocument()) as any;
-    const sample = TOOL_CATALOG.find(
-      t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount && TOOL_SCOPES[t.name]
-    )!;
+    const sample = TOOL_CATALOG.find(t => !t.localOnly && !t.internal && TOOL_SCOPES[t.name])!;
     const op = doc.paths[`/tools/${sample.name}`].post;
     expect(op['x-required-scope']).toBe(TOOL_SCOPES[sample.name]);
     expect(op.security).toEqual([{ bearerAuth: [] }]);

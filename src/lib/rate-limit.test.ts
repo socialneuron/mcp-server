@@ -1,12 +1,15 @@
-import { describe, it, expect, vi, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 // Import the REAL module, bypassing the global mock from test-setup.ts
 const { RateLimiter, checkRateLimit, getRateLimiter, rateLimitCategoryForTool } =
   await vi.importActual<typeof import('./rate-limit.js')>('./rate-limit.js');
 
 describe('RateLimiter', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.useRealTimers();
   });
 
   describe('token bucket mechanics', () => {
@@ -25,25 +28,21 @@ describe('RateLimiter', () => {
     });
 
     it('refills tokens over time', () => {
-      let now = 1_000;
-      vi.spyOn(Date, 'now').mockImplementation(() => now);
       const limiter = new RateLimiter({ maxTokens: 2, refillRate: 1 });
       limiter.consume();
       limiter.consume();
       expect(limiter.consume()).toBe(false);
 
       // Advance 1 second → 1 token refilled
-      now += 1_000;
+      vi.advanceTimersByTime(1000);
       expect(limiter.consume()).toBe(true);
       expect(limiter.consume()).toBe(false);
     });
 
     it('does not exceed maxTokens when refilling', () => {
-      let now = 1_000;
-      vi.spyOn(Date, 'now').mockImplementation(() => now);
       const limiter = new RateLimiter({ maxTokens: 3, refillRate: 10 });
       // Wait 10 seconds — would add 100 tokens, but capped at 3
-      now += 10_000;
+      vi.advanceTimersByTime(10_000);
       expect(limiter.consume()).toBe(true);
       expect(limiter.consume()).toBe(true);
       expect(limiter.consume()).toBe(true);
@@ -140,9 +139,8 @@ describe('RateLimiter', () => {
       'execute_recipe',
       'plan_content_week',
       'extract_brand',
-    ])(
-      'classifies %s as generation',
-      tool => expect(rateLimitCategoryForTool(tool)).toBe('generation')
+    ])('classifies %s as generation', tool =>
+      expect(rateLimitCategoryForTool(tool)).toBe('generation')
     );
 
     it.each(['schedule_post', 'reschedule_post', 'post_comment', 'delete_comment'])(

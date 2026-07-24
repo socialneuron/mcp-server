@@ -39,9 +39,9 @@ describe('SDK canonical REST tool contract', () => {
     expect(
       () => new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://user:pass@example.com' })
     ).toThrow(/credentials/);
-    expect(() => new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.com?token=x' })).toThrow(
-      /query/
-    );
+    expect(
+      () => new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.com?token=x' })
+    ).toThrow(/query/);
     expect(() => new SocialNeuron({ apiKey: API_KEY, timeout: Number.POSITIVE_INFINITY })).toThrow(
       /timeout/
     );
@@ -56,7 +56,9 @@ describe('SDK canonical REST tool contract', () => {
           baseUrl: 'http://127.0.0.1:3000/',
         })
     ).not.toThrow();
-    expect(() => new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test/' })).not.toThrow();
+    expect(
+      () => new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test/' })
+    ).not.toThrow();
   });
 
   it('routes every convenience method through a catalogued /v1/tools/{name} endpoint', async () => {
@@ -120,13 +122,13 @@ describe('SDK canonical REST tool contract', () => {
 
     const paths = calls.map(({ url }) => new URL(url).pathname);
     const toolNames = paths
-      .filter((path) => path.startsWith('/v1/tools/'))
-      .map((path) => decodeURIComponent(path.slice('/v1/tools/'.length)));
-    const catalogNames = new Set(TOOL_CATALOG.map((tool) => tool.name));
+      .filter(path => path.startsWith('/v1/tools/'))
+      .map(path => decodeURIComponent(path.slice('/v1/tools/'.length)));
+    const catalogNames = new Set(TOOL_CATALOG.map(tool => tool.name));
 
     expect(toolNames).toHaveLength(40);
     for (const name of toolNames) expect(catalogNames.has(name), name).toBe(true);
-    expect(paths.filter((path) => path !== '/v1/tools' && !path.startsWith('/v1/tools/'))).toEqual(
+    expect(paths.filter(path => path !== '/v1/tools' && !path.startsWith('/v1/tools/'))).toEqual(
       []
     );
 
@@ -162,7 +164,9 @@ describe('SDK canonical REST tool contract', () => {
           { status: 200 }
         )
       )
-      .mockResolvedValueOnce(successResponse({ status: 'completed', result_url: 'https://cdn.test/v.mp4' }));
+      .mockResolvedValueOnce(
+        successResponse({ status: 'completed', result_url: 'https://cdn.test/v.mp4' })
+      );
 
     const sn = new SocialNeuron({ apiKey: API_KEY });
     expect((await sn.account.credits()).data).toEqual({ balance: 50 });

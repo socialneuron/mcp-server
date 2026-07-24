@@ -345,6 +345,45 @@ describe('media tools', () => {
         }
       });
 
+      it('sends fileSize on the presigned-PUT request for large local files', async () => {
+        // get-signed-url has required a positive fileSize since #876 (2026-05-26);
+        // omitting it 400s every >10MB upload_media call (found live 2026-07-22).
+        const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+        const { tmpdir } = await import('node:os');
+        const { join } = await import('node:path');
+        const dir = mkdtempSync(join(tmpdir(), 'sn-media-test-'));
+        const bigPath = join(dir, 'big.mp4');
+        const bigSize = 11 * 1024 * 1024;
+        writeFileSync(bigPath, Buffer.alloc(bigSize));
+        const prior = process.env.MCP_TRANSPORT;
+        process.env.MCP_TRANSPORT = 'stdio';
+        try {
+          mockCallEdge.mockResolvedValueOnce({
+            data: { url: 'https://put.example.com/x', key: 'org_1/user_1/big.mp4' },
+            error: null,
+          });
+          // The PUT itself + follow-up signing are network calls; stub fetch.
+          const fetchSpy = vi
+            .spyOn(globalThis, 'fetch')
+            .mockResolvedValue(new Response(null, { status: 200 }));
+          try {
+            const handler = server.getHandler('upload_media')!;
+            await handler({ source: bigPath, content_type: 'video/mp4' });
+            expect(mockCallEdge).toHaveBeenCalledWith(
+              'get-signed-url',
+              expect.objectContaining({ operation: 'put', fileSize: bigSize }),
+              expect.anything()
+            );
+          } finally {
+            fetchSpy.mockRestore();
+          }
+        } finally {
+          if (prior === undefined) delete process.env.MCP_TRANSPORT;
+          else process.env.MCP_TRANSPORT = prior;
+          rmSync(dir, { recursive: true, force: true });
+        }
+      });
+
       it('errors when neither source nor file_data is provided', async () => {
         const handler = server.getHandler('upload_media')!;
         const result = await handler({});
@@ -456,6 +495,64 @@ describe('media tools', () => {
       const result = await handler({ r2_key: 'some/key' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No signed URL returned');
+    });
+  });
+
+  // =========================================================================
+  // get_media_url — 1f (2026-07-17 sweep): legacy keys + job_id handoff
+  // =========================================================================
+  describe('get_media_url legacy-key / job_id handling (1f)', () => {
+    it('accepts a job_id and asks the EF to resolve the key via the job row', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { signedUrl: 'https://signed.example.com/from-job.mp4', expiresIn: 3600 },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({ job_id: '00000000-0000-4000-8000-000000000042' });
+      expect(result.isError).toBeFalsy();
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'get-signed-url',
+        expect.objectContaining({
+          jobId: '00000000-0000-4000-8000-000000000042',
+          operation: 'get',
+        }),
+        expect.objectContaining({ timeoutMs: 10_000 })
+      );
+    });
+
+    it('treats a bare UUID passed as r2_key as a job_id (check_status handoff)', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { signedUrl: 'https://signed.example.com/from-job.mp4', expiresIn: 3600 },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({ r2_key: '00000000-0000-4000-8000-000000000042' });
+      expect(result.isError).toBeFalsy();
+      const body = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+      expect(body.jobId).toBe('00000000-0000-4000-8000-000000000042');
+      expect(body.r2Key).toBeUndefined();
+    });
+
+    it('errors when neither r2_key nor job_id is provided', async () => {
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({});
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/r2_key or job_id/i);
+    });
+
+    it('adds ownership-tracking guidance on a 403 access-denied error', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: null,
+        error: 'Forbidden (HTTP 403): permission_denied. This action is not permitted.',
+      });
+
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({ r2_key: 'legacy/odd-format/file.png' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/predate ownership tracking/i);
+      expect(result.content[0].text).toMatch(/job_id/i);
     });
   });
 });

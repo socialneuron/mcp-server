@@ -72,18 +72,12 @@ describe('ideation tools', () => {
       expect(result.content[0].text).toContain('Rate limit exceeded');
     });
 
-    it('auto-enriches prompt with brand and performance context when project_id is provided', async () => {
+    it('with project_id: enriches performance context only and delegates brand injection to the EF', async () => {
+      // Brand injection is owned by social-neuron-ai (source:'mcp' is in
+      // BRAND_INJECT_SOURCES) — the tool must NOT hand-build a second brand
+      // block. It passes project_id through and only fetches performance
+      // context locally.
       mockCallEdge
-        .mockResolvedValueOnce({
-          data: {
-            success: true,
-            profile: {
-              brand_name: 'Acme',
-              brand_context: { industryClassification: 'SaaS' },
-            },
-          },
-          error: null,
-        })
         .mockResolvedValueOnce({
           data: {
             success: true,
@@ -103,57 +97,34 @@ describe('ideation tools', () => {
         project_id: '11111111-1111-4111-8111-111111111111',
       });
 
-      expect(mockCallEdge).toHaveBeenCalledTimes(3);
+      // Exactly ONE mcp-data call (ideation-context) — no brand-profile read.
+      expect(mockCallEdge).toHaveBeenCalledTimes(2);
       expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data');
-      expect(mockCallEdge.mock.calls[1][0]).toBe('mcp-data');
-      expect(mockCallEdge.mock.calls[2][0]).toBe('social-neuron-ai');
+      expect(mockCallEdge.mock.calls[0][1]).toMatchObject({ action: 'ideation-context' });
+      expect(mockCallEdge.mock.calls[1][0]).toBe('social-neuron-ai');
 
-      const finalPrompt = mockCallEdge.mock.calls[2][1].prompt as string;
-      expect(finalPrompt).toContain('PROJECT BRAND CONTEXT');
-      expect(finalPrompt).toContain('Brand: Acme');
-      expect(finalPrompt).toContain('Industry: SaaS');
+      const finalBody = mockCallEdge.mock.calls[1][1] as Record<string, unknown>;
+      const finalPrompt = finalBody.prompt as string;
+      // No hand-built brand block — the EF compiles + injects the single one.
+      expect(finalPrompt).not.toContain('PROJECT BRAND CONTEXT');
+      expect(finalPrompt).not.toContain('BRAND VOICE GUIDANCE');
+      // Performance insights still enriched locally.
       expect(finalPrompt).toContain('PERFORMANCE INSIGHTS');
       expect(finalPrompt).toContain('Top hooks: Ask a bold question first.');
+      // project_id passed through so the EF's BRAND_INJECT_SOURCES path fires.
+      expect(finalBody.projectId).toBe('11111111-1111-4111-8111-111111111111');
+      expect(finalBody.project_id).toBe('11111111-1111-4111-8111-111111111111');
       expect(result.content[0].text).toContain('Generated with enrichment');
     });
 
-    it('injects full voice profile and platform overrides into generation prompt', async () => {
+    it('keeps the explicit brand_voice free-text passthrough alongside project_id', async () => {
       mockCallEdge
-        .mockResolvedValueOnce({
-          data: {
-            success: true,
-            profile: {
-              brand_name: 'Acme',
-              brand_context: {
-                industryClassification: 'SaaS',
-                voiceProfile: {
-                  tone: ['professional'],
-                  style: ['concise'],
-                  languagePatterns: ['use active voice'],
-                  avoidPatterns: ['clickbait'],
-                  sampleContent: 'We help founders scale with practical systems.',
-                  platformOverrides: {
-                    linkedin: {
-                      tone: ['authoritative'],
-                      style: ['insightful'],
-                      sampleContent: 'A short LinkedIn thought-leadership sample.',
-                      ctaStyle: 'ask a question',
-                      hashtagStrategy: '3-5 industry tags',
-                      avoidPatterns: ['hype'],
-                    },
-                  },
-                },
-              },
-            },
-          },
-          error: null,
-        })
         .mockResolvedValueOnce({
           data: { success: true, context: { promptInjection: '' } },
           error: null,
         })
         .mockResolvedValueOnce({
-          data: { text: 'Generated with full voice context' },
+          data: { text: 'Generated with voice directive' },
           error: null,
         });
 
@@ -162,20 +133,29 @@ describe('ideation tools', () => {
         prompt: 'Create a post',
         content_type: 'caption',
         platform: 'linkedin',
+        brand_voice: 'witty, contrarian',
         project_id: '11111111-1111-4111-8111-111111111111',
       });
 
-      const finalPrompt = mockCallEdge.mock.calls[2][1].prompt as string;
-      expect(finalPrompt).toContain('BRAND VOICE GUIDANCE');
-      expect(finalPrompt).toContain('Tone: professional');
-      expect(finalPrompt).toContain('Style: concise');
-      expect(finalPrompt).toContain('Use these language patterns: use active voice');
-      expect(finalPrompt).toContain('Avoid these patterns: clickbait');
-      expect(finalPrompt).toContain('Voice samples:');
-      expect(finalPrompt).toContain('Platform tone override: authoritative');
-      expect(finalPrompt).toContain('Platform samples:');
-      expect(finalPrompt).toContain('CTA style: ask a question');
-      expect(finalPrompt).toContain('Hashtag strategy: 3-5 industry tags');
+      const finalBody = mockCallEdge.mock.calls[1][1] as Record<string, unknown>;
+      const finalPrompt = finalBody.prompt as string;
+      expect(finalPrompt).toContain('Brand Voice: witty, contrarian');
+      expect(finalPrompt).not.toContain('BRAND VOICE GUIDANCE');
+      expect(finalBody.projectId).toBe('11111111-1111-4111-8111-111111111111');
+    });
+
+    it('omits projectId from the EF body when project_id is not provided', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { text: 'Generated without project' },
+        error: null,
+      });
+
+      const handler = server.getHandler('generate_content')!;
+      await handler({ prompt: 'Write something', content_type: 'caption' });
+
+      const finalBody = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+      expect(finalBody.projectId).toBeUndefined();
+      expect(finalBody.project_id).toBeUndefined();
     });
   });
 

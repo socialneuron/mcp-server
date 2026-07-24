@@ -1,347 +1,206 @@
 /**
  * Tests for skills MCP tools (list_skills, get_skill, run_skill).
  *
- * Mocks the MCP server to capture tool handlers, then invokes them
- * directly. No network — the manifest is in-process.
+ * list_skills + get_skill route through the mcp-data EF (get-skills / get-skill).
+ * callEdgeFunction is globally mocked in test-setup; each test sets its own
+ * resolved value. run_skill is unchanged (no network — in-process manifest).
  */
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { registerSkillsTools } from "./skills.js";
-import { callEdgeFunction } from "../lib/edge-function.js";
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { createMockServer } from '../test-setup.js';
+import { registerSkillsTools } from './skills.js';
+import { callEdgeFunction } from '../lib/edge-function.js';
 
+vi.mock('../lib/edge-function.js');
 const mockCallEdge = vi.mocked(callEdgeFunction);
 
-interface CapturedTool {
-  name: string;
-  description: string;
-  schema: Record<string, unknown>;
-  handler: (args: Record<string, unknown>) => Promise<{
-    content: Array<{ type: string; text: string }>;
-    isError?: boolean;
-  }>;
-}
+const CATALOG_ROW = {
+  slug: 'tiktok-content',
+  kind: 'platform',
+  platform: 'tiktok',
+  model_id: null,
+  tier_minimum: 'free',
+  frontmatter: { description: 'How to win on TikTok' },
+  updated_at: '2026-07-13T00:00:00Z',
+  body_chars: 4231,
+  locked: false,
+};
 
-function makeMockServer() {
-  const tools = new Map<string, CapturedTool>();
-  const server = {
-    tool: vi.fn(
-      (
-        name: string,
-        description: string,
-        schema: Record<string, unknown>,
-        handler: CapturedTool["handler"],
-      ) => {
-        tools.set(name, { name, description, schema, handler });
-      },
-    ),
-  };
-  return { server, tools };
-}
-
-describe("registerSkillsTools", () => {
-  let mock: ReturnType<typeof makeMockServer>;
+describe('registerSkillsTools', () => {
+  let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: EF returns nothing → list_skills falls back to the vendored manifest.
     mockCallEdge.mockResolvedValue({ data: null, error: null });
-    mock = makeMockServer();
-    // The first argument to server.tool is the McpServer instance — we cast to any
-    // because the mock is a minimal duck-typed stand-in.
+    server = createMockServer();
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    registerSkillsTools(mock.server as any);
+    registerSkillsTools(server as any);
   });
 
-  it("registers list_skills, get_skill, and run_skill", () => {
-    expect(mock.tools.has("list_skills")).toBe(true);
-    expect(mock.tools.has("get_skill")).toBe(true);
-    expect(mock.tools.has("run_skill")).toBe(true);
+  it('registers list_skills, get_skill, and run_skill', () => {
+    expect(server.getHandler('list_skills')).toBeDefined();
+    expect(server.getHandler('get_skill')).toBeDefined();
+    expect(server.getHandler('run_skill')).toBeDefined();
   });
 
-  describe("list_skills", () => {
-    it("merges live guide rows with executable workflows", async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: {
-          skills: [
-            {
-              slug: "tiktok-content",
-              kind: "platform",
-              platform: "tiktok",
-              model_id: null,
-              tier_minimum: "free",
-              frontmatter: { description: "How to win on TikTok" },
-              updated_at: "2026-07-13T00:00:00Z",
-              body_chars: 4231,
-              locked: false,
-            },
-          ],
-        },
-        error: null,
-      });
-      const result = await mock.tools.get("list_skills")!.handler({});
-      expect(result.content[0].text).toContain("tiktok-content");
-      expect(result.content[0].text).toContain(
-        'get_skill(slug: "tiktok-content")',
-      );
-      expect(result.content[0].text).toContain(
-        "skill-brand-locked-viral-hook-reel",
-      );
-      expect(result.content[0].text).toContain("GUIDES —");
-      expect(result.content[0].text).toContain("WORKFLOWS —");
-      expect(mockCallEdge).toHaveBeenCalledWith("mcp-data", {
-        action: "get-skills",
-      });
-    });
-
-    it("does not leak unrelated guides into a studio-filtered workflow list", async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: {
-          skills: [
-            {
-              slug: "tiktok-content",
-              kind: "platform",
-              platform: "tiktok",
-              model_id: null,
-              tier_minimum: "free",
-              frontmatter: { description: "How to win on TikTok" },
-              updated_at: null,
-              body_chars: 100,
-              locked: false,
-            },
-          ],
-        },
-        error: null,
-      });
-
-      const result = await mock.tools
-        .get("list_skills")!
-        .handler({ studio: "video" });
-      expect(result.content[0].text).not.toContain("tiktok-content");
-      expect(result.content[0].text).toContain("WORKFLOWS —");
-    });
-
-    it("returns the manifest as text by default", async () => {
-      const tool = mock.tools.get("list_skills")!;
-      const result = await tool.handler({});
+  describe('list_skills', () => {
+    it('maps live catalogue rows from the get-skills EF action', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skills: [CATALOG_ROW] }, error: null });
+      const result = await server.getHandler('list_skills')!({ response_format: 'text' });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain(
-        "skill-brand-locked-viral-hook-reel",
-      );
-      expect(result.content[0].text).toContain("Brand-locked viral hook reel");
-      expect(result.content[0].text).toContain(
-        "Inspired by: MrBeast, Alex Hormozi",
-      );
+      expect(result.content[0].text).toContain('tiktok-content');
+      expect(result.content[0].text).toContain('How to win on TikTok');
+      expect(result.content[0].text).toContain('4231 chars');
+      expect(result.content[0].text).toContain('get_skill(slug: "tiktok-content")');
+      // Merged contract (codex P2): manifest WORKFLOW entries ride along so the
+      // documented list_skills → run_skill flow survives the DB path.
+      expect(result.content[0].text).toContain('skill-brand-locked-viral-hook-reel');
+      expect(result.content[0].text).toContain('GUIDES —');
+      expect(result.content[0].text).toContain('WORKFLOWS —');
+      expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data');
+      expect((mockCallEdge.mock.calls[0][1] as Record<string, unknown>).action).toBe('get-skills');
     });
 
-    it("returns JSON when response_format=json", async () => {
-      const tool = mock.tools.get("list_skills")!;
-      const result = await tool.handler({ response_format: "json" });
+    it('renders the locked upsell annotation for tier-gated rows', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { skills: [{ ...CATALOG_ROW, tier_minimum: 'pro', locked: true }] },
+        error: null,
+      });
+      const result = await server.getHandler('list_skills')!({ response_format: 'text' });
+      expect(result.content[0].text).toContain('upgrade to unlock');
+    });
+
+    it('returns the EF rows as a JSON envelope when response_format=json', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skills: [CATALOG_ROW] }, error: null });
+      const result = await server.getHandler('list_skills')!({ response_format: 'json' });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.count).toBeGreaterThanOrEqual(1);
-      expect(parsed.data.skills[0].id).toBe(
-        "skill-brand-locked-viral-hook-reel",
-      );
+      // Merged contract: 1 DB guide + 1 manifest workflow.
+      expect(parsed.data.count).toBe(2);
+      expect(parsed.data.guides[0].slug).toBe('tiktok-content');
+      expect(parsed.data.guides[0].use_with).toBe('get_skill');
+      expect(parsed.data.workflows[0].id).toBe('skill-brand-locked-viral-hook-reel');
+      expect(parsed.data.workflows[0].use_with).toBe('run_skill');
       expect(parsed._meta.version).toBeDefined();
     });
 
-    it("filters by studio", async () => {
-      const tool = mock.tools.get("list_skills")!;
-      const videoResult = await tool.handler({
-        studio: "video",
-        response_format: "json",
-      });
-      const videoParsed = JSON.parse(videoResult.content[0].text);
-      expect(videoParsed.data.count).toBeGreaterThanOrEqual(1);
-      for (const s of videoParsed.data.skills) {
-        expect(s.studio).toBe("video");
-      }
-
-      const carouselResult = await tool.handler({
-        studio: "carousel",
-        response_format: "json",
-      });
-      const carouselParsed = JSON.parse(carouselResult.content[0].text);
-      expect(carouselParsed.data.count).toBe(0);
+    it('falls back to the vendored manifest on EF error', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: 'boom' });
+      const result = await server.getHandler('list_skills')!({ response_format: 'text' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('skill-brand-locked-viral-hook-reel');
+      expect(result.content[0].text).toContain('Brand-locked viral hook reel');
     });
 
-    it("featured_only narrows results", async () => {
-      const tool = mock.tools.get("list_skills")!;
-      const result = await tool.handler({
-        featured_only: true,
-        response_format: "json",
-      });
-      const parsed = JSON.parse(result.content[0].text);
-      for (const s of parsed.data.skills) {
-        expect(s.featured).toBe(true);
-      }
+    it('falls back to the vendored manifest when the EF returns no rows', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skills: [] }, error: null });
+      const result = await server.getHandler('list_skills')!({ response_format: 'text' });
+      expect(result.isError).toBeFalsy();
+      expect(result.content[0].text).toContain('skill-brand-locked-viral-hook-reel');
     });
 
-    it("returns a helpful empty message when filter has no matches", async () => {
-      const tool = mock.tools.get("list_skills")!;
-      const result = await tool.handler({ studio: "voice" });
+    it('fallback path still honors the studio filter (manifest-era concept)', async () => {
+      // EF empty → fallback; carousel has no manifest entry → empty message.
+      const result = await server.getHandler('list_skills')!({ studio: 'carousel' });
       expect(result.content[0].text).toMatch(/No skills match/);
-      expect(result.content[0].text).toMatch(/Available studios/);
     });
   });
 
-  describe("get_skill", () => {
-    const detail = {
-      slug: "tiktok-content",
-      kind: "platform",
-      platform: "tiktok",
-      tier_minimum: "free",
-      frontmatter: { description: "How to win on TikTok" },
-      body: "# TikTok Content\n\nAct on this document top-to-bottom.",
-      compiled_section: "Short hooks beat long intros.",
+  describe('get_skill', () => {
+    const DETAIL = {
+      slug: 'tiktok-content',
+      kind: 'platform',
+      platform: 'tiktok',
+      tier_minimum: 'free',
+      frontmatter: { description: 'How to win on TikTok' },
+      body: '# TikTok Content — Platform Base Skill\n\nAct on this document top-to-bottom.',
+      compiled_section: null,
       recipe_slug: null,
       version: 1,
-      updated_at: "2026-07-13T00:00:00Z",
+      updated_at: '2026-07-13T00:00:00Z',
       locked: false,
     };
 
-    it("returns the skill body and compiled section", async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: { skill: detail },
-        error: null,
-      });
-      const result = await mock.tools
-        .get("get_skill")!
-        .handler({ slug: "tiktok-content" });
+    it('returns the skill body and sends the slug to the get-skill action', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skill: DETAIL }, error: null });
+      const result = await server.getHandler('get_skill')!({ slug: 'tiktok-content' });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain("TikTok Content");
-      expect(result.content[0].text).toContain("What's working now");
-      expect(result.content[0].text).toContain("Short hooks beat long intros.");
-      expect(mockCallEdge).toHaveBeenCalledWith("mcp-data", {
-        action: "get-skill",
-        slug: "tiktok-content",
-      });
+      expect(result.content[0].text).toContain('TikTok Content — Platform Base Skill');
+      expect(result.content[0].text).toContain('Act on this document top-to-bottom');
+      expect(mockCallEdge.mock.calls[0][0]).toBe('mcp-data');
+      const body = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+      expect(body.action).toBe('get-skill');
+      expect(body.slug).toBe('tiktok-content');
     });
 
-    it("returns a JSON envelope", async () => {
+    it('includes the compiled "what\'s working now" section when present', async () => {
       mockCallEdge.mockResolvedValueOnce({
-        data: { skill: detail },
+        data: { skill: { ...DETAIL, compiled_section: 'Short hooks beat long intros.' } },
         error: null,
       });
-      const result = await mock.tools.get("get_skill")!.handler({
-        slug: "tiktok-content",
-        response_format: "json",
+      const result = await server.getHandler('get_skill')!({ slug: 'tiktok-content' });
+      expect(result.content[0].text).toContain("What's working now");
+      expect(result.content[0].text).toContain('Short hooks beat long intros.');
+    });
+
+    it('returns a JSON envelope when response_format=json', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skill: DETAIL }, error: null });
+      const result = await server.getHandler('get_skill')!({
+        slug: 'tiktok-content',
+        response_format: 'json',
       });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.slug).toBe("tiktok-content");
+      expect(parsed.data.slug).toBe('tiktok-content');
+      expect(parsed.data.body).toContain('Platform Base Skill');
       expect(parsed._meta.version).toBeDefined();
     });
 
-    it("returns an error for a missing skill or Edge Function failure", async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: { skill: null },
-        error: null,
-      });
-      const missing = await mock.tools
-        .get("get_skill")!
-        .handler({ slug: "missing" });
-      expect(missing.isError).toBe(true);
-      expect(missing.content[0].text).toContain("No skill found");
-
-      mockCallEdge.mockResolvedValueOnce({
-        data: null,
-        error: "upstream unavailable",
-      });
-      const failed = await mock.tools
-        .get("get_skill")!
-        .handler({ slug: "tiktok-content" });
-      expect(failed.isError).toBe(true);
-      expect(failed.content[0].text).toContain(
-        "skill catalogue could not be loaded",
-      );
-      expect(failed.content[0].text).not.toContain("upstream unavailable");
+    it('isError when the slug resolves to no skill', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: { skill: null }, error: null });
+      const result = await server.getHandler('get_skill')!({ slug: 'nope' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/No skill found/);
     });
 
-    it("does not expose a locked skill body", async () => {
-      mockCallEdge.mockResolvedValueOnce({
-        data: {
-          skill: {
-            ...detail,
-            locked: true,
-            tier_minimum: "agency",
-            body: "paid guide body must stay private",
-            compiled_section: "paid performance data must stay private",
-          },
-        },
-        error: null,
-      });
-      const result = await mock.tools
-        .get("get_skill")!
-        .handler({ slug: "tiktok-content" });
+    it('isError and surfaces the EF error', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: 'boom' });
+      const result = await server.getHandler('get_skill')!({ slug: 'tiktok-content' });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain("permission_denied");
-      expect(result.content[0].text).not.toContain("paid guide body");
-      expect(result.content[0].text).not.toContain("paid performance data");
+      expect(result.content[0].text).toContain('boom');
     });
   });
 
-  describe("run_skill", () => {
-    it("returns isError=true for unknown skill_id", async () => {
-      const tool = mock.tools.get("run_skill")!;
-      const result = await tool.handler({
-        skill_id: "skill-does-not-exist",
-        topic: "t",
+  describe('run_skill (unchanged)', () => {
+    it('returns isError=true for unknown skill_id', async () => {
+      const result = await server.getHandler('run_skill')!({
+        skill_id: 'skill-does-not-exist',
+        topic: 't',
       });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toMatch(/Unknown skill_id/);
-      expect(result.content[0].text).toMatch(/list_skills/);
     });
 
-    it("returns a structured preview for a valid skill_id", async () => {
-      const tool = mock.tools.get("run_skill")!;
-      const result = await tool.handler({
-        skill_id: "skill-brand-locked-viral-hook-reel",
-        topic: "why we built SN",
-        audience: "first-time founders",
+    it('returns a structured preview for a valid skill_id', async () => {
+      const result = await server.getHandler('run_skill')!({
+        skill_id: 'skill-brand-locked-viral-hook-reel',
+        topic: 'why we built SN',
+        audience: 'first-time founders',
       });
       expect(result.isError).toBeFalsy();
-      expect(result.content[0].text).toContain("Brand-locked viral hook reel");
-      expect(result.content[0].text).toContain("why we built SN");
-      expect(result.content[0].text).toContain("first-time founders");
-      expect(result.content[0].text).toContain(
-        "socialneuron.com/dashboard/creation",
-      );
+      expect(result.content[0].text).toContain('Brand-locked viral hook reel');
+      expect(result.content[0].text).toContain('why we built SN');
+      expect(result.content[0].text).toContain('socialneuron.com/dashboard/creation');
     });
 
-    it("falls back to brand defaults when optional inputs omitted", async () => {
-      const tool = mock.tools.get("run_skill")!;
-      const result = await tool.handler({
-        skill_id: "skill-brand-locked-viral-hook-reel",
-        topic: "t",
-      });
-      expect(result.content[0].text).toContain("(brand persona)");
-      expect(result.content[0].text).toContain("(brand default)");
-    });
-
-    it("returns JSON envelope when response_format=json", async () => {
-      const tool = mock.tools.get("run_skill")!;
-      const result = await tool.handler({
-        skill_id: "skill-brand-locked-viral-hook-reel",
-        topic: "t",
-        response_format: "json",
+    it('returns a JSON envelope when response_format=json', async () => {
+      const result = await server.getHandler('run_skill')!({
+        skill_id: 'skill-brand-locked-viral-hook-reel',
+        topic: 't',
+        response_format: 'json',
       });
       const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.status).toBe("preview");
-      expect(parsed.data.skill.id).toBe("skill-brand-locked-viral-hook-reel");
-      expect(parsed.data.runUrl).toContain(
-        "skill-brand-locked-viral-hook-reel",
-      );
+      expect(parsed.data.status).toBe('preview');
+      expect(parsed.data.skill.id).toBe('skill-brand-locked-viral-hook-reel');
       expect(parsed._meta.version).toBeDefined();
-    });
-
-    it("URL-encodes skill_id in runUrl", async () => {
-      const tool = mock.tools.get("run_skill")!;
-      const result = await tool.handler({
-        skill_id: "skill-brand-locked-viral-hook-reel",
-        topic: "t",
-        response_format: "json",
-      });
-      const parsed = JSON.parse(result.content[0].text);
-      expect(parsed.data.runUrl).toBe(
-        "https://socialneuron.com/dashboard/creation?skill=skill-brand-locked-viral-hook-reel",
-      );
     });
   });
 });

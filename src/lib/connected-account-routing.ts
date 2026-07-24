@@ -1,4 +1,4 @@
-import { callEdgeFunction } from "./edge-function.js";
+import { callEdgeFunction } from './edge-function.js';
 
 interface ConnectedAccountRoute {
   id: string;
@@ -15,20 +15,20 @@ interface RoutingResult {
 }
 
 const PLATFORM_CASE_MAP: Record<string, string> = {
-  youtube: "YouTube",
-  tiktok: "TikTok",
-  instagram: "Instagram",
-  twitter: "Twitter",
-  x: "Twitter",
-  linkedin: "LinkedIn",
-  facebook: "Facebook",
-  threads: "Threads",
-  bluesky: "Bluesky",
+  youtube: 'YouTube',
+  tiktok: 'TikTok',
+  instagram: 'Instagram',
+  twitter: 'Twitter',
+  x: 'Twitter',
+  linkedin: 'LinkedIn',
+  facebook: 'Facebook',
+  threads: 'Threads',
+  bluesky: 'Bluesky',
 };
 
 function canonicalPlatform(value: string): string {
   const normalized = value.trim().toLowerCase();
-  return normalized === "x" ? "twitter" : normalized;
+  return normalized === 'x' ? 'twitter' : normalized;
 }
 
 function providerPlatform(value: string): string {
@@ -37,7 +37,7 @@ function providerPlatform(value: string): string {
 
 function isUsable(account: ConnectedAccountRoute): boolean {
   const status = account.effective_status ?? account.status;
-  return status === "active" || status === "expires_soon";
+  return status === 'active' || status === 'expires_soon';
 }
 
 function normalizeRequestedIds(requested: Record<string, string> | undefined): {
@@ -88,18 +88,18 @@ export async function resolveConnectedAccountRouting(input: {
     accounts?: ConnectedAccountRoute[];
     error?: string;
   }>(
-    "mcp-data",
+    'mcp-data',
     {
-      action: "connected-accounts",
+      action: 'connected-accounts',
       projectId: input.projectId,
       project_id: input.projectId,
     },
-    { timeoutMs: 10_000 },
+    { timeoutMs: 10_000 }
   );
 
   if (error || !Array.isArray(data?.accounts)) {
     return {
-      error: `Connected-account verification failed: ${error ?? data?.error ?? "no account inventory returned"}.`,
+      error: `Connected-account verification failed: ${error ?? data?.error ?? 'no account inventory returned'}.`,
     };
   }
 
@@ -108,16 +108,16 @@ export async function resolveConnectedAccountRouting(input: {
     const canonical = canonicalPlatform(platform);
     const displayPlatform = providerPlatform(platform);
     const platformAccounts = data.accounts.filter(
-      (account) =>
+      account =>
         canonicalPlatform(account.platform) === canonical &&
         account.project_id === input.projectId &&
-        isUsable(account),
+        isUsable(account)
     );
     const requestedId = normalizedRequested.ids?.get(canonical);
 
     let selected: ConnectedAccountRoute | undefined;
     if (requestedId) {
-      selected = data.accounts.find((account) => account.id === requestedId);
+      selected = data.accounts.find(account => account.id === requestedId);
       if (!selected) {
         return {
           error: `${displayPlatform}: account ${requestedId} is not available for project_id ${input.projectId}.`,
@@ -148,7 +148,7 @@ export async function resolveConnectedAccountRouting(input: {
       return {
         error:
           `${displayPlatform}: multiple active accounts are bound to project_id ${input.projectId}; ` +
-          "pass the exact account ID returned by list_connected_accounts.",
+          'pass the exact account ID returned by list_connected_accounts.',
       };
     }
 

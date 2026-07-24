@@ -51,7 +51,37 @@ describe('hermes tools', () => {
       const handler = server.getHandler('save_draft_to_library')!;
       const result = await handler({ platform: 'instagram', copy: 'x' });
       expect(result.isError).toBe(true);
-      expect(result.content[0].text).toContain('Error: boom');
+      // Structured error (toolError) — the real upstream message must still
+      // reach the model (this was the "[object Object]" swallow bug), now
+      // carried as `message` inside a machine-readable envelope instead of a
+      // bare `Error: ${error}` string.
+      expect(result.content[0].text).toContain('boom');
+      expect(result.structuredContent?.error?.error_type).toBe('upstream_error');
+      expect(result.structuredContent?.error?.message).toBe('boom');
+    });
+
+    it('classifies auth/permission failures as permission_denied, not upstream_error', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: null,
+        error:
+          "Authentication failed (HTTP 401). Run 'npx @socialneuron/mcp-server login' to re-authenticate.",
+      });
+      const handler = server.getHandler('save_draft_to_library')!;
+      const result = await handler({ platform: 'instagram', copy: 'x' });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent?.error?.error_type).toBe('permission_denied');
+    });
+
+    it('classifies rate-limit failures as rate_limited', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: null,
+        error:
+          'Rate limit exceeded (HTTP 429). Wait 60s before retrying. Reduce request frequency or upgrade your plan.',
+      });
+      const handler = server.getHandler('save_draft_to_library')!;
+      const result = await handler({ platform: 'instagram', copy: 'x' });
+      expect(result.isError).toBe(true);
+      expect(result.structuredContent?.error?.error_type).toBe('rate_limited');
     });
 
     it('returns JSON envelope when response_format=json', async () => {
@@ -290,6 +320,110 @@ describe('hermes tools', () => {
       const parsed = JSON.parse(result.content[0].text);
       expect(parsed.data.campaigns).toHaveLength(1);
       expect(parsed.data.campaigns[0].id).toBe('c1');
+    });
+  });
+
+  // ──────────────────────────────────────────────────────────────────────
+  // record_heartbeat
+  // ──────────────────────────────────────────────────────────────────────
+  describe('record_heartbeat', () => {
+    it('routes to mcp-data with record-heartbeat action, passing the caller-supplied run_id through', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, event_id: 'evt-1' },
+        error: null,
+      });
+
+      const handler = server.getHandler('record_heartbeat')!;
+      const result = await handler({
+        agent: 'cfo-report',
+        phase: 'start',
+        run_id: 'run-abc',
+      });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'record-heartbeat',
+          agent: 'cfo-report',
+          phase: 'start',
+          run_id: 'run-abc',
+        })
+      );
+      expect(result.content[0].text).toContain('start');
+      expect(result.content[0].text).toContain('run-abc');
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('auto-generates a UUID run_id when omitted, and returns it in the response', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, event_id: 'evt-2' },
+        error: null,
+      });
+
+      const handler = server.getHandler('record_heartbeat')!;
+      const result = await handler({ agent: 'hermes-fleet-digest', phase: 'start' });
+
+      const call = mockCallEdge.mock.calls[0];
+      const body = call[1] as Record<string, unknown>;
+      expect(typeof body.run_id).toBe('string');
+      expect((body.run_id as string).length).toBeGreaterThan(0);
+      expect(result.content[0].text).toContain(body.run_id as string);
+    });
+
+    it('passes phase=end fields (status, duration_ms, note, artifact_path) through', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, event_id: 'evt-3' },
+        error: null,
+      });
+
+      const handler = server.getHandler('record_heartbeat')!;
+      await handler({
+        agent: 'cfo-report',
+        phase: 'end',
+        run_id: 'run-abc',
+        status: 'ok',
+        duration_ms: 4200,
+        note: 'ran clean, no anomalies',
+        artifact_path: 'docs/reports/2026-07-13-example-report.md',
+      });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'mcp-data',
+        expect.objectContaining({
+          action: 'record-heartbeat',
+          phase: 'end',
+          status: 'ok',
+          duration_ms: 4200,
+          note: 'ran clean, no anomalies',
+          artifact_path: 'docs/reports/2026-07-13-example-report.md',
+        })
+      );
+    });
+
+    it('returns isError on EF failure', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: 'boom' });
+      const handler = server.getHandler('record_heartbeat')!;
+      const result = await handler({ agent: 'cfo-report', phase: 'start' });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Error: boom');
+    });
+
+    it('returns JSON envelope when response_format=json', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { success: true, event_id: 'evt-4' },
+        error: null,
+      });
+      const handler = server.getHandler('record_heartbeat')!;
+      const result = await handler({
+        agent: 'cfo-report',
+        phase: 'start',
+        run_id: 'run-json',
+        response_format: 'json',
+      });
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed._meta.version).toBeDefined();
+      expect(parsed.data.run_id).toBe('run-json');
+      expect(parsed.data.event_id).toBe('evt-4');
     });
   });
 });

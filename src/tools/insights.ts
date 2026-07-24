@@ -1,7 +1,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId } from '../lib/supabase.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { PerformanceInsight, BestPostingTime, ResponseEnvelope } from '../types/index.js';
 
@@ -70,7 +70,23 @@ export function registerInsightsTools(server: McpServer): void {
       const lookbackDays = days ?? 30;
       const maxRows = limit ?? 10;
       const effectiveDays = Math.min(lookbackDays, MAX_INSIGHT_AGE_DAYS);
-      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      // 1g (2026-07-17 sweep): standardized missing-project error — list the
+      // user's projects instead of silently querying without a scope.
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'project_id is required. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{
@@ -216,7 +232,22 @@ export function registerInsightsTools(server: McpServer): void {
     async ({ platform, days, project_id, response_format }) => {
       const format = response_format ?? 'text';
       const lookbackDays = days ?? 30;
-      const resolvedProjectId = project_id ?? (await getDefaultProjectId()) ?? undefined;
+      // 1g (2026-07-17 sweep): standardized missing-project error.
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'project_id is required. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
 
       // Route through mcp-data EF (works with API key via gateway)
       const { data: result, error: efError } = await callEdgeFunction<{

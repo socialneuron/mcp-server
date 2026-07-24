@@ -1,5 +1,5 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
-import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
+import { initializeAuth, getDefaultProjectId, getDefaultUserId } from '../../lib/supabase.js';
 import { emitSnResult, classifySupabaseCliError, tryGetSupabaseClient } from './parse.js';
 import type { SnArgs } from './types.js';
 
@@ -10,6 +10,15 @@ async function ensureAuth(): Promise<string> {
 
 export async function handlePosts(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
+  const projectId =
+    (typeof args['project-id'] === 'string' ? args['project-id'] : undefined) ??
+    (await getDefaultProjectId()) ??
+    undefined;
+  if (!projectId) {
+    throw new Error(
+      'Posts require --project-id unless the authenticated key has exactly one project.'
+    );
+  }
   const supabase = tryGetSupabaseClient();
   const daysRaw = args.days;
   const days = typeof daysRaw === 'string' ? Number(daysRaw) : 7;
@@ -27,6 +36,7 @@ export async function handlePosts(args: SnArgs, asJson: boolean): Promise<void> 
         'id, platform, status, title, external_post_id, scheduled_at, published_at, created_at'
       )
       .eq('user_id', userId)
+      .eq('project_id', projectId)
       .gte('created_at', since.toISOString())
       .order('created_at', { ascending: false })
       .limit(50);
@@ -49,6 +59,8 @@ export async function handlePosts(args: SnArgs, asJson: boolean): Promise<void> 
     const { data, error } = await callEdgeFunction<{ success: boolean; posts: any[] }>('mcp-data', {
       action: 'recent-posts',
       userId,
+      projectId,
+      project_id: projectId,
       days: lookbackDays,
       limit: 50,
       platform: typeof args.platform === 'string' ? args.platform : undefined,
@@ -85,9 +97,18 @@ export async function handlePosts(args: SnArgs, asJson: boolean): Promise<void> 
 
 export async function handleRefreshAnalytics(args: SnArgs, asJson: boolean): Promise<void> {
   await ensureAuth();
+  const projectId =
+    (typeof args['project-id'] === 'string' ? args['project-id'] : undefined) ??
+    (await getDefaultProjectId()) ??
+    undefined;
+  if (!projectId) {
+    throw new Error(
+      'Analytics refresh requires --project-id unless the authenticated key has exactly one project.'
+    );
+  }
   const { data, error } = await callEdgeFunction<{ success: boolean; postsProcessed: number }>(
     'fetch-analytics',
-    {}
+    { projectId, project_id: projectId }
   );
   if (error || !data?.success) {
     throw new Error(`Analytics refresh failed: ${error ?? 'Unknown error'}`);

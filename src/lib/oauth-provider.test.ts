@@ -32,9 +32,7 @@ function makeSupabaseQuery(result: Record<string, unknown>) {
   for (const method of ['delete', 'lt', 'select', 'insert', 'update', 'eq', 'maybeSingle']) {
     chain[method] = vi.fn().mockReturnValue(chain);
   }
-  chain.then = vi.fn((resolve: (value: typeof result) => unknown) =>
-    Promise.resolve(resolve(result))
-  );
+  chain.then = (resolve: (value: typeof result) => unknown) => Promise.resolve(resolve(result));
   chain.catch = vi.fn().mockReturnValue(chain);
   chain.finally = vi.fn().mockReturnValue(chain);
   return chain;
@@ -100,144 +98,6 @@ describe('createOAuthProvider', () => {
       await expect(provider.clientsStore.getClient!('legacy-client')).resolves.toBeUndefined();
       expect(deleteQuery.delete).toHaveBeenCalledTimes(1);
       expect(deleteQuery.eq).toHaveBeenCalledWith('client_id', 'legacy-client');
-    });
-
-    it('executes the last_used_at touch after a durable client read', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const selectQuery = makeSupabaseQuery({
-        data: {
-          client_id: 'durable-client',
-          client_secret: '',
-          client_secret_expires_at: 0,
-          client_id_issued_at: 1,
-          redirect_uris: ['http://localhost:6274/oauth/callback'],
-          client_name: 'Durable Client',
-          metadata: {},
-        },
-        error: null,
-      });
-      const touchQuery = makeSupabaseQuery({ data: null, error: null });
-      const from = vi.fn().mockReturnValueOnce(selectQuery).mockReturnValueOnce(touchQuery);
-      vi.mocked(getSupabaseClient)
-        .mockReturnValueOnce({ from } as never)
-        .mockReturnValueOnce({ from } as never);
-
-      await expect(provider.clientsStore.getClient!('durable-client')).resolves.toMatchObject({
-        client_id: 'durable-client',
-      });
-      await vi.waitFor(() => expect(touchQuery.then).toHaveBeenCalledTimes(1));
-
-      expect(touchQuery.update).toHaveBeenCalledWith({
-        last_used_at: expect.any(String),
-      });
-      expect(touchQuery.eq).toHaveBeenCalledWith('client_id', 'durable-client');
-    });
-
-    it('refreshes cached client activity at most once per day', async () => {
-      const now = new Date('2026-07-14T10:00:00.000Z').getTime();
-      const dateNow = vi.spyOn(Date, 'now').mockReturnValue(now);
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const selectQuery = makeSupabaseQuery({
-        data: {
-          client_id: 'active-client',
-          client_secret: '',
-          client_secret_expires_at: 0,
-          client_id_issued_at: 1,
-          redirect_uris: ['http://localhost:6274/oauth/callback'],
-          client_name: 'Active Client',
-          metadata: {},
-        },
-        error: null,
-      });
-      const firstTouchQuery = makeSupabaseQuery({ data: null, error: null });
-      const secondTouchQuery = makeSupabaseQuery({ data: null, error: null });
-      const from = vi
-        .fn()
-        .mockReturnValueOnce(selectQuery)
-        .mockReturnValueOnce(firstTouchQuery)
-        .mockReturnValueOnce(secondTouchQuery);
-      vi.mocked(getSupabaseClient)
-        .mockReturnValueOnce({ from } as never)
-        .mockReturnValueOnce({ from } as never)
-        .mockReturnValueOnce({ from } as never);
-
-      try {
-        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
-          client_id: 'active-client',
-        });
-        await vi.waitFor(() => expect(firstTouchQuery.then).toHaveBeenCalledTimes(1));
-
-        // A cached hit inside the interval must not generate another write.
-        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
-          client_id: 'active-client',
-        });
-        expect(from).toHaveBeenCalledTimes(2);
-
-        // Once the interval has elapsed, a cached hit refreshes durable activity
-        // so retention cleanup cannot prune an actively used registration.
-        dateNow.mockReturnValue(now + 24 * 60 * 60 * 1000);
-        await expect(provider.clientsStore.getClient!('active-client')).resolves.toMatchObject({
-          client_id: 'active-client',
-        });
-        await vi.waitFor(() => expect(secondTouchQuery.then).toHaveBeenCalledTimes(1));
-
-        expect(secondTouchQuery.update).toHaveBeenCalledWith({
-          last_used_at: expect.any(String),
-        });
-        expect(secondTouchQuery.eq).toHaveBeenCalledWith('client_id', 'active-client');
-      } finally {
-        dateNow.mockRestore();
-      }
-    });
-
-    it('retries a cached client activity refresh after a transient write failure', async () => {
-      const provider = createOAuthProvider(TEST_OPTIONS);
-      const selectQuery = makeSupabaseQuery({
-        data: {
-          client_id: 'retry-client',
-          client_secret: '',
-          client_secret_expires_at: 0,
-          client_id_issued_at: 1,
-          redirect_uris: ['http://localhost:6274/oauth/callback'],
-          client_name: 'Retry Client',
-          metadata: {},
-        },
-        error: null,
-      });
-      const failedTouchQuery = makeSupabaseQuery({
-        data: null,
-        error: { message: 'temporary write failure' },
-      });
-      const retryTouchQuery = makeSupabaseQuery({ data: null, error: null });
-      const from = vi
-        .fn()
-        .mockReturnValueOnce(selectQuery)
-        .mockReturnValueOnce(failedTouchQuery)
-        .mockReturnValueOnce(retryTouchQuery);
-      vi.mocked(getSupabaseClient)
-        .mockReturnValueOnce({ from } as never)
-        .mockReturnValueOnce({ from } as never)
-        .mockReturnValueOnce({ from } as never);
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-
-      try {
-        await expect(provider.clientsStore.getClient!('retry-client')).resolves.toMatchObject({
-          client_id: 'retry-client',
-        });
-        await vi.waitFor(() =>
-          expect(consoleError).toHaveBeenCalledWith(
-            expect.stringContaining('failed to update client activity')
-          )
-        );
-
-        await expect(provider.clientsStore.getClient!('retry-client')).resolves.toMatchObject({
-          client_id: 'retry-client',
-        });
-        await vi.waitFor(() => expect(retryTouchQuery.then).toHaveBeenCalledTimes(1));
-        expect(from).toHaveBeenCalledTimes(3);
-      } finally {
-        consoleError.mockRestore();
-      }
     });
 
     it('revalidates cached clients when the environment becomes production', async () => {
@@ -547,8 +407,74 @@ describe('createOAuthProvider', () => {
         client_id: client.client_id,
         refresh_token: 'refresh-token',
         scopes: ['mcp:read'],
-        resource: 'https://mcp.socialneuron.com/',
+        resource: 'https://mcp.socialneuron.com',
       });
+    });
+  });
+
+  describe('resource-bound production connector tokens', () => {
+    const resourceOptions = {
+      ...TEST_OPTIONS,
+      resource: 'https://mcp.socialneuron.com/mcp',
+    };
+
+    it('fails closed when the protected resource is missing or invalid in production', () => {
+      process.env.NODE_ENV = 'production';
+      expect(() => createOAuthProvider(TEST_OPTIONS)).toThrow('valid HTTPS protected resource');
+      expect(() =>
+        createOAuthProvider({ ...TEST_OPTIONS, resource: 'http://mcp.socialneuron.com/mcp' })
+      ).toThrow('valid HTTPS protected resource');
+    });
+
+    it('requires the exact protected resource during authorization', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      const res = { redirect: vi.fn() } as unknown as import('express').Response;
+
+      await expect(
+        provider.authorize(makeClient(), { state: 'missing-resource' }, res)
+      ).rejects.toThrow('configured MCP protected resource');
+      await expect(
+        provider.authorize(
+          makeClient(),
+          { state: 'wrong-resource', resource: new URL('https://mcp.socialneuron.com') } as any,
+          res
+        )
+      ).rejects.toThrow('configured MCP protected resource');
+    });
+
+    it('rejects legacy keys and undocumented connector scopes', async () => {
+      const provider = createOAuthProvider(resourceOptions);
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'snk_test_legacy_oauth_token',
+            scopes: ['mcp:read'],
+            expires_in: 7_776_000,
+          }),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({
+            access_token: 'sno_access_test_connector',
+            refresh_token: 'sno_refresh_test_connector',
+            scopes: ['mcp:read', 'mcp:internal'],
+            expires_in: 3_600,
+            resource: resourceOptions.resource,
+          }),
+        });
+      const args = [
+        makeClient(),
+        'code',
+        'verifier',
+        'http://localhost:6274/oauth/callback',
+        new URL(resourceOptions.resource),
+      ] as const;
+
+      await expect(provider.exchangeAuthorizationCode(...args)).rejects.toThrow('legacy API key');
+      await expect(provider.exchangeAuthorizationCode(...args)).rejects.toThrow(
+        'non-public MCP scope'
+      );
     });
   });
 

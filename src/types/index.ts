@@ -4,14 +4,7 @@
 
 /** Platforms supported for distribution and trend fetching. */
 export type Platform =
-  | 'youtube'
-  | 'tiktok'
-  | 'instagram'
-  | 'twitter'
-  | 'linkedin'
-  | 'facebook'
-  | 'threads'
-  | 'bluesky';
+  'youtube' | 'tiktok' | 'instagram' | 'twitter' | 'linkedin' | 'facebook' | 'threads' | 'bluesky';
 
 /** Content types the AI generation endpoint supports. */
 export type ContentType = 'script' | 'caption' | 'blog' | 'hook' | 'generation';

@@ -191,7 +191,9 @@ export async function runSetup(): Promise<void> {
   // Privacy notice (first-run)
   console.error('  Privacy Notice:');
   console.error('  - Your API key is stored locally in your OS keychain');
-  console.error('  - CLI telemetry records tool name, status, and duration — not tool input/output');
+  console.error(
+    '  - CLI telemetry records tool name, status, and duration — not tool input/output'
+  );
   console.error('  - Service-side content processing follows https://socialneuron.com/privacy');
   console.error('  - Set DO_NOT_TRACK=1 to disable telemetry');
   console.error('  - Data export/delete: https://www.socialneuron.com/settings');

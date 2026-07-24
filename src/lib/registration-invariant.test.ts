@@ -21,7 +21,11 @@ import { TOOL_CATALOG } from './tool-catalog.js';
 
 const registered = (() => {
   const server = createMockServer();
-  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0]);
+  // includeInternalTools: the invariant asserts every scoped/cataloged tool is
+  // REGISTRABLE — internal ops tools register only for mcp:internal sessions.
+  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0], {
+    includeInternalTools: true,
+  });
   return new Set<string>(server._handlers.keys());
 })();
 const scoped = new Set(Object.keys(TOOL_SCOPES));

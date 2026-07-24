@@ -25,6 +25,11 @@ const SCOPE_HIERARCHY: Record<string, string[]> = {
   'mcp:analytics': [],
   'mcp:comments': [],
   'mcp:autopilot': [],
+  // Deliberately NOT a child of mcp:full: internal ops tools (fleet
+  // telemetry, loop/bandit introspection) must never be reachable by a
+  // customer key. This scope is issued only to a small internal allowlist,
+  // never derived from a customer-facing grant.
+  'mcp:internal': [],
 };
 
 /** Tool name → required scope */
@@ -96,7 +101,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   moderate_comment: 'mcp:comments',
   delete_comment: 'mcp:comments',
 
-  // mcp:autopilot (Pro+ only)
+  // mcp:autopilot (Team+ only)
   list_autopilot_configs: 'mcp:autopilot',
   update_autopilot_config: 'mcp:autopilot',
   get_autopilot_status: 'mcp:autopilot',
@@ -157,20 +162,20 @@ export const TOOL_SCOPES: Record<string, string> = {
   open_analytics_pulse: 'mcp:read',
 
   // mcp:write (Agentic harness — learning loop write-back)
-  write_agent_reflection: 'mcp:write',
-  record_outcome: 'mcp:write',
+  write_agent_reflection: 'mcp:internal',
+  record_outcome: 'mcp:internal',
 
   // mcp:read (Agentic harness — read-back; reads are cheaper → higher rate limit)
-  read_agent_reflection: 'mcp:read',
+  read_agent_reflection: 'mcp:internal',
 
   // mcp:write (Hermes integration — 2026-05-22)
-  save_draft_to_library: 'mcp:write',
-  record_voice_lesson: 'mcp:write',
-  record_observation: 'mcp:write',
-  record_intel_signal: 'mcp:write',
-  record_campaign_spend: 'mcp:write',
+  save_draft_to_library: 'mcp:internal',
+  record_voice_lesson: 'mcp:internal',
+  record_observation: 'mcp:internal',
+  record_intel_signal: 'mcp:internal',
+  record_campaign_spend: 'mcp:internal',
   // mcp:read
-  get_active_campaigns: 'mcp:read',
+  get_active_campaigns: 'mcp:internal',
 
   // mcp:read / mcp:write (Skills)
   list_skills: 'mcp:read',
@@ -178,8 +183,11 @@ export const TOOL_SCOPES: Record<string, string> = {
   run_skill: 'mcp:write',
 
   // mcp:read (Loop observability — growth-loop KPIs + content learning state)
-  get_loop_pulse: 'mcp:read',
-  get_bandit_state: 'mcp:read',
+  get_loop_pulse: 'mcp:internal',
+  get_bandit_state: 'mcp:internal',
+
+  // mcp:write (ExO fleet tracker — routine/agent heartbeat telemetry, 2026-07-13)
+  record_heartbeat: 'mcp:internal',
 };
 
 /**

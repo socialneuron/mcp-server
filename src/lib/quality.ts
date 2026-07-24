@@ -8,6 +8,12 @@
  * Extracted from index.ts so it can be shared by:
  *   - MCP tools (quality_check, quality_check_plan, schedule_content_plan)
  *   - CLI subcommands (quality-check, e2e)
+ *
+ * Node runtime twin: worker/lib/quality.js (gates the non-carousel branch of
+ * the recipe runner's `quality_check` step). Keep the two in sync — a
+ * divergence means a post that scores X via this tool would score Y when
+ * autopilot gates on it, which is the exact opposite of a quality gate's
+ * job. Guarded by tests/worker/generalQualityParityMcp.test.ts.
  */
 
 export type QualityCategory = {
@@ -48,9 +54,24 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   const firstLine = caption.split('\n')[0]?.trim() ?? '';
   const hashtags = countHashtags(caption);
   const threshold = Math.min(35, Math.max(0, input.threshold ?? 26));
-  // Long-caption keyword heuristics unfairly block clean X posts. Keep them
-  // neutral for an X-only post inside the platform limit; blocked-term and
-  // downstream substance checks still apply.
+  // Short-form X calibration (2026-07-06, ported from worker/lib/quality.js
+  // #1799): the Novelty and CTA axes are keyword-furniture checks shaped for
+  // long IG/LinkedIn captions ('framework', 'playbook', 'comment/save/
+  // follow'). A clean 200-char X post structurally cannot satisfy them
+  // without violating the X platform style guide (no hashtag stuffing, no
+  // forced CTA) — live evidence: two strong tweets hard-blocked at 23/35 on
+  // exactly these two axes (runs b1d03f79/22dea067). For a twitter-only
+  // target within the tweet limit, those axes score NEUTRAL 3 unless their
+  // signals are actually present — the substance judge downstream remains
+  // the real quality arbiter for short-form.
+  // Extended 2026-07-09 to Hook Strength and Brand Alignment: live prod
+  // evidence showed twitter-only ≤280-char captions hard-blocked solely on
+  // "Hook Strength below threshold (2/5)" (run 2026-07-06 13:38) and
+  // "Brand Alignment below threshold (2/5)" (run 2026-07-08 09:17) — the
+  // hard-coded first-line keyword/punctuation/length triggers and the
+  // you/your/customer/audience second-person check are the same
+  // long-caption-shaped furniture as Novelty/CTA. Blocked-term enforcement
+  // is unaffected — matched terms still push explicit blocker entries below.
   const isShortFormX =
     platforms.length > 0 && platforms.every(p => p === 'twitter') && caption.length <= 280;
   const blockedTerms = [
@@ -104,7 +125,10 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   // 4. Brand Alignment
   let brandScore = 3;
   const rawBrandKeyword = input.brandKeyword ?? process.env.SOCIALNEURON_BRAND_KEYWORD?.trim();
-  // Escape and cap caller-controlled text before compiling it as a regex.
+  // Codex idx 35 (2026-05-26, ported from worker/lib/quality.js): brandKeyword
+  // is caller-controlled and was interpolated raw into a regex — `(a+)+$`
+  // style input gave catastrophic backtracking on long captions. Escape regex
+  // metachars + cap length.
   const brandKeyword = rawBrandKeyword
     ? rawBrandKeyword.slice(0, 80).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     : null;

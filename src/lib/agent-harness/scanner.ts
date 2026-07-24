@@ -14,9 +14,7 @@ export function scan(text: string, options: ScanOptions): ScanResult {
   // tool outputs can legitimately contain larger analytics/brand payloads but
   // still have a hard ceiling so regex scanning cannot become a memory/CPU DoS.
   const maxLength =
-    options.source === 'mcp_tool_output'
-      ? CONSTANTS.MAX_OUTPUT_LENGTH
-      : CONSTANTS.MAX_LENGTH;
+    options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH;
   if (text.length > maxLength) {
     return {
       passed: false,

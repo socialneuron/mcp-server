@@ -9,13 +9,14 @@
  *   - Log per-campaign spend.
  *   - Read currently-live campaigns to bias content drafts.
  *
- * Plan: /docs/handover/2026-05-22-hermes-social-action-plan.md §11.
- * Backed by 6 actions added to supabase/functions/mcp-data/index.ts on 2026-05-22.
+ * Backed by dedicated data-layer actions in the backend data function.
  */
+import { randomUUID } from 'node:crypto';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { toolError } from '../lib/tool-error.js';
 import type { ResponseEnvelope } from '../types/index.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
@@ -74,7 +75,22 @@ export function registerHermesTools(server: McpServer): void {
       );
 
       if (error) {
-        return { content: [{ type: 'text' as const, text: `Error: ${error}` }], isError: true };
+        // Structured error (same convention as lifecycle.ts) instead of a bare
+        // `Error: ${error}` text block, which gave the model no
+        // machine-readable code to branch/retry on. `error` here is always the
+        // *already-sanitized* string callEdgeFunction/safeGatewayError
+        // produced, but the real cause was upstream in mcp-data's own error
+        // handler doing `String(nonErrorObject)` on a thrown Postgrest error
+        // object (fixed in supabase/functions/mcp-data/index.ts's top-level
+        // catch — see normalizeUnknownError).
+        const code = /^Authentication failed|^Not authenticated/i.test(error)
+          ? 'permission_denied'
+          : /^Forbidden/i.test(error)
+            ? 'permission_denied'
+            : /^Rate limit exceeded/i.test(error)
+              ? 'rate_limited'
+              : 'upstream_error';
+        return toolError(code, error);
       }
 
       const format = response_format ?? 'text';
@@ -386,6 +402,96 @@ export function registerHermesTools(server: McpServer): void {
         text += '\n';
       }
       return { content: [{ type: 'text' as const, text }] };
+    }
+  );
+
+  // ──────────────────────────────────────────────────────────────────────
+  // record_heartbeat
+  // ──────────────────────────────────────────────────────────────────────
+  server.tool(
+    'record_heartbeat',
+    'Report a start/end heartbeat for a Claude cloud routine or scheduled ExO agent into the ' +
+      "operator fleet tracker. Call once with phase='start' when the run " +
+      "begins and once with phase='end' when it finishes, reusing the same run_id for both. " +
+      'This is telemetry only — never authenticate with a bearer secret to report a heartbeat; ' +
+      'this tool uses the MCP session you are already authenticated with.',
+    {
+      agent: z
+        .string()
+        .min(1)
+        .max(200)
+        .describe('Routine/agent/cron slug, e.g. "daily-digest", "weekly-report".'),
+      phase: z
+        .enum(['start', 'end'])
+        .describe("'start' when the run begins, 'end' when it finishes."),
+      run_id: z
+        .string()
+        .optional()
+        .describe(
+          'Ties the start/end pair together. Omit to auto-generate a UUID (returned in the ' +
+            'response) — reuse that same value on the matching phase="end" call.'
+        ),
+      status: z
+        .enum(['ok', 'failed'])
+        .optional()
+        .describe("Only meaningful on phase='end'. Defaults to 'ok' if omitted."),
+      duration_ms: z
+        .number()
+        .optional()
+        .describe("Run duration in ms. Only meaningful on phase='end'."),
+      note: z
+        .string()
+        .max(2000)
+        .optional()
+        .describe(
+          'Short human-readable summary. NO PII — UUIDs only, never emails, names, or other ' +
+            'personal information.'
+        ),
+      artifact_path: z
+        .string()
+        .max(500)
+        .optional()
+        .describe(
+          'Pointer to a written artifact (e.g. a report or design doc path), not a duplicate.'
+        ),
+      response_format: z.enum(['text', 'json']).optional(),
+    },
+    async ({ agent, phase, run_id, status, duration_ms, note, artifact_path, response_format }) => {
+      const runId = run_id ?? randomUUID();
+
+      const { data, error } = await callEdgeFunction<{
+        success: boolean;
+        event_id: string;
+      }>('mcp-data', {
+        action: 'record-heartbeat',
+        agent,
+        phase,
+        run_id: runId,
+        status,
+        duration_ms,
+        note,
+        artifact_path,
+      });
+
+      if (error) {
+        return { content: [{ type: 'text' as const, text: `Error: ${error}` }], isError: true };
+      }
+
+      const payload = { run_id: runId, event_id: data?.event_id ?? null };
+
+      if (response_format === 'json') {
+        return {
+          content: [{ type: 'text' as const, text: JSON.stringify(asEnvelope(payload), null, 2) }],
+        };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: `Heartbeat recorded (${phase}, run_id ${payload.run_id}).`,
+          },
+        ],
+      };
     }
   );
 }

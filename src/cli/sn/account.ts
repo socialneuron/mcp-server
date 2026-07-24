@@ -1,5 +1,5 @@
 import { callEdgeFunction } from '../../lib/edge-function.js';
-import { initializeAuth, getDefaultUserId } from '../../lib/supabase.js';
+import { initializeAuth, getDefaultProjectId, getDefaultUserId } from '../../lib/supabase.js';
 import {
   isEnabledFlag,
   emitSnResult,
@@ -16,8 +16,58 @@ async function ensureAuth(): Promise<string> {
   return getDefaultUserId();
 }
 
+async function requireProjectId(args: SnArgs, command: string): Promise<string> {
+  const projectId =
+    (typeof args['project-id'] === 'string' ? args['project-id'] : undefined) ??
+    (await getDefaultProjectId()) ??
+    undefined;
+  if (!projectId) {
+    throw new Error(
+      `${command} requires --project-id unless the authenticated key has exactly one project.`
+    );
+  }
+  return projectId;
+}
+
+function requestedRefreshAccountIds(args: SnArgs, platforms: string[]): Map<string, string> {
+  const result = new Map<string, string>();
+  const accountId = typeof args['account-id'] === 'string' ? args['account-id'] : undefined;
+  const accountIdsJson = typeof args['account-ids'] === 'string' ? args['account-ids'] : undefined;
+  if (accountId && accountIdsJson) {
+    throw new Error('Pass either --account-id or --account-ids, not both.');
+  }
+  if (accountId) {
+    if (platforms.length !== 1) {
+      throw new Error(
+        '--account-id is valid only with one platform; use --account-ids for several.'
+      );
+    }
+    result.set(platforms[0].toLowerCase(), accountId);
+    return result;
+  }
+  if (!accountIdsJson) return result;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(accountIdsJson);
+  } catch {
+    throw new Error('--account-ids must be a JSON object mapping platform names to account IDs.');
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('--account-ids must be a JSON object mapping platform names to account IDs.');
+  }
+  for (const [platform, value] of Object.entries(parsed)) {
+    if (typeof value !== 'string') {
+      throw new Error('--account-ids must be a JSON object mapping platform names to account IDs.');
+    }
+    result.set(platform.toLowerCase(), value);
+  }
+  return result;
+}
+
 export async function handleOauthHealth(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
+  const projectId = await requireProjectId(args, 'oauth-health');
   const supabase = tryGetSupabaseClient();
   const warnDaysRaw = typeof args['warn-days'] === 'string' ? Number(args['warn-days']) : 7;
   const warnDays = Number.isFinite(warnDaysRaw) && warnDaysRaw > 0 ? Math.min(warnDaysRaw, 90) : 7;
@@ -31,8 +81,11 @@ export async function handleOauthHealth(args: SnArgs, asJson: boolean): Promise<
   if (supabase) {
     let query = supabase
       .from('connected_accounts')
-      .select('platform, status, username, expires_at, refresh_token, updated_at, created_at')
+      .select(
+        'id, project_id, platform, status, username, expires_at, refresh_token, updated_at, created_at'
+      )
       .eq('user_id', userId)
+      .eq('project_id', projectId)
       .order('platform');
 
     if (!includeAll) {
@@ -52,6 +105,8 @@ export async function handleOauthHealth(args: SnArgs, asJson: boolean): Promise<
       {
         action: 'connected-accounts',
         userId,
+        projectId,
+        project_id: projectId,
         includeAll,
       }
     );
@@ -61,6 +116,9 @@ export async function handleOauthHealth(args: SnArgs, asJson: boolean): Promise<
     }
 
     accounts = data.accounts ?? [];
+  }
+  if (accounts.some(account => account.project_id !== projectId)) {
+    throw new Error('Connected-account project attestation failed.');
   }
 
   const now = Date.now();
@@ -142,6 +200,7 @@ export async function handleOauthHealth(args: SnArgs, asJson: boolean): Promise<
 
 export async function handleOauthRefresh(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
+  const projectId = await requireProjectId(args, 'oauth-refresh');
   const supabase = tryGetSupabaseClient();
   const includeAll = isEnabledFlag(args.all);
 
@@ -149,54 +208,96 @@ export async function handleOauthRefresh(args: SnArgs, asJson: boolean): Promise
 
   if (typeof args.platforms === 'string') {
     platforms = normalizePlatforms(args.platforms);
-  } else if (includeAll) {
-    if (supabase) {
-      const { data: accounts, error } = await supabase
-        .from('connected_accounts')
-        .select('platform')
-        .eq('user_id', userId)
-        .eq('status', 'active');
-
-      if (error) {
-        const formatted = classifySupabaseCliError('load connected accounts', error);
-        throw new Error(formatted.message);
-      }
-
-      platforms = (accounts ?? []).map((a: any) => String(a.platform));
-    } else {
-      const { data, error } = await callEdgeFunction<{ success: boolean; accounts: any[] }>(
-        'mcp-data',
-        {
-          action: 'connected-accounts',
-          userId,
-        }
-      );
-
-      if (error || !data?.success) {
-        throw new Error('Failed to load connected accounts: ' + (error ?? 'Unknown error'));
-      }
-
-      platforms = (data.accounts ?? []).map((a: any) => String((a as any).platform));
-    }
   }
 
-  if (!platforms.length) {
+  if (!platforms.length && !includeAll) {
     throw new Error('Missing required flags: pass --platforms "youtube,tiktok" or --all');
+  }
+
+  let accounts: Array<{ id: string; platform: string; project_id?: string | null }>;
+  if (supabase) {
+    const { data, error } = await supabase
+      .from('connected_accounts')
+      .select('id, platform, project_id')
+      .eq('user_id', userId)
+      .eq('project_id', projectId)
+      .in('status', ['active', 'expired']);
+    if (error) {
+      const formatted = classifySupabaseCliError('load connected accounts', error);
+      throw new Error(formatted.message);
+    }
+    accounts = (data ?? []) as typeof accounts;
+  } else {
+    const { data, error } = await callEdgeFunction<{ success: boolean; accounts: any[] }>(
+      'mcp-data',
+      {
+        action: 'connected-accounts',
+        userId,
+        projectId,
+        project_id: projectId,
+        includeAll: true,
+      }
+    );
+    if (error || !data?.success) {
+      throw new Error('Failed to load connected accounts: ' + (error ?? 'Unknown error'));
+    }
+    accounts = (data.accounts ?? []) as typeof accounts;
+  }
+  if (accounts.some(account => account.project_id !== projectId)) {
+    throw new Error('Connected-account project attestation failed.');
+  }
+
+  const targetPlatforms = includeAll
+    ? new Set(accounts.map(account => account.platform.toLowerCase()))
+    : new Set(platforms.map(platform => platform.toLowerCase()));
+  const requestedIds = requestedRefreshAccountIds(args, Array.from(targetPlatforms));
+  for (const platform of requestedIds.keys()) {
+    if (!targetPlatforms.has(platform)) {
+      throw new Error(`An account ID was supplied for untargeted platform ${platform}.`);
+    }
+  }
+  const selectedAccounts: typeof accounts = [];
+  for (const platform of targetPlatforms) {
+    const candidates = accounts.filter(account => account.platform.toLowerCase() === platform);
+    const requestedId = requestedIds.get(platform);
+    if (requestedId) {
+      const selected = candidates.find(account => account.id === requestedId);
+      if (!selected) {
+        throw new Error(`Account ${requestedId} is not available for ${platform} in this project.`);
+      }
+      selectedAccounts.push(selected);
+    } else if (includeAll) {
+      selectedAccounts.push(...candidates);
+    } else if (candidates.length === 1) {
+      selectedAccounts.push(candidates[0]);
+    } else if (candidates.length === 0) {
+      throw new Error(`No refreshable ${platform} account is bound to this project.`);
+    } else {
+      throw new Error(
+        `Multiple ${platform} accounts are bound to this project; pass --account-id or --account-ids.`
+      );
+    }
+  }
+  if (selectedAccounts.length === 0) {
+    throw new Error('No refreshable connected accounts are bound to this project.');
   }
 
   const results: Record<string, { ok: boolean; expiresAt: string | null; error?: string }> = {};
 
-  for (const platform of platforms) {
+  for (const account of selectedAccounts) {
+    const platform = account.platform;
     const { data, error } = await callEdgeFunction<{ success: boolean; expires_at?: string }>(
       'social-auth',
-      {},
-      { query: { action: 'refresh', platform }, timeoutMs: 30_000 }
+      { userId, projectId, project_id: projectId, accountId: account.id },
+      { query: { action: 'refresh', platform, accountId: account.id }, timeoutMs: 30_000 }
     );
 
+    const resultKey = `${platform}:${account.id}`;
+
     if (error || !data?.success) {
-      results[platform] = { ok: false, expiresAt: null, error: error ?? 'Refresh failed' };
+      results[resultKey] = { ok: false, expiresAt: null, error: error ?? 'Refresh failed' };
     } else {
-      results[platform] = { ok: true, expiresAt: data.expires_at ?? null };
+      results[resultKey] = { ok: true, expiresAt: data.expires_at ?? null };
     }
   }
 
@@ -221,6 +322,7 @@ export async function handleOauthRefresh(args: SnArgs, asJson: boolean): Promise
 
 export async function handlePreflight(args: SnArgs, asJson: boolean): Promise<void> {
   const userId = await ensureAuth();
+  const projectId = await requireProjectId(args, 'preflight');
   const supabase = tryGetSupabaseClient();
   const privacyFromArg = typeof args['privacy-url'] === 'string' ? args['privacy-url'] : null;
   const termsFromArg = typeof args['terms-url'] === 'string' ? args['terms-url'] : null;
@@ -310,8 +412,9 @@ export async function handlePreflight(args: SnArgs, asJson: boolean): Promise<vo
   if (supabase) {
     const { data: accounts, error: accountsError } = await supabase
       .from('connected_accounts')
-      .select('platform, status, username, expires_at')
+      .select('id, project_id, platform, status, username, expires_at')
       .eq('user_id', userId)
+      .eq('project_id', projectId)
       .eq('status', 'active')
       .order('platform');
 
@@ -324,7 +427,12 @@ export async function handlePreflight(args: SnArgs, asJson: boolean): Promise<vo
   } else {
     const { data, error } = await callEdgeFunction<{ success: boolean; accounts: any[] }>(
       'mcp-data',
-      { action: 'connected-accounts', userId }
+      {
+        action: 'connected-accounts',
+        userId,
+        projectId,
+        project_id: projectId,
+      }
     );
 
     if (error || !data?.success) {
@@ -332,6 +440,9 @@ export async function handlePreflight(args: SnArgs, asJson: boolean): Promise<vo
     }
 
     activeAccounts = (data.accounts ?? []) as any[];
+  }
+  if (activeAccounts.some(account => (account as any).project_id !== projectId)) {
+    throw new Error('Connected-account project attestation failed.');
   }
   const expiredAccounts = activeAccounts.filter(account => {
     if (!account.expires_at) return false;

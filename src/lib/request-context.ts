@@ -3,7 +3,7 @@
  * In HTTP mode, multiple users share the same process.
  * This provides per-request userId and scopes without changing tool files.
  */
-import { AsyncLocalStorage } from "node:async_hooks";
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 interface RequestContext {
   userId: string;
@@ -67,7 +67,7 @@ export function resolveSurface(): string {
   const ctx = getRequestSurface();
   if (ctx) return ctx;
   const transport = process.env.MCP_TRANSPORT;
-  if (transport === "stdio") return "mcp-stdio";
-  if (transport === "http") return "mcp-http";
-  return "cli";
+  if (transport === 'stdio') return 'mcp-stdio';
+  if (transport === 'http') return 'mcp-http';
+  return 'cli';
 }

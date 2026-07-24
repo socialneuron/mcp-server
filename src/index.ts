@@ -28,6 +28,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { MCP_VERSION } from './lib/version.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
+import { hasScope } from './auth/scopes.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
 import { initPostHog, shutdownPostHog } from './lib/posthog.js';
@@ -243,7 +244,10 @@ applyScopeEnforcement(server, getAuthenticatedScopes);
 // Stdio mode: skip MCP Apps. The package includes their HTML so the hosted
 // deployment is self-contained, but interactive iframe resources require an
 // Apps-capable HTTP host. Stdio retains the normal text/tool workflows.
-registerAllTools(server, { skipApps: true });
+registerAllTools(server, {
+  skipApps: true,
+  includeInternalTools: hasScope(getAuthenticatedScopes() ?? [], 'mcp:internal'),
+});
 
 // ── Prompts & Resources ──────────────────────────────────────────────
 registerPrompts(server);

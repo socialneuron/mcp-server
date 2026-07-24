@@ -39,6 +39,14 @@ describe('supabase module', () => {
 
   afterEach(() => {
     process.env = { ...ORIGINAL_ENV };
+    // Tests below install module-scoped auth and credential mocks. Always
+    // release them even when an assertion throws so a later shuffled test
+    // cannot inherit another key's project scope.
+    vi.doUnmock('../auth/api-keys.js');
+    vi.doUnmock('./validation-cache.js');
+    vi.doUnmock('../cli/credentials.js');
+    vi.clearAllMocks();
+    vi.resetModules();
   });
 
   // We import once — module-level constants are captured at this point

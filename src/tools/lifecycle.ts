@@ -33,11 +33,18 @@ function lifecycleFailure(error: string) {
     return toolError('not_found', 'The requested object was not found in this project.');
   }
   if (/not_cancellable|publishing_in_progress|schedule_conflict|post_in_progress/i.test(error)) {
-    return toolError('validation_error', 'The object can no longer be cancelled in its current state.', {
-      recover_with: ['Refresh its status before deciding the next action.'],
-    });
+    return toolError(
+      'validation_error',
+      'The object can no longer be cancelled in its current state.',
+      {
+        recover_with: ['Refresh its status before deciding the next action.'],
+      }
+    );
   }
-  return toolError('upstream_error', 'The lifecycle operation could not be completed. Please retry.');
+  return toolError(
+    'upstream_error',
+    'The lifecycle operation could not be completed. Please retry.'
+  );
 }
 
 async function projectContext(projectId?: string): Promise<string | null> {
@@ -51,7 +58,10 @@ async function invokeLifecycle(
 ): Promise<CallToolResult> {
   const resolvedProjectId = await projectContext(projectId);
   if (!resolvedProjectId) {
-    return toolError('validation_error', 'A project_id is required because no default project is configured.');
+    return toolError(
+      'validation_error',
+      'A project_id is required because no default project is configured.'
+    );
   }
   const { data, error } = await callEdgeFunction<LifecycleResult>('mcp-data', {
     action,
@@ -60,7 +70,8 @@ async function invokeLifecycle(
     ...identifiers,
   });
   if (error) return lifecycleFailure(error);
-  if (!data?.success) return toolError('upstream_error', 'The lifecycle operation returned no result.');
+  if (!data?.success)
+    return toolError('upstream_error', 'The lifecycle operation returned no result.');
   const result = envelope(data);
   return {
     structuredContent: result,
@@ -86,8 +97,7 @@ export function registerLifecycleTools(server: McpServer): void {
       project_id: PROJECT_ID,
       confirm: CONFIRM,
     },
-    async ({ job_id, project_id }) =>
-      invokeLifecycle('cancel-async-job', project_id, { job_id })
+    async ({ job_id, project_id }) => invokeLifecycle('cancel-async-job', project_id, { job_id })
   );
 
   server.tool(

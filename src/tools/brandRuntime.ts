@@ -13,7 +13,27 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
-import { getDefaultProjectId } from '../lib/supabase.js';
+import { resolveProjectStrict } from '../lib/supabase.js';
+
+/**
+ * 1g (2026-07-17 sweep): on a multi-brand account with no resolvable default,
+ * these tools used to answer "No brand profile found" as if that were fact.
+ * They now fail with the standardized missing-project error (which lists the
+ * user's projects) so the agent retries with an explicit project_id.
+ */
+function missingProjectError(res: { error?: string }) {
+  return {
+    content: [
+      {
+        type: 'text' as const,
+        text:
+          res.error ??
+          'project_id is required. Configure an explicit project or use an API key scoped to exactly one project.',
+      },
+    ],
+    isError: true,
+  };
+}
 import { MCP_VERSION } from '../lib/version.js';
 import { computeBrandConsistency } from '../lib/brandScoring.js';
 import { auditBrandColors, exportDesignTokens } from '../lib/colorAudit.js';
@@ -39,7 +59,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
     },
     async ({ project_id }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) return missingProjectError(projectResolution);
+      const projectId = projectResolution.projectId;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
@@ -143,7 +165,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
     },
     async ({ project_id }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) return missingProjectError(projectResolution);
+      const projectId = projectResolution.projectId;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
@@ -281,7 +305,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
     },
     async ({ content, project_id }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) return missingProjectError(projectResolution);
+      const projectId = projectResolution.projectId;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
@@ -333,7 +359,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
         .describe('Max Delta E for on-brand (default 10). Lower = stricter.'),
     },
     async ({ content_colors, project_id, threshold }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) return missingProjectError(projectResolution);
+      const projectId = projectResolution.projectId;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;
@@ -385,7 +413,9 @@ export function registerBrandRuntimeTools(server: McpServer): void {
       project_id: z.string().optional().describe('Project ID. Defaults to current project.'),
     },
     async ({ format, project_id }) => {
-      const projectId = project_id || (await getDefaultProjectId());
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) return missingProjectError(projectResolution);
+      const projectId = projectResolution.projectId;
 
       const { data: result, error: efError } = await callEdgeFunction<{
         success: boolean;

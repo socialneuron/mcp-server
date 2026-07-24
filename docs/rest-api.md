@@ -144,28 +144,45 @@ A missing/invalid bearer token returns **401** (no body).
 
 ## Rate Limits
 
-| Tier | Requests/min | Credits/mo |
+Limiting is layered — a request must clear all of the layers that apply to it:
+
+1. **Per-IP (pre-auth):** 60 requests/min, before credentials are even checked.
+2. **Per-user (post-auth):** 100 requests/min flat across every paid tier — Pro, Team, Agency, and the legacy `business` tier all share the same 100 rpm cap. Trial keys get a deliberately lower **15 requests/min** abuse guard.
+3. **Per-tool caps** on expensive operations, regardless of the per-user budget:
+
+   | Tool / function | Cap |
+   |---|---|
+   | Video generation | 5/min |
+   | Image generation | 10/min |
+   | Music generation | 5/min |
+   | Text generation (`social-neuron-ai`) | 30/min |
+   | `schedule_post` | 10/min |
+   | Brand extraction | 5/min |
+
+4. **Account-wide session cap:** 500 calls/hour across all keys for the account. Read/poll-heavy calls (`kie-task-status`, `get-signed-url`) are weighted at 0.2x toward this cap since they dominate normal usage volume without representing abuse.
+
+| Tier | Requests/min (per-user) | Credits/mo |
 |------|-------------|------------|
 | Trial (14 days) | 15 | 300 one-time |
-| Pro | 60 | 1,500 |
-| Team | 60 | 3,500 |
-| Agency | 60 | 10,000 |
+| Pro | 100 | 1,500 |
+| Team | 100 | 3,500 |
+| Agency | 100 | 10,000 |
 
 Free and Starter plans do not include MCP/API access.
-
-Per-IP rate limit: 60 requests/minute (before auth).
 
 ## Scopes
 
 | Scope | Allows | Required By |
 |-------|--------|-------------|
 | `mcp:full` | All operations | — |
-| `mcp:read` | Analytics, brand, credits, lists | GET endpoints |
-| `mcp:write` | Content generation | POST /content/* |
-| `mcp:distribute` | Scheduling, publishing | POST /distribution/* |
+| `mcp:read` | Analytics, brand, credits, lists | Read/list tools called via `POST /v1/tools/{name}` |
+| `mcp:write` | Content generation | Content-creation tools (e.g. `generate_content`, `generate_image`, `generate_video`) via `POST /v1/tools/{name}` |
+| `mcp:distribute` | Scheduling, publishing | Distribution tools (e.g. `schedule_post`, `reschedule_post`) via `POST /v1/tools/{name}` |
 | `mcp:analytics` | Refresh analytics | refresh_platform_analytics |
 | `mcp:comments` | Comment management | list/reply/post/moderate/delete comments |
-| `mcp:autopilot` | Automation config (Pro+) | autopilot tools |
+| `mcp:autopilot` | Automation config (Team+) | autopilot tools |
+
+There are no `/content/*` or `/distribution/*` resource routes — every tool, regardless of scope, is invoked the same way: `POST /v1/tools/{name}`. The scope column above says which capability a tool needs, not a separate route family.
 
 Destructive lifecycle calls (`cancel_async_job`, `cancel_scheduled_post`, `delete_carousel`, `delete_content_plan`, and `delete_autopilot_config`) require `confirm: true`, enforce ownership and project scope server-side, and do not remove already-published platform content. Job cancellation reports any attempted credit refund explicitly.
 

@@ -1,9 +1,6 @@
 // Mirror of lib/agent-harness/types.ts. Update README.md when this file changes.
 export type ScanRole =
-  | 'mcp_tool_input'
-  | 'mcp_tool_output'
-  | 'agent_chat_tool'
-  | 'content_safety_publish';
+  'mcp_tool_input' | 'mcp_tool_output' | 'agent_chat_tool' | 'content_safety_publish';
 
 export type ScanMode = 'block' | 'sanitize' | 'observe';
 

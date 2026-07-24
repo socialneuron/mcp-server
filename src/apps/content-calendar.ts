@@ -120,14 +120,14 @@ export function registerContentCalendarApp(server: McpServer): void {
     {
       title: 'Content Calendar',
       description:
-        "Open a project-scoped interactive calendar for the current week. Users can filter, inspect, quick-create, suggest a slot, and reschedule pending posts with optimistic conflict protection.",
+        'Open a project-scoped interactive calendar for the current week. Users can filter, inspect, quick-create, suggest a slot, and reschedule pending posts with optimistic conflict protection.',
       inputSchema: {
         project_id: z
           .string()
           .uuid()
           .optional()
           .describe(
-            "Brand/project ID. Defaults to the authenticated key's project or the account default.",
+            "Brand/project ID. Defaults to the authenticated key's project or the account default."
           ),
         start_date: z
           .string()

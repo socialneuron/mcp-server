@@ -51,8 +51,7 @@ function transformInsightsToPerformanceContext(
 
   const optimalTimes = ((
     optimalTimingInsight?.insight_data as
-      | { times?: Array<{ dayOfWeek: number; hourOfDay: number }> }
-      | undefined
+      { times?: Array<{ dayOfWeek: number; hourOfDay: number }> } | undefined
   )?.times || []) as Array<{ dayOfWeek: number; hourOfDay: number }>;
   const bestModels = ((
     bestModelsInsight?.insight_data as { models?: Array<{ model: string }> } | undefined

@@ -4,17 +4,17 @@
  * Run: npx tsx examples/sdk/02-content-plan-workflow.ts
  */
 
-import { SocialNeuron } from "@socialneuron/sdk";
+import { SocialNeuron } from '@socialneuron/sdk';
 
 const sn = new SocialNeuron({
   apiKey: process.env.SOCIALNEURON_API_KEY!,
 });
 
 // 1. Create a weekly content plan
-console.log("Creating content plan...");
+console.log('Creating content plan...');
 const plan = await sn.plans.create({
-  topic: "AI tools for small businesses",
-  platforms: ["youtube", "tiktok", "linkedin"],
+  topic: 'AI tools for small businesses',
+  platforms: ['youtube', 'tiktok', 'linkedin'],
   days: 7,
 });
 
@@ -28,9 +28,9 @@ for (const post of details.data.posts ?? []) {
 }
 
 // 3. Approve the plan
-await sn.plans.approve(planId, { action: "approve" });
-console.log("Plan approved");
+await sn.plans.approve(planId, { action: 'approve' });
+console.log('Plan approved');
 
 // 4. Schedule all posts (auto-selects optimal time slots)
 const scheduled = await sn.plans.schedule(planId, { auto_slot: true });
-console.log("All posts scheduled:", scheduled.data);
+console.log('All posts scheduled:', scheduled.data);

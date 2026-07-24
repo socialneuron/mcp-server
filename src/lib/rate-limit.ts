@@ -76,7 +76,8 @@ export function rateLimitCategoryForTool(toolName: string | undefined): string {
     scope === 'mcp:analytics' ||
     scope === 'mcp:comments' ||
     scope === 'mcp:autopilot'
-  ) return 'posting';
+  )
+    return 'posting';
   return 'read';
 }
 

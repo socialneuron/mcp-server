@@ -75,7 +75,7 @@ describe('httpStatusForResult', () => {
 });
 
 describe('restToolNames', () => {
-  it('is the public surface (catalog minus internal, localOnly, and hidden)', () => {
+  it('is the public surface (catalog minus internal, localOnly, and hidden-count)', () => {
     const names = restToolNames();
     const expected = TOOL_CATALOG.filter(
       t => !t.localOnly && !t.internal && !t.hiddenFromPublicCount
@@ -84,6 +84,13 @@ describe('restToolNames', () => {
     // Internal tools excluded.
     expect(names.has('write_agent_reflection')).toBe(false);
     expect(names.has('save_draft_to_library')).toBe(false);
+  });
+
+  it('keeps hidden-count telemetry off the public REST projection', () => {
+    // record_heartbeat remains registered on authenticated HTTP MCP sessions,
+    // but REST discovery/OpenAPI are public product surfaces and must match the
+    // 91-tool server card rather than advertising an operation the route rejects.
+    expect(restToolNames().has('record_heartbeat')).toBe(false);
   });
 });
 

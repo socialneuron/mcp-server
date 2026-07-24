@@ -1,11 +1,20 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 
 // This JavaScript module deliberately lives under scripts/ because it builds a
 // temporary bundle of the production registry. Vitest can import it directly.
 import {
   enumerateCatalogTools,
+  enumerateLockedTools,
   hashTool,
 } from '../../scripts/lib/enumerate-runtime-tools.mjs';
+
+interface ToolsLockManifest {
+  tool_count: number;
+  runtime_tool_count: number;
+  catalog_tool_count: number;
+  tools: Record<string, string>;
+}
 
 describe('tool integrity lock coverage', () => {
   it('includes exposure flags and all agent-selection guidance', async () => {
@@ -44,5 +53,24 @@ describe('tool integrity lock coverage', () => {
 
     expect(hashTool('example', baseline)).not.toBe(hashTool('example', exposed));
     expect(hashTool('example', baseline)).not.toBe(hashTool('example', redirected));
+  });
+
+  it('matches the committed manifest without regenerating it', async () => {
+    const committed = JSON.parse(
+      readFileSync(new URL('../../tools.lock.json', import.meta.url), 'utf8')
+    ) as ToolsLockManifest;
+    const locked = await enumerateLockedTools();
+    const current = Object.fromEntries(
+      Object.entries(locked).map(([name, info]) => [name, hashTool(name, info)])
+    );
+
+    expect(committed.tool_count).toBe(Object.keys(current).length);
+    expect(committed.runtime_tool_count).toBe(
+      Object.values(locked).filter(info => info.runtime).length
+    );
+    expect(committed.catalog_tool_count).toBe(
+      Object.values(locked).filter(info => info.catalog).length
+    );
+    expect(committed.tools).toEqual(current);
   });
 });
