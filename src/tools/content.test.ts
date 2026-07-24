@@ -10,6 +10,7 @@ import {
   getDefaultUserId,
   getDefaultProjectId,
   listAccessibleProjectsWithAccountStatus,
+  resolveProjectStrict,
 } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
 
@@ -18,6 +19,7 @@ const mockGetClient = vi.mocked(getSupabaseClient);
 const mockGetUserId = vi.mocked(getDefaultUserId);
 const mockGetProjectId = vi.mocked(getDefaultProjectId);
 const mockListProjects = vi.mocked(listAccessibleProjectsWithAccountStatus);
+const mockResolveProjectStrict = vi.mocked(resolveProjectStrict);
 
 // Build a chainable Supabase query that resolves to a custom value.
 function chainMock(resolvedValue = { data: null, error: null }) {
@@ -37,6 +39,9 @@ describe('content tools', () => {
 
   beforeEach(() => {
     vi.clearAllMocks();
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
     server = createMockServer();
     registerContentTools(server as any);
   });
@@ -71,6 +76,7 @@ describe('content tools', () => {
           // 2026-07-13: enable_audio now defaults FALSE (cost control — the old
           // `?? true` default silently multiplied kling-family costs).
           enableAudio: false,
+          projectId: 'test-project-id',
         },
         { timeoutMs: 30_000 }
       );
@@ -97,6 +103,19 @@ describe('content tools', () => {
         expect.objectContaining({ projectId: 'proj-123' }),
         { timeoutMs: 30_000 }
       );
+    });
+
+    it('fails closed before provider work when video project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const handler = server.getHandler('generate_video')!;
+      const result = await handler({ prompt: 'brand clip', model: 'veo3-fast' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('honors an explicit enable_audio: true', async () => {
@@ -351,6 +370,7 @@ describe('content tools', () => {
           model: 'midjourney',
           aspectRatio: '1:1',
           imageUrl: undefined,
+          projectId: 'test-project-id',
         },
         { timeoutMs: 30_000 }
       );
@@ -472,6 +492,21 @@ describe('content tools', () => {
       expect(mockCallEdge.mock.calls[0][1]).toEqual(
         expect.objectContaining({ projectId: 'project-123' })
       );
+    });
+
+    it('fails closed before image spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('generate_image')!({
+        prompt: 'brand asset',
+        model: 'imagen4',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 
@@ -769,7 +804,7 @@ describe('content tools', () => {
           slideCount: 7,
           aspectRatio: '1:1',
           style: 'hormozi',
-          projectId: undefined,
+          projectId: 'test-project-id',
         },
         { timeoutMs: 60_000 }
       );
@@ -865,6 +900,18 @@ describe('content tools', () => {
         { timeoutMs: 60_000 }
       );
     });
+
+    it('fails closed before carousel spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('generate_carousel')!({ topic: 'test topic' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
   });
 
   // -------------------------------------------------------------------------
@@ -911,6 +958,21 @@ describe('content tools', () => {
 
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('empty response');
+    });
+
+    it('fails closed before storyboard spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('create_storyboard')!({
+        concept: 'Product launch',
+        platform: 'tiktok',
+      });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
   });
 
@@ -979,6 +1041,18 @@ describe('content tools', () => {
       ];
       expect(statusFn).toBe('kie-tts-status');
       expect(statusBody.taskId).toBe('task-1');
+    });
+
+    it('fails closed before fresh voiceover spend when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const result = await server.getHandler('generate_voiceover')!({ text: 'Hello world' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
     });
 
     it('never calls elevenlabs-tts for generate_voiceover (regression guard)', async () => {

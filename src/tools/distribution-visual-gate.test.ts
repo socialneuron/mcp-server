@@ -38,6 +38,9 @@ vi.mock('../lib/supabase.js', async importOriginal => {
     resolveProjectForConnectedAccountTool: vi.fn(async (explicitProjectId?: string) => ({
       projectId: explicitProjectId ?? 'test-project',
     })),
+    resolveProjectStrict: vi.fn(async (explicitProjectId?: string) => ({
+      projectId: explicitProjectId ?? 'test-project',
+    })),
     getSupabaseClient: vi.fn(() => ({
       from: () => ({
         select: () => ({

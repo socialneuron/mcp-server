@@ -325,6 +325,15 @@ describe('MCP default project isolation', () => {
       expect(result.projectId).toBe('project-only');
     });
 
+    it('fails closed when the caller has no accessible project', async () => {
+      const { resolveProjectStrict } = await import('./supabase.js');
+
+      const result = await resolveProjectStrict();
+
+      expect(result.projectId).toBeUndefined();
+      expect(result.error).toContain('project_id is required');
+    });
+
     it('NEVER auto-resolves based on connected accounts, even when exactly one project owns one', async () => {
       accessibleProjects.push(
         { id: 'project-a', name: 'Brand A' },
