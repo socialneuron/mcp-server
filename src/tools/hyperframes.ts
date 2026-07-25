@@ -12,7 +12,7 @@ import { sanitizeError } from '../lib/sanitize-error.js';
  * Adds external-agent access (Claude Code / Cursor / Hermes) to the same
  * EF (`create-hyperframes-job`) the agent-chat tool uses.
  *
- * Spec: docs/superpowers/specs/2026-04-25-video-pipeline-overhaul-design.md (F4 §7)
+ * Spec: an internal design spec (F4 §7)
  */
 
 // =============================================================================

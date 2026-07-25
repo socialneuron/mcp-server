@@ -75,7 +75,7 @@ function hasScope(userScopes: string[], required: string): boolean {
 }
 
 // Scope-denied responses arrive as success-shaped tool calls with a content
-// prefix. See `superpowers/specs/2026-04-24-mcp-app-content-calendar.md` Auth flow.
+// prefix. See the internal design spec's auth flow.
 function isScopeDenied(result: {
   isError?: boolean;
   structuredContent?: unknown;

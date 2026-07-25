@@ -17,7 +17,7 @@
  *     table derived from the rendering templates* — if layouts change,
  *     TEMPLATE_FIELD_CONSTRAINTS is the one place to update.
  *
- * Spec:     docs/superpowers/specs/2026-04-19-visual-qa-gate-design.md
+ * Spec:     an internal design spec
  */
 
 // =============================================================================

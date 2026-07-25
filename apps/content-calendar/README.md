@@ -101,7 +101,7 @@ Day 4 of the 7-day spec. Currently shipped:
 
 ## Scope cuts (not in this version)
 
-Per the parent spec at `superpowers/specs/2026-04-24-mcp-app-content-calendar.md`:
+Per the parent design spec:
 
 - Per-platform analytics overlay
 - Bulk multi-select reschedule

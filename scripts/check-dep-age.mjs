@@ -7,7 +7,7 @@
  * risk from account-takeover → malicious patch published in minutes → pulled
  * in by a routine install.
  *
- * Reference: internal planning notesan internal plan
+ * Reference: an internal hardening plan
  *            (Plan A Task 1.5 — dependency cooldown)
  *
  * Usage: node scripts/check-dep-age.mjs
@@ -127,7 +127,7 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // 2026-07-23: founder-directed drain of the dependabot queue (waived the
   // cooldown for this batch). Verified locally on each PR head before
   // exemption: npm ci + full test suite + build green (drain log,
-  // private internal notesaudits/an internal review).
+  // private internal architecture notes).
   // Publishers: jose by panva (canonical), posthog-node by PostHog,
   // vite by GitHub Actions with npm provenance, @remotion/* by the
   // project's canonical maintainer. Exact pins only; all age out of the

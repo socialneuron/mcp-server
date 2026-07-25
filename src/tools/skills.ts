@@ -6,8 +6,8 @@
  * MCP wedge: every brand-locked workflow skill in SN becomes
  * one tool call away inside any AI assistant the user already uses.
  *
- * Architecture: `internal notesaudits/an internal audit`
- * Competitive context: `internal notesaudits/an internal research note`
+ * Architecture: internal architecture notes
+ * Competitive context: internal competitive research
  *
  * Current status (this file):
  *   - `list_skills`: ✅ returns the live `public.skills` catalogue via the

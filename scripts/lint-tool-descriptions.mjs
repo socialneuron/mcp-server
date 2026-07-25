@@ -10,7 +10,7 @@
  *   - External URLs not on the allowlist
  *   - Email addresses (potential exfil targets)
  *
- * Reference: internal notesresearch/an internal briefing
+ * Reference: an internal research briefing
  * (internal repository) for the attack patterns this defends against.
  *
  * Usage: node scripts/lint-tool-descriptions.mjs

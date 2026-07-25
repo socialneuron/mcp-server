@@ -6,7 +6,7 @@
 #
 # This hook is a belt-and-braces defense layered on top of GitHub's
 # account-level "Block command line pushes that expose my email" setting.
-# Reference: internal notessessions/internal session notes
+# Reference: internal security-sprint notes
 # in the internal repository (the incident section on
 # `gh pr merge --squash --admin` identity leak).
 
@@ -119,7 +119,7 @@ To temporarily bypass (NOT RECOMMENDED), run:
 This hook is opt-in — enable it once per clone with:
     git config core.hooksPath .githooks
 
-See internal notessessions/internal session notes
+See internal security-sprint notes
 (in the internal repository) for the incident postmortem.
 EOF
   exit 1
