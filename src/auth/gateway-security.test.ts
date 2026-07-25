@@ -1,6 +1,6 @@
 /**
  * Tests for the pure security functions extracted from the mcp-gateway
- * Edge Function (supabase/functions/mcp-gateway/index.ts).
+ * Edge Function (the mcp-gateway backend function).
  *
  * The gateway runs on Deno, but these are pure functions that can be
  * tested in Node.js by copying them here. Any changes to the gateway

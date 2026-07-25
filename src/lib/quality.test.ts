@@ -4,8 +4,8 @@ import { evaluateQuality } from './quality.js';
 // ---------------------------------------------------------------------------
 // Short-form X carve-out extension (2026-07-09) — Hook Strength + Brand
 // Alignment. TS mirror of the equivalent worker-side cases in
-// tests/worker/qualityCheck.test.ts (worker/lib/quality.js). Ported from the
-// 2026-07-06 Novelty/CTA carve-out (worker/lib/quality.js #1799) after live
+// the worker's qualityCheck.test.ts suite (the worker's quality.js twin). Ported from the
+// 2026-07-06 Novelty/CTA carve-out (the worker's quality.js twin #1799) after live
 // evidence of the SAME structural unfairness on these two axes: twitter-only
 // <=280-char runs hard-blocked on "Hook Strength below threshold (2/5)"
 // (2026-07-06 13:38) and "Brand Alignment below threshold (2/5)"

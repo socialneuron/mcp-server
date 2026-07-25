@@ -188,7 +188,7 @@ Downstream EF → verifies x-gateway-token against GATEWAY_SECRET
 
 This prevents authenticated users from calling downstream EFs directly, bypassing credit and scope enforcement.
 
-See `supabase/functions/_shared/gatewayToken.ts` for the implementation.
+See the backend's shared gatewayToken.ts module for the implementation.
 
 ## Service Role (Legacy)
 

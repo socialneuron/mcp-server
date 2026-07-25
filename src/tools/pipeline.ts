@@ -727,7 +727,7 @@ export function registerPipelineTools(server: McpServer): void {
             }
             try {
               // schedule-post requires a `platforms` ARRAY + camelCase keys
-              // (supabase/functions/schedule-post/index.ts:301,392). Singular
+              // (the schedule-post backend function:301,392). Singular
               // `platform` / snake_case keys 400 with "At least one platform is required".
               const { error: schedError } = await callEdgeFunction(
                 'schedule-post',

@@ -28,7 +28,7 @@ const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
 // Canonical carousel-capable template packs (constants/templates/templatePacks.ts).
 // `sn_artifact_reel_v1` is deliberately excluded — it's a vertical_video pack, not
 // carousel. Keep this list in sync with SERVER_TEMPLATE_PACKS in
-// supabase/functions/_shared/templatePacks.ts (format === 'instagram_carousel').
+// the backend's shared templatePacks.ts module (format === 'instagram_carousel').
 const CAROUSEL_TEMPLATE_PACK_IDS = [
   'sn_signal_carousel_v1',
   'sn_performance_recap_v1',
@@ -347,7 +347,7 @@ export function registerCarouselTools(server: McpServer): void {
           templateId,
           // Additive: only sent when the caller passed a canonical pack id.
           // template_pack_id wins over template_id server-side (generate-carousel's
-          // pack path takes precedence — see supabase/functions/generate-carousel/index.ts).
+          // pack path takes precedence — see the generate-carousel backend function).
           ...(template_pack_id && { templatePackId: template_pack_id }),
           slideCount,
           aspectRatio: ratio,

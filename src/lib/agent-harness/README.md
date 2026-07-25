@@ -12,7 +12,7 @@ Hand-maintained TS mirror of `lib/agent-harness/` (TS internal source of truth a
 The repo-root TS internal source of truth uses neither constraint (it ships through Vite, not tsc),
 so a direct cross-package import fails on both axes.
 
-A third copy exists at `worker/lib/agent-harness-scanner.js` (Node port for the
+A third copy exists at the worker's agent-harness-scanner.js twin (Node port for the
 Railway worker, which can't load TypeScript).
 
 ## Source of truth
@@ -20,7 +20,7 @@ Railway worker, which can't load TypeScript).
 `lib/agent-harness/scanner.ts` at repo root. Any logic change MUST update all
 three copies in the same PR. Parity is guarded by:
 
-- `tests/worker/scannerParity.test.ts` — TS internal source of truth vs `worker/lib/`
+- the worker's scannerParity.test.ts suite — TS internal source of truth vs the worker runtime
 - `mcp-server/src/__tests__/scannerWrap.test.ts` — exercises the mirror via the
   wrapper; behavioural divergence will break wrap tests.
 

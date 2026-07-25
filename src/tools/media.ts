@@ -12,7 +12,7 @@ import { getDefaultUserId } from '../lib/supabase.js';
 const MAX_BASE64_SIZE = 10 * 1024 * 1024;
 
 /**
- * Mirrors the ALLOWED_TYPES allowlist in supabase/functions/upload-to-r2/index.ts.
+ * Mirrors the ALLOWED_TYPES allowlist in the upload-to-r2 backend function.
  * Keep in sync — drift causes either wasted round-trips (client allows, EF rejects)
  * or silent feature gaps (client blocks, EF would have accepted). URL-safe base64
  * (`-`/`_`) is deliberately excluded to match the EF's `atob`-compatible decoding.

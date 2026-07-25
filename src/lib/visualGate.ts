@@ -2,7 +2,7 @@
  * Carousel Visual Quality Gate
  *
  * Pre-render and post-render verification of carousel slides. Catches two
- * defects that the caption-level quality rubric (worker/lib/quality.js) does
+ * defects that the caption-level quality rubric (the worker's quality.js twin) does
  * NOT catch:
  *   1. Text overflow — Satori renders without error even when text clips
  *      the slide border, producing visually broken posts.
@@ -10,7 +10,7 @@
  *      in the generation pipeline today.
  *
  * Design:
- *   - Pure, synchronous where possible — mirrors worker/lib/quality.js.
+ *   - Pure, synchronous where possible — mirrors the worker's quality.js. twin
  *   - Dependency-free. The caller injects a Spellchecker (nspell wrapper in
  *     production, stub in tests) so this module stays cheap to import.
  *   - Template-aware: font sizes and effective widths come from a lookup

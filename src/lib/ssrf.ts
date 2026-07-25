@@ -1,7 +1,7 @@
 /**
  * SSRF Protection for the MCP Server (Node.js)
  *
- * Ported from supabase/functions/_shared/ssrfProtection.ts
+ * Ported from the backend's shared ssrfProtection.ts module
  *
  * Validates URLs to prevent Server-Side Request Forgery attacks by blocking:
  * - Private IP ranges (RFC 1918)

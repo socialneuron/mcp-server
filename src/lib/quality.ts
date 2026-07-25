@@ -9,11 +9,11 @@
  *   - MCP tools (quality_check, quality_check_plan, schedule_content_plan)
  *   - CLI subcommands (quality-check, e2e)
  *
- * Node runtime twin: worker/lib/quality.js (gates the non-carousel branch of
+ * Node runtime twin: the worker's quality.js twin (gates the non-carousel branch of
  * the recipe runner's `quality_check` step). Keep the two in sync — a
  * divergence means a post that scores X via this tool would score Y when
  * autopilot gates on it, which is the exact opposite of a quality gate's
- * job. Guarded by tests/worker/generalQualityParityMcp.test.ts.
+ * job. Guarded by the worker's generalQualityParityMcp.test.ts. suite
  */
 
 export type QualityCategory = {
@@ -54,7 +54,7 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   const firstLine = caption.split('\n')[0]?.trim() ?? '';
   const hashtags = countHashtags(caption);
   const threshold = Math.min(35, Math.max(0, input.threshold ?? 26));
-  // Short-form X calibration (2026-07-06, ported from worker/lib/quality.js
+  // Short-form X calibration (2026-07-06, ported from the worker's quality.js twin
   // #1799): the Novelty and CTA axes are keyword-furniture checks shaped for
   // long IG/LinkedIn captions ('framework', 'playbook', 'comment/save/
   // follow'). A clean 200-char X post structurally cannot satisfy them
@@ -125,7 +125,7 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   // 4. Brand Alignment
   let brandScore = 3;
   const rawBrandKeyword = input.brandKeyword ?? process.env.SOCIALNEURON_BRAND_KEYWORD?.trim();
-  // Codex idx 35 (2026-05-26, ported from worker/lib/quality.js): brandKeyword
+  // Codex idx 35 (2026-05-26, ported from the worker's quality.js twin): brandKeyword
   // is caller-controlled and was interpolated raw into a regex — `(a+)+$`
   // style input gave catastrophic backtracking on long captions. Escape regex
   // metachars + cap length.

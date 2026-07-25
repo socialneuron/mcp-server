@@ -16,7 +16,7 @@ import { sanitizeError } from '../lib/sanitize-error.js';
  */
 
 // =============================================================================
-// Curated 23-block catalog — keep in sync with worker/lib/hyperframesRunner.js
+// Curated 23-block catalog — keep in sync with the worker's hyperframesRunner.js twin
 // =============================================================================
 
 const HYPERFRAMES_BLOCKS = [

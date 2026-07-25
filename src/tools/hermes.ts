@@ -81,7 +81,7 @@ export function registerHermesTools(server: McpServer): void {
         // *already-sanitized* string callEdgeFunction/safeGatewayError
         // produced, but the real cause was upstream in mcp-data's own error
         // handler doing `String(nonErrorObject)` on a thrown Postgrest error
-        // object (fixed in supabase/functions/mcp-data/index.ts's top-level
+        // object (fixed in the mcp-data backend function's top-level
         // catch — see normalizeUnknownError).
         const code = /^Authentication failed|^Not authenticated/i.test(error)
           ? 'permission_denied'

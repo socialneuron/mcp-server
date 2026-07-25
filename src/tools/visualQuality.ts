@@ -16,11 +16,11 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 }
 
 /**
- * Mirror of worker/handlers/carouselSlideAdapter.js pickLayout + mapFieldsToLayout.
+ * Mirror of the worker's carouselSlideAdapter.js handler pickLayout + mapFieldsToLayout.
  * Kept inline (rather than imported from the worker) so the MCP build has no
  * cross-package dependency — the MCP bundle ships as a single-file npm package.
  *
- * When worker/handlers/carouselSlideAdapter.js changes, update this in lockstep.
+ * When the worker's carouselSlideAdapter.js handler changes, update this in lockstep.
  */
 const VALID_STYLES = ['dark-cinematic', 'clean-editorial', 'bold-authority'] as const;
 type VisualStyle = (typeof VALID_STYLES)[number];
