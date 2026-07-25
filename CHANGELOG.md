@@ -8,6 +8,9 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Security
 
+- **Prompt-injection scanner: closed a homoglyph bypass.** `normalize()` applies NFKC, which does not fold Cyrillic/Greek confusables, so an instruction phrase spelled with Cyrillic `о` (U+043E) passed both the raw and normalized scans and reached the model verbatim. Detection now also runs over a confusable-folded skeleton. Folding is detection-only — `sanitized_text` is unchanged, so legitimate non-Latin content is not corrupted.
+- **Prompt-injection scanner: the canonical payload matched no pattern at all.** `ignore (?:all|previous|prior) instructions` never matched "ignore all previous instructions" in any script. Three instruction phrases broadened.
+- **Output secret redaction no longer fails open.** AWS `AKIA`, Google `AIza`, Slack `xoxp`/`xapp`, `sno_` connector tokens, opaque `Bearer` values and PEM private-key blocks were all passing through unredacted; only `snk_`-style keys were covered.
 - OAuth authorization-code and refresh exchanges use short-lived, resource-bound connector tokens with exact protected-resource matching, canonical public scopes, PKCE, refresh rotation, replay-family revocation, and connector-session revocation.
 - Distribution-capable recipes and other consequential operations require explicit confirmation, executable approval boundaries, and the corresponding public MCP scope.
 - Hosted discovery carries MCP safety annotations, OAuth security schemes, and MCP App metadata for Claude, Codex, REST, CLI, and SDK clients.
