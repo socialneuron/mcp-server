@@ -4,6 +4,21 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## [Unreleased]
 
+## [1.9.2] - 2026-07-26
+
+Security release. Upgrade is recommended for all users.
+
+### Security
+
+- **Prompt-injection scanner bypass via lookalike characters.** Instruction phrases written with Cyrillic or Greek characters that resemble Latin ones passed both existing scans and reached the model verbatim. Text is now also scanned in a confusable-folded form. Detection only — the folded form is never used for output, which would corrupt legitimate non-Latin text.
+- **Secret redaction failed open on common credential formats.** AWS access key IDs, Google API keys, Slack tokens, bearer tokens, and PEM private keys were not matched by the output scanner and could pass through unredacted. Patterns for each are now covered.
+- **SSRF guard missed IPv4-mapped IPv6 addresses.** URL parsing canonicalizes an embedded IPv4 literal to hexadecimal, so `http://[::ffff:169.254.169.254]/` reached the guard in a form the blocklist did not match, leaving cloud metadata endpoints and private ranges reachable. Mapped addresses are now expanded before the blocklist is applied.
+- **Scope attenuation could widen authority.** Requesting a narrower scope on the hosted endpoint used exact-string matching, so a token holding a parent scope that asked for one of its children matched nothing and was silently given its original scopes back. The request now resolves through the scope hierarchy and is refused when no requested scope is granted.
+
+### Fixed
+
+- **Instruction scanner no longer blocks ordinary copy.** "Forget everything you know about …" and similar phrasings were scored as prompt injection, discarding the entire tool result. The affected phrase now requires a qualifier such as "previous" or "above"; injection phrasings are unchanged.
+
 ## [1.9.1] - 2026-07-18
 
 ### Fixed
