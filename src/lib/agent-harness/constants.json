@@ -3,7 +3,9 @@
   "INSTRUCTION_PHRASES": [
     "(?:^|[^A-Za-z])ignore (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*instructions",
     "(?:^|[^A-Za-z])disregard (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:instructions|prompts?|context)",
-    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:instructions|everything|context)",
+    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*instructions",
+    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )+(?:everything|context)",
+    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:everything|context) (?:above|previously|prior|before|you (?:were|have been))",
     "(?:^|[^A-Za-z])you are now (?:a |an )",
     "(?:^|[^A-Za-z])system:\\s",
     "<\\|im_start\\|>",
