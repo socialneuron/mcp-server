@@ -1,8 +1,11 @@
 blank_issues_enabled: false
 contact_links:
   - name: Private / operational work
-    url: https://github.com/socialneuron/mcp-server/issues/266
+    url: https://github.com/socialneuron/mcp-server/blob/main/CONTRIBUTING.md
     about: >-
-      Production operations, internal architecture, customer state, Sentry/Linear
-      incidents, and private-repository coordination belong on the internal tracker,
-      not here. See the repository-boundary policy before filing.
+      Production operations, internal architecture, customer state, and private
+      incident coordination are tracked privately and are out of scope for this
+      repository. Please only file issues about the published package itself.
+  - name: Security vulnerability
+    url: https://github.com/socialneuron/mcp-server/security/policy
+    about: Report security issues privately via the policy in SECURITY.md.

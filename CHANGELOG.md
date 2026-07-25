@@ -124,7 +124,7 @@ Released without changelog entries (see git history): OAuth connector flow + DCR
 
 ### Source
 
-Anchored by `internal notesaudits/an internal audit` (an internal change). The same audit landed Phase 4b across `constants/pricing.ts`, `lib/currency.ts`, `data/answers.ts`, `pages/Pricing.tsx`, the docs-site llms.txt feeds, and the SEO comparison data — this release ships the corresponding MCP-protocol-level fix.
+Anchored by an internal pricing-consistency audit. The same audit landed Phase 4b across `constants/pricing.ts`, `lib/currency.ts`, `data/answers.ts`, `pages/Pricing.tsx`, the docs-site llms.txt feeds, and the SEO comparison data — this release ships the corresponding MCP-protocol-level fix.
 
 ## [1.7.6] - 2026-04-22
 
