@@ -1,26 +1,33 @@
 {
   "ZERO_WIDTH_CHARS": "[\\u200B\\u200C\\u200D\\u2060\\uFEFF\\u{E0020}-\\u{E007F}]",
   "INSTRUCTION_PHRASES": [
-    "(?:^|[^A-Za-z])ignore (?:all|previous|prior) instructions",
-    "(?:^|[^A-Za-z])disregard (?:the|all) (?:above|prior|previous)",
-    "(?:^|[^A-Za-z])forget (?:all|previous|prior|the above)",
+    "(?:^|[^A-Za-z])ignore (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*instructions",
+    "(?:^|[^A-Za-z])disregard (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:instructions|prompts?|context)",
+    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:instructions|everything|context)",
     "(?:^|[^A-Za-z])you are now (?:a |an )",
     "(?:^|[^A-Za-z])system:\\s",
     "<\\|im_start\\|>",
     "<\\|im_end\\|>",
     "</?im_(?:start|end)>",
     "<\\|assistant\\|>",
-    "(?:^|[^A-Za-z])\\[INST\\]"
+    "(?:^|[^A-Za-z])\\[INST\\]",
+    "(?:^|[^A-Za-z])disregard (?:the|all) (?:above|prior|previous)",
+    "(?:^|[^A-Za-z])forget (?:all|previous|prior|the above)"
   ],
   "PII_PATTERNS": {
     "email": "[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
     "phone_us": "(?<!\\d|-)(?:\\+?1[-\\s.])?\\(?\\d{3}\\)?[-\\s.]?\\d{3}[-\\s.]?\\d{4}(?!\\d|-)",
     "phone_intl": "\\+\\d{1,3}[-\\s.]?\\d{1,4}[-\\s.]?\\d{1,4}[-\\s.]?\\d{4,}",
     "jwt": "eyJ[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+\\.[A-Za-z0-9_-]+",
-    "api_key": "(?:sk|pk|snk|xoxb|ghp|github_pat)_[A-Za-z0-9_-]{16,}",
+    "api_key": "(?:sk|pk|snk|sno|xoxb|ghp|github_pat)_[A-Za-z0-9_-]{16,}",
     "credit_card": "(?<!\\d|-)(?:\\d{4}[ -]?){3}\\d{4}(?!\\d|-)",
     "ssn": "\\d{3}-\\d{2}-\\d{4}",
-    "ip": "(?<![\\d.])(?:\\d{1,3}\\.){3}\\d{1,3}(?![\\d.])"
+    "ip": "(?<![\\d.])(?:\\d{1,3}\\.){3}\\d{1,3}(?![\\d.])",
+    "aws_access_key": "AKIA[0-9A-Z]{16}",
+    "google_api_key": "AIza[0-9A-Za-z_\\-]{35}",
+    "slack_token": "xox[abprs]-[A-Za-z0-9-]{10,}|xapp-[0-9]-[A-Za-z0-9-]{10,}",
+    "bearer_token": "Bearer\\s+[A-Za-z0-9._~+/=-]{20,}",
+    "private_key_block": "-----BEGIN [A-Z ]*PRIVATE KEY-----[\\s\\S]*?-----END [A-Z ]*PRIVATE KEY-----"
   },
   "MAX_LENGTH": 10000,
   "MAX_OUTPUT_LENGTH": 1000000

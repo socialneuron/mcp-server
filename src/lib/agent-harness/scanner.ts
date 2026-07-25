@@ -1,6 +1,6 @@
 // Mirror of lib/agent-harness/scanner.ts. Update README.md when this file changes.
 import { CONSTANTS } from './constants.js';
-import { normalize } from './normalize.js';
+import { normalize, skeleton } from './normalize.js';
 import { detectZeroWidth } from './detectors/zeroWidth.js';
 import { detectInstructionPhrase } from './detectors/instructionPhrase.js';
 import { scrubPii } from './detectors/pii.js';
@@ -44,11 +44,26 @@ export function scan(text: string, options: ScanOptions): ScanResult {
   // NORMALIZE (NFKC + RTL strip + HTML comment strip).
   const normalized = normalize(text);
 
-  // Instruction-phrase scan on NORMALIZED text — catches homoglyph / RTL-override attacks.
+  // Instruction-phrase scan on NORMALIZED text — catches RTL-override and
+  // compatibility-form attacks that NFKC folds away.
   const ipNorm = detectInstructionPhrase(normalized);
   if (ipNorm.found) {
     flagged.add(ipNorm.pattern!);
     risk = Math.max(risk, 0.9);
+  }
+
+  // Instruction-phrase scan on the CONFUSABLE SKELETON. NFKC does not fold
+  // Cyrillic/Greek lookalikes, so `ignоre all previous instructions` (Cyrillic о)
+  // cleared both scans above and reached the model verbatim. Detection only —
+  // the skeleton is never used for sanitized output, which would corrupt
+  // legitimate non-Latin text.
+  const skeletonText = skeleton(normalized);
+  if (skeletonText !== normalized) {
+    const ipSkel = detectInstructionPhrase(skeletonText);
+    if (ipSkel.found) {
+      flagged.add(ipSkel.pattern!);
+      risk = Math.max(risk, 0.9);
+    }
   }
 
   const flaggedArr = Array.from(flagged);
