@@ -663,9 +663,18 @@ async function authenticateRequest(
         .split(',')
         .map(s => s.trim())
         .filter(Boolean);
-      // Only keep scopes the token already has (intersection = downgrade only)
-      scopes = requestedScopes.filter(s => authInfo.scopes.includes(s));
-      if (scopes.length === 0) scopes = authInfo.scopes; // fallback if none match
+      // Only keep scopes the token already grants, directly or via the
+      // hierarchy — an exact-string intersection would drop `mcp:read` for an
+      // `mcp:full` token, which previously fell through to the branch below and
+      // returned the caller MORE authority than they asked for.
+      scopes = requestedScopes.filter(s => hasScope(authInfo.scopes, s));
+      if (scopes.length === 0) {
+        res.status(403).json({
+          error: 'insufficient_scope',
+          error_description: 'None of the requested scopes are granted by this token.',
+        });
+        return;
+      }
     }
 
     req.auth = {

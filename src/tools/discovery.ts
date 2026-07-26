@@ -22,6 +22,24 @@ interface KnowledgeDocument {
 const KNOWLEDGE_BASE_URL = 'https://socialneuron.com/for-developers';
 const KNOWLEDGE_SEARCH_LIMIT = 10;
 
+/**
+ * Hosted (HTTP) transport does not register localOnly tools — screenshots need a
+ * local Playwright, and http.ts registers with skipScreenshots: true — so they
+ * must not surface in HTTP-mode discovery either. In stdio/local mode they are
+ * registered and stay discoverable.
+ */
+function isHostedTransport(): boolean {
+  return process.env.MCP_TRANSPORT === 'http';
+}
+
+/** Internal and count-hidden tools are never advertised; localOnly tools are
+ *  advertised only on the stdio/local transport. */
+function isPubliclyDiscoverable(tool: ToolEntry): boolean {
+  if (tool.internal || tool.hiddenFromPublicCount) return false;
+  if (tool.localOnly && isHostedTransport()) return false;
+  return true;
+}
+
 const SearchOutputSchema = {
   results: z.array(
     z.object({
@@ -116,7 +134,7 @@ function toolKnowledgeDocument(tool: ToolEntry): KnowledgeDocument {
 function getKnowledgeDocuments(): KnowledgeDocument[] {
   return [
     ...STATIC_KNOWLEDGE_DOCUMENTS,
-    ...TOOL_CATALOG.filter(t => !t.internal && !t.hiddenFromPublicCount).map(toolKnowledgeDocument),
+    ...TOOL_CATALOG.filter(isPubliclyDiscoverable).map(toolKnowledgeDocument),
   ];
 }
 
@@ -271,8 +289,9 @@ export function registerDiscoveryTools(server: McpServer): void {
         results = searchTools(query);
       }
       // Internal operations tools, and tools hidden from the public marketing
-      // count, are runtime-registered but not discoverable via search.
-      results = results.filter(t => !t.internal && !t.hiddenFromPublicCount);
+      // count, are runtime-registered but not discoverable via search. Local-only
+      // tools are not registered at all on the hosted transport.
+      results = results.filter(isPubliclyDiscoverable);
       if (module) {
         const moduleTools = getToolsByModule(module);
         results = results.filter(t => moduleTools.some(mt => mt.name === t.name));

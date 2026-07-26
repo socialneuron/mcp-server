@@ -9,7 +9,7 @@ import {
   listAccessibleProjectsWithAccountStatus,
   resolveProjectStrict,
 } from '../lib/supabase.js';
-import { sanitizeDbError } from '../lib/sanitize-error.js';
+import { sanitizeDbError, redactSensitiveIdentifiers } from '../lib/sanitize-error.js';
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
@@ -720,7 +720,7 @@ export function registerContentTools(server: McpServer): void {
         );
       }
       if (job.error_message) {
-        lines.push(`Error: ${job.error_message}`);
+        lines.push(`Error: ${redactSensitiveIdentifiers(job.error_message)}`);
       }
       const fallbackDisclosure = buildFallbackDisclosureLine(job.result_metadata);
       if (fallbackDisclosure) lines.push(fallbackDisclosure);

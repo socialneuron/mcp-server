@@ -1,5 +1,10 @@
 import { describe, it, expect, vi } from 'vitest';
-import { sanitizeDbError, sanitizeError, scrubPII } from './sanitize-error.js';
+import {
+  sanitizeDbError,
+  sanitizeError,
+  scrubPII,
+  redactSensitiveIdentifiers,
+} from './sanitize-error.js';
 
 describe('sanitizeDbError', () => {
   // ── Permission denied ───────────────────────────────────────────────
@@ -260,5 +265,26 @@ describe('scrubPII', () => {
     expect(scrubPII('project_id is required — pass one of: Brand A')).toBe(
       'project_id is required — pass one of: Brand A'
     );
+  });
+});
+
+describe('redactSensitiveIdentifiers', () => {
+  it('strips internal row IDs from an upstream error message', () => {
+    const out = redactSensitiveIdentifiers(
+      'render failed for asset 550e8400-e29b-41d4-a716-446655440000'
+    );
+    expect(out).toBe('render failed for asset [redacted-id]');
+  });
+
+  it('strips emails as well as IDs, keeping the diagnostic readable', () => {
+    const out = redactSensitiveIdentifiers(
+      'quota exceeded for user@example.com on job 550e8400-e29b-41d4-a716-446655440000'
+    );
+    expect(out).toBe('quota exceeded for [redacted-email] on job [redacted-id]');
+  });
+
+  it('leaves a message with no identifiers untouched', () => {
+    const msg = 'Upstream provider timed out after 60s';
+    expect(redactSensitiveIdentifiers(msg)).toBe(msg);
   });
 });

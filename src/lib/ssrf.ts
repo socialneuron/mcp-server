@@ -73,9 +73,35 @@ export interface SSRFValidationResult {
   resolvedIP?: string;
 }
 
+/**
+ * Expand an IPv4-mapped IPv6 address to its dot-decimal IPv4 form, or null if
+ * the address is not IPv4-mapped.
+ *
+ * The WHATWG URL parser canonicalizes the embedded IPv4 literal to hextets:
+ * `http://[::ffff:169.254.169.254]/` has hostname `[::ffff:a9fe:a9fe]`. Patterns
+ * written against the dot-decimal spelling therefore never match what
+ * `new URL().hostname` actually yields, so cloud metadata and RFC 1918 ranges
+ * reached the fetch. Expanding here lets the full IPv4 blocklist apply to both
+ * spellings instead of duplicating every range as a hex pattern.
+ */
+function expandIPv4Mapped(ip: string): string | null {
+  const dotted = /^::ffff:((?:\d{1,3}\.){3}\d{1,3})$/i.exec(ip);
+  if (dotted) return dotted[1];
+
+  const hex = /^::ffff:([0-9a-f]{1,4}):([0-9a-f]{1,4})$/i.exec(ip);
+  if (hex) {
+    const high = parseInt(hex[1], 16);
+    const low = parseInt(hex[2], 16);
+    return `${(high >> 8) & 0xff}.${high & 0xff}.${(low >> 8) & 0xff}.${low & 0xff}`;
+  }
+  return null;
+}
+
 function isBlockedIP(ip: string): boolean {
   const normalized = ip.replace(/^\[/, '').replace(/\]$/, '');
   if (normalized.includes(':')) {
+    const mapped = expandIPv4Mapped(normalized);
+    if (mapped) return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(mapped));
     return BLOCKED_IPV6_PATTERNS.some(pattern => pattern.test(normalized));
   }
   return BLOCKED_IP_PATTERNS.some(pattern => pattern.test(normalized));

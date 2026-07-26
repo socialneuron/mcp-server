@@ -106,6 +106,24 @@ export function scrubPII(message: string): string {
   return out;
 }
 
+const UUID_PATTERN = /\b[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi;
+
+/**
+ * Scrub identifiers from an already-user-safe message while keeping the
+ * surrounding diagnostic text readable.
+ *
+ * Unlike sanitizeError / sanitizeDbError, which replace the whole message when a
+ * sensitive pattern matches, this preserves it so the caller still learns why
+ * something failed — it strips only emails and internal object IDs.
+ *
+ * UUIDs are deliberately absent from PII_SCRUB_PATTERNS because job IDs are
+ * UUIDs and callers need them. They are stripped here because an upstream
+ * error_message can carry internal row IDs that the caller has no claim to.
+ */
+export function redactSensitiveIdentifiers(message: string): string {
+  return scrubPII(message).replace(UUID_PATTERN, '[redacted-id]');
+}
+
 export function sanitizeDbError(error: { message?: string; code?: string }): string {
   const msg = error.message ?? '';
   const code = error.code ?? '';

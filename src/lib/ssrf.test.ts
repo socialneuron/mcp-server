@@ -111,6 +111,31 @@ describe('SSRF protection', () => {
       expect(result.isValid).toBe(false);
       expect(result.error).toBeDefined();
     });
+
+    // The URL parser canonicalizes the embedded IPv4 literal to hextets, so
+    // `[::ffff:169.254.169.254]` reaches the guard as `[::ffff:a9fe:a9fe]`.
+    // These blocked only in their dot-decimal spelling before the fix.
+    it('blocks IPv4-mapped IPv6 cloud metadata (hextet form)', () => {
+      const result = quickSSRFCheck('http://[::ffff:169.254.169.254]/latest/meta-data/');
+      expect(result.isValid).toBe(false);
+      expect(result.error).toContain('internal');
+    });
+
+    it('blocks IPv4-mapped IPv6 private ranges', () => {
+      for (const url of [
+        'http://[::ffff:10.0.0.1]/',
+        'http://[::ffff:192.168.1.1]/',
+        'http://[::ffff:172.16.0.1]/',
+        'http://[::ffff:127.0.0.1]/',
+      ]) {
+        expect(quickSSRFCheck(url).isValid).toBe(false);
+      }
+    });
+
+    it('still allows IPv4-mapped IPv6 public addresses', () => {
+      // ::ffff:93.184.216.34 — example.com, must not be caught by the expansion
+      expect(quickSSRFCheck('http://[::ffff:93.184.216.34]/').isValid).toBe(true);
+    });
   });
 
   // =========================================================================
