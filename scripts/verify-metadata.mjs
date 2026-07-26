@@ -98,8 +98,6 @@ const SURFACE = [
   'CHANGELOG.md',
   'docs/rest-api.md',
   'docs/integration-methods.md',
-  'docs/ROADMAP.md',
-  'an internal brief',
   'docs/troubleshooting.md',
   'docs/auth.md',
   'docs/tools-reference.md',
@@ -112,7 +110,11 @@ for (const file of SURFACE) {
   try {
     text = readFileSync(file, 'utf8');
   } catch {
-    continue; // file removed — nothing to scan
+    // Skipping silently means a surface can drop out of the scan while the run
+    // still reports success — the list carried a path that never existed, and
+    // nothing surfaced it. A surface listed here must exist or be removed.
+    failures.push(`${file} is listed in SURFACE but could not be read`);
+    continue;
   }
   for (const needle of FORBIDDEN) {
     if (text.includes(needle)) {
