@@ -15,5 +15,17 @@ jobs:
         with:
           node-version: 22
 
+      - name: Materialize internal needle list
+        id: needles
+        env:
+          SN_FORBIDDEN_NEEDLES: ${{ secrets.SN_FORBIDDEN_NEEDLES }}
+        run: |
+          if [ -n "$SN_FORBIDDEN_NEEDLES" ]; then
+            printf '%s\n' "$SN_FORBIDDEN_NEEDLES" > "$RUNNER_TEMP/forbidden.txt"
+            echo "SN_FORBIDDEN_FILE=$RUNNER_TEMP/forbidden.txt" >> "$GITHUB_ENV"
+          else
+            echo "::warning::SN_FORBIDDEN_NEEDLES is not configured - internal-identifier checks will be skipped. Retired-claim and structural-pattern checks still run."
+          fi
+
       - name: Verify live hosted metadata contract
         run: npm run verify:metadata:live

@@ -247,7 +247,7 @@ async function listAccessibleProjectsWithAccountStatusDirect(
     // SECURITY: this MUST also filter by user_id. Without it, a teammate's
     // connected account in another project on the SAME org can manufacture
     // (or break) the "sole project with an account" signal below for THIS
-    // user, cross-user-leaking project resolution. See ADR-0027 / oauth-security.md.
+    // user, cross-user-leaking project resolution.
     const { data: accounts } = await supabase
       .from("connected_accounts")
       .select("project_id, status, platform")

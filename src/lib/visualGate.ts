@@ -14,7 +14,7 @@
  *   - Dependency-free. The caller injects a Spellchecker (nspell wrapper in
  *     production, stub in tests) so this module stays cheap to import.
  *   - Template-aware: font sizes and effective widths come from a lookup
- *     table derived from the rendering templates* — if layouts change,
+ *     table derived from the rendering templates — if layouts change,
  *     TEMPLATE_FIELD_CONSTRAINTS is the one place to update.
  *
  * Spec:     an internal design spec
@@ -45,7 +45,7 @@ export const AT_RISK_LINE_TOLERANCE = 1;
 export const OCR_SIMILARITY_THRESHOLD = 0.9;
 
 /**
- * Canvas dimensions (IG 4:5). Must match the renderer design tokens
+ * Canvas dimensions (IG 4:5). Must match the renderer design tokens.
  * DEFAULTS.{w,h}. If tokens change, update here too.
  */
 export const CANVAS_W = 1080;
@@ -59,7 +59,7 @@ export const CANVAS_H = 1350;
  * Opaque identifier for which carousel template + slide layout a given slide
  * uses. The gate uses this to look up font sizes and container widths.
  *
- * Values mirror the exported functions in the rendering templates*:
+ * Values mirror the exported template functions:
  *   - boldAuthority:   'authority-statement' | 'authority-cta'
  *   - cleanEditorial:  'editorial-content'   | 'editorial-cta'
  *   - darkCinematic:   'cinematic-hook'      | 'cinematic-content' | 'cinematic-cta'
@@ -183,7 +183,7 @@ export type SlideRegenerator = (
 ) => Promise<GateSlideInput>;
 
 // =============================================================================
-// Field constraints lookup — derived from the rendering templates*
+// Field constraints lookup — derived from the rendering templates
 // Keep in sync with template source. When layouts change, update here.
 // =============================================================================
 

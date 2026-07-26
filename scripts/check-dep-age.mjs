@@ -7,8 +7,7 @@
  * risk from account-takeover → malicious patch published in minutes → pulled
  * in by a routine install.
  *
- * Reference: an internal hardening plan
- *            (Plan A Task 1.5 — dependency cooldown)
+ * Implements a dependency cooldown window.
  *
  * Usage: node scripts/check-dep-age.mjs
  * Exits 1 if any dep is younger than the cooldown.
@@ -116,7 +115,7 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // vitest + vite published by GitHub Actions WITH npm provenance
   // attestations; typescript by Microsoft's canonical publisher; @types/node
   // by the DefinitelyTyped bot; @remotion/* by the project's canonical
-  // maintainer. Founder-approved exemption 2026-07-15. Exact pins only -
+  // maintainer. Reviewed exemption. Exact pins only -
   // all six age out of the window by 2026-07-26.
   '@remotion/bundler@4.0.489',
   '@remotion/renderer@4.0.489',

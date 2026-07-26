@@ -80,6 +80,17 @@ jobs:
       - name: Verify tools.lock.json drift
         run: npm run verify:lock
 
+      - name: Materialize internal needle list
+        env:
+          SN_FORBIDDEN_NEEDLES: ${{ secrets.SN_FORBIDDEN_NEEDLES }}
+        run: |
+          if [ -z "$SN_FORBIDDEN_NEEDLES" ]; then
+            echo "::error::SN_FORBIDDEN_NEEDLES is not configured. A release must not ship with the internal-identifier checks disabled."
+            exit 1
+          fi
+          printf '%s\n' "$SN_FORBIDDEN_NEEDLES" > "$RUNNER_TEMP/forbidden.txt"
+          echo "SN_FORBIDDEN_FILE=$RUNNER_TEMP/forbidden.txt" >> "$GITHUB_ENV"
+
       - name: Verify public metadata contract
         run: npm run verify:metadata
 

@@ -133,7 +133,7 @@ function toGateSlides(slides: WorkerSlide[], visualStyle: VisualStyle): GateSlid
 export function registerVisualQualityTools(server: McpServer): void {
   server.tool(
     'visual_quality_check',
-    'Run a pre-render visual QA check on carousel slides before publishing. Predicts text overflow against per-layout font-size/container constraints from the rendering templates*. Does NOT call Gemini Vision OCR (that runs inside the worker on the rendered PNG). Use after generate_carousel and before schedule_post to catch clipped text and single-line overflows. Spellcheck is skipped at the MCP layer — the worker handles it with the brand vocab allowlist.',
+    'Run a pre-render visual QA check on carousel slides before publishing. Predicts text overflow against the per-layout font-size and container constraints of the rendering templates. Does NOT call Gemini Vision OCR (that runs inside the worker on the rendered PNG). Use after generate_carousel and before schedule_post to catch clipped text and single-line overflows. Spellcheck is skipped at the MCP layer — the worker handles it with the brand vocab allowlist.',
     {
       slides: z
         .array(
@@ -153,7 +153,7 @@ export function registerVisualQualityTools(server: McpServer): void {
         .min(1)
         .max(10)
         .describe(
-          'Carousel slides (1-10). Shape matches the carousel service CarouselSlide. Required fields: slideNumber. Text fields: headline, body, visualDirection, footnote, accentWord, bullets.'
+          'Carousel slides (1-10). Required fields: slideNumber. Text fields: headline, body, visualDirection, footnote, accentWord, bullets.'
         ),
       visual_style: z
         .enum(VALID_STYLES)

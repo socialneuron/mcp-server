@@ -10,8 +10,8 @@
  *   - External URLs not on the allowlist
  *   - Email addresses (potential exfil targets)
  *
- * Reference: an internal research briefing
- * (internal repository) for the attack patterns this defends against.
+ * Defends against prompt-injection and exfiltration patterns in
+ * model-visible tool descriptions.
  *
  * Usage: node scripts/lint-tool-descriptions.mjs
  * Exits 1 on any finding.

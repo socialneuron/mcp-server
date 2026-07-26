@@ -13,7 +13,7 @@ Route deep work to the specialized skills in this plugin instead of improvising:
 
 - **content-quality** — producing, quality-gating, adapting, and scheduling content (the full pipeline with the 7-category gate).
 - **brand-consistency** — brand profile management, voice/color/claims enforcement, and avatar/character consistency across generated media.
-- **learning-loop** — reading loop health and bandit state, applying insights, and writing outcomes/reflections back after publishing.
+- **learning-loop** — reading loop health, applying insights, and writing outcomes/reflections back after publishing.
 
 ## Workflow
 

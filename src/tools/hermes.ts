@@ -105,7 +105,7 @@ export function registerHermesTools(server: McpServer): void {
         content: [
           {
             type: 'text' as const,
-            text: `Draft saved to ContentLibrary (id ${payload.content_id}). Founder approves in SN Distribution > Schedule.`,
+            text: `Draft saved (id ${payload.content_id}). Approve it in your scheduling view to publish.`,
           },
         ],
       };
@@ -410,8 +410,8 @@ export function registerHermesTools(server: McpServer): void {
   // ──────────────────────────────────────────────────────────────────────
   server.tool(
     'record_heartbeat',
-    'Report a start/end heartbeat for a Claude cloud routine or scheduled ExO agent into the ' +
-      "operator fleet tracker. Call once with phase='start' when the run " +
+    'Report a start/end heartbeat for a cloud routine or scheduled agent into the ' +
+      "operator run tracker. Call once with phase='start' when the run " +
       "begins and once with phase='end' when it finishes, reusing the same run_id for both. " +
       'This is telemetry only — never authenticate with a bearer secret to report a heartbeat; ' +
       'this tool uses the MCP session you are already authenticated with.',

@@ -211,9 +211,8 @@ function assertCanonicalPublicScopes(scopes: unknown): asserts scopes is string[
 
 // ── Supabase-backed client store with in-memory fallback ─────────────
 //
-// Persisted to public.mcp_oauth_clients (migration:
-// supabase/migrations/20260425220000_mcp_oauth_clients.sql) so DCR
-// registrations survive Railway redeploys. Previously this was an
+// Persisted to public.mcp_oauth_clients so DCR
+// registrations survive redeploys. Previously this was an
 // in-memory Map and every redeploy invalidated all client_ids,
 // surfacing as "Authorization with the MCP server failed" in claude.ai
 // after every deploy.

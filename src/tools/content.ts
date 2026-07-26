@@ -1211,8 +1211,8 @@ Return ONLY valid JSON in this exact format:
       // terminal failure invited "try again", which would charge a SECOND
       // time for the same work. Money invariant if THIS loop abandons the
       // job: the hourly `cleanup_stale_jobs` pg_cron sweep (job
-      // `hourly-job-cleanup`, `supabase/migrations/20260109250000_schedule_cron_job.sql`)
-      // is a GENERIC, job-type-agnostic sweeper — no job_type/provider filter —
+      // `hourly-job-cleanup`) is a GENERIC, job-type-agnostic sweeper —
+      // no job_type/provider filter —
       // that marks any async_jobs row stuck in pending/processing >30 min as
       // failed and refunds it when credits_debited/credits_refund_authorized
       // are true (createAsyncJobRecord already sets both for this job's

@@ -54,24 +54,14 @@ export function evaluateQuality(input: QualityInput): QualityResult {
   const firstLine = caption.split('\n')[0]?.trim() ?? '';
   const hashtags = countHashtags(caption);
   const threshold = Math.min(35, Math.max(0, input.threshold ?? 26));
-  // Short-form X calibration (2026-07-06, ported from the worker's quality.js twin
-  // #1799): the Novelty and CTA axes are keyword-furniture checks shaped for
-  // long IG/LinkedIn captions ('framework', 'playbook', 'comment/save/
-  // follow'). A clean 200-char X post structurally cannot satisfy them
-  // without violating the X platform style guide (no hashtag stuffing, no
-  // forced CTA) — live evidence: two strong tweets hard-blocked at 23/35 on
-  // exactly these two axes (runs b1d03f79/22dea067). For a twitter-only
-  // target within the tweet limit, those axes score NEUTRAL 3 unless their
-  // signals are actually present — the substance judge downstream remains
-  // the real quality arbiter for short-form.
-  // Extended 2026-07-09 to Hook Strength and Brand Alignment: live prod
-  // evidence showed twitter-only ≤280-char captions hard-blocked solely on
-  // "Hook Strength below threshold (2/5)" (run 2026-07-06 13:38) and
-  // "Brand Alignment below threshold (2/5)" (run 2026-07-08 09:17) — the
-  // hard-coded first-line keyword/punctuation/length triggers and the
-  // you/your/customer/audience second-person check are the same
-  // long-caption-shaped furniture as Novelty/CTA. Blocked-term enforcement
-  // is unaffected — matched terms still push explicit blocker entries below.
+  // Short-form X calibration. Several axes are keyword-presence checks shaped
+  // for long IG/LinkedIn captions. A clean short X post structurally cannot
+  // satisfy them without violating the X style guide (no hashtag stuffing, no
+  // forced CTA), so for a twitter-only target within the tweet limit those axes
+  // score neutral unless their signals are actually present. The substance
+  // judge downstream remains the real quality arbiter for short-form.
+  // Blocked-term enforcement is unaffected — matched terms still push explicit
+  // blocker entries below.
   const isShortFormX =
     platforms.length > 0 && platforms.every(p => p === 'twitter') && caption.length <= 280;
   const blockedTerms = [

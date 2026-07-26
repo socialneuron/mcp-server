@@ -750,8 +750,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
   {
     name: 'record_heartbeat',
     description:
-      'Report a start/end heartbeat for a Claude cloud routine or scheduled ExO agent into the ' +
-      'admin Agents fleet tracker, authenticated via the existing MCP session (no bearer secret).',
+      'Report a start/end heartbeat for a cloud routine or scheduled agent into the ' +
+      'operator run tracker, authenticated via the existing MCP session (no bearer secret).',
     module: 'hermes',
     scope: 'mcp:internal',
     internal: true,

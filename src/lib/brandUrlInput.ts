@@ -1,13 +1,11 @@
 /**
  * Brand-extract input normalizer — handle/URL detection.
  *
- * Ported verbatim from lib/brandUrlInput.ts (the main repository/frontend internal source of truth).
- * The MCP server is a separate deployable package (own build, own repo
- * split — see mcp-server/CLAUDE.md) that cannot import from the main repository
- * root, so this is a hand-maintained twin. Mirror any change to the internal source of truth
- * here in the same PR.
+ * This is a hand-maintained twin of the frontend normalizer; the MCP server
+ * is a separate deployable package with its own build, so the logic is
+ * duplicated rather than imported. Keep the two in sync.
  *
- * Incident (2026-07-13): a bare handle like "acmefoods" was blind-
+ * A bare handle like "acmefoods" was previously blind-
  * prepended with `https://`, producing a syntactically valid but
  * unresolvable URL. That URL sailed past every downstream check (EF SSRF
  * format check, worker DNS lookup) until the DNS lookup itself failed with

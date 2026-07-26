@@ -23,7 +23,11 @@ const server = JSON.parse(readFileSync('server.json', 'utf8'));
 
 const failures = [];
 const expectedHostedToolCount = server.tools_count;
-const retiredHostedTools = ['get_loop_pulse', 'get_bandit_state'];
+
+// Names that must not appear on the hosted server card. Sourced from the
+// out-of-repo needle file (see FORBIDDEN below) so this guard does not itself
+// publish the identifiers it exists to keep off the public surface.
+const retiredHostedTools = [];
 
 // 1. Version equality
 if (server.version !== pkg.version) {
@@ -74,23 +78,95 @@ const FORBIDDEN = [
   'https://mcp.socialneuron.com/mcp/v1',
   'https://api.socialneuron.com/api/v1',
   'https://api.socialneuron.com/v1',
-  // internal codenames / infrastructure that must never re-enter public metadata
-  'quality-guard',
-  '203.0.113.10',
-  'Hermes reflection',
-  'get_loop_pulse',
-  'get_bandit_state',
-  'hermes_run_id',
-  '"hermes"',
-  'hermes',
-  'banditState',
-  'loopPulse',
-  'bandit',
-  'founder approves',
-  'PR #4.4',
-  'content_winners',
   // /v1/openapi.json is live as of v1.7.17 — the link is allowed again.
 ];
+
+// Internal codenames and infrastructure identifiers are NOT listed here.
+//
+// A denylist of literal secrets is itself a disclosure: this array used to
+// name the production host and eight internal identifiers in plaintext, in a
+// public repository, under a comment saying they must never be public. It also
+// printed the matched needle into a world-readable Actions log on failure.
+// Hashing does not fix that — a dotted-quad address is exhaustively searchable
+// and short codenames fall to a dictionary.
+//
+// So the sensitive half lives outside the repo. CI provides it via
+// SN_FORBIDDEN_FILE (a newline-delimited file, one needle per line, '#'
+// comments allowed). If the variable is set the file MUST be readable, so a
+// misconfigured secret fails the build instead of silently disarming the
+// ratchet. Structural classes that can be expressed without naming anything
+// stay in-repo as patterns below.
+const FORBIDDEN_PATTERNS = [
+  {
+    label: 'bare IPv4 literal (use a hostname; never publish infrastructure addresses)',
+    // Excludes only loopback and the RFC 5737 documentation ranges, which are
+    // safe to publish. RFC 1918 addresses are deliberately NOT exempt: an
+    // internal LAN address is exactly the kind of unnamed infrastructure this
+    // pattern exists to catch, and the external needle list can only match
+    // addresses somebody already knew to add. Word boundaries keep version
+    // strings from matching. This surface is documentation only — SSRF test
+    // fixtures live in src/ and are not scanned.
+    re: /\b(?!0\.)(?!127\.)(?!192\.0\.2\.)(?!198\.51\.100\.)(?!203\.0\.113\.)(?:\d{1,3}\.){3}\d{1,3}\b/,
+  },
+];
+
+function loadExternalNeedles() {
+  const path = process.env.SN_FORBIDDEN_FILE;
+  if (!path) return { needles: [], configured: false };
+  let raw;
+  try {
+    raw = readFileSync(path, 'utf8');
+  } catch {
+    // Fail closed: an unreadable path here means the ratchet is not running.
+    failures.push('SN_FORBIDDEN_FILE is set but could not be read — the internal needle list did not load');
+    return { needles: [], configured: true };
+  }
+  const needles = raw
+    .split('\n')
+    .map((l) => l.trim())
+    .filter((l) => l && !l.startsWith('#'));
+  if (needles.length === 0) {
+    // A blank or comment-only file is the shape a missing CI secret takes when
+    // it is redirected into a temp file. Treating that as "configured" would
+    // disarm the ratchet while the run still passes.
+    failures.push('SN_FORBIDDEN_FILE is set but yielded no usable entries — the internal needle list is empty');
+    return { needles: [], configured: true };
+  }
+  return { needles, configured: true };
+}
+
+const { needles: SENSITIVE, configured: sensitiveConfigured } = loadExternalNeedles();
+
+// Report internal needles by position, never by value — including in the live
+// check, whose failure messages land in a world-readable Actions log.
+const needleLabel = (n) => `SN_FORBIDDEN_FILE entry #${SENSITIVE.indexOf(n) + 1} (${n.length} chars)`;
+
+retiredHostedTools.push(...SENSITIVE.filter((n) => /^[a-z][a-z0-9_]*$/.test(n)));
+
+// Scan any text on the public surface — file, hosted server card, or OpenAPI
+// document — with all three rule sets. Used by both the offline and live paths
+// so a deployed description cannot carry what a tracked file may not.
+function scanText(label, text) {
+  const lineOf = (idx) => text.slice(0, idx).split('\n').length;
+  for (const needle of FORBIDDEN) {
+    const idx = text.indexOf(needle);
+    if (idx !== -1) {
+      failures.push(`${label}:${lineOf(idx)} contains forbidden string: ${JSON.stringify(needle)}`);
+    }
+  }
+  for (const needle of SENSITIVE) {
+    const idx = text.toLowerCase().indexOf(needle.toLowerCase());
+    if (idx !== -1) {
+      failures.push(`${label}:${lineOf(idx)} contains ${needleLabel(needle)} — value withheld`);
+    }
+  }
+  for (const { label: patternLabel, re } of FORBIDDEN_PATTERNS) {
+    const m = re.exec(text);
+    if (m) {
+      failures.push(`${label}:${lineOf(m.index)} matches forbidden pattern — ${patternLabel} — value withheld`);
+    }
+  }
+}
 
 const SURFACE = [
   'README.md',
@@ -103,6 +179,13 @@ const SURFACE = [
   'docs/tools-reference.md',
   'docs/cli-guide.md',
   'docs/sdk-guide.md',
+  // Published agent skills are part of the public surface and were previously
+  // outside every scan, which is how the learning-loop skill shipped internal
+  // taxonomy while CI reported OK.
+  '.agents/plugins/plugins/social-neuron-com-mcp/skills/social-neuron/SKILL.md',
+  '.agents/plugins/plugins/social-neuron-com-mcp/skills/learning-loop/SKILL.md',
+  '.agents/plugins/plugins/social-neuron-com-mcp/skills/content-quality/SKILL.md',
+  '.agents/plugins/plugins/social-neuron-com-mcp/skills/brand-consistency/SKILL.md',
 ];
 
 for (const file of SURFACE) {
@@ -116,12 +199,14 @@ for (const file of SURFACE) {
     failures.push(`${file} is listed in SURFACE but could not be read`);
     continue;
   }
-  for (const needle of FORBIDDEN) {
-    if (text.includes(needle)) {
-      const line = text.slice(0, text.indexOf(needle)).split('\n').length;
-      failures.push(`${file}:${line} contains forbidden string: ${JSON.stringify(needle)}`);
-    }
-  }
+  scanText(file, text);
+}
+
+if (!sensitiveConfigured) {
+  console.warn(
+    'notice: SN_FORBIDDEN_FILE is not set — internal-identifier checks were skipped. ' +
+      'Structural pattern checks and retired-claim checks still ran.'
+  );
 }
 
 // 4. Optional live server-card check
@@ -147,15 +232,10 @@ if (process.argv.includes('--live')) {
       const cardToolNames = new Set(cardTools.map(tool => tool?.name).filter(Boolean));
       for (const retiredTool of retiredHostedTools) {
         if (cardToolNames.has(retiredTool)) {
-          failures.push(`live server card exposes retired hosted tool: ${retiredTool}`);
+          failures.push(`live server card exposes a retired hosted tool — ${needleLabel(retiredTool)}`);
         }
       }
-      const cardText = JSON.stringify(card);
-      for (const needle of FORBIDDEN) {
-        if (cardText.includes(needle)) {
-          failures.push(`live server card contains forbidden string: ${JSON.stringify(needle)}`);
-        }
-      }
+      scanText('live server card', JSON.stringify(card));
     }
   } catch (err) {
     failures.push(`live server card fetch failed: ${err.message}`);
@@ -178,15 +258,10 @@ if (process.argv.includes('--live')) {
       }
       for (const retiredTool of retiredHostedTools) {
         if (doc.paths?.[`/tools/${retiredTool}`]) {
-          failures.push(`live openapi exposes retired hosted tool: ${retiredTool}`);
+          failures.push(`live openapi exposes a retired hosted tool — ${needleLabel(retiredTool)}`);
         }
       }
-      const docText = JSON.stringify(doc);
-      for (const needle of FORBIDDEN) {
-        if (docText.includes(needle)) {
-          failures.push(`live openapi contains forbidden string: ${JSON.stringify(needle)}`);
-        }
-      }
+      scanText('live openapi', JSON.stringify(doc));
     }
   } catch (err) {
     failures.push(`live openapi fetch failed: ${err.message}`);

@@ -81,7 +81,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 ### Fixed
 
 - Scrubbed an internal codename from `schedule_post`'s param descriptions (exposed via the new unauthenticated OpenAPI). Added a regression guard.
-- Tightened `schedule_post` account selection so platform account IDs are validated against the requested `project_id`, platform, and usable connection status before a post is scheduled. `list_connected_accounts`, `start_platform_connection`, and `wait_for_connection` now carry project context so agents can distinguish brands such as The VPN Matrix from Social Neuron.
+- Tightened `schedule_post` account selection so platform account IDs are validated against the requested `project_id`, platform, and usable connection status before a post is scheduled. `list_connected_accounts`, `start_platform_connection`, and `wait_for_connection` now carry project context so agents can distinguish one connected brand from another.
 - Hid internal loop-observability tools from public HTTP discovery, server-card, OpenAPI, REST, and `search_tools`, while keeping them registered for internal automation.
 - Removed private lineage fields from public `schedule_post` discovery/OpenAPI schemas while preserving runtime compatibility for internal callers.
 
@@ -127,7 +127,7 @@ Released without changelog entries (see git history): OAuth connector flow + DCR
 
 ### Source
 
-Anchored by an internal pricing-consistency audit. The same audit landed Phase 4b across `constants/pricing.ts`, `lib/currency.ts`, `data/answers.ts`, `pages/Pricing.tsx`, the docs-site llms.txt feeds, and the SEO comparison data — this release ships the corresponding MCP-protocol-level fix.
+Anchored by an internal pricing-consistency review; this release ships the corresponding MCP-protocol-level fix.
 
 ## [1.7.6] - 2026-04-22
 

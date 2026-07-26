@@ -4,11 +4,6 @@
  * Calls the mcp-data Edge Function action 'find-winning-content'. Returns
  * patterns + pre-compiled Stage-1+Stage-2 replication prompts that the caller
  * can feed into script/video generation tools.
- *
- * See:
- * - supabase/migrations/20260419000000_research_layer_hardening.sql
- * - docs/06-operations/growth-scorecard-runbook.md
- * - docs/08-security/RESEARCH_LAYER_COMPLIANCE_DRAFT.md
  */
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';

@@ -14,7 +14,7 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
 /**
  * Loop Pulse MCP tools.
  *
- * Exposes the same dynamic loop KPIs that back the admin "Loop Health" tab —
+ * Exposes dynamic loop KPIs —
  * so agent callers (autonomous agents, agent-chat, Claude Code) can reason
  * about whether the loop is actually closing and where it is stuck.
  *

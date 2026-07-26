@@ -186,7 +186,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   get_loop_pulse: 'mcp:internal',
   get_bandit_state: 'mcp:internal',
 
-  // mcp:write (ExO fleet tracker — routine/agent heartbeat telemetry, 2026-07-13)
+  // mcp:write (fleet tracker — routine/agent heartbeat telemetry)
   record_heartbeat: 'mcp:internal',
 };
 

@@ -1,9 +1,8 @@
 /**
  * mcp-server/src/lib/brandUrlInput.ts — Node-twin unit tests.
  *
- * Ported from the main repository internal source of truth (lib/brandUrlInput.ts) — mirrors its test
- * coverage since the two implementations must stay in sync (see the file
- * header comment for the twin-maintenance rule).
+ * Mirrors the frontend twin's test coverage, since the two implementations
+ * must stay in sync (see the file header comment for the maintenance rule).
  */
 import { describe, it, expect } from 'vitest';
 import { normalizeBrandUrlInput, BRAND_INPUT_PLATFORMS } from './brandUrlInput.js';

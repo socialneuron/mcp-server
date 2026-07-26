@@ -99,7 +99,7 @@
     "quality_check_plan": "a01f54f71a79fa3b4886d2e8c666e5113807c2acab860d75ea2ec3033017ca52",
     "read_agent_reflection": "03e38f0484caa63a51268d19b503b50976f692a78c6b089d199c05e41de52a7d",
     "record_campaign_spend": "041fa7f5452455f2ceb36daea0c70067b997c6646d193c138dd59d804b8bcdf5",
-    "record_heartbeat": "8e40d5ceeb7eb7d00f800252d91ecbaeaa09838a2d5bffc71b9eea1c58ce211f",
+    "record_heartbeat": "732ff9c5605b2ba6563970c797d940edbda985ac04aef30ce2a1a8eced7b39ba",
     "record_intel_signal": "cc6d5079c894d5dcc126ff2cd44563e5a008dc4241059861a75d0e55f895ecdf",
     "record_observation": "3588fe137aac87db54d4126debf77ce93e334fb9c26674d5f86703dd65c8c88b",
     "record_outcome": "ccdd5367115ca4e46ed7bbb5679a84f6213fd85937f2bcacaee14b39823fafc2",
@@ -128,7 +128,7 @@
     "update_platform_voice": "afbb0d6c9e0137f359f51aa170943b024422e2be41bd439adfe9e28ca8e325d1",
     "upload_media": "8f50781149d84a8416c5276499cff3dd1c0fb55e820bd44468607d9303480d94",
     "visual_gate_constraints": "b66adf7fe56fd898aed527e30ff13661e6d5277ed48927d4d9fced5d94b81f2c",
-    "visual_quality_check": "febc1606e3dfd4847a0103f26149f076ad460d0766cc17f49e46b631a4b165a9",
+    "visual_quality_check": "cdc3fc409ea1ed756397ae3ae84574f698f462778c1d278268a63228a242f3f1",
     "wait_for_connection": "eb530de70dd8192bc33ec300a26faee4131c339f314d533b7ed1a622304a963b",
     "write_agent_reflection": "16678198e40ff9a4b099227048a1b42874483b35536dfcceb57498033370d606"
   }
