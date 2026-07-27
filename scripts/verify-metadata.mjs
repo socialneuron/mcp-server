@@ -16,7 +16,7 @@
  * shipping it. Extend FORBIDDEN when retiring a public claim — that is the
  * ratchet that keeps it retired.
  */
-import { readFileSync } from 'node:fs';
+import { readFileSync, readdirSync } from 'node:fs';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const server = JSON.parse(readFileSync('server.json', 'utf8'));
@@ -146,7 +146,9 @@ retiredHostedTools.push(...SENSITIVE.filter((n) => /^[a-z][a-z0-9_]*$/.test(n)))
 // Scan any text on the public surface — file, hosted server card, or OpenAPI
 // document — with all three rule sets. Used by both the offline and live paths
 // so a deployed description cannot carry what a tracked file may not.
-function scanText(label, text) {
+// `skipPatterns` exempts the structural pattern checks for the few files
+// where address literals are deliberate (see the src walk below).
+function scanText(label, text, { skipPatterns = false } = {}) {
   const lineOf = (idx) => text.slice(0, idx).split('\n').length;
   for (const needle of FORBIDDEN) {
     const idx = text.indexOf(needle);
@@ -160,6 +162,7 @@ function scanText(label, text) {
       failures.push(`${label}:${lineOf(idx)} contains ${needleLabel(needle)} — value withheld`);
     }
   }
+  if (skipPatterns) return;
   for (const { label: patternLabel, re } of FORBIDDEN_PATTERNS) {
     const m = re.exec(text);
     if (m) {
@@ -200,6 +203,28 @@ for (const file of SURFACE) {
     continue;
   }
   scanText(file, text);
+}
+
+// Source is a public surface too: everything under src/ ships in the repo and
+// (bundled) on npm, so the retired-claim and internal-needle ratchets scan it
+// as well. Structural pattern checks are skipped only where address literals
+// are legitimate: test files (SSRF fixtures use private-range literals) and
+// the SSRF defense module itself (its comments document the addresses it
+// blocks). Every other source file gets the full pattern scan.
+function walk(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = `${dir}/${entry.name}`;
+    if (entry.isDirectory()) out.push(...walk(path));
+    else out.push(path);
+  }
+  return out;
+}
+const PATTERN_EXEMPT = new Set(['src/lib/ssrf.ts']);
+for (const file of walk('src')) {
+  scanText(file, readFileSync(file, 'utf8'), {
+    skipPatterns: /\.test\.ts$/.test(file) || PATTERN_EXEMPT.has(file),
+  });
 }
 
 if (!sensitiveConfigured) {

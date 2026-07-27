@@ -65,7 +65,6 @@ const JOB_ID = '00000000-0000-4000-8000-000000000006';
 const CONFIG_ID = '00000000-0000-4000-8000-000000000007';
 const APPROVAL_ID = '00000000-0000-4000-8000-000000000008';
 const CAROUSEL_ID = '00000000-0000-4000-8000-000000000009';
-const DECISION_EVENT_ID = '00000000-0000-4000-8000-00000000000a';
 const ACCOUNT_ID = '00000000-0000-4000-8000-00000000000b';
 const RUN_ID = '00000000-0000-4000-8000-00000000000c';
 
@@ -771,89 +770,6 @@ const EF_RESPONSES = {
     tools: [{ tool: 'generate_content', calls: 10, credits: 10 }],
   }),
 
-  // --- loop / learning ------------------------------------------------------
-  'mc-bandit-state': () => ({
-    project_id: PROJECT_ID,
-    platform_filter: null,
-    arm_type_filter: null,
-    top_k: 5,
-    groups: [
-      {
-        arm_type: 'hook_family',
-        platform_scoped: [
-          {
-            arm_type: 'hook_family',
-            arm_name: 'question',
-            platform: 'tiktok',
-            alpha: 8,
-            beta: 4,
-            total_pulls: 12,
-            total_reward: 7.2,
-            last_pulled_at: NOW,
-            updated_at: NOW,
-            posterior_mean: 0.667,
-            posterior_variance: 0.017,
-            posterior_stdev: 0.13,
-          },
-        ],
-        platform_agnostic: [],
-        summary: 'question leads on tiktok',
-      },
-    ],
-    total_arms: 1,
-    generated_at: NOW,
-  }),
-  'mc-loop-pulse': () => ({
-    pulse: { stage: 'analyze', health: 'green' },
-    kpis: [
-      {
-        metric: 'reflection_coverage',
-        label: 'Reflection coverage',
-        value: 82,
-        unit: '%',
-        status: 'ok',
-        why: 'Share of published posts with a written agent reflection.',
-      },
-      {
-        metric: 'visual_gate_pass',
-        label: 'Visual gate pass rate',
-        value: 64,
-        unit: '%',
-        status: 'warn',
-        why: 'Share of rendered slides passing the visual QA gate first try.',
-      },
-    ],
-    overall: 'ok',
-    generated_at: NOW,
-  }),
-  'write-agent-reflection': () => ({ success: true, reflection_id: DECISION_EVENT_ID }),
-  'read-agent-reflection': () => ({
-    reflections: [
-      {
-        id: DECISION_EVENT_ID,
-        reflection_text: 'Shorts with strong hooks outperformed.',
-        generated_by_agent: 'analyst',
-        provenance_jsonb: {},
-        created_at: NOW,
-      },
-    ],
-  }),
-  'record-outcome': () => ({ id: DECISION_EVENT_ID, idempotent: false }),
-
-  // --- hermes (drafts / lessons / observations / campaigns) -----------------
-  hermes: () => ({
-    success: true,
-    id: DECISION_EVENT_ID,
-    draft_id: DECISION_EVENT_ID,
-    lesson_id: DECISION_EVENT_ID,
-    observation_id: DECISION_EVENT_ID,
-    signal_id: DECISION_EVENT_ID,
-    spend_id: DECISION_EVENT_ID,
-    campaigns: [
-      { id: RUN_ID, name: 'Smoke campaign', status: 'active', budget: 100, spent: 25, started_at: NOW },
-    ],
-  }),
-
   // --- ideation extras ------------------------------------------------------
   'fetch-trends': () => ({
     success: true,
@@ -1199,7 +1115,6 @@ const PARAM_VALUES = {
   config_id: CONFIG_ID,
   approval_id: APPROVAL_ID,
   carousel_id: CAROUSEL_ID,
-  decision_event_id: DECISION_EVENT_ID,
   account_id: ACCOUNT_ID,
   run_id: RUN_ID,
   content_id: POST_ID,
@@ -1324,23 +1239,6 @@ const TOOL_ARGS = {
   get_recipe_run_status: { run_id: RUN_ID },
   get_skill: { slug: 'tiktok-content' },
   run_skill: { skill_id: 'skill-brand-locked-viral-hook-reel' },
-
-  // loop / learning
-  write_agent_reflection: {
-    reflection_text: 'Smoke reflection: strong hooks continue to win.',
-    generated_by_agent: 'analyst',
-    provenance: {},
-    brand_id: BRAND_ID,
-  },
-  record_outcome: { decision_event_id: DECISION_EVENT_ID, horizon: '24h', reward: 0.7 },
-  read_agent_reflection: { brand_id: BRAND_ID },
-
-  // hermes
-  save_draft_to_library: { content: PARAM_VALUES.content, platform: 'youtube' },
-  record_voice_lesson: { lesson: 'Short punchy openers outperform.', source: 'analytics' },
-  record_observation: { observation: 'Competitor pivoted to carousels.' },
-  record_intel_signal: { signal: 'Trend: silent vlogs', source_url: 'https://example.com' },
-  record_campaign_spend: { campaign_id: RUN_ID, amount: 25, currency: 'USD' },
 
   // storyboard
   create_storyboard: { topic: PARAM_VALUES.topic, scene_count: 2 },

@@ -54,7 +54,7 @@ describe('supabase module', () => {
 
   describe('getSupabaseUrl', () => {
     it('returns URL when SOCIALNEURON_SUPABASE_URL is set', async () => {
-      const { getSupabaseUrl } = await import('./supabase.js');
+      const { getSupabaseUrl } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const url = getSupabaseUrl();
       expect(url).toContain('supabase.co');
     });
@@ -62,14 +62,14 @@ describe('supabase module', () => {
 
   describe('getDefaultUserId', () => {
     it('returns user ID from env', async () => {
-      const { getDefaultUserId } = await import('./supabase.js');
+      const { getDefaultUserId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const userId = await getDefaultUserId();
       expect(typeof userId).toBe('string');
       expect(userId.length).toBeGreaterThan(0);
     });
 
     it('returns consistent value on repeated calls (caching)', async () => {
-      const { getDefaultUserId } = await import('./supabase.js');
+      const { getDefaultUserId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const first = await getDefaultUserId();
       const second = await getDefaultUserId();
       expect(first).toBe(second);
@@ -78,13 +78,13 @@ describe('supabase module', () => {
 
   describe('getDefaultProjectId', () => {
     it('returns a project ID', async () => {
-      const { getDefaultProjectId } = await import('./supabase.js');
+      const { getDefaultProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const projectId = await getDefaultProjectId();
       expect(typeof projectId).toBe('string');
     });
 
     it('returns consistent value on repeated calls (caching)', async () => {
-      const { getDefaultProjectId } = await import('./supabase.js');
+      const { getDefaultProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const first = await getDefaultProjectId();
       const second = await getDefaultProjectId();
       expect(first).toBe(second);
@@ -93,14 +93,14 @@ describe('supabase module', () => {
 
   describe('getSupabaseClient', () => {
     it('returns a client with from() method', async () => {
-      const { getSupabaseClient } = await import('./supabase.js');
+      const { getSupabaseClient } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const client = getSupabaseClient();
       expect(client).toBeDefined();
       expect(typeof client.from).toBe('function');
     });
 
     it('returns singleton (same reference)', async () => {
-      const { getSupabaseClient } = await import('./supabase.js');
+      const { getSupabaseClient } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const a = getSupabaseClient();
       const b = getSupabaseClient();
       expect(a).toBe(b);
@@ -109,7 +109,7 @@ describe('supabase module', () => {
 
   describe('getServiceKey', () => {
     it('returns the service key when set', async () => {
-      const { getServiceKey } = await import('./supabase.js');
+      const { getServiceKey } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const key = getServiceKey();
       expect(typeof key).toBe('string');
       expect(key.length).toBeGreaterThan(0);
@@ -119,33 +119,33 @@ describe('supabase module', () => {
   describe('isTelemetryDisabled', () => {
     it('returns true when DO_NOT_TRACK=1', async () => {
       process.env.DO_NOT_TRACK = '1';
-      const { isTelemetryDisabled } = await import('./supabase.js');
+      const { isTelemetryDisabled } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(isTelemetryDisabled()).toBe(true);
     });
 
     it('returns true when DO_NOT_TRACK=true', async () => {
       process.env.DO_NOT_TRACK = 'true';
-      const { isTelemetryDisabled } = await import('./supabase.js');
+      const { isTelemetryDisabled } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(isTelemetryDisabled()).toBe(true);
     });
 
     it('returns true when SOCIALNEURON_NO_TELEMETRY=1', async () => {
       process.env.SOCIALNEURON_NO_TELEMETRY = '1';
-      const { isTelemetryDisabled } = await import('./supabase.js');
+      const { isTelemetryDisabled } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(isTelemetryDisabled()).toBe(true);
     });
 
     it('returns false when no opt-out env vars set', async () => {
       delete process.env.DO_NOT_TRACK;
       delete process.env.SOCIALNEURON_NO_TELEMETRY;
-      const { isTelemetryDisabled } = await import('./supabase.js');
+      const { isTelemetryDisabled } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(isTelemetryDisabled()).toBe(false);
     });
   });
 
   describe('logMcpToolInvocation', () => {
     it('does not throw on success', async () => {
-      const { logMcpToolInvocation } = await import('./supabase.js');
+      const { logMcpToolInvocation } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       await expect(
         logMcpToolInvocation({ toolName: 'test', status: 'success', durationMs: 100 })
       ).resolves.not.toThrow();
@@ -153,14 +153,14 @@ describe('supabase module', () => {
 
     it('respects DO_NOT_TRACK (returns immediately)', async () => {
       process.env.DO_NOT_TRACK = '1';
-      const { logMcpToolInvocation } = await import('./supabase.js');
+      const { logMcpToolInvocation } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       await expect(
         logMcpToolInvocation({ toolName: 'test', status: 'success', durationMs: 50 })
       ).resolves.not.toThrow();
     });
 
     it('never throws even on insert failure', async () => {
-      const { logMcpToolInvocation } = await import('./supabase.js');
+      const { logMcpToolInvocation } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       await expect(
         logMcpToolInvocation({
           toolName: 'failing',
@@ -174,20 +174,20 @@ describe('supabase module', () => {
 
   describe('getMcpRunId', () => {
     it('returns a UUID v4 string', async () => {
-      const { getMcpRunId } = await import('./supabase.js');
+      const { getMcpRunId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const runId = getMcpRunId();
       expect(runId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
     });
 
     it('returns same value across calls (stable per process)', async () => {
-      const { getMcpRunId } = await import('./supabase.js');
+      const { getMcpRunId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(getMcpRunId()).toBe(getMcpRunId());
     });
   });
 
   describe('getAuthenticatedScopes', () => {
     it('returns an array of strings', async () => {
-      const { getAuthenticatedScopes } = await import('./supabase.js');
+      const { getAuthenticatedScopes } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       const scopes = getAuthenticatedScopes();
       expect(Array.isArray(scopes)).toBe(true);
     });
@@ -195,7 +195,7 @@ describe('supabase module', () => {
 
   describe('getAuthMode', () => {
     it('defaults to unauthenticated before initializeAuth', async () => {
-      const { getAuthMode } = await import('./supabase.js');
+      const { getAuthMode } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
       expect(getAuthMode()).toBe('unauthenticated');
     });
   });
@@ -232,7 +232,7 @@ describe('supabase module', () => {
 
       // Reset the module so the new mocks take effect.
       vi.resetModules();
-      const { initializeAuth } = await import('./supabase.js');
+      const { initializeAuth } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
 
       await initializeAuth();
 
@@ -272,7 +272,7 @@ describe('supabase module', () => {
       }));
 
       vi.resetModules();
-      const { initializeAuth } = await import('./supabase.js');
+      const { initializeAuth } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
 
       await expect(initializeAuth()).rejects.toThrow(/invalid|expired|revoked/i);
 
@@ -314,7 +314,7 @@ describe('supabase module', () => {
 
       vi.resetModules();
       const { initializeAuth, getAuthenticatedProjectId, getDefaultProjectId } =
-        await import('./supabase.js');
+        await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
 
       await initializeAuth();
 
@@ -344,7 +344,7 @@ describe('supabase module', () => {
       }));
 
       vi.resetModules();
-      const { initializeAuth, getAuthenticatedProjectId } = await import('./supabase.js');
+      const { initializeAuth, getAuthenticatedProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
 
       await initializeAuth();
 
@@ -360,7 +360,7 @@ describe('supabase module', () => {
     it('prefers the per-request project scope over the module-level authenticated one', async () => {
       vi.resetModules();
       const { requestContext } = await import('./request-context.js');
-      const { getDefaultProjectId } = await import('./supabase.js');
+      const { getDefaultProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
 
       const result = await requestContext.run(
         {

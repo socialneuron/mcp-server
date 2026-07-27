@@ -43,7 +43,7 @@ describe('Tool catalog integrity', () => {
 
   it('registerAllTools registers same count as TOOL_CATALOG', () => {
     const server = createMockServer();
-    registerAllTools(server as any, { includeInternalTools: true });
+    registerAllTools(server as any);
     // Tools may register via the legacy .tool() API or the current
     // .registerTool() API (used by @modelcontextprotocol/ext-apps for MCP Apps).
     // _handlers unifies both; count it instead of the individual spies.
@@ -96,8 +96,8 @@ describe('search_tools token efficiency', () => {
   const handler = server.getHandler('search_tools')!;
 
   it('"name" output is compact (<2500 chars)', async () => {
-    // Ceiling sized for ~80 tool names. Bumped from 2000 → 2500 when the
-    // catalog crossed 96 tools (find_winning_content + future research tools).
+    // Ceiling sized for ~80 tool names. Bumped from 2000 → 2500 as the
+    // catalog grew (find_winning_content + future research tools).
     const result = await handler({ detail: 'name' });
     expect(result.content[0].text.length).toBeLessThan(2500);
   });

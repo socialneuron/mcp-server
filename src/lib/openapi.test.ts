@@ -54,11 +54,8 @@ describe('buildOpenApiDocument', () => {
     for (const n of [...internal, ...local, ...hidden]) {
       expect(doc.paths[`/tools/${n}`]).toBeUndefined();
     }
-    // Spot-check a known internal tool is absent.
-    expect(doc.paths['/tools/write_agent_reflection']).toBeUndefined();
-    expect(doc.paths['/tools/get_loop_pulse']).toBeUndefined();
-    expect(doc.paths['/tools/get_bandit_state']).toBeUndefined();
-    expect(doc.paths['/tools/record_heartbeat']).toBeUndefined();
+    // Spot-check a known localOnly tool is absent.
+    expect(doc.paths['/tools/capture_screenshot']).toBeUndefined();
   });
 
   it('carries the required scope on each operation', async () => {
