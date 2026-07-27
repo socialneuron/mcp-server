@@ -2,7 +2,21 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { hasScope } from '../auth/scopes.js';
+import { getAuthenticatedScopes } from '../lib/supabase.js';
+import { getRequestScopes } from '../lib/request-context.js';
 import type { ResponseEnvelope } from '../types/index.js';
+
+/**
+ * Recipe step types whose execution egresses content (publishing to a
+ * connected account, or calling out to an external webhook). A recipe
+ * carrying one of these is a distribution surface, not just a write surface —
+ * executing it requires mcp:distribute. The set matches the backend's own
+ * distribution-effect classification; the backend independently re-validates
+ * effects and scopes at execution time, so this pre-flight exists to give
+ * agents a clean, actionable refusal instead of a raw backend 403.
+ */
+const DISTRIBUTION_STEP_TYPES = new Set(['distribute', 'webhook']);
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
@@ -293,7 +307,7 @@ export function registerRecipeTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'execute_recipe',
-    'Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status.',
+    'Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. Recipes containing a distribution step (publishing or webhook egress) additionally require the mcp:distribute scope.',
     {
       slug: z.string().describe('Recipe slug (e.g., "weekly-instagram-calendar")'),
       inputs: z
@@ -312,6 +326,42 @@ export function registerRecipeTools(server: McpServer): void {
     },
     async ({ slug, inputs, response_format }) => {
       const format = response_format ?? 'text';
+
+      // A recipe that publishes is gated like a publish, not like a write.
+      // Pre-flight: resolve the recipe's steps and refuse with a clean,
+      // actionable error when a distribution step is present and the session
+      // lacks mcp:distribute. This is UX-layer defence-in-depth — the backend
+      // independently re-validates recipe effects and scopes at execution
+      // time — so when the step list cannot be resolved here (details lookup
+      // failed, recipe not visible to the details action, or steps missing),
+      // execution proceeds and the backend remains the enforcement point.
+      const { data: details, error: detailsError } = await callEdgeFunction<{
+        recipe: RecipeRow | null;
+      }>('mcp-data', {
+        action: 'get-recipe-details',
+        slug,
+      });
+
+      const steps = details?.recipe?.steps;
+      if (!detailsError && Array.isArray(steps)) {
+        const distributionStep = steps.find(s =>
+          DISTRIBUTION_STEP_TYPES.has(String(s?.type ?? '').trim())
+        );
+        if (distributionStep) {
+          const scopes = getRequestScopes() ?? getAuthenticatedScopes();
+          if (!hasScope(scopes ?? [], 'mcp:distribute')) {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text: `Recipe "${slug}" includes a distribution step ("${distributionStep.name}") and requires the mcp:distribute scope. Your session does not have it — re-authenticate with a key or connection that grants mcp:distribute, or run a recipe without a distribution step.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+      }
 
       const { data: result, error: efError } = await callEdgeFunction<{
         run_id: string;
