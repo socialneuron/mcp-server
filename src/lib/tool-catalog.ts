@@ -645,7 +645,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'execute_recipe',
-    description: 'Execute a recipe template with provided inputs to run a multi-step workflow',
+    description:
+      'Execute a recipe template with provided inputs to run a multi-step workflow. Recipes containing a distribution step (publishing or webhook egress) additionally require the mcp:distribute scope.',
     module: 'recipes',
     scope: 'mcp:write',
   },
