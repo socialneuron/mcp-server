@@ -159,13 +159,22 @@ describe('findOldestIdleSessionId', () => {
     expect(findOldestIdleSessionId(sessions, 'user-1')).toBeNull();
   });
 
-  it('can select the global oldest idle session without a user filter', () => {
+  it("never selects another tenant's idle session under global pressure", () => {
     const sessions = new Map<string, SessionUsage>([
-      ['newer', { userId: 'user-1', lastActivity: 20, activeRequests: 0 }],
-      ['oldest', { userId: 'user-2', lastActivity: 5, activeRequests: 0 }],
+      ['other-oldest', { userId: 'user-2', lastActivity: 5, activeRequests: 0 }],
+      ['requester-newer', { userId: 'user-1', lastActivity: 20, activeRequests: 0 }],
     ]);
 
-    expect(findOldestIdleSessionId(sessions)).toBe('oldest');
+    expect(findOldestIdleSessionId(sessions, 'user-1')).toBe('requester-newer');
+  });
+
+  it('returns null instead of crossing tenants when requester has no idle sessions', () => {
+    const sessions = new Map<string, SessionUsage>([
+      ['other-oldest', { userId: 'user-2', lastActivity: 5, activeRequests: 0 }],
+      ['requester-active', { userId: 'user-1', lastActivity: 20, activeRequests: 1 }],
+    ]);
+
+    expect(findOldestIdleSessionId(sessions, 'user-1')).toBeNull();
   });
 });
 

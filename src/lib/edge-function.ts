@@ -1,6 +1,24 @@
+import { createHash } from 'node:crypto';
 import { getSupabaseUrl, getDefaultUserId, getAuthenticatedApiKey } from './supabase.js';
 import { getRequestToken } from './request-context.js';
 import { sanitizeUpstreamClientError, sanitizeLoneUpstreamError } from './sanitize-error.js';
+
+/**
+ * Correlation line for a sanitizer-rejected 4xx body. The raw upstream body
+ * may contain provider internals, signed URLs, tokens, or user-sensitive
+ * content, so operators get a hash + byte count to correlate against
+ * backend logs — never the payload itself.
+ */
+function summarizeUnrelayedClientError(
+  responseText: string,
+  status: number,
+  functionName: string,
+  errorCode: string
+): string {
+  const bodyHash = createHash('sha256').update(responseText).digest('hex').slice(0, 16);
+  const safeFunctionName = functionName.replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80);
+  return `[edge-function] unrelayed ${status} from ${safeFunctionName}: error=${errorCode}; body_sha256=${bodyHash}; body_bytes=${Buffer.byteLength(responseText, 'utf8')}`;
+}
 
 const SAFE_GATEWAY_ERROR_CODES = new Set([
   'daily_limit_reached',
@@ -314,12 +332,12 @@ export async function callEdgeFunction<T = unknown>(
       if (response.status >= 400 && response.status < 500) {
         const passthrough = clientErrorPassthrough(responseText);
         if (passthrough) return { data: failureData, error: passthrough };
-        // Server-side only (Railway logs): keep the raw reject visible for
-        // operators when the body couldn't be safely relayed to the client.
-        // Debugging evidence: the 2026-07-20 carousel per-slide 400s were
-        // undiagnosable because this body was dropped on the floor.
+        // Server-side only (Railway logs): record a correlation fingerprint
+        // for sanitizer-rejected bodies without persisting the raw upstream
+        // payload. These bodies may contain provider internals, signed URLs,
+        // tokens, or user-sensitive content.
         console.warn(
-          `[edge-function] unrelayed ${response.status} from ${functionName}: ${responseText.slice(0, 300)}`
+          summarizeUnrelayedClientError(responseText, response.status, functionName, errorCode)
         );
       }
       return { data: failureData, error: errorCode };

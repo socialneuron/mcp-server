@@ -84,19 +84,20 @@ export async function reclaimIdleUntilBelowLimit(input: {
 }
 
 /**
- * Select the least-recently-used session that has no request or SSE stream in
- * flight. A user filter keeps per-user reclamation from affecting another
- * account; omitting it supports the bounded global session pool.
+ * Select the least-recently-used session owned by `userId` that has no
+ * request or SSE stream in flight. Reclamation is deliberately tenant-scoped:
+ * global admission pressure must fail closed instead of evicting another
+ * user's idle session.
  */
 export function findOldestIdleSessionId(
   sessions: ReadonlyMap<string, SessionUsage>,
-  userId?: string
+  userId: string
 ): string | null {
   let candidateId: string | null = null;
   let candidateActivity = Number.POSITIVE_INFINITY;
 
   for (const [sessionId, entry] of sessions) {
-    if (userId !== undefined && entry.userId !== userId) continue;
+    if (entry.userId !== userId) continue;
     if (entry.activeRequests > 0) continue;
     if (entry.lastActivity >= candidateActivity) continue;
 
