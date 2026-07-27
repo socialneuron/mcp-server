@@ -232,7 +232,7 @@ describe('supabase module', () => {
 
       // Reset the module so the new mocks take effect.
       vi.resetModules();
-      const { initializeAuth } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+      const { initializeAuth } = await import('./supabase.js');
 
       await initializeAuth();
 
@@ -272,7 +272,7 @@ describe('supabase module', () => {
       }));
 
       vi.resetModules();
-      const { initializeAuth } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+      const { initializeAuth } = await import('./supabase.js');
 
       await expect(initializeAuth()).rejects.toThrow(/invalid|expired|revoked/i);
 
@@ -314,7 +314,7 @@ describe('supabase module', () => {
 
       vi.resetModules();
       const { initializeAuth, getAuthenticatedProjectId, getDefaultProjectId } =
-        await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+        await import('./supabase.js');
 
       await initializeAuth();
 
@@ -344,7 +344,7 @@ describe('supabase module', () => {
       }));
 
       vi.resetModules();
-      const { initializeAuth, getAuthenticatedProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+      const { initializeAuth, getAuthenticatedProjectId } = await import('./supabase.js');
 
       await initializeAuth();
 
@@ -360,7 +360,7 @@ describe('supabase module', () => {
     it('prefers the per-request project scope over the module-level authenticated one', async () => {
       vi.resetModules();
       const { requestContext } = await import('./request-context.js');
-      const { getDefaultProjectId } = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+      const { getDefaultProjectId } = await import('./supabase.js');
 
       const result = await requestContext.run(
         {
