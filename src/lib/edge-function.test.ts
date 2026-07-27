@@ -553,4 +553,29 @@ describe('actionable 4xx passthrough (1e)', () => {
     const result = await callEdgeFunction('kie-image-generate', {});
     expect(result.error).toBe('Backend request failed (HTTP 400).');
   });
+
+  it('logs only an opaque fingerprint when a sanitizer-rejected 4xx body is not relayed', async () => {
+    const sensitiveBody = JSON.stringify({
+      error: `upstream provider error: 400 - {"provider_token":"sk_live_${'SUPER_SECRET_PROVIDER_TOKEN'}","signed_url":"https://cdn.example.invalid/private.png?X-Amz-Signature=abc123"}`,
+      status: 'failed',
+      billing_status: 'failed_no_charge',
+    });
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => mockResponse(400, sensitiveBody))
+    );
+
+    const result = await callEdgeFunction('kie-image-generate', {});
+
+    expect(result.error).toBe('Backend request failed (HTTP 400).');
+    expect(warnSpy).toHaveBeenCalledOnce();
+    const warning = String(warnSpy.mock.calls[0]?.[0]);
+    expect(warning).toContain('[edge-function] unrelayed 400 from kie-image-generate');
+    expect(warning).toContain('body_sha256=');
+    expect(warning).toContain(`body_bytes=${Buffer.byteLength(sensitiveBody, 'utf8')}`);
+    expect(warning).not.toContain(`sk_live_${'SUPER_SECRET_PROVIDER_TOKEN'}`);
+    expect(warning).not.toContain('X-Amz-Signature');
+    expect(warning).not.toContain('upstream provider error');
+  });
 });

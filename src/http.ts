@@ -289,7 +289,7 @@ async function closeSessionEntry(sessionId: string, entry: SessionEntry): Promis
   }
 }
 
-async function reclaimOldestIdleSession(userId?: string): Promise<boolean> {
+async function reclaimOldestIdleSession(userId: string): Promise<boolean> {
   const sessionId = findOldestIdleSessionId(sessions, userId);
   if (!sessionId) return false;
 
@@ -297,7 +297,7 @@ async function reclaimOldestIdleSession(userId?: string): Promise<boolean> {
   if (!entry) return false;
 
   await closeSessionEntry(sessionId, entry);
-  console.info(`[MCP HTTP] Reclaimed one idle ${userId ? 'user' : 'global'} session.`);
+  console.info('[MCP HTTP] Reclaimed one idle user session.');
   return true;
 }
 
@@ -354,7 +354,11 @@ async function reserveSessionSlot(
     const serverHasCapacity = await reclaimIdleUntilBelowLimit({
       currentCount: () => sessions.size + pendingSessionCount,
       limit: MAX_SESSIONS,
-      reclaimOne: () => reclaimOldestIdleSession(),
+      // Global pressure must only reclaim sessions owned by the requester.
+      // Otherwise one authenticated tenant can fill the global pool and force
+      // eviction of another tenant's idle MCP session. If the requester has
+      // no reclaimable session, return global_full (429) instead.
+      reclaimOne: () => reclaimOldestIdleSession(userId),
     });
     if (!serverHasCapacity) return 'global_full';
 
