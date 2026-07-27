@@ -671,93 +671,6 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'hyperframes',
     scope: 'mcp:write',
   },
-  // agentic-harness — learning loop write-back
-  {
-    name: 'write_agent_reflection',
-    description:
-      'Persist a verbal reflection for an agent loop. Provenance keys are restricted to an allowlist: only content_history_id, outcome_event_id, prm_score_ids, and handoff_ids are accepted.',
-    module: 'harness',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_outcome',
-    description:
-      'Record an outcome for a published decision event. Idempotent on (decision_event_id, horizon). Only horizon=24h triggers a learning-loop update.',
-    module: 'harness',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-
-  // agentic-harness — learning loop read-back
-  {
-    name: 'read_agent_reflection',
-    description:
-      'Read past agent reflections for a brand. Ordered by created_at DESC, id ASC (deterministic tiebreak). ' +
-      'Only active reflections returned (superseded_by IS NULL). Optional generated_by_agent filter.',
-    module: 'harness',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-
-  // hermes — autonomous agent integration (closed-loop content)
-  {
-    name: 'save_draft_to_library',
-    description:
-      'Save a draft post to the SN content library for review before publishing. Drafts land in the content library pending approval.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_voice_lesson',
-    description: 'Persist a learned voice lesson to the brand voice profile.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_observation',
-    description:
-      'Record an agent observation (e.g. "topic X engagement up 23%") for the analytics playbook.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_intel_signal',
-    description:
-      'Record a research/trend signal (news, competitor, community sources) for niche intelligence. Dedupes by URL.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_campaign_spend',
-    description: 'Log a campaign cost line item. Ownership-checked.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'get_active_campaigns',
-    description:
-      'List currently-running campaigns with thesis, budget, hero format, and current spend.',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'record_heartbeat',
-    description:
-      'Report a start/end heartbeat for a cloud routine or scheduled agent into the ' +
-      'operator run tracker, authenticated via the existing MCP session (no bearer secret).',
-    module: 'hermes',
-    scope: 'mcp:internal',
-    internal: true,
-    hiddenFromPublicCount: true,
-  },
-
   // skills (workflow skills — multi-step brand-locked content pipelines)
   {
     name: 'list_skills',
@@ -779,24 +692,6 @@ export const TOOL_CATALOG: ToolEntry[] = [
       'Preview only: returns a structured run preview, estimated credits, and a dashboard deep link — it does not execute the skill. Run a Social Neuron workflow skill end-to-end (brand-locked content production). Returns a structured run preview with the step plan, credit cost, and a deep-link to launch in the SN dashboard.',
     module: 'skills',
     scope: 'mcp:write',
-  },
-
-  // loop observability (growth-loop KPIs + content learning state)
-  {
-    name: 'get_loop_pulse',
-    description:
-      'Read dynamic loop-health KPIs for the growth loop over the last 7 days (reflection/decision coverage, visual gate pass rate, learning-update application rate, per-platform uptake, autopilot lag) — each with an ok/warn/bad status. Use to decide whether the loop is closing or where it is stuck.',
-    module: 'loop',
-    scope: 'mcp:internal',
-    internal: true,
-  },
-  {
-    name: 'get_bandit_state',
-    description:
-      'Read the current content learning state for a project — top-K arms per (arm_type, platform) with expected performance and uncertainty. Use to reason about which hook family / format / timing slot currently performs best per platform.',
-    module: 'loop',
-    scope: 'mcp:internal',
-    internal: true,
   },
 ];
 

@@ -48,11 +48,7 @@ import { registerHyperframesTools } from '../tools/hyperframes.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
 import { registerAnalyticsPulseApp } from '../apps/analytics-pulse.js';
 import { registerConnectionTools } from '../tools/connections.js';
-import { registerHarnessTools } from '../tools/harness.js';
-import { registerHermesTools } from '../tools/hermes.js';
 import { registerSkillsTools } from '../tools/skills.js';
-import { registerLoopPulseTools } from '../tools/loopPulse.js';
-import { registerBanditStateTools } from '../tools/banditState.js';
 import { registerLifecycleTools } from '../tools/lifecycle.js';
 
 /**
@@ -416,10 +412,6 @@ function truncateResponse(result: any): any {
  * @param options.skipScreenshots - Skip screenshot tools (requires local Playwright, unavailable on Railway)
  * @param options.skipApps - Skip MCP App registrations. Pass true for stdio mode: the package
  *   ships the HTML, but interactive app resources are registered on the HTTP surface only.
- * @param options.includeInternalTools - Register the internal ops tool groups (harness, fleet
- *   telemetry, loop pulse, bandit state). Callers pass hasScope(scopes, 'mcp:internal') so
- *   customer sessions never even LIST these tools — scope enforcement additionally denies
- *   invocation as defence-in-depth.
  */
 export function registerAllTools(
   server: McpServer,
@@ -427,7 +419,6 @@ export function registerAllTools(
     skipScreenshots?: boolean;
     skipApps?: boolean;
     toolProfile?: ToolProfile;
-    includeInternalTools?: boolean;
   }
 ): void {
   applyToolProfile(server, options?.toolProfile ?? 'full');
@@ -464,12 +455,6 @@ export function registerAllTools(
   registerNicheResearchTools(server);
   registerHyperframesTools(server);
   registerConnectionTools(server);
-  if (options?.includeInternalTools) {
-    registerHarnessTools(server, undefined);
-    registerHermesTools(server);
-    registerLoopPulseTools(server);
-    registerBanditStateTools(server);
-  }
   registerSkillsTools(server);
   registerLifecycleTools(server);
 

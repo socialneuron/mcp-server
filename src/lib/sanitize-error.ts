@@ -23,8 +23,8 @@ const ERROR_PATTERNS: Array<[RegExp, string]> = [
   ],
   [/gemini.*error|generativelanguage/i, 'Content generation failed. Please try again.'],
 
-  // Kie.ai
-  [/kie\.ai|kieai|kie_api/i, 'Media generation failed. Please try again.'],
+  // Media provider
+  [/k[i1]e[._-]?(?:ai|api)/i, 'Media generation failed. Please try again.'],
 
   // Stripe
   [/stripe.*api|sk_live_|sk_test_/i, 'Payment processing error. Please try again.'],

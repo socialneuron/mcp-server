@@ -118,7 +118,6 @@ describe('schedule_post publishing provenance', () => {
     expect(body.visualGateResult).toBeUndefined();
     expect(body.visualGateSource).toBeUndefined();
     expect(body.origin).toBeUndefined();
-    expect(body.hermesRunId).toBeUndefined();
   });
 
   it('forwards a stable idempotency key using the backend field name', async () => {

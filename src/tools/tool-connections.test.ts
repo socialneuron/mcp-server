@@ -48,11 +48,7 @@ import { registerNicheResearchTools } from './niche-research.js';
 import { registerHyperframesTools } from './hyperframes.js';
 import { registerContentCalendarApp } from '../apps/content-calendar.js';
 import { registerConnectionTools } from './connections.js';
-import { registerHarnessTools } from './harness.js';
-import { registerHermesTools } from './hermes.js';
 import { registerSkillsTools } from './skills.js';
-import { registerLoopPulseTools } from './loopPulse.js';
-import { registerBanditStateTools } from './banditState.js';
 import { registerAllTools } from '../lib/register-tools.js';
 // Screenshot tools require browser mocks; tested separately below.
 // (Individual registrars above remain used by the per-module tests in SECTION 2.)
@@ -250,10 +246,10 @@ describe('Registration & Scope Coverage', () => {
     vi.clearAllMocks();
     server = createMockServer();
     // Use the REAL registerAllTools so this coverage check can never drift from
-    // production (the previous hand-mirrored list silently omitted skills /
-    // loopPulse / banditState). The standalone registered==scoped==cataloged
+    // production (a previous hand-mirrored list silently omitted whole
+    // modules). The standalone registered==scoped==cataloged
     // invariant lives in src/lib/registration-invariant.test.ts (P1.12).
-    registerAllTools(server as any, { includeInternalTools: true });
+    registerAllTools(server as any);
   });
 
   it('every tool in TOOL_SCOPES is actually registered (no orphaned scope entries)', () => {
@@ -279,9 +275,9 @@ describe('Registration & Scope Coverage', () => {
   });
 
   it('mcp:full grants access to every tool via hierarchy — EXCEPT mcp:internal ops tools', () => {
-    // P0-1 (2026-07-15 review): internal ops tools (hermes/harness/loop/bandit)
-    // require the standalone mcp:internal scope, which mcp:full deliberately
-    // does NOT include — a customer key must never reach internal ops surfaces.
+    // P0-1 (2026-07-15 review): internal ops tools require the standalone
+    // mcp:internal scope, which mcp:full deliberately does NOT include — a
+    // customer key must never reach internal ops surfaces.
     for (const [toolName, requiredScope] of Object.entries(TOOL_SCOPES)) {
       if (requiredScope === 'mcp:internal') {
         expect(
