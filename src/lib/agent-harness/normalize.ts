@@ -6,7 +6,15 @@ export function normalize(text: string): string {
   if (typeof text !== 'string') return '';
   let out = text.normalize('NFKC');
   out = out.replace(OVERRIDE_CHARS, '');
-  out = out.replace(HTML_COMMENT, '');
+  // Strip comments to a fixed point: a single pass can splice fragments into
+  // a fresh comment (`<!<!-- x -->-- y -->` → `<!-- y -->`), letting crafted
+  // input carry a comment — and its hidden payload — into sanitized_text.
+  // Terminates: every pass strictly shrinks the string.
+  let prev: string;
+  do {
+    prev = out;
+    out = out.replace(HTML_COMMENT, '');
+  } while (out !== prev);
   out = out.replace(EXCESSIVE_WHITESPACE, ' ');
   return out;
 }
