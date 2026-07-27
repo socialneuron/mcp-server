@@ -4,7 +4,9 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
-## 2.0.0 - 2026-07-27
+## 2.0.1 - 2026-07-27
+
+Published as 2.0.1: a v2.0.0 tag was cut during release preparation but never published to npm; the tag is retained and 2.0.1 is the first published 2.x release.
 
 ### Security
 

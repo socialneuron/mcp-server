@@ -37,7 +37,8 @@ This policy covers:
 
 | Version | Supported |
 | ------- | --------- |
-| 1.7.x   | Yes       |
+| 2.0.x   | Yes       |
+| 1.7.x – 1.9.x | Security fixes only — upgrade to 2.0.x |
 | < 1.7   | No        |
 
 ## Credential Safety
