@@ -258,7 +258,6 @@ describe('distribution tools', () => {
       });
       expect(body).not.toHaveProperty('visualGateResult');
       expect(body).not.toHaveProperty('origin');
-      expect(body).not.toHaveProperty('hermesRunId');
     });
 
     it('derives and always sends an idempotency key when none is provided (P1-8)', async () => {

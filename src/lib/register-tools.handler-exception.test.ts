@@ -5,9 +5,9 @@ import { applyScopeEnforcement } from './register-tools.js';
  * A handler that throws (typically a TypeError from dereferencing an
  * unexpected backend response shape) must surface as a CLEAN structured
  * tool error — never as the raw runtime message. Regression coverage for
- * the 2026-07-21 full-surface smoke findings (get_bandit_state,
- * get_loop_pulse, get_ideation_context, list_comments all leaked raw
- * "Cannot read properties of undefined" messages to agents).
+ * the 2026-07-21 full-surface smoke findings (get_ideation_context,
+ * list_comments and others leaked raw "Cannot read properties of
+ * undefined" messages to agents).
  */
 describe('applyScopeEnforcement — escaped handler exceptions', () => {
   function register(handlerImpl: (...args: unknown[]) => Promise<unknown>) {

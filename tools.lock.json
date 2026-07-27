@@ -22,9 +22,9 @@
     "catalog.avoid_when",
     "catalog.next_tools"
   ],
-  "tool_count": 105,
+  "tool_count": 93,
   "runtime_tool_count": 93,
-  "catalog_tool_count": 105,
+  "catalog_tool_count": 93,
   "tools": {
     "adapt_content": "05bcc20944257e2095be12a716554eeabc80516152107fc178ba818e5d1916d0",
     "audit_brand_colors": "544c6436ed370ab8e5f82cced1c3f6b42ebcfea9c9c75be7b0525d7cb6ce8d65",
@@ -62,9 +62,7 @@
     "generate_performance_digest": "6601d42259a5449069f7a8c802c9fbae841961a99d0735f2e80ac739f32360f5",
     "generate_video": "57e39de12d1ee134b2d42ea18456b42e0a1cd462d17353a29774b0289bc0e32d",
     "generate_voiceover": "9f19f21ed61248d6a1f081d1a9b7da38c9c25b6189994dfd5051f18b534635b6",
-    "get_active_campaigns": "9d0a6bec7baa23faf979913b12b296ce906f91bab02136c57c1d519d21a01e9e",
     "get_autopilot_status": "ca00b246fcd55755a88b1ae655a6f715066060e1ebbb0b40fd6fc9f160fdecc5",
-    "get_bandit_state": "ac3ac1caca2aafb7dc7627a8384922f483e271ee75779ebe116170c2bb961250",
     "get_best_posting_times": "35015171a64f81b8b3870b603a020de08fa0f4531eec118fe6c759a7e6c3b515",
     "get_brand_profile": "2110d0684e32b05b2617e38f948f1eb77dcf01e75e9f1bf6b6e6226dc2403220",
     "get_brand_runtime": "450534147397a95a39cb61ec838229be55a41983416d8ebe9fe6325b8ed63655",
@@ -72,7 +70,6 @@
     "get_content_plan": "a0e5c5833edd5588a8d332d5d456f0e4d43bb5ab95e1efd8621bb997b69dec47",
     "get_credit_balance": "27fad568a8527ca42fde63b2af307d95305174f044184f65ac4cd4603c10eeca",
     "get_ideation_context": "f5bc2b0c108fef141a8299650628d3948c573012a3a786e706c9859f61437091",
-    "get_loop_pulse": "cbba437945bcab3257d0182f79435bb95dccfa850382cfa03128b9c666a601bd",
     "get_loop_summary": "0eacf937edec710c639a3aceeff756c3b8d7d0f9f5d65e49663120252f467758",
     "get_mcp_usage": "7e343dec64576bab7ff6da280756218bc1f376f1d997aa6482e90841a090e19a",
     "get_media_url": "0c189b3faff192806e0276b86e361c54e21a7b7d209acce842bee785cc2e25ea",
@@ -97,13 +94,6 @@
     "post_comment": "ecec1f3b3f1e884cc3c5b122e2a889c5977798358119882590cc03b45f03a2ab",
     "quality_check": "048e66d51a45d7fae741489d5daec62befbcb5586015a6533a3a91231eb6fd3f",
     "quality_check_plan": "a01f54f71a79fa3b4886d2e8c666e5113807c2acab860d75ea2ec3033017ca52",
-    "read_agent_reflection": "03e38f0484caa63a51268d19b503b50976f692a78c6b089d199c05e41de52a7d",
-    "record_campaign_spend": "041fa7f5452455f2ceb36daea0c70067b997c6646d193c138dd59d804b8bcdf5",
-    "record_heartbeat": "732ff9c5605b2ba6563970c797d940edbda985ac04aef30ce2a1a8eced7b39ba",
-    "record_intel_signal": "cc6d5079c894d5dcc126ff2cd44563e5a008dc4241059861a75d0e55f895ecdf",
-    "record_observation": "3588fe137aac87db54d4126debf77ce93e334fb9c26674d5f86703dd65c8c88b",
-    "record_outcome": "ccdd5367115ca4e46ed7bbb5679a84f6213fd85937f2bcacaee14b39823fafc2",
-    "record_voice_lesson": "c2274edae53a9fc1816a9d8e4cae3ce9f8e71ca26d794cf1efa0e1c0a253fc65",
     "refresh_platform_analytics": "6ca771a95bbe906bf80e7e904475d7655d6228dff8aee52f064b9f09b634f1f1",
     "render_demo_video": "f3fcbcbd5b70dfb224fb23c40307a63c6a76130d71634e612b70279208098e5c",
     "render_hyperframes": "14f8071b1ce9c6452743221e306bf54fa1e3a30863d1bea902eca89d6f34a2ac",
@@ -115,7 +105,6 @@
     "run_skill": "c001b2fcc1e4669647126bccc54a25edb92340a8b54fb7ec0d77b28db22f56fc",
     "save_brand_profile": "16b1c0527f42ce663e659f1d62efaf51baef71f741b33e5e1726acf9b010215b",
     "save_content_plan": "512b13a46398eee45d79b699bf1ed8a72275732b0b938beb790ab5519d07210f",
-    "save_draft_to_library": "cb26e36dcacdc584f6dd01732011636a712f64eb405d15e8d5ffe45d61a9b05c",
     "schedule_content_plan": "22674de53754cedbe8cdd5313832f0faa281d231ff67a1f1a4db0ea0e0517ecd",
     "schedule_post": "736bc3f24a080117669f279cda15695663d308ad7f8aaff1954975f1f4cc936f",
     "search": "81a225505140428fa8ee49a6cba729011b691aef5e631bf3daf5e198bf1b7072",
@@ -129,7 +118,6 @@
     "upload_media": "8f50781149d84a8416c5276499cff3dd1c0fb55e820bd44468607d9303480d94",
     "visual_gate_constraints": "b66adf7fe56fd898aed527e30ff13661e6d5277ed48927d4d9fced5d94b81f2c",
     "visual_quality_check": "cdc3fc409ea1ed756397ae3ae84574f698f462778c1d278268a63228a242f3f1",
-    "wait_for_connection": "eb530de70dd8192bc33ec300a26faee4131c339f314d533b7ed1a622304a963b",
-    "write_agent_reflection": "16678198e40ff9a4b099227048a1b42874483b35536dfcceb57498033370d606"
+    "wait_for_connection": "eb530de70dd8192bc33ec300a26faee4131c339f314d533b7ed1a622304a963b"
   }
 }

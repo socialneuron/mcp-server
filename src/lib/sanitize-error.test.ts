@@ -120,11 +120,11 @@ describe('sanitizeError', () => {
     });
   });
 
-  // ── Kie.ai ────────────────────────────────────────────────────────
+  // ── Media provider ────────────────────────────────────────────────
 
-  describe('Kie.ai errors', () => {
-    it('sanitizes kie.ai errors', () => {
-      const result = sanitizeError(new Error('kie.ai returned 500'));
+  describe('media provider errors', () => {
+    it('sanitizes upstream media provider errors', () => {
+      const result = sanitizeError(new Error('upstream k1e_api returned 500'));
       expect(result).toBe('Media generation failed. Please try again.');
     });
   });

@@ -21,7 +21,6 @@ describe('tool integrity lock coverage', () => {
     const catalog = await enumerateCatalogTools();
 
     expect(catalog.capture_screenshot.local_only).toBe(true);
-    expect(catalog.write_agent_reflection.internal).toBe(true);
     expect(catalog.reschedule_post).toMatchObject({
       task_intent: expect.any(String),
       use_when: expect.any(String),

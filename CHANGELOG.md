@@ -9,6 +9,11 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 - **Session admission: global-capacity reclamation is tenant-scoped.** Pressure on the global session pool can no longer evict another user's idle MCP session; when the requester has no reclaimable session of their own, admission fails closed (HTTP 429) instead.
 - **Unrelayed 4xx bodies are no longer logged raw.** When a backend 4xx body cannot be safely relayed to the client, the server log now records a SHA-256 fingerprint and byte count for correlation instead of the payload's first 300 bytes (which could contain provider internals, signed URLs, or tokens).
 
+### Changed
+
+- The package and repository now contain only the advertised public tool surface. Internal-only operations (which were never discoverable, never REST-servable, and required a non-customer scope) are no longer shipped. Public tool count is unchanged.
+- The public metadata contract gate now scans all of `src/` (in addition to README, docs, and server metadata) for retired claims and internal identifiers, so a regression anywhere in source fails CI, not just in docs.
+
 ## 2.0.0 - 2026-07-16
 
 ### Security

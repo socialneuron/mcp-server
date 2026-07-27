@@ -1169,7 +1169,6 @@ app.post('/mcp', async (req: AuthenticatedRequest, res) => {
       registerAllTools(server, {
         skipScreenshots: true,
         toolProfile: TOOL_PROFILE,
-        includeInternalTools: hasScope(auth.scopes ?? [], 'mcp:internal'),
       });
       registerPrompts(server);
       registerResources(server);

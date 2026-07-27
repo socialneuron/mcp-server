@@ -2,8 +2,8 @@
  * internal source of truth invariant: the set of REGISTERED tools must equal TOOL_SCOPES keys must
  * equal TOOL_CATALOG names — in BOTH directions.
  *
- * This is the durable guard for the bug class that shipped get_loop_pulse /
- * get_bandit_state dead-on-arrival (registered but unscoped → default-denied;
+ * This is the durable guard for the bug class that ships a tool
+ * dead-on-arrival (registered but unscoped → default-denied;
  * registered but uncatalogued → undiscoverable). The pre-existing count-only
  * check (mcp-e2e.test.ts: registerAllTools count === TOOL_CATALOG.length) misses
  * symmetric add+drop drift; this asserts membership, not just cardinality, and
@@ -21,11 +21,7 @@ import { TOOL_CATALOG } from './tool-catalog.js';
 
 const registered = (() => {
   const server = createMockServer();
-  // includeInternalTools: the invariant asserts every scoped/cataloged tool is
-  // REGISTRABLE — internal ops tools register only for mcp:internal sessions.
-  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0], {
-    includeInternalTools: true,
-  });
+  registerAllTools(server as unknown as Parameters<typeof registerAllTools>[0]);
   return new Set<string>(server._handlers.keys());
 })();
 const scoped = new Set(Object.keys(TOOL_SCOPES));

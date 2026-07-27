@@ -9,7 +9,7 @@ import { sanitizeError } from '../lib/sanitize-error.js';
  * F4 Hyperframes — MCP tool surface.
  *
  * Mirrors the agent-chat tools `render_hyperframes` and `list_hyperframes_blocks`.
- * Adds external-agent access (Claude Code / Cursor / Hermes) to the same
+ * Adds external-agent access (Claude Code / Cursor) to the same
  * EF (`create-hyperframes-job`) the agent-chat tool uses.
  *
  * Spec: an internal design spec (F4 §7)

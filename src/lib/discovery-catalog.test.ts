@@ -37,12 +37,6 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     // localOnly tools (screenshots — no Playwright on HTTP) are not registered on
     // the HTTP transport, so discovery must not advertise them.
     expect(tools.map(t => t.name)).not.toContain('capture_screenshot');
-    // Internal operations tools stay runtime-registered but undiscoverable.
-    expect(tools.map(t => t.name)).not.toContain('write_agent_reflection');
-    expect(tools.map(t => t.name)).not.toContain('save_draft_to_library');
-    expect(tools.map(t => t.name)).not.toContain('record_heartbeat');
-    expect(tools.map(t => t.name)).not.toContain('get_loop_pulse');
-    expect(tools.map(t => t.name)).not.toContain('get_bandit_state');
     for (const t of tools) {
       expect(t.inputSchema.type, `${t.name} inputSchema.type`).toBe('object');
       expect(t.inputSchema.properties, `${t.name} inputSchema.properties`).toBeTypeOf('object');
@@ -54,7 +48,6 @@ describe('discovery catalog (unauthenticated tools/list carries real input schem
     const schedulePost = tools.find(t => t.name === 'schedule_post');
     expect(schedulePost).toBeDefined();
     expect(schedulePost!.inputSchema.properties).not.toHaveProperty('origin');
-    expect(schedulePost!.inputSchema.properties).not.toHaveProperty('hermes_run_id');
     expect(schedulePost!.inputSchema.properties).not.toHaveProperty('visual_gate_result');
     expect(schedulePost!.inputSchema.properties).toHaveProperty('idempotency_key');
   });

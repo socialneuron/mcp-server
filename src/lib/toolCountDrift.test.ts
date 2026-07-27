@@ -9,10 +9,10 @@
  *
  * (localOnly tools — e.g. screenshot capture — only register on the stdio
  * transport; internal tools are agent back-office operations excluded from
- * public discovery; hiddenFromPublicCount tools — e.g. record_heartbeat — ARE
- * listed/callable over the authenticated HTTP MCP surface but excluded from
- * the public marketing count and server-card. None of the three is part of
- * the advertised public surface.)
+ * public discovery; hiddenFromPublicCount tools ARE listed/callable over the
+ * authenticated HTTP MCP surface but excluded from the public marketing
+ * count and server-card. None of the three is part of the advertised
+ * public surface.)
  *
  * README.md and server.json hand-type this number in prose/JSON instead of
  * importing it, so they silently drift whenever TOOL_CATALOG changes (this
