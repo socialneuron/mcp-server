@@ -91,7 +91,7 @@
   "dependencies": {
     "@modelcontextprotocol/ext-apps": "1.7.4",
     "@modelcontextprotocol/sdk": "^1.27.1",
-    "@sentry/node": "10.66.0",
+    "@sentry/node": "10.68.0",
     "@supabase/supabase-js": "2.110.7",
     "express": "^5.1.0",
     "jose": "^6.2.1",
