@@ -482,9 +482,8 @@ export async function resolveProjectForConnectedAccountTool(
  * Falls through ONLY to an explicit `project_id` or
  * {@link getDefaultProjectId}'s existing sole-accessible-project rule —
  * never the accounts-based widening `resolveProjectForConnectedAccountTool`
- * performs. On failure, still attaches the caller's project list (via
- * {@link listAccessibleProjectsWithAccountStatus}) so an agent can
- * self-recover with an explicit project_id.
+ * performs. Failures deliberately omit project metadata because this resolver
+ * is also used by tools whose API-key scope does not grant project reads.
  */
 export async function resolveProjectStrict(
   explicitProjectId?: string,
@@ -497,24 +496,7 @@ export async function resolveProjectStrict(
   const genericError =
     "project_id is required. Configure an explicit project or use an API key scoped to exactly one project.";
 
-  const userId = await getDefaultUserId().catch(() => null);
-  if (!userId) return { error: genericError };
-
-  const projects = await listAccessibleProjectsWithAccountStatus(userId);
-  if (projects.length === 0) return { error: genericError };
-
-  const projectList = projects
-    .map(
-      (p) =>
-        `${p.name} (${p.id}${p.hasConnectedAccounts ? ", has connected accounts" : ""})`,
-    )
-    .join("; ");
-  return {
-    error:
-      `project_id is required — your account has ${projects.length} projects. ` +
-      `Pass the exact project_id from this list: ${projectList}.`,
-    projects,
-  };
+  return { error: genericError };
 }
 
 /**

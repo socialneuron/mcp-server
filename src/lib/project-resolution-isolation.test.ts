@@ -334,7 +334,7 @@ describe('MCP default project isolation', () => {
       expect(result.error).toContain('project_id is required');
     });
 
-    it('NEVER auto-resolves based on connected accounts, even when exactly one project owns one', async () => {
+    it('fails closed without disclosing project metadata when multiple projects are accessible', async () => {
       accessibleProjects.push(
         { id: 'project-a', name: 'Brand A' },
         { id: 'project-b', name: 'Brand B' }
@@ -350,10 +350,15 @@ describe('MCP default project isolation', () => {
       const result = await resolveProjectStrict();
 
       expect(result.projectId).toBeUndefined();
-      expect(result.error).toContain('project_id is required');
-      expect(result.error).toContain('Brand A');
-      expect(result.error).toContain('Brand B');
-      expect(result.projects).toHaveLength(2);
+      expect(result.error).toBe(
+        'project_id is required. Configure an explicit project or use an API key scoped to exactly one project.'
+      );
+      expect(result.error).not.toContain('Brand A');
+      expect(result.error).not.toContain('Brand B');
+      expect(result.error).not.toContain('project-a');
+      expect(result.error).not.toContain('project-b');
+      expect(result.error).not.toContain('connected account');
+      expect(result.projects).toBeUndefined();
     });
   });
 });
