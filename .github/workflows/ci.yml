@@ -66,6 +66,7 @@ jobs:
         run: npm run verify:lock
 
       - name: Materialize internal needle list
+        if: github.event_name != 'pull_request'
         id: needles
         env:
           SN_FORBIDDEN_NEEDLES: ${{ secrets.SN_FORBIDDEN_NEEDLES }}
