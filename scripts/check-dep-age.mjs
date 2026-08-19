@@ -157,6 +157,23 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // publisher; @supabase/supabase-js by Supabase. Age out by 2026-07-30.
   '@sentry/node@10.66.0',
   '@supabase/supabase-js@2.110.7',
+  // 2026-08-18: founder-directed drain of the dependabot queue (explicit
+  // cooldown waiver, session 2026-08-18). These heads were refreshed by a
+  // maintainer-triggered "@dependabot rebase", which moved each dep to its
+  // latest release and restarted the window. Lockfile integrity validated on
+  // every PR head (JSON.parse + resolved-version + entry-count checks, zero
+  // truncation) before exemption. Publishers: jose by panva (canonical),
+  // posthog-node by PostHog, @sentry/node by Sentry's canonical publisher,
+  // @types/node by the DefinitelyTyped bot, vite by GitHub Actions with npm
+  // provenance, @remotion/* by the project's canonical maintainer. Exact
+  // pins only; all age out of the 14-day window by 2026-09-01.
+  'jose@6.2.9',
+  'posthog-node@5.49.1',
+  '@sentry/node@10.70.0',
+  '@types/node@26.2.0',
+  'vite@8.2.1',
+  '@remotion/bundler@4.0.512',
+  '@remotion/renderer@4.0.512',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
