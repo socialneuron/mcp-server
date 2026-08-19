@@ -13,7 +13,7 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // repo-root TS internal source of truth (`lib/agent-harness/`). Mirror exists because mcp-server
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
-import { scan } from './agent-harness/scanner.js';
+import { scanStructuredText } from './agent-harness/scanner.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -121,7 +121,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
         : typeof scanArgs === 'string'
           ? scanArgs
           : JSON.stringify(scanArgs);
-    const inputScan = scan(inputText, {
+    const inputScan = scanStructuredText(inputText, {
       mode: 'block',
       source: 'mcp_tool_input',
       user_id: ctx?.userId,
@@ -161,7 +161,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       // Skip output scan rather than crash.
       return result;
     }
-    const outputScan = scan(outputText, {
+    const outputScan = scanStructuredText(outputText, {
       mode: 'sanitize',
       source: 'mcp_tool_output',
       user_id: ctx?.userId,
