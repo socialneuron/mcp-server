@@ -5,6 +5,12 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 10
+    # Mirror the CI-side 14-day gate (scripts/check-dep-age.mjs) at the
+    # source: Dependabot only proposes versions already older than the
+    # cooldown, so PRs arrive pre-aged and green instead of sitting red
+    # on the dep-age step for up to two weeks.
+    cooldown:
+      default-days: 14
     groups:
       remotion:
         patterns:
@@ -24,17 +30,33 @@ updates:
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
   - package-ecosystem: npm
     directory: /apps/content-calendar
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
   - package-ecosystem: npm
     directory: /apps/analytics-pulse
     schedule:
       interval: weekly
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 14
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 14
+    groups:
+      # codeql-action init + analyze must move in ONE PR: a split bump fails
+      # hard with "Loaded a configuration file for version X, but running
+      # version Y" (see #440/#445; manual combined bumps #431 and the
+      # 4.37.7 follow-up were the workaround before this group existed).
+      codeql-action:
+        patterns:
+          - "github/codeql-action*"
