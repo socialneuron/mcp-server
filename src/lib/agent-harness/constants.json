@@ -4,7 +4,6 @@
     "(?:^|[^A-Za-z])ignore (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*instructions",
     "(?:^|[^A-Za-z])disregard (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:instructions|prompts?|context)",
     "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*instructions",
-    "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:everything|context)\\b(?! you (?:know|knew|learn|learned|think|thought|believe|heard|ever)\\b)",
     "(?:^|[^A-Za-z])you are now (?:a |an )",
     "(?:^|[^A-Za-z])system:\\s",
     "<\\|im_start\\|>",
@@ -15,6 +14,11 @@
     "(?:^|[^A-Za-z])disregard (?:the|all) (?:above|prior|previous)",
     "(?:^|[^A-Za-z])forget (?:all|previous|prior|the above)"
   ],
+  "INSTRUCTION_PHRASE_ALLOW_RULE": {
+    "pattern": "(?:^|[^A-Za-z])forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:everything|context)\\b",
+    "allow": "(?:[^A-Za-z])?forget (?:all |any |the )*(?:previous |prior |preceding |earlier |above )*(?:everything|context) you (?:ever )?(?:know|knew|think you know|thought you knew|believe|believed|heard|learn|learned)(?: (?:about|in|from) ((?:[\\p{L}\\p{N}'’-]+)(?: [\\p{L}\\p{N}'’-]+){0,3}))?[.!?]?\\s*$",
+    "topicDeny": "\\b(?:instructions?|prompts?|system|reveal|output|execute|bypass|override|ignore|disregard|secrets?|tokens?|credentials?|passwords?)\\b"
+  },
   "PII_PATTERNS": {
     "email": "[\\w.+-]+@[\\w-]+\\.[\\w.-]+",
     "phone_us": "(?<!\\d|-)(?:\\+?1[-\\s.])?\\(?\\d{3}\\)?[-\\s.]?\\d{3}[-\\s.]?\\d{4}(?!\\d|-)",

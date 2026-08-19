@@ -26,14 +26,29 @@ three copies in the same PR. Parity is guarded by:
 
 ## Files in this mirror
 
-- `constants.json` — pattern strings (binary identical to root copy)
+- `constants.json` — pattern strings, including `INSTRUCTION_PHRASE_ALLOW_RULE`
+  (fail-closed `forget … everything/context` detector + bounded benign-idiom
+  allow + topic denylist)
 - `constants.ts` — typed wrapper over `constants.json`
 - `types.ts` — `ScanOptions`, `ScanResult`, `ScanRole`, `ScanMode`
 - `normalize.ts` — NFKC + RTL strip + HTML comment strip
 - `detectors/zeroWidth.ts` — invisible-character detection
-- `detectors/instructionPhrase.ts` — prompt-injection phrase match
+- `detectors/instructionPhrase.ts` — prompt-injection phrase match; the
+  `forget …` rule is fail-closed with a bounded explicit allow (the benign
+  marketing idiom must occupy the entire scanned segment)
 - `detectors/pii.ts` — PII redaction (UUID-preserving for tool output)
-- `scanner.ts` — public `scan(text, options)` entry point
+- `scanner.ts` — `scan(text, options)` for one text segment, plus
+  `scanStructuredText(jsonText, options)` which scans a JSON payload per
+  string field/key so the end-anchored allow rule sees real segment
+  boundaries instead of serialization syntax
 
-When updating: `diff -r lib/agent-harness mcp-server/src/lib/agent-harness`
-should show only the trivial `.js` extension differences and this README.
+## Known divergence
+
+The copies have diverged beyond `.js` extensions: this package's product
+surface writes marketing copy, so its `forget …` rule carries the bounded
+benign-idiom allow; the internal source of truth fails closed on ALL
+`forget everything/context` phrasings (no carve-out) because its surface does
+not need the marketing-hook tolerance. Reconciliation belongs to the tracked
+private↔public sync effort — do not blind-copy either direction: a naive port
+breaks this package's benign-copy contract, and exporting the allow inward
+would loosen a stricter internal gate.
