@@ -157,27 +157,6 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // publisher; @supabase/supabase-js by Supabase. Age out by 2026-07-30.
   '@sentry/node@10.66.0',
   '@supabase/supabase-js@2.110.7',
-  // 2026-08-19: founder-directed drain of the dependabot queue (waived the
-  // cooldown for this batch; same on-record pattern as 2026-07-23).
-  // Publishers verified per-package before pinning: posthog-node, jose
-  // (approver panva), esbuild and vite published via GitHub Actions trusted
-  // publishing WITH npm provenance attestations; @sentry/node by sentry-bot
-  // (canonical); @types/node by Microsoft's DefinitelyTyped publisher; open
-  // by sindresorhus (canonical author); @remotion/* by the project's
-  // canonical maintainer. NOTE: check:dep-age runs before tests in CI, so
-  // the held PR heads never reached their test steps — the merge gate for
-  // this batch is full CI (typecheck + tests + build) green on each PR head
-  // after rebase picks up these pins. Exact pins only; all age out of the
-  // 14-day window by 2026-08-29.
-  'posthog-node@5.49.1',
-  'jose@6.2.9',
-  '@sentry/node@10.70.0',
-  '@types/node@26.2.0',
-  'open@11.0.1',
-  'esbuild@0.28.2',
-  'vite@8.2.1',
-  '@remotion/bundler@4.0.512',
-  '@remotion/renderer@4.0.512',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
