@@ -100,6 +100,12 @@ describe('buildAnnotationsMap', () => {
     expect(ann.destructiveHint).toBe(true);
   });
 
+  it('marks create_autopilot_config as destructive (standing automation)', () => {
+    const ann = annotations.get('create_autopilot_config')!;
+    expect(ann.destructiveHint).toBe(true);
+    expect(ann.openWorldHint).toBe(true);
+  });
+
   // ── Per-tool overrides ──────────────────────────────────────────
 
   it('marks delete_comment as destructiveHint=true', () => {

@@ -237,10 +237,11 @@ export function registerAnalyticsTools(server: McpServer): void {
       const projectResolution = await resolveProjectStrict(project_id);
       const resolvedProjectId = projectResolution.projectId;
       const projectAutoResolvedNote = projectResolution.autoResolvedNote;
-      const rateLimit = checkRateLimit(
-        'posting',
-        `refresh_platform_analytics:${userId}:${resolvedProjectId ?? 'default'}`
-      );
+      // Key the limit by user only. project_id is caller-supplied and NOT
+      // ownership-validated here, so including it let an attacker mint a fresh
+      // token bucket per random id (limit bypass) and grow the shared-process
+      // bucket Map unboundedly. Every other tool keys by userId alone.
+      const rateLimit = checkRateLimit('posting', `refresh_platform_analytics:${userId}`);
       if (!rateLimit.allowed) {
         return {
           content: [
