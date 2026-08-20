@@ -98,6 +98,10 @@ const OVERRIDES: Record<string, Partial<AnnotationHints>> = {
   update_content_plan: { destructiveHint: true, idempotentHint: true },
   respond_plan_approval: { destructiveHint: true, idempotentHint: true },
   update_autopilot_config: { destructiveHint: true, idempotentHint: true },
+  // Creates a standing, recurring automation (is_active defaults true,
+  // approval_mode 'auto' is legal) — more consequential than a one-shot run,
+  // so clients must not treat it as a safe non-destructive action.
+  create_autopilot_config: { destructiveHint: true, openWorldHint: true },
   run_content_pipeline: { destructiveHint: true, openWorldHint: true },
   auto_approve_plan: { destructiveHint: true, idempotentHint: true },
   execute_recipe: { destructiveHint: true, openWorldHint: true },

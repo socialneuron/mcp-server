@@ -136,6 +136,24 @@ describe('SSRF protection', () => {
       // ::ffff:93.184.216.34 — example.com, must not be caught by the expansion
       expect(quickSSRFCheck('http://[::ffff:93.184.216.34]/').isValid).toBe(true);
     });
+
+    // Unique-local fc00::/7. The first hextet always renders as 4 hex chars
+    // (0xfc00-0xfdff), so the old 3-char pattern never matched — these reached
+    // loopback/metadata/ULA services from hosted infra.
+    it('blocks unique-local IPv6 (fc00::/7) literals', () => {
+      for (const url of [
+        'http://[fd00:ec2::254]/latest/meta-data/', // AWS IMDSv6-style
+        'http://[fc00::1]/',
+        'http://[fdff:ffff:ffff:ffff::1]/',
+      ]) {
+        expect(quickSSRFCheck(url).isValid).toBe(false);
+      }
+    });
+
+    it('still allows public IPv6 literals', () => {
+      // 2606:2800:220::1 — example.com public v6, must not be caught by ULA rule
+      expect(quickSSRFCheck('http://[2606:2800:220:1:248:1893:25c8:1946]/').isValid).toBe(true);
+    });
   });
 
   // =========================================================================

@@ -38,8 +38,10 @@ const BLOCKED_IPV6_PATTERNS: RegExp[] = [
   /^::1$/i, // loopback
   /^::$/i, // unspecified
   /^fe[89ab][0-9a-f]:/i, // link-local fe80::/10
-  /^fc[0-9a-f]:/i, // unique local fc00::/7
-  /^fd[0-9a-f]:/i, // unique local fc00::/7
+  // unique local fc00::/7. The first hextet (0xfc00-0xfdff) always renders as
+  // 4 hex chars — leading nibble 0xf is never stripped — so a 3-char pattern
+  // (`fc[0-9a-f]:`) never matches a real ULA address (e.g. fd00:ec2::254).
+  /^f[cd][0-9a-f]{2}:/i,
   /^::ffff:127\./i, // IPv4-mapped localhost
   /^::ffff:(0|10|127|169\.254|172\.(1[6-9]|2[0-9]|3[0-1])|192\.168)\./i, // IPv4-mapped private
 ];
