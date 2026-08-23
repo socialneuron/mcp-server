@@ -185,10 +185,6 @@ const SURFACE = [
   // Published agent skills are part of the public surface and were previously
   // outside every scan, which is how the learning-loop skill shipped internal
   // taxonomy while CI reported OK.
-  '.agents/plugins/plugins/social-neuron-com-mcp/skills/social-neuron/SKILL.md',
-  '.agents/plugins/plugins/social-neuron-com-mcp/skills/learning-loop/SKILL.md',
-  '.agents/plugins/plugins/social-neuron-com-mcp/skills/content-quality/SKILL.md',
-  '.agents/plugins/plugins/social-neuron-com-mcp/skills/brand-consistency/SKILL.md',
 ];
 
 for (const file of SURFACE) {

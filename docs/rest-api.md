@@ -140,26 +140,22 @@ Errors carry a machine-readable `error_type` and map to a matching HTTP status.
 | `upstream_error` | 502 | A downstream dependency failed |
 | `server_error` | 500 | Unclassified server fault |
 
-A missing/invalid bearer token returns **401** (no body).
+A request without a bearer token returns **401** with a top-level authentication envelope:
+
+```json
+{
+  "error": "authentication_required",
+  "error_code": "authentication_required",
+  "message": "A Bearer access token is required to execute Social Neuron tools.",
+  "recover_with": ["Authorize, then send the token as Authorization: Bearer <token>."]
+}
+```
 
 ## Rate Limits
 
-Limiting is layered — a request must clear all of the layers that apply to it:
+Rate-limited requests return `429` with `Retry-After`. Clients should honor that header, use exponential backoff with jitter, and avoid fixed assumptions about internal enforcement or operation-specific capacity.
 
-1. **Per-IP (pre-auth):** 60 requests/min, before credentials are even checked.
-2. **Per-user (post-auth):** 100 requests/min flat across every paid tier — Pro, Team, Agency, and the legacy `business` tier all share the same 100 rpm cap. Trial keys get a deliberately lower **15 requests/min** abuse guard.
-3. **Per-tool caps** on expensive operations, regardless of the per-user budget:
-
-   | Tool / function | Cap |
-   |---|---|
-   | Video generation | 5/min |
-   | Image generation | 10/min |
-   | Music generation | 5/min |
-   | Text generation (`social-neuron-ai`) | 30/min |
-   | `schedule_post` | 10/min |
-   | Brand extraction | 5/min |
-
-4. **Account-wide session cap:** 500 calls/hour across all keys for the account. Read/poll-heavy calls (`kie-task-status`, `get-signed-url`) are weighted at 0.2x toward this cap since they dominate normal usage volume without representing abuse.
+The public account quotas are:
 
 | Tier | Requests/min (per-user) | Credits/mo |
 |------|-------------|------------|
@@ -169,6 +165,8 @@ Limiting is layered — a request must clear all of the layers that apply to it:
 | Agency | 100 | 10,000 |
 
 Free and Starter plans do not include MCP/API access.
+
+Credits and rate limits are separate controls. Current plan entitlements are shown in Social Neuron account settings; protective limits may also apply to abusive or unusually expensive traffic.
 
 ## Scopes
 

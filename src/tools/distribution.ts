@@ -279,10 +279,9 @@ export function registerDistributionTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'URL of the media file to post. Any public HTTPS URL works — including ephemeral ' +
-            'generator URLs (Replicate, OpenAI, DALL-E). The server persists non-R2 URLs into ' +
-            'R2 before posting so scheduled posts and byte-upload platforms (X, LinkedIn, ' +
-            'YouTube, Bluesky) do not 404 when the source URL expires. Set auto_rehost=false ' +
+          'URL of the media file to post. Any public HTTPS URL works, including temporary ' +
+            'generator URLs. The service persists temporary media before posting so scheduled ' +
+            'posts remain available. Set auto_rehost=false ' +
             'to skip. Not needed if media_urls, r2_key, or job_id is provided.'
         ),
       media_urls: z
@@ -298,7 +297,7 @@ export function registerDistributionTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'R2 object key from upload_media. Signed on demand at post time — survives scheduling delays. ' +
+          'Durable media key from upload_media. Resolved at post time so it survives scheduling delays. ' +
             'Alternative to media_url.'
         ),
       r2_keys: z
@@ -306,14 +305,12 @@ export function registerDistributionTools(server: McpServer): void {
         .min(2)
         .max(10)
         .optional()
-        .describe(
-          'Array of R2 object keys for carousel posts. Each is signed on demand. Alternative to media_urls.'
-        ),
+        .describe('Array of durable media keys for carousel posts. Alternative to media_urls.'),
       job_id: z
         .string()
         .optional()
         .describe(
-          "Async job ID from generate_image/generate_video. Resolves the completed job's R2 key and signs it. " +
+          'Async job ID from generate_image/generate_video. Resolves the completed media. ' +
             'Alternative to media_url/r2_key.'
         ),
       job_ids: z
@@ -322,7 +319,7 @@ export function registerDistributionTools(server: McpServer): void {
         .max(10)
         .optional()
         .describe(
-          'Array of async job IDs for carousel posts. Each resolved to its R2 key. Alternative to media_urls/r2_keys.'
+          'Array of async job IDs for carousel posts. Each resolves to stored media. Alternative to media_urls/r2_keys.'
         ),
       platform_metadata: z
         .object({
@@ -514,7 +511,7 @@ export function registerDistributionTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe(
-          'Whether to persist non-R2 media_url/media_urls into R2 before posting. ' +
+          'Whether to persist temporary media_url/media_urls before posting. ' +
             'Default: true. Set to false only if you know the source URL will outlive the ' +
             'scheduling window and every target platform supports URL ingest.'
         ),
@@ -719,7 +716,7 @@ export function registerDistributionTools(server: McpServer): void {
           resolvedMediaUrlsAreTrustedR2 = resolvedJobs.map(item => item.trustedR2);
         }
 
-        // --- Auto-rehost non-R2 URLs into R2 ---
+        // --- Persist caller-supplied temporary URLs ---
         // Keeps scheduled posts alive past ephemeral-URL expiry and feeds
         // byte-upload platforms (X, LinkedIn, YouTube, Bluesky). Fires for
         // any URL that is not already R2-signed, regardless of source —

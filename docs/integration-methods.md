@@ -97,13 +97,11 @@ const content = await sn.content.generate({
 });
 ```
 
-## Plugins and skills (distribution)
+## Agent host setup
 
-A Codex plugin is an installable bundle containing the MCP connection metadata, listing information, assets, and one or more skills. It points to the existing MCP server; it does not duplicate Social Neuron business logic.
+Connect compatible agent hosts to `https://mcp.socialneuron.com/mcp` and complete the discovered OAuth flow. The hosted MCP catalogue supplies current tools, schemas, scopes, and safety annotations; repository-local assistant configuration is not distributed from this repository.
 
-A skill is concise agent guidance: when to use Social Neuron, which workflow to follow, and where approval boundaries apply. Skills should discover the live MCP catalogue rather than copy a tool count or hard-code every tool name.
-
-The repo-local Codex plugin is under `.agents/plugins/plugins/social-neuron-com-mcp`. The public cross-agent skills repository should follow the same approval and authorization rules while using the packaging convention of each host.
+Any separately published agent skill must contain only setup, task selection, least-privilege scopes, user-approval boundaries, and links to canonical documentation. It must not copy implementation details or a static tool catalogue.
 
 ## Decision Guide
 
@@ -113,19 +111,11 @@ The repo-local Codex plugin is under `.agents/plugins/plugins/social-neuron-com-
 - **Building a TypeScript app?** Use REST API (SDK in preview)
 - **Integrating with Zapier or Make.com?** Use REST API
 - **Need type safety?** Wait for SDK or use OpenAPI codegen
-- **Installing in ChatGPT/Codex?** Use the plugin, which connects the MCP and supplies the skill
-- **Teaching another agent host?** Install/adapt the skill, then connect the same OAuth MCP endpoint
+- **Connecting ChatGPT, Codex, or another compatible host?** Add the hosted MCP endpoint and complete OAuth using that host's connector flow
+- **Need agent guidance?** Use the developer portal and live tool catalogue; do not copy a static tool list
 
 ## Shared Architecture
 
-All four runtime methods execute the same tool handler functions. There is one source of truth for business logic (Supabase Edge Functions + direct queries). The access patterns (MCP JSON-RPC, REST HTTP, CLI stdio, and SDK-over-REST) are thin layers on top. Plugins and skills sit above MCP as packaging and operating guidance.
+All runtime methods use the same authenticated hosted contracts. MCP, REST, CLI, and the preview SDK adapt those contracts to their respective transports; proprietary implementation remains in the hosted service.
 
 Interactive MCP Apps are a presentation layer over the hosted MCP tools. They do not receive bearer tokens, bypass project scoping, or introduce a second business-logic path. Hosts without MCP Apps support still receive the normal tool result and can complete the workflow conversationally.
-
-```
-Plugin + skill ──→ MCP Client ──→ JSON-RPC ──┐
-                                              │
-SDK ──→ REST Client ──→ HTTP JSON ──→ Tool Executor ──→ Edge Functions / Supabase
-                                              │
-                    CLI ──→ commands/stdio ───┘
-```

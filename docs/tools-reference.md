@@ -34,7 +34,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `get_ideation_context` | Get synthesized ideation context from performance insights. Returns the same prompt-injection context used by ideation generation. |
 | `get_loop_summary` | Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights). |
 | `get_mcp_usage` | Get your MCP API usage breakdown for the current billing month. Shows per-tool call counts and credit usage. Useful for monitoring API consumption and staying within tier limits. |
-| `get_media_url` | Get a fresh signed URL for R2 media. Use when a previously returned signed URL has expired (they last 1 hour). Pass the r2_key from upload_media or check_status, or the job_id from check_status (the job row resolves the key server-side — wo |
+| `get_media_url` | Get a fresh download URL for stored media when a previous URL has expired. Pass the r2_key from upload_media or check_status, or the job_id from check_status. |
 | `get_performance_insights` | Query project-scoped performance insights derived from post analytics. Returns metrics like engagement rate, view velocity, and click rate aggregated over time. Use this to understand what content is performing well. |
 | `get_pipeline_status` | Check status of a pipeline run, including stages completed, pending approvals, and scheduled posts. |
 | `get_recipe_details` | Get full details of a recipe template including all steps, input schema, and estimated costs. Use this before execute_recipe to understand what inputs are required. |
@@ -80,11 +80,11 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `create_storyboard` | Plan a multi-scene video storyboard with AI-generated prompts, durations, captions, and voiceover text per frame. Use before generate_video or generate_image to create cohesive multi-shot content. Include brand_context from get_brand_profil |
 | `delete_carousel` | Delete an owned carousel content-history record from one project. Stored media is retained until the normal retention cleanup; this does not delete already-published platform posts. |
 | `delete_content_plan` | Permanently delete an owned content plan in one project. This does not cancel posts that were already scheduled from the plan. |
-| `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. |
+| `execute_recipe` | Execute a recipe template with the provided inputs. This creates a recipe run that processes each step sequentially. Long-running recipes will return a run_id you can check with get_recipe_run_status. Recipes containing a distribution step  |
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. project_id may be omitted only when exact |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 10-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (i |
-| `generate_video` | Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. Base credit costs (reference config; dynamic models scale with duration/audio/resolution): seedance-2-fast 264 (8s, b |
+| `generate_video` | Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. Available models and accepted options are defined by the live input schema. Credit usage varies by model, duration, a |
 | `generate_voiceover` | Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Pass project_id to keep the asset with the corre |
 | `plan_content_week` | Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_pl |
 | `render_demo_video` | Render a Remotion composition to an MP4 or GIF file locally. Uses the Remotion bundler and renderer from the root project. This can take 30-120 seconds depending on composition length. Output is saved to public/videos/. |
@@ -97,7 +97,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `submit_content_plan_for_approval` | Create pending approval items for each post in a plan and mark plan status as in_review. |
 | `update_content_plan` | Edit individual posts in a persisted content plan — change caption, title, hashtags, hook, or angle. Use after get_content_plan when the user wants to revise drafts before scheduling. Each post_updates entry must include post_id from the lo |
 | `update_platform_voice` | Update platform-specific voice overrides (samples, tone/style, CTA/hashtag strategy). |
-| `upload_media` | Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL fetched by the server, (3) inline base64 via file_data (remote age |
+| `upload_media` | Upload media to durable storage. Returns an r2_key that can be passed to schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL fetched by the server, (3) inline base64 via file_data (remote agents, ≤10MB de |
 
 ## Publishing & Scheduling
 

@@ -43,16 +43,16 @@ This policy covers:
 
 ## Credential Safety
 
-This npm package contains **no service role keys or admin credentials**.
+This npm package contains **no administrator or service credentials**.
 
-- The `SUPABASE_SERVICE_ROLE_KEY` is **never hardcoded** — it is only read from environment variables at runtime, and only in legacy self-hosted mode.
-- The embedded `CLOUD_SUPABASE_URL` and `CLOUD_SUPABASE_ANON_KEY` are **intentionally public** — they are the same values shipped in the frontend bundle. The anon key JWT decodes to `"role": "anon"`, and all data access is gated by Row Level Security (RLS).
+- Public service identifiers bundled with the client are least-privileged identifiers, not administrator credentials.
+- Customer data access requires authenticated, scoped, server-authorized requests.
 - API keys are stored in the OS keychain (macOS Keychain / Linux `secret-tool`) or a `chmod 0600` credentials file. They are never committed to source control.
 - The `npm pack` output is restricted to `dist/`, `README.md`, `CHANGELOG.md`, and `LICENSE` via both `.npmignore` and `package.json files` field.
 
 ## Security Best Practices
 
-- Always use API key authentication (not service-role keys)
+- Use OAuth or a scoped API key
 - Rotate API keys every 90 days
 - Use minimum required scopes (`mcp:read` for read-only access)
 - Set `daily_credit_cap` to prevent runaway costs
@@ -61,17 +61,14 @@ This npm package contains **no service role keys or admin credentials**.
 
 ## Scanner False Positives
 
-Security scanners (TruffleHog, Gitleaks, etc.) may flag the embedded Supabase anon key in `src/lib/supabase.ts`. This is **not a vulnerability**:
+Security scanners may flag public client configuration. Verify the privilege level before reporting it as a credential exposure:
 
-- The anon key is intentionally public — it's the same value shipped in the frontend JavaScript bundle
-- The JWT payload decodes to `"role": "anon"` — it has no elevated privileges
-- All data access is gated by Row Level Security (RLS) policies
-- The `SUPABASE_SERVICE_ROLE_KEY` is **never** embedded in this package
+- Public client identifiers have no administrator privileges
+- Data access still requires authentication, authorization, ownership checks, and server-side policy
+- Privileged credentials are not embedded in the package
 
 The `.gitleaks.toml` configuration allowlists this file to suppress false positives.
 
-## Rate Limiting
+## Abuse Protection
 
-- Edge Function endpoints enforce per-IP rate limits (60 requests/minute)
-- API keys are hashed (SHA-256) before storage and comparison
-- Key cache entries expire after 10 seconds to limit revocation exposure window
+Hosted endpoints apply rate limits and abuse controls. Public clients should honor `429` responses and `Retry-After`; internal detection, caching, and enforcement mechanics are not part of the client contract.

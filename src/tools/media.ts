@@ -12,8 +12,8 @@ import { getDefaultUserId } from '../lib/supabase.js';
 const MAX_BASE64_SIZE = 10 * 1024 * 1024;
 
 /**
- * Mirrors the ALLOWED_TYPES allowlist in the upload-to-r2 backend function.
- * Keep in sync — drift causes either wasted round-trips (client allows, EF rejects)
+ * Mirrors the hosted upload allowlist. Keep in sync — drift causes either
+ * wasted round-trips (client allows, service rejects)
  * or silent feature gaps (client blocks, EF would have accepted). URL-safe base64
  * (`-`/`_`) is deliberately excluded to match the EF's `atob`-compatible decoding.
  */
@@ -70,11 +70,11 @@ function approxBase64Size(raw: string): number {
 
 export function registerMediaTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
-  // upload_media — Upload local file, external URL, or inline base64 to R2
+  // upload_media — Upload local file, external URL, or inline base64
   // ---------------------------------------------------------------------------
   server.tool(
     'upload_media',
-    'Upload media to persistent R2 storage. Returns a durable r2_key that can be passed to ' +
+    'Upload media to durable storage. Returns an r2_key that can be passed to ' +
       'schedule_post. Three input modes: (1) local file path (stdio mode only), (2) public URL ' +
       'fetched by the server, (3) inline base64 via file_data (remote agents, ≤10MB decoded). ' +
       'AGENT ROUTING GUIDE: If the media was produced by another tool here (generate_image, ' +
@@ -114,7 +114,10 @@ export function registerMediaTools(server: McpServer): void {
             'paths/URLs, or from the data: prefix on file_data. Required when passing raw ' +
             'base64 with no prefix.'
         ),
-      project_id: z.string().optional().describe('Project ID for R2 path organization.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe('Project ID used to verify ownership and associate the upload.'),
       response_format: z
         .enum(['text', 'json'])
         .optional()
@@ -555,19 +558,17 @@ export function registerMediaTools(server: McpServer): void {
   );
 
   // ---------------------------------------------------------------------------
-  // get_media_url — Sign an R2 key on demand
+  // get_media_url — Resolve a durable media key on demand
   // ---------------------------------------------------------------------------
   server.tool(
     'get_media_url',
-    'Get a fresh signed URL for R2 media. Use when a previously returned signed URL has ' +
-      'expired (they last 1 hour). Pass the r2_key from upload_media or check_status, or the ' +
-      'job_id from check_status (the job row resolves the key server-side — works for legacy ' +
-      'key formats too).',
+    'Get a fresh download URL for stored media when a previous URL has expired. Pass the ' +
+      'r2_key from upload_media or check_status, or the job_id from check_status.',
     {
       r2_key: z
         .string()
         .optional()
-        .describe('The R2 object key (e.g. "org_x/user_y/images/2026-04-03/abc.png").'),
+        .describe('Durable media key returned by upload_media or check_status.'),
       job_id: z
         .string()
         .uuid()

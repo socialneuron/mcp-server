@@ -8,15 +8,11 @@ import { sanitizeError } from '../lib/sanitize-error.js';
 /**
  * F4 Hyperframes — MCP tool surface.
  *
- * Mirrors the agent-chat tools `render_hyperframes` and `list_hyperframes_blocks`.
- * Adds external-agent access (Claude Code / Cursor) to the same
- * EF (`create-hyperframes-job`) the agent-chat tool uses.
- *
- * Spec: an internal design spec (F4 §7)
+ * Exposes the hosted Hyperframes renderer through MCP tools.
  */
 
 // =============================================================================
-// Curated 23-block catalog — keep in sync with the worker's hyperframesRunner.js twin
+// Curated 23-block catalog — keep in sync with the hosted renderer
 // =============================================================================
 
 const HYPERFRAMES_BLOCKS = [
@@ -190,7 +186,7 @@ export function registerHyperframesTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'R2 URL pointing to a previously uploaded composition HTML file. Use this instead of composition_html for compositions > 500KB.'
+          'URL for a previously uploaded composition HTML file. Use this instead of composition_html for compositions > 500KB.'
         ),
       input_props: z
         .string()
