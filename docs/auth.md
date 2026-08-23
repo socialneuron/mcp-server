@@ -1,12 +1,11 @@
-# Authentication Architecture
+# Authentication
 
-The Social Neuron MCP Server supports three authentication modes:
+The Social Neuron MCP Server supports two public authentication modes:
 
 1. **OAuth Custom Connector** (Claude Web, Claude Desktop, Smithery, Glama, mcp.so) — discovery-driven connector setup
 2. **API Key** (CLI/SDK/REST) — zero-config for stdio MCP clients and HTTP API users
-3. **Service Role** (legacy, deprecated) — self-hosted only
 
-General Social Neuron dashboard session JWTs are deliberately not accepted as hosted MCP bearer tokens: they are not resource-bound to the MCP server. A legacy self-hosted deployment can temporarily set `MCP_ALLOW_SUPABASE_SESSION_TOKENS=true` while migrating, but the supported hosted credentials are connector tokens and `snk_` API keys.
+General Social Neuron dashboard sessions are not accepted as hosted MCP bearer tokens. Use an OAuth connector token or a scoped Social Neuron API key.
 
 ## OAuth Custom Connector Flow (Claude Web/Desktop, Smithery, Glama)
 
@@ -63,7 +62,7 @@ The DCR endpoint accepts:
 - `https://glama.ai/callback`, `https://mcp.so/callback`
 - `http://localhost:6274/oauth/callback` (Claude Code/Desktop debug)
 
-Unknown HTTPS redirect URIs are rejected by default. Staging environments can set `MCP_ALLOW_ANY_HTTPS_REDIRECT=true` while onboarding a new client before adding its callback to the allowlist. Disallowed URIs return `400 invalid_client_metadata` (not 500).
+Unknown redirect URIs are rejected. A new connector must register an approved callback before production use. Disallowed URIs return `400 invalid_client_metadata`.
 
 ### Discovery URLs
 
@@ -86,7 +85,7 @@ User → `npx @socialneuron/mcp-server login`
        ↓
   PKCE exchange verifies key → stored in OS keychain
        ↓
-  MCP server uses key for all Edge Function calls
+  MCP server uses the key for authenticated requests
 ```
 
 ### Key Storage
@@ -102,23 +101,9 @@ API keys are stored securely via OS-native mechanisms:
 
 > **Windows users**: The file fallback does not have strong permission enforcement on NTFS. For production use on Windows, set the `SOCIALNEURON_API_KEY` environment variable instead.
 
-See `src/cli/credentials.ts` for implementation.
-
 ### Key Validation
 
-On startup, `initializeAuth()` loads the API key and validates it against the `mcp-auth` Edge Function:
-
-```
-MCP Server → POST /functions/v1/mcp-auth?action=validate-key-public
-             Authorization: Bearer <anon-key>
-             Body: { "api_key": "<user-api-key>" }
-             ↓
-mcp-auth   → SHA-256 hash → lookup in `api_keys` table
-             ↓
-             Returns: { valid, userId, scopes, email, expiresAt }
-```
-
-See `src/auth/api-keys.ts` for the client-side validation call.
+On startup, the client loads the API key from the configured secure store and validates it with the hosted service. Validation returns the key's current scopes and expiry. Revoked, expired, malformed, or unknown keys are rejected.
 
 ### PKCE Setup Flow
 
@@ -128,10 +113,8 @@ The `login` command uses PKCE (Proof Key for Code Exchange) to securely deliver 
 2. Compute `code_challenge` = SHA-256(code_verifier), base64url
 3. Open browser with `code_challenge` + ephemeral callback port
 4. User authenticates and approves → app POSTs `api_key` + `state` to `localhost:<port>/callback`
-5. MCP server completes exchange: POST `code_verifier` + `state` to `mcp-auth?action=exchange-key`
+5. The client completes the one-time exchange with the hosted authorization service
 6. Server activates the key only if the verifier matches the original challenge
-
-See `src/cli/setup.ts` for the full flow.
 
 ## Scope Enforcement
 
@@ -151,63 +134,9 @@ mcp:full (includes all below)
 
 Default scopes for new API keys: `['mcp:read']`.
 
-See `src/auth/scopes.ts` for the full tool-to-scope mapping.
 
-## Gateway Token System
+## Credential Boundary
 
-When the MCP server runs in cloud mode (API key auth), all Edge Function calls are proxied through `mcp-gateway`. The gateway:
+The public package contains no administrator or service credentials. Any public service identifiers bundled with a client are least-privileged identifiers, not authorization to access customer data. Authentication, ownership checks, scopes, and server-side policy are enforced by the hosted service.
 
-1. Validates the API key
-2. Enforces credit limits and scope checks
-3. Generates an HMAC-SHA256 **gateway token** before forwarding to downstream EFs
-4. Downstream EFs verify the gateway token to ensure the request came through the gateway
-
-### Token Format
-
-```
-<timestamp>:<hex-signature>
-```
-
-**Payload**: `<userId>:<functionName>:<timestamp>`
-**Algorithm**: HMAC-SHA256 with `GATEWAY_SECRET` env var
-**TTL**: 5 minutes
-
-### Flow
-
-```
-MCP Server → mcp-gateway (validates API key, deducts credits)
-             ↓
-             Generates gateway token: HMAC-SHA256(userId:functionName:timestamp)
-             Sets header: x-gateway-token
-             ↓
-             Forwards to downstream EF (e.g., social-neuron-ai)
-             ↓
-Downstream EF → verifies x-gateway-token against GATEWAY_SECRET
-                Rejects if missing, expired, or invalid signature
-```
-
-This prevents authenticated users from calling downstream EFs directly, bypassing credit and scope enforcement.
-
-See the backend's shared gatewayToken.ts module for the implementation.
-
-## Service Role (Legacy)
-
-When no API key is configured, the server falls back to using `SUPABASE_SERVICE_ROLE_KEY` directly. This mode:
-
-- Grants `mcp:full` scope (all permissions)
-- Requires `SOCIALNEURON_USER_ID` env var (no user discovery)
-- Bypasses credit enforcement
-- Logs deprecation warnings on startup
-
-**This mode is deprecated.** Use `npx @socialneuron/mcp-server login` to migrate to API key auth.
-
-## Intentionally Public Values
-
-The following values are embedded in the npm package and are **not secrets**:
-
-| Value | Purpose | Why it's safe |
-|-------|---------|---------------|
-| `CLOUD_SUPABASE_URL` | Identifies the Supabase project | Same as frontend `VITE_SUPABASE_URL`. URL alone grants no access. |
-| `CLOUD_SUPABASE_ANON_KEY` | Bearer token for Edge Function calls | JWT role is `"anon"`. RLS enforces all access control. Same as frontend `VITE_SUPABASE_ANON_KEY`. |
-
-The `SUPABASE_SERVICE_ROLE_KEY` is **never** hardcoded in this package.
+Do not configure privileged backend credentials in an MCP client. Use OAuth or a scoped API key, request only the scopes required for the task, and revoke credentials that are no longer needed.
