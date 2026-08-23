@@ -140,7 +140,16 @@ Errors carry a machine-readable `error_type` and map to a matching HTTP status.
 | `upstream_error` | 502 | A downstream dependency failed |
 | `server_error` | 500 | Unclassified server fault |
 
-A missing/invalid bearer token returns **401** (no body).
+A request without a bearer token returns **401** with a top-level authentication envelope:
+
+```json
+{
+  "error": "authentication_required",
+  "error_code": "authentication_required",
+  "message": "A Bearer access token is required to execute Social Neuron tools.",
+  "recover_with": ["Authorize, then send the token as Authorization: Bearer <token>."]
+}
+```
 
 ## Rate Limits
 

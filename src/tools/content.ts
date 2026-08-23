@@ -127,14 +127,7 @@ export function registerContentTools(server: McpServer): void {
   server.tool(
     'generate_video',
     'Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. ' +
-      'Base credit costs (reference config; dynamic models scale with duration/audio/resolution): ' +
-      'seedance-2-fast 264 (8s, best quality/credit) · kling-3 100 (5s no-audio) · grok-imagine 30 (6s, cheapest) · ' +
-      'veo3-fast 65 (8s) · kling-3-pro 135 (5s no-audio) · seedance-2 328 (8s 720p) · veo3-quality 1000 (8s) · ' +
-      'wan-2.6 105 (5s) · gemini-omni-video 126 (multi-reference composites) · ' +
-      'hailuo-02-standard 180 / seedance-1.5-pro 150 / kling 170 (legacy/budget fallbacks). ' +
-      'Costs are estimated pre-check and reconciled post-response from the actual charge. ' +
-      'audio adds ~1.5x on kling-3/kling-3-pro and ~2.65x on kling (enable_audio defaults to FALSE). ' +
-      'Check get_credit_balance first for expensive generations.',
+      'Available models and accepted options are defined by the live input schema. Credit usage varies by model, duration, audio, and resolution; use get_credit_balance to confirm sufficient balance before starting. The accepted job response reports the credits charged.',
     {
       prompt: z
         .string()
@@ -145,12 +138,8 @@ export function registerContentTools(server: McpServer): void {
       model: z
         .enum(VIDEO_MODEL_ENUM)
         .describe(
-          'Video model, quality ladder best->worst: seedance-2-fast (264cr/8s, S-tier, native audio, top quality/credit) > ' +
-            'kling-3 (100cr/5s no-audio, compound prompts, up to 10s) > grok-imagine (30cr/6s, cheapest real model, great image-to-video) > ' +
-            'veo3-fast (65cr/8s, Veo 3.1 Fast, native audio) > kling-3-pro (135cr/5s no-audio, up to 15s) > ' +
-            'seedance-2 (328cr/8s 720p, premium cinematic, native audio) > veo3-quality (1000cr/8s, Veo 3.1 Quality, hero shots) > ' +
-            'wan-2.6 (105cr/5s, fallback) > gemini-omni-video (126cr — pick this ONLY for multi-reference composites/edits, not raw quality). ' +
-            'hailuo-02-standard (180cr), seedance-1.5-pro (150cr), kling (170cr/10s no-audio) are legacy/budget fallbacks.'
+          'REQUIRED. Must exactly match one of the enum values below (case-sensitive, hyphenated) — ' +
+            'an unrecognized string is rejected before any credit spend. Select a model based on the required capabilities shown in the authenticated product; do not infer routing priority, quality, or cost from enum order.'
         ),
       duration: z
         .number()
@@ -173,11 +162,7 @@ export function registerContentTools(server: McpServer): void {
         .boolean()
         .optional()
         .describe(
-          'Enable native audio generation. DEFAULTS TO FALSE for kling/hailuo/veo/etc (cost control) — ' +
-            'cost multiplier when true: kling 2.6 ~2.65x (17->45 cr/sec), kling-3 1.5x (20->30 cr/sec), ' +
-            'kling-3-pro ~1.5x (27->40 cr/sec). seedance-2/-fast DEFAULT TO TRUE (native audio-video, no ' +
-            'separate audio cost multiplier) — pass enable_audio: false to opt out. seedance-1.5-pro never ' +
-            'generates audio regardless of this flag. 5+ languages.'
+          'Enable native audio when the selected model supports it. If omitted, Social Neuron applies the model-safe default. Audio can change credit usage; confirm sufficient balance before generation.'
         ),
       image_url: z
         .string()
@@ -191,8 +176,8 @@ export function registerContentTools(server: McpServer): void {
         .string()
         .optional()
         .describe(
-          'Project ID to associate the video with (brand context is auto-injected from the ' +
-            'project brand profile). Required when more than one project is accessible; omitted ' +
+          'Project ID to associate the video with; its saved brand profile is applied automatically. ' +
+            'Required when more than one project is accessible; omitted ' +
             'values auto-resolve only when exactly one project is accessible.'
         ),
       response_format: z

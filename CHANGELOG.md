@@ -71,9 +71,9 @@ Published as 2.0.1: a v2.0.0 tag was cut during release preparation but never pu
 
 ### Changed
 
-- **`generate_video` model menu rebuilt around quality — 8 → 12 models.** New: `seedance-2-fast`, `seedance-2`, `grok-imagine`, `wan-2.6`, `gemini-omni-video`, `hailuo-02-standard`, `seedance-1.5-pro`. Removed from the menu: `runway-aleph` (upstream provider sunsets 2026-07-30), `sora2`/`sora2-pro` (upstream API shuts down 2026-09-24). The model description now carries a quality ladder plus honest per-model base credit costs, replacing figures that had drifted badly from real charges.
-- **`enable_audio` now defaults to FALSE** (cost control) with the real per-model audio multipliers documented in the parameter description.
-- **Video prices corrected server-side** (notably `veo3-fast` cut to roughly a third of its previous credit price); the client-side estimate map matches.
+- **`generate_video` model menu refreshed.** Added currently supported video capabilities and removed providers with announced API shutdowns. Live discovery describes the accepted enum without publishing internal routing or provider-economics guidance.
+- **`enable_audio` uses safer model-specific defaults.** Agents are directed to confirm sufficient balance before generation.
+- **Video pricing corrected server-side.** Client budget checks remain aligned with the hosted service.
 
 ### Added
 
@@ -245,16 +245,15 @@ Anchored by an internal pricing-consistency review; this release ships the corre
 
 ### Added
 
-- **Hardcoded anon key fallback**: npm consumers no longer need to configure `SUPABASE_ANON_KEY` — the public anon key is embedded as `CLOUD_SUPABASE_ANON_KEY`
-- **Gateway token system**: HMAC-SHA256 tokens prevent direct Edge Function bypass of mcp-gateway credit/scope enforcement
+- **Zero-config hosted connection**: npm consumers no longer need manual hosted-service configuration
+- **Hosted request enforcement**: strengthened server-side credit, scope, and ownership checks
 - **Standardized error responses**: All 17 mcp-gateway error paths now return structured `{ error, message, upgrade_url?, retry_after? }` JSON
 
 ### Security
 
-- Tightened `api_keys` RLS policies from `{public}` to `{authenticated}` role
-- Added `key_hash` index on `api_keys` table
-- Daily credit reset cron job (`reset-api-key-daily-credits`)
-- 11 downstream Edge Functions now verify gateway tokens on service-role calls
+- Tightened API-key storage access controls
+- Improved API-key lookup and scheduled credit maintenance
+- Expanded authenticated request verification across hosted operations
 
 ### Fixed
 
@@ -278,7 +277,7 @@ Anchored by an internal pricing-consistency review; this release ships the corre
 - **50+ MCP tools** across 19 modules: ideation, content, distribution, analytics, brand, screenshot, remotion, insights, youtube-analytics, comments, planning, quality, credits, autopilot, loop-summary, usage, and more
 - **OAuth 2.1 authentication** with PKCE browser flow, device code flow, and API key paste
 - **Scope-based access control**: `mcp:full`, `mcp:read`, `mcp:write`, `mcp:distribute`, `mcp:analytics`, `mcp:comments`
-- **Cloud mode** via MCP gateway proxy (recommended) — service-role key stays server-side
+- **Hosted mode** with server-side scope, credit, and project enforcement
 - **Secure credential storage**: macOS Keychain, Linux secret-tool, file fallback
 - **Auto-configuration** for Claude Desktop and Claude Code
 - **CLI tools**: `sn publish`, `sn preflight`, `sn quality-check`, `sn status`, `sn posts`, `sn refresh-analytics`
@@ -300,11 +299,9 @@ Anchored by an internal pricing-consistency review; this release ships the corre
 - Per-request budget isolation in HTTP mode (AsyncLocalStorage)
 - Daily credit cap enforcement in gateway
 - Pre-execution balance check for expensive operations (video/image generation)
-- Gateway-side userId override (prevents horizontal privilege escalation)
-- Per-user rate limiting (100 req/min default)
-- Per-tool rate limits for expensive operations
-- Agent loop detection (>5 identical calls in 30s)
-- Session hard cap (200 calls/hour)
+- Server-side user and project ownership enforcement
+- Per-user and operation-aware rate limiting
+- Runaway automation protection
 - Shell metacharacter injection detection
 - Audit logging with PII-redacted params
 - Kill switch for emergency halt of autonomous operations

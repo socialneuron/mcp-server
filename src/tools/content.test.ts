@@ -50,6 +50,23 @@ describe('content tools', () => {
   // generate_video
   // -------------------------------------------------------------------------
   describe('generate_video', () => {
+    it('describes balance and charged credits without publishing a routing ladder', () => {
+      const registrationCall = (server.tool as any).mock.calls.find(
+        (call: unknown[]) => call[0] === 'generate_video'
+      );
+      expect(registrationCall).toBeTruthy();
+
+      const description = registrationCall![1] as string;
+      expect(description).toContain('get_credit_balance');
+      expect(description).toContain('credits charged');
+      expect(description).not.toContain(['Base', 'credit', 'costs'].join(' '));
+      expect(description).not.toMatch(/quality ladder|returned estimate/i);
+
+      const shape = registrationCall![2] as Record<string, z.ZodTypeAny>;
+      expect(shape.enable_audio.description).toContain('confirm sufficient balance');
+      expect(shape.enable_audio.description).not.toMatch(/cost multiplier|inspect the estimate/i);
+    });
+
     it('calls kie-video-generate with correct default params', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {

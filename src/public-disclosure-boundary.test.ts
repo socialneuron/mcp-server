@@ -23,11 +23,24 @@ describe('public disclosure boundary', () => {
 
   it('keeps public auth guidance at the consumer contract boundary', () => {
     const auth = readFileSync(join(ROOT, 'docs/auth.md'), 'utf8');
+    const rest = readFileSync(join(ROOT, 'docs/rest-api.md'), 'utf8');
 
     expect(auth).toContain('OAuth');
     expect(auth).toContain('PKCE');
     expect(auth).toContain('mcp:read');
     expect(auth).toContain('## Credential Boundary');
+    expect(rest).toContain('"error_code": "authentication_required"');
+  });
+
+  it('keeps model routing and economics out of public tool descriptions', () => {
+    const content = readFileSync(join(ROOT, 'src/tools/content.ts'), 'utf8');
+    const routingPhrase = ['quality', 'ladder', 'best->worst'].join(' ');
+    const pricingPhrase = ['Base', 'credit', 'costs'].join(' ');
+
+    expect(content).not.toContain(routingPhrase);
+    expect(content).not.toContain(pricingPhrase);
+    expect(content).not.toMatch(/audio adds ~|cost multiplier when true/i);
+    expect(content).not.toMatch(/returned estimate|preflight estimate/i);
   });
 
   it('documents recoverable throttling without coupling clients to internals', () => {
