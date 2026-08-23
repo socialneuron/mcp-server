@@ -1,24 +1,37 @@
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = join(__dirname, '..');
 
-function collectFiles(path: string): string[] {
-  if (!existsSync(path)) return [];
-  return readdirSync(path, { withFileTypes: true }).flatMap(entry => {
-    const child = join(path, entry.name);
-    return entry.isDirectory() ? collectFiles(child) : [child];
-  });
-}
-
 describe('public disclosure boundary', () => {
   it('does not ship repository-local assistant configuration', () => {
-    expect(collectFiles(join(ROOT, '.agents'))).toEqual([]);
-    expect(collectFiles(join(ROOT, '.claude'))).toEqual([]);
+    const tracked = execFileSync('git', ['ls-files', '--', '.agents', '.claude'], {
+      cwd: ROOT,
+      encoding: 'utf8',
+    })
+      .trim()
+      .split('\n')
+      .filter(Boolean);
+    expect(tracked).toEqual([]);
+
+    const packageFiles = (
+      JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')) as { files: string[] }
+    ).files;
+    expect(packageFiles).not.toContain('.agents/');
+    expect(packageFiles).not.toContain('.claude/');
 
     const metadataGate = readFileSync(join(ROOT, 'scripts/verify-metadata.mjs'), 'utf8');
     expect(metadataGate).not.toContain("'.agents/");
+  });
+
+  it('does not direct users to the removed repository-local plugin', () => {
+    const integrations = readFileSync(join(ROOT, 'docs/integration-methods.md'), 'utf8');
+
+    expect(integrations).toContain('https://mcp.socialneuron.com/mcp');
+    expect(integrations).not.toContain('.agents/plugins/');
+    expect(integrations).not.toContain('Use the plugin');
   });
 
   it('keeps public auth guidance at the consumer contract boundary', () => {
