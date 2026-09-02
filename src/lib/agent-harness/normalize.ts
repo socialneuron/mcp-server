@@ -6,7 +6,13 @@ export function normalize(text: string): string {
   if (typeof text !== 'string') return '';
   let out = text.normalize('NFKC');
   out = out.replace(OVERRIDE_CHARS, '');
-  out = out.replace(HTML_COMMENT, '');
+
+  let previous: string;
+  do {
+    previous = out;
+    out = out.replace(HTML_COMMENT, '');
+  } while (out !== previous);
+
   out = out.replace(EXCESSIVE_WHITESPACE, ' ');
   return out;
 }
