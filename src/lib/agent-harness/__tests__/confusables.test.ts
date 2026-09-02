@@ -71,7 +71,7 @@ describe('secret redaction covers the formats that previously failed open', () =
     ['Slack user token', 'xoxp-000-000-notarealtoken'],
     ['Slack app token', 'xapp-1-notarealapptoken'],
     ['SN connector token', 'sno_abcdefghijklmnopqrstuvwxyz012345'],
-    ['Bearer token', 'Bearer abcdefghijklmnopqrstuvwxyz0123456789'],
+    ['Bearer token', 'Bearer xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx'],
   ];
 
   it.each(cases)('redacts a %s from tool output', (_label, secret) => {

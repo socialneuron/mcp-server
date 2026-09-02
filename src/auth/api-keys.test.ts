@@ -11,7 +11,7 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGetUrl.mockReturnValue('https://test.supabase.co');
   // Most tests need an anon key to be available (API key fallback was removed)
-  process.env.SUPABASE_ANON_KEY = 'eyJ_test_default_anon';
+  process.env.SUPABASE_ANON_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxx';
 });
 
 afterEach(() => {
@@ -132,7 +132,7 @@ describe('validateApiKey', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer eyJ_test_default_anon',
+        Authorization: 'Bearer xxxxxxxxxxxxxxxxxxxxxxxx',
       },
       body: JSON.stringify({ api_key: 'sn_my_api_key_value' }),
     });
