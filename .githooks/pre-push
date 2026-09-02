@@ -1,13 +1,19 @@
 #!/usr/bin/env bash
 #
-# Pre-push hook: allowlist-based identity enforcement for public commits.
+# Pre-push hook: allowlist-based identity enforcement, plus the deny-by-default
+# path + content gates, for public commits.
 #
-# Enables: run `git config core.hooksPath .githooks` once after cloning.
+# Enables: run `git config core.hooksPath .githooks` once after cloning (also
+# self-installed by `npm install` via the "prepare" script, #3014).
 #
-# This hook is a belt-and-braces defense layered on top of GitHub's
-# account-level "Block command line pushes that expose my email" setting.
-# It guards against author-identity leaks via
-# `gh pr merge --squash --admin`.
+# The identity check is a belt-and-braces defense layered on top of GitHub's
+# account-level "Block command line pushes that expose my email" setting. It
+# guards against author-identity leaks via `gh pr merge --squash --admin`.
+#
+# The path + content gates (#3014, #2846, #3777) mirror the CI job so a push
+# that would fail CI fails here first, before it ever reaches a public Actions
+# log — belt-and-braces the same way: CI is the enforced backstop, this hook
+# is the local convenience layer, and either one catching it is sufficient.
 
 set -eu
 
@@ -19,6 +25,12 @@ set -eu
 ALLOWED_EMAIL_PATTERNS=(
   # Team identity used for all hand-written commits on public repos
   '^socialneuronteam@gmail\.com$'
+  # Maintainer's GitHub noreply address: the only author identity whose commit
+  # signature GitHub can verify for main's required-signatures rule (the team
+  # address is not a verified email on the signing account). Exposes nothing
+  # beyond the public username.
+  '^ajaknumber4@users\.noreply\.github\.com$'
+  '^217942657\+ajaknumber4@users\.noreply\.github\.com$'
   # Dependabot bot account
   '^[0-9]+\+dependabot\[bot\]@users\.noreply\.github\.com$'
   # GitHub Actions bot (for automated workflow commits)
@@ -39,6 +51,21 @@ report_error() {
   printf '\n\033[31m✗ pre-push: %s\033[0m\n' "$1" >&2
   has_error=1
 }
+
+# Deny-by-default path + content gates. Whole-tree checks against what's about to
+# be pushed (not per-commit — see scripts/verify-public-paths.mjs). Requires node;
+# if it's missing locally this only skips the LOCAL convenience check — CI still
+# enforces both gates as a required check, so nothing is bypassed by skipping here.
+if command -v node >/dev/null 2>&1 && [ -f scripts/verify-public-paths.mjs ]; then
+  if ! node scripts/verify-public-paths.mjs; then
+    has_error=1
+  fi
+  if ! node scripts/check-public-mcp-leak.mjs .; then
+    has_error=1
+  fi
+else
+  printf '\n\033[33m⚠ pre-push: node or scripts/verify-public-paths.mjs not found — path/content gates skipped locally (CI still enforces both).\033[0m\n' >&2
+fi
 
 # Special hash meaning "the zero ref" (branch creation/deletion).
 ZERO='0000000000000000000000000000000000000000'

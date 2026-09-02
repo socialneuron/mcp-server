@@ -41,10 +41,9 @@ The OAuth connector path derives scopes from the current subscription tier at va
 ## Platforms
 
 ### A platform won't connect / "reconnect required"
-1. Call `list_connected_accounts` to see status.
+1. Call `list_connected_accounts` to see status — it reflects live per-platform availability, which changes as platform reviews complete.
 2. If disconnected, call `start_platform_connection` — it returns a one-time browser link to complete the platform OAuth on socialneuron.com.
 3. Then `wait_for_connection`, and retry `schedule_post`.
-- **Instagram** is pending platform review — publishing is live for **YouTube** and **TikTok**. See [Platform Status](../README.md#platform-status).
 
 ### `schedule_post` returns "mediaUrl required" or a carousel error
 - Single media: pass `media_url`, `r2_key`, or `job_id`.

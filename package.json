@@ -60,6 +60,9 @@
     "provenance": true
   },
   "scripts": {
+    "prepare": "git config core.hooksPath .githooks || true",
+    "check:paths": "node scripts/verify-public-paths.mjs",
+    "check:public-leak": "node scripts/check-public-mcp-leak.mjs .",
     "lint:lockfile": "node scripts/lint-lockfile.mjs package-lock.json packages/sdk/package-lock.json apps/content-calendar/package-lock.json apps/analytics-pulse/package-lock.json",
     "check:dep-age": "node scripts/check-dep-age.mjs",
     "verify:deps": "node scripts/verify-dependency-contracts.mjs",

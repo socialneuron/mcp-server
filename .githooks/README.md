@@ -2,7 +2,10 @@
 
 Repo-local git hooks that enforce public-repo hygiene.
 
-## Installation (one-time per clone)
+## Installation
+
+`npm install` runs this automatically (see the `prepare` script in `package.json`).
+To enable manually in an existing clone:
 
 ```bash
 git config core.hooksPath .githooks
@@ -14,7 +17,23 @@ Git will now run hooks from this directory instead of `.git/hooks/`.
 
 ### `pre-push`
 
-Uses an **allowlist** model — rejects any push containing commits whose author or committer email is not on the allowlist:
+Three checks, all belt-and-braces layered on top of the equivalent CI job
+(`.github/workflows/ci.yml`) — CI is the enforced backstop; this hook just
+catches the same problem locally, before a rejected push ever reaches a
+public Actions log.
+
+**Path allowlist** (`npm run check:paths`, `scripts/verify-public-paths.mjs`) —
+deny-by-default: every tracked path must be on `scripts/public-paths-allowlist.txt`,
+whole-tree, not diff-only. A path git skips (node missing locally) still fails in CI.
+
+**Private-marker content scan** (`npm run check:public-leak`,
+`scripts/check-public-mcp-leak.mjs`) — flags identifier-shaped content (a real
+account UUID, a personal email, a Stripe id, an API key/bearer token, a local
+`/Users/<name>` path) anywhere in the tree about to be pushed. Set
+`SN_FORBIDDEN_FILE` to a local newline-delimited needle file to also arm the
+external needle check CI runs from a repository secret.
+
+**Identity allowlist** — uses an **allowlist** model — rejects any push containing commits whose author or committer email is not on the allowlist:
 
 - `socialneuronteam@gmail.com` (team identity — use this for all hand-written commits)
 - `<id>+dependabot[bot]@users.noreply.github.com` (Dependabot)

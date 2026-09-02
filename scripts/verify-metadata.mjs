@@ -79,6 +79,8 @@ const FORBIDDEN = [
   'https://api.socialneuron.com/api/v1',
   'https://api.socialneuron.com/v1',
   // /v1/openapi.json is live as of v1.7.17 — the link is allowed again.
+  // stale platform-availability claim (retired 2026-09-02, #2846)
+  'Instagram** is pending platform review',
 ];
 
 // Internal codenames and infrastructure identifiers are NOT listed here.
