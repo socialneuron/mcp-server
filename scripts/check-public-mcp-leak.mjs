@@ -26,7 +26,7 @@
  * Exit 0 = clean, 1 = markers found, 2 = usage error.
  */
 import { readFileSync, statSync, readdirSync } from 'node:fs';
-import { join, relative, extname, basename } from 'node:path';
+import { join, relative, extname, basename, resolve } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 /**
@@ -184,7 +184,7 @@ function* walk(dir, visible) {
       yield* walk(full, visible);
     } else if (entry.isFile()) {
       if (isBinaryByType(entry.name)) continue;
-      if (visible && !visible.has(full)) continue;
+      if (visible && !visible.has(resolve(full))) continue;
       yield full;
     }
   }
