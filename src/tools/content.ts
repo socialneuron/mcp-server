@@ -26,6 +26,11 @@ import {
   checkCreditBudget,
   getCurrentBudgetStatus,
 } from '../lib/budget.js';
+import {
+  VIDEO_CREDIT_ESTIMATES,
+  IMAGE_CREDIT_ESTIMATES,
+  formatCreditRange,
+} from '../lib/creditEstimates.js';
 
 interface AsyncJob {
   id: string;
@@ -70,26 +75,6 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
-// Synced with the platform's video pricing source of truth — 2026-07-13 reprice + MCP-surface expansion.
-// Values are each model's reference-config base cost in credits; dynamic models
-// (kling family, wan, hailuo, seedance, grok) scale with duration/audio/resolution
-// server-side. These are pre-check ESTIMATES only — the real charge is reconciled
-// from the EF response (creditsDeducted). A server-side drift gate keeps this map in sync.
-const VIDEO_CREDIT_ESTIMATES: Record<string, number> = {
-  'seedance-2-fast': 264,
-  'kling-3': 100,
-  'grok-imagine': 30,
-  'veo3-fast': 65,
-  'kling-3-pro': 135,
-  'seedance-2': 328,
-  'veo3-quality': 1000,
-  'wan-2.6': 105,
-  'gemini-omni-video': 126,
-  'hailuo-02-standard': 180,
-  'seedance-1.5-pro': 150,
-  kling: 170,
-};
-
 // The MCP-exposed model set, in quality-ladder order (best->worst for steering). Hidden by design: runway-aleph (upstream sunsets
 // 2026-07-30), sora2/sora2-pro (C-tier + OpenAI API shutdown 2026-09-24), luma +
 // midjourney-video (dead kie endpoints). Kept in sync with the server's exposure flags.
@@ -108,17 +93,10 @@ const VIDEO_MODEL_ENUM = [
   'kling',
 ] as const;
 
-const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
-  midjourney: 20,
-  'nano-banana': 15,
-  'nano-banana-pro': 25,
-  'flux-pro': 30,
-  'flux-max': 50,
-  'gpt4o-image': 40,
-  imagen4: 35,
-  'imagen4-fast': 35,
-  seedream: 20,
-};
+// Composed once at module load so `generate_image`'s description can never
+// hand-drift from IMAGE_CREDIT_ESTIMATES, the same table the estimate lookup
+// below uses to budget-check every call. See ../lib/creditEstimates.ts.
+const IMAGE_CREDIT_RANGE = formatCreditRange(IMAGE_CREDIT_ESTIMATES);
 
 export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -340,7 +318,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'generate_image',
-    'Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 10-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (image-to-video). Pass project_id so the asset is stored with the correct brand/project.',
+    `Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 10-15s until complete. Costs ${IMAGE_CREDIT_RANGE} credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (image-to-video). Pass project_id so the asset is stored with the correct brand/project.`,
     {
       prompt: z
         .string()

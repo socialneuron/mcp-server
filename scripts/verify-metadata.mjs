@@ -81,6 +81,15 @@ const FORBIDDEN = [
   // /v1/openapi.json is live as of v1.7.17 — the link is allowed again.
   // stale platform-availability claim (retired 2026-09-02, #2846)
   'Instagram** is pending platform review',
+  // stale credit quotes (retired 2.0.2) — every quoted range is now derived from
+  // src/lib/creditEstimates.ts, never hand-written. Needles are the exact retired
+  // strings, not bare "2-10"/"15-80": those spans are still legitimate elsewhere
+  // (the 2-10 media_urls carousel limit) and in prose describing this fix.
+  'generate_video costs 15-80',
+  "image_generation: '2-10 credits'",
+  "video_generation: '15-80 credits'",
+  '- Image generation: 2-10 credits',
+  '- Video generation: 15-80 credits',
 ];
 
 // Internal codenames and infrastructure identifiers are NOT listed here.
