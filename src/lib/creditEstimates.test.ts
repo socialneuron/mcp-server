@@ -9,7 +9,7 @@
  * (not just cross-surface agreement — two surfaces can agree and both be wrong)
  * so a hand-written string can never reintroduce the drift.
  */
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAllTools } from './register-tools.js';
 import { registerResources } from '../resources.js';
@@ -80,15 +80,31 @@ describe('credit estimate ranges', () => {
     expect(generateImage?.description ?? '').toContain('15-50');
   });
 
-  it('quotes the real ranges on the docs resources', async () => {
-    for (const uri of ['socialneuron://docs/capabilities', 'socialneuron://docs/getting-started']) {
-      const text = await readResource(uri);
-      expect(text, uri).toContain('15-50');
-      expect(text, uri).toContain('30-1000');
-      expect(text, uri).not.toContain('2-10');
-      expect(text, uri).not.toContain('15-80');
+  it.each(['2026-02-10T12:00:00.000Z', '2026-12-10T12:00:00.000Z'])(
+    'quotes the real ranges on the docs resources at %s',
+    async timestamp => {
+      vi.useFakeTimers({ toFake: ['Date'] });
+      vi.setSystemTime(new Date(timestamp));
+      try {
+        for (const uri of ['socialneuron://docs/capabilities', 'socialneuron://docs/getting-started']) {
+          const text = await readResource(uri);
+          // Capability metadata contains an ISO date, which can include "2-10".
+          const quotes =
+            uri === 'socialneuron://docs/capabilities'
+              ? JSON.stringify(
+                  (JSON.parse(text) as { credit_costs: Record<string, string> }).credit_costs
+                )
+              : text;
+          expect(quotes, uri).toContain('15-50');
+          expect(quotes, uri).toContain('30-1000');
+          expect(quotes, uri).not.toContain('2-10');
+          expect(quotes, uri).not.toContain('15-80');
+        }
+      } finally {
+        vi.useRealTimers();
+      }
     }
-  });
+  );
 
   it('covers exactly the models the tool schemas admit', async () => {
     const tools = (await listTools()).tools;
