@@ -178,6 +178,8 @@ src/lib/checkStatusShape.ts
 src/lib/colorAudit.ts
 src/lib/connected-account-routing.test.ts
 src/lib/connected-account-routing.ts
+src/lib/creditEstimates.test.ts
+src/lib/creditEstimates.ts
 src/lib/discovery-catalog.test.ts
 src/lib/discovery-catalog.ts
 src/lib/edge-function.test.ts

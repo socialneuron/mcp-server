@@ -5,6 +5,11 @@ import { sanitizeDbError } from '../lib/sanitize-error.js';
 import { getCurrentBudgetStatus } from '../lib/budget.js';
 import { MCP_VERSION } from '../lib/version.js';
 import type { ResponseEnvelope } from '../types/index.js';
+import {
+  VIDEO_CREDIT_ESTIMATES,
+  IMAGE_CREDIT_ESTIMATES,
+  formatCreditRange,
+} from '../lib/creditEstimates.js';
 
 function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   return {
@@ -16,10 +21,16 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+// Composed once at module load from the same estimate tables generate_image and
+// generate_video budget-check against, so this description can never hand-drift
+// from the amount actually charged. See ../lib/creditEstimates.ts.
+const IMAGE_CREDIT_RANGE = formatCreditRange(IMAGE_CREDIT_ESTIMATES);
+const VIDEO_CREDIT_RANGE = formatCreditRange(VIDEO_CREDIT_ESTIMATES);
+
 export function registerCreditsTools(server: McpServer): void {
   server.tool(
     'get_credit_balance',
-    'Check remaining credits, monthly limit, spending cap, and plan tier. Call this before expensive operations — generate_video costs 15-80 credits, generate_image costs 2-10. Returns current balance, monthly allocation, and spending cap (2.5x allocation).',
+    `Check remaining credits, monthly limit, spending cap, and plan tier. Call this before expensive operations — generate_video costs ${VIDEO_CREDIT_RANGE} credits (dynamic models can run higher based on duration/audio/resolution), generate_image costs ${IMAGE_CREDIT_RANGE}. Returns current balance, monthly allocation, and spending cap (2.5x allocation).`,
     {
       response_format: z
         .enum(['text', 'json'])

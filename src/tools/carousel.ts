@@ -12,18 +12,7 @@ import {
   checkAssetBudget,
   checkCreditBudget,
 } from '../lib/budget.js';
-
-const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
-  midjourney: 20,
-  'nano-banana': 15,
-  'nano-banana-pro': 25,
-  'flux-pro': 30,
-  'flux-max': 50,
-  'gpt4o-image': 40,
-  imagen4: 35,
-  'imagen4-fast': 35,
-  seedream: 20,
-};
+import { IMAGE_CREDIT_ESTIMATES } from '../lib/creditEstimates.js';
 
 // Canonical carousel-capable template packs (constants/templates/templatePacks.ts).
 // `sn_artifact_reel_v1` is deliberately excluded — it's a vertical_video pack, not
