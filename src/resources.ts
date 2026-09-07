@@ -7,6 +7,17 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { callEdgeFunction } from './lib/edge-function.js';
 import { MCP_VERSION } from './lib/version.js';
+import {
+  VIDEO_CREDIT_ESTIMATES,
+  IMAGE_CREDIT_ESTIMATES,
+  formatCreditRange,
+} from './lib/creditEstimates.js';
+
+// Composed once at module load from the same estimate tables generate_image and
+// generate_video budget-check against, so these resources can never hand-drift
+// from the amount actually charged. See ./lib/creditEstimates.ts.
+const IMAGE_CREDIT_RANGE = formatCreditRange(IMAGE_CREDIT_ESTIMATES);
+const VIDEO_CREDIT_RANGE = formatCreditRange(VIDEO_CREDIT_ESTIMATES);
 
 export function registerResources(server: McpServer): void {
   // ── 1. Brand Profile ────────────────────────────────────────────────
@@ -181,8 +192,8 @@ export function registerResources(server: McpServer): void {
         },
         credit_costs: {
           text_generation: '1-3 credits',
-          image_generation: '2-10 credits',
-          video_generation: '15-80 credits',
+          image_generation: `${IMAGE_CREDIT_RANGE} credits`,
+          video_generation: `${VIDEO_CREDIT_RANGE} credits (dynamic models can run higher based on duration/audio/resolution)`,
           analytics_query: '0 credits',
           distribution: '1 credit per platform',
         },
@@ -314,8 +325,8 @@ export function registerResources(server: McpServer): void {
 
 ## Credit Tips
 - Text generation: 1-3 credits
-- Image generation: 2-10 credits
-- Video generation: 15-80 credits
+- Image generation: ${IMAGE_CREDIT_RANGE} credits
+- Video generation: ${VIDEO_CREDIT_RANGE} credits — dynamic models can run higher based on duration/audio/resolution
 - Check balance anytime: \`get_credit_balance\`
 
 ## Need Help?

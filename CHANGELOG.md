@@ -4,6 +4,18 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.0.2 - 2026-09-06
+
+### Fixed
+
+- **Credit quotes match what you are actually charged.** `get_credit_balance`'s description and the `socialneuron://docs/capabilities` and `socialneuron://docs/getting-started` resources quoted image generation at 2-10 credits and video generation at 15-80. The real spans across the models these tools admit are 15-50 for images and 30-1000 for video (dynamic video models can run higher still, scaling with duration, audio, and resolution), so an agent budgeting from those numbers could under-reserve by up to 5x on images and 12x on video. Every quoted range is now derived at load time from the same estimate tables `generate_image` and `generate_video` budget-check each call against, and a regression test asserts the quoted values, plus that those tables cover exactly the models the tool schemas admit. `generate_image`'s own quote was already correct and is unchanged.
+
+### Changed
+
+- The image credit estimate table is defined once and shared by the image, carousel, credit-balance, and documentation-resource surfaces instead of being hand-copied into each.
+- The public metadata contract gate carries the retired quote strings on its forbidden list, so they cannot return anywhere in source, docs, or server metadata.
+
+
 ## 2.0.1 - 2026-07-27
 
 Published as 2.0.1: a v2.0.0 tag was cut during release preparation but never published to npm; the tag is retained and 2.0.1 is the first published 2.x release.
