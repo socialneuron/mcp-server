@@ -227,7 +227,7 @@ describe('callEdgeFunction', () => {
       {
         userId: 'user-req',
         scopes: [],
-        token: 'snk_live_request_token',
+        token: 'xxxxxxxxxxxxxxxxxxxxxxxx',
         creditsUsed: 0,
         assetsGenerated: 0,
         projectId: null,
@@ -236,7 +236,7 @@ describe('callEdgeFunction', () => {
         await callEdgeFunction('test-fn', {});
       }
     );
-    expect(sentHeaders().Authorization).toBe('Bearer snk_live_request_token');
+    expect(sentHeaders().Authorization).toBe('Bearer xxxxxxxxxxxxxxxxxxxxxxxx');
   });
 
   // 13. Sets Authorization header with Bearer token
