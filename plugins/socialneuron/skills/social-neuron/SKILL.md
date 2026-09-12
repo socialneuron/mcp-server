@@ -77,7 +77,7 @@ tool returned. Never regenerate or re-upload existing media.
 ## 5. When a tool errors
 
 Read `error_type` and `hint`. Correct invalid inputs before retrying validation errors; stop
-on credit or entitlement limits. For uncertain publishing outcomes use the timeout rule above: 
+on credit or entitlement limits. For uncertain publishing outcomes use the timeout rule above:
 changing a key or payload to obtain a success response can duplicate the original action.
 
 ## 6. Learn, handle limits, and use interactive views
