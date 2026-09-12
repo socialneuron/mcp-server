@@ -520,8 +520,7 @@ export function registerDistributionTools(server: McpServer): void {
         .regex(/^[a-zA-Z0-9_-]{8,128}$/)
         .optional()
         .describe(
-          'Stable 8-128 character retry key (letters, numbers, underscore, hyphen). ' +
-            'Reuse the same key when retrying the same publish request to prevent duplicate posts.'
+          'Optional stable 8-128 character retry key (letters, numbers, underscore, hyphen). After a timeout, preserve the exact original request and idempotency_key: if initially omitted, keep it omitted; if supplied, reuse that value. Never introduce a new key or change content, target, or timing to retry an uncertain publish.'
         ),
     },
     async ({
@@ -1182,7 +1181,7 @@ export function registerDistributionTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'list_connected_accounts',
-    'Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. Pass project_id to list the accounts for a specific brand/project, then pass the returned account id as account_id/account_ids when posting. If a platform is missing or expired, the user needs to reconnect at socialneuron.com/settings/connections.',
+    'Check which social platforms have active OAuth connections for posting. Call this before schedule_post to verify credentials. Pass project_id to list the accounts for a specific brand/project, then pass the returned account id as account_id/account_ids when posting. If a platform is missing or expired, discover and call `start_platform_connection` (requires mcp:distribute) with the same project_id to get a one-time browser link. After the user completes the connection, call `wait_for_connection` before posting. If that tool is unavailable, guide the user to Integrations in Social Neuron and recheck connections.',
     {
       project_id: z
         .string()
@@ -1280,8 +1279,7 @@ export function registerDistributionTools(server: McpServer): void {
             {
               type: 'text' as const,
               text:
-                'No connected social media accounts found. Connect platforms ' +
-                'in Social Neuron Settings > Connections.' +
+                'No connected social media accounts found. If a platform is missing or expired, discover and call `start_platform_connection` (requires mcp:distribute) with the same project_id to get a one-time browser link. After the user completes the connection, call `wait_for_connection` before posting. If that tool is unavailable, guide the user to Integrations in Social Neuron and recheck connections.' +
                 (projectAutoResolvedNote ? `\n\nNote: ${projectAutoResolvedNote}` : ''),
             },
           ],

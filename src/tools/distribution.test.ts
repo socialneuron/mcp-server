@@ -935,6 +935,29 @@ describe('distribution tools', () => {
   // list_connected_accounts
   // =========================================================================
   describe('list_connected_accounts', () => {
+    it('emits scope-qualified connection recovery in registration and empty results', async () => {
+      const registration = server.tool.mock.calls.find(
+        ([name]) => name === 'list_connected_accounts'
+      )!;
+      mockCallEdge.mockResolvedValueOnce({ data: { success: true, accounts: [] }, error: null });
+      const result = await server.getHandler('list_connected_accounts')!({});
+      for (const text of [registration[1], result.content[0].text]) {
+        expect(text).toContain('start_platform_connection');
+        expect(text).toContain('mcp:distribute');
+        expect(text).toContain('wait_for_connection');
+        expect(text).toContain('If that tool is unavailable');
+        expect(text).toContain('Integrations');
+      }
+    });
+
+    it('emits retry guidance that preserves omitted and explicit idempotency inputs', () => {
+      const registration = server.tool.mock.calls.find(([name]) => name === 'schedule_post')!;
+      const guidance = registration[2].idempotency_key.description;
+      expect(guidance).toContain('if initially omitted, keep it omitted');
+      expect(guidance).toContain('if supplied, reuse that value');
+      expect(guidance).toContain('Never introduce a new key');
+    });
+
     it('calls mcp-data EF with connected-accounts action', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: {

@@ -172,7 +172,8 @@ export const TOOL_CATALOG: ToolEntry[] = [
   },
   {
     name: 'list_connected_accounts',
-    description: 'List connected social media accounts',
+    description:
+      'Check connected platforms before posting. For missing or expired accounts, discover start_platform_connection (requires mcp:distribute), then wait_for_connection after browser approval. If unavailable, use Integrations in Social Neuron and recheck.',
     module: 'distribution',
     scope: 'mcp:read',
   },

@@ -13,6 +13,15 @@ import { TOOL_CATALOG } from './tool-catalog.js';
 describe('discovery catalog (unauthenticated tools/list carries real input schemas)', () => {
   beforeEach(() => __resetDiscoveryCatalogCache());
 
+  it('advertises scope-qualified connection recovery in the emitted discovery catalog', async () => {
+    const tools = await buildDiscoveryCatalog();
+    const description = tools.find(tool => tool.name === 'list_connected_accounts')!.description;
+    expect(description).toContain('start_platform_connection');
+    expect(description).toContain('mcp:distribute');
+    expect(description).toContain('wait_for_connection');
+    expect(description).toContain('Integrations');
+  });
+
   it('advertises real params for tools the schemaless bug disabled', async () => {
     const tools = await buildDiscoveryCatalog();
     for (const name of ['schedule_post', 'run_content_pipeline', 'fetch_analytics']) {
