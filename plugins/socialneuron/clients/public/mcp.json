@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "socialneuron": {
+      "type": "http",
+      "url": "https://mcp.socialneuron.com/mcp"
+    }
+  }
+}

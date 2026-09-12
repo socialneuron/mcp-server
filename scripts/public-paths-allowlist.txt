@@ -326,3 +326,15 @@ src/types/index.ts
 tools.lock.json
 tsconfig.json
 vitest.config.ts
+
+# Reviewed portable plugin candidate (no evaluation or local marketplace files)
+plugins/socialneuron/.claude-plugin/plugin.json
+plugins/socialneuron/.codex-plugin/plugin.json
+plugins/socialneuron/.cursor-plugin/plugin.json
+plugins/socialneuron/LICENSE
+plugins/socialneuron/README.md
+plugins/socialneuron/assets/logo.svg
+plugins/socialneuron/clients/public/mcp.json
+plugins/socialneuron/mcp.json
+plugins/socialneuron/plugin.json
+plugins/socialneuron/skills/social-neuron/SKILL.md

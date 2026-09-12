@@ -1,0 +1,20 @@
+{
+  "name": "socialneuron",
+  "version": "0.1.0",
+  "description": "Create brand-aware social content, prepare schedules, and use analytics to improve the next draft.",
+  "author": {
+    "name": "Social Neuron",
+    "url": "https://socialneuron.com"
+  },
+  "keywords": [
+    "social-media",
+    "content-creation",
+    "mcp",
+    "scheduling",
+    "analytics"
+  ],
+  "logo": "./assets/logo.svg",
+  "skills": "./skills/",
+  "mcpServers": "./clients/public/mcp.json",
+  "primaryColor": "#01E789"
+}

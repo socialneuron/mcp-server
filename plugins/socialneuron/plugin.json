@@ -1,0 +1,45 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "socialneuron",
+  "version": "0.1.0",
+  "description": "Create brand-aware social content, prepare schedules, and use analytics to improve the next draft.",
+  "author": {
+    "name": "Social Neuron",
+    "url": "https://socialneuron.com"
+  },
+  "homepage": "https://socialneuron.com/for-developers",
+  "repository": "https://github.com/socialneuron/mcp-server",
+  "license": "MIT",
+  "keywords": [
+    "social-media",
+    "content-creation",
+    "mcp",
+    "scheduling",
+    "analytics"
+  ],
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "Social Neuron",
+        "shortDescription": "Brand-aware social content: create, schedule, measure, improve",
+        "longDescription": "Draft posts, images, videos and carousels with Social Neuron, prepare schedules for connected accounts, and use performance insights to plan what to create next. The bundled skill asks for approval before publishing; tool permissions and server-side controls remain separate.",
+        "developerName": "Social Neuron",
+        "category": "Productivity",
+        "capabilities": [
+          "Read",
+          "Write"
+        ],
+        "websiteURL": "https://socialneuron.com",
+        "privacyPolicyURL": "https://socialneuron.com/privacy",
+        "termsOfServiceURL": "https://socialneuron.com/terms",
+        "defaultPrompt": [
+          "Draft three LinkedIn posts in my brand voice about our latest launch.",
+          "What performed best on my Instagram last month, and what should I post next?",
+          "Plan next week's content across TikTok and Instagram for my review."
+        ],
+        "brandColor": "#01E789",
+        "logo": "./assets/logo.svg"
+      }
+    }
+  }
+}

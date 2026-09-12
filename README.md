@@ -80,6 +80,10 @@ Add to `.cursor/mcp.json` in your workspace:
 
 Ask Claude: "What content should I post this week?" or "Schedule my latest video to YouTube and TikTok"
 
+## Plugin release candidate
+
+The [Social Neuron plugin candidate](plugins/socialneuron/README.md) bundles a guided content workflow and the hosted MCP connection for Claude, Cursor, ChatGPT and Codex. Its portable package root is `plugins/socialneuron`; directory review and publication are pending. Use that subdirectory when testing a local plugin. The existing root Cursor server manifest remains separate while its directory listing is reconciled.
+
 ## What You Can Do
 
 Ask Claude things like:
