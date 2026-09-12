@@ -17,8 +17,10 @@ follows the same shape: **ground → act → hand back**.
 | Anything that spends credits — image, video, carousel imagery, voiceover | `get_credit_balance` | Say the likely cost when it is a large share of the balance |
 | "What worked / what should I post next" | `fetch_analytics` or `get_performance_insights` | Keep observed results separate from recommendations |
 
-If the requested account is missing or expired, call `start_platform_connection` for that platform,
-share its returned URL, and use `wait_for_connection` briefly. A URL is not proof of connection;
+If the requested account is missing or expired, discover `start_platform_connection` by its exact
+name using the host tool search if it is not visible, then call it for that platform and project.
+Share its returned URL and use `wait_for_connection` briefly. Starting a connection requires
+distribution permission; if unavailable, give the supported Settings connection path instead. A URL is not proof of connection;
 refresh `list_connected_accounts` before publishing. While waiting, prepare useful draft text
 without paid media or publishing. If multiple projects/accounts match, ask which one to use.
 
@@ -48,8 +50,11 @@ preview and approval. Preserve the approved text verbatim.
 Receipt after publishing = the status the tool returned (`accepted`, `queued`, `scheduled`) + the
 post id + anything still pending. `accepted` means accepted for processing, not live. Say "live"
 only after `list_recent_posts` confirms publication. If a publishing response times out, report
-the outcome as unknown and reconcile through a read before any retry; never create a duplicate
-post to obtain a receipt.
+the outcome as unknown and reconcile through a read. An empty or inconclusive recent-posts
+result does not prove the first attempt failed: stop and hand back the uncertainty; do not
+submit again in that turn. Any later authorized retry must preserve the complete original
+payload and idempotency key, including leaving the key omitted if originally omitted. Adding
+a new key after a timeout can create a duplicate. Carry these rules into any delegated task.
 
 ## 3. Carousels: text first
 
@@ -71,8 +76,9 @@ tool returned. Never regenerate or re-upload existing media.
 
 ## 5. When a tool errors
 
-Read `error_type` and `hint`. Never repeat an identical call — change the input, or report the
-problem with the hint's next step.
+Read `error_type` and `hint`. Correct invalid inputs before retrying validation errors; stop
+on credit or entitlement limits. For uncertain publishing outcomes use the timeout rule above: 
+changing a key or payload to obtain a success response can duplicate the original action.
 
 ## 6. Learn, handle limits, and use interactive views
 
