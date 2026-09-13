@@ -121,6 +121,107 @@ describe('distribution tools', () => {
       );
     });
 
+    it.each([
+      ['missing results', undefined],
+      ['null results', null],
+      ['empty results', {}],
+      ['array results', [{ secret: 'array detail' }]],
+    ])('returns an actionable fallback for %s', async (_label, malformedResults) => {
+      mockCallEdge.mockReset();
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube']));
+      const data: Record<string, unknown> = {
+        success: true,
+        scheduledAt: '2027-03-01T12:00:00Z',
+      };
+      if (malformedResults !== undefined) data.results = malformedResults;
+      mockCallEdge.mockResolvedValueOnce({ data, error: null });
+
+      const result = await server.getHandler('schedule_post')!({
+        media_url: 'https://example.com/video.mp4',
+        caption: 'Malformed result response',
+        platforms: ['youtube'],
+        auto_rehost: false,
+      });
+
+      const output = result.content[0].text;
+      expect(result.isError).toBe(false);
+      expect(output).toContain('No platform result details were returned by schedule-post.');
+      expect(output).toContain('Check list_recent_posts before retrying');
+      expect(output).not.toContain('undefined');
+      expect(output).not.toContain('[object Object]');
+      expect(JSON.stringify(result.structuredContent)).not.toContain('array detail');
+    });
+
+    it.each([
+      ['missing failure reason', { success: false }],
+      [
+        'object failure reason',
+        { success: false, error: { message: 'provider detail', access_token: 'secret-value' } },
+      ],
+    ])('uses a safe fallback for a %s', async (_label, platformResult) => {
+      mockCallEdge.mockReset();
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['TikTok']));
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: false,
+          scheduledAt: '2027-03-01T12:00:00Z',
+          results: { TikTok: platformResult },
+        } as any,
+        error: null,
+      });
+
+      const result = await server.getHandler('schedule_post')!({
+        media_url: 'https://example.com/video.mp4',
+        caption: 'Missing provider failure reason',
+        platforms: ['tiktok'],
+        auto_rehost: false,
+      });
+
+      const output = result.content[0].text;
+      expect(result.isError).toBe(true);
+      expect(output).toContain('TikTok: FAILED - No provider failure reason was returned by schedule-post.');
+      expect(output).toContain('Check list_recent_posts before retrying');
+      expect(output).not.toContain('provider detail');
+      expect(output).not.toContain('access_token');
+      expect(output).not.toContain('undefined');
+      expect(output).not.toContain('[object Object]');
+      expect(JSON.stringify(result.structuredContent)).not.toContain('provider detail');
+      expect(JSON.stringify(result.structuredContent)).not.toContain('access_token');
+    });
+
+    it('keeps mixed-success semantics while formatting a malformed platform failure safely', async () => {
+      mockCallEdge.mockReset();
+      mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['YouTube', 'TikTok']));
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          scheduledAt: '2027-03-01T12:00:00Z',
+          results: {
+            YouTube: { success: true, jobId: 'j1', postId: 'p1' },
+            TikTok: { success: false, error: { provider: 'private detail' } },
+          },
+        } as any,
+        error: null,
+      });
+
+      const result = await server.getHandler('schedule_post')!({
+        media_url: 'https://example.com/video.mp4',
+        caption: 'Mixed provider result',
+        platforms: ['youtube', 'tiktok'],
+        auto_rehost: false,
+      });
+
+      const output = result.content[0].text;
+      expect(result.isError).toBe(false);
+      expect(output).toContain('Post scheduled successfully.');
+      expect(output).toContain('YouTube: OK (jobId=j1, postId=p1)');
+      expect(output).toContain('TikTok: FAILED - No provider failure reason was returned by schedule-post.');
+      expect(output).not.toContain('private detail');
+      expect(output).not.toContain('undefined');
+      expect(output).not.toContain('[object Object]');
+      expect(JSON.stringify(result.structuredContent)).not.toContain('private detail');
+    });
+
     // =========================================================================
     // account_id/account_ids auto-bind (E3, 2026-07-15)
     // =========================================================================

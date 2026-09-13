@@ -107,6 +107,64 @@ function asEnvelope<T>(data: T): ResponseEnvelope<T> {
   };
 }
 
+const NO_PLATFORM_RESULTS_FALLBACK =
+  'No platform result details were returned by schedule-post. Check list_recent_posts before retrying.';
+const NO_PROVIDER_FAILURE_REASON_FALLBACK =
+  'No provider failure reason was returned by schedule-post. Check list_recent_posts before retrying.';
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function formatPlatformFailureReason(value: unknown): string {
+  if (typeof value !== 'string') return NO_PROVIDER_FAILURE_REASON_FALLBACK;
+  const reason = value.trim();
+  return reason.length > 0 ? reason : NO_PROVIDER_FAILURE_REASON_FALLBACK;
+}
+
+function formatResultIdentifier(value: unknown): string {
+  if (typeof value !== 'string' || value.trim().length === 0) return 'not returned';
+  return value;
+}
+
+function normalizeSchedulePlatformResult(
+  value: unknown
+): SchedulePostResult['results'][string] {
+  if (!isObjectRecord(value)) {
+    return { success: false, error: NO_PROVIDER_FAILURE_REASON_FALLBACK };
+  }
+
+  const success = value.success === true;
+  const normalized: Record<string, unknown> = { success };
+  for (const field of ['jobId', 'postId', 'publishStatus', 'message'] as const) {
+    if (typeof value[field] === 'string') normalized[field] = value[field];
+  }
+  if (Array.isArray(value.warnings) && value.warnings.every(warning => typeof warning === 'string')) {
+    normalized.warnings = value.warnings;
+  }
+  if (typeof value.aiDisclosureAdded === 'boolean') {
+    normalized.aiDisclosureAdded = value.aiDisclosureAdded;
+  }
+  if (success && isObjectRecord(value.aiDisclosure)) {
+    normalized.aiDisclosure = value.aiDisclosure;
+  }
+  if (typeof value.error === 'string' && value.error.trim().length > 0) {
+    normalized.error = value.error.trim();
+  } else if (!success) {
+    normalized.error = NO_PROVIDER_FAILURE_REASON_FALLBACK;
+  }
+  return normalized as SchedulePostResult['results'][string];
+}
+
+function normalizeScheduleResults(value: unknown): SchedulePostResult['results'] {
+  if (!isObjectRecord(value)) return {};
+  const normalized: SchedulePostResult['results'] = {};
+  for (const [platform, result] of Object.entries(value)) {
+    normalized[platform] = normalizeSchedulePlatformResult(result);
+  }
+  return normalized;
+}
+
 /**
  * Never relay an Edge Function object wholesale. The backend is allowed to add
  * internal fields without turning them into part of the public MCP/REST/SDK
@@ -998,9 +1056,10 @@ export function registerDistributionTools(server: McpServer): void {
         };
       }
 
+      const safeResults = normalizeScheduleResults(data.results);
       const responseData = projectAutoResolvedNote
-        ? { ...data, project_auto_resolved: projectAutoResolvedNote }
-        : data;
+        ? { ...data, results: safeResults, project_auto_resolved: projectAutoResolvedNote }
+        : { ...data, results: safeResults };
 
       const lines: string[] = [
         data.success ? 'Post scheduled successfully.' : 'Post scheduling had errors.',
@@ -1017,11 +1076,17 @@ export function registerDistributionTools(server: McpServer): void {
       }
       lines.push('', 'Platform results:');
 
-      for (const [platform, result] of Object.entries(data.results)) {
-        if (result.success) {
-          lines.push(`  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`);
-        } else {
-          lines.push(`  ${platform}: FAILED - ${result.error}`);
+      if (Object.keys(safeResults).length === 0) {
+        lines.push(`  ${NO_PLATFORM_RESULTS_FALLBACK}`);
+      } else {
+        for (const [platform, result] of Object.entries(safeResults)) {
+          if (result.success) {
+            lines.push(
+              `  ${platform}: OK (jobId=${formatResultIdentifier(result.jobId)}, postId=${formatResultIdentifier(result.postId)})`
+            );
+          } else {
+            lines.push(`  ${platform}: FAILED - ${formatPlatformFailureReason(result.error)}`);
+          }
         }
       }
 
