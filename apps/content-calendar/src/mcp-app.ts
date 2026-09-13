@@ -65,6 +65,9 @@ const SCOPE_HIERARCHY: Record<string, string[]> = {
   ],
 };
 
+const READ_ONLY_SCHEDULE_HINT =
+  'Read-only connection. Reconnect with scheduling permission';
+
 function hasScope(userScopes: string[], required: string): boolean {
   if (userScopes.includes(required)) return true;
   for (const userScope of userScopes) {
@@ -204,6 +207,12 @@ function getWeekDates(): string[] {
   });
 }
 
+function getDayLabel(date: string): string {
+  const parsed = new Date(`${date}T00:00:00.000Z`);
+  if (!Number.isFinite(parsed.getTime())) return '';
+  return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][parsed.getUTCDay()];
+}
+
 function el(tag: string, className?: string, text?: string): HTMLElement {
   const node = document.createElement(tag);
   if (className) node.className = className;
@@ -255,7 +264,7 @@ function renderToolbar() {
   suggest.disabled = !state.canSchedule || candidatePlatforms.length === 0;
   if (suggest.disabled) {
     suggest.title = !state.canSchedule
-      ? 'Upgrade to schedule posts'
+      ? `${READ_ONLY_SCHEDULE_HINT} to find slots.`
       : 'No platforms with posts to suggest for';
   }
   suggest.addEventListener('click', () => {
@@ -271,13 +280,7 @@ function renderToolbar() {
 function renderUpgradeBanner(): HTMLElement | null {
   if (state.canSchedule) return null;
   const wrap = el('div', 'upgrade-banner');
-  wrap.append(document.createTextNode('Read-only — upgrade your plan to drag-drop reschedule. '));
-  const link = document.createElement('a');
-  link.href = 'https://socialneuron.com/pricing';
-  link.target = '_blank';
-  link.rel = 'noopener noreferrer';
-  link.textContent = 'View pricing →';
-  wrap.append(link);
+  wrap.append(document.createTextNode(`${READ_ONLY_SCHEDULE_HINT} to reschedule posts. `));
   return wrap;
 }
 
@@ -353,7 +356,7 @@ function renderCalendar() {
       : `${visible.length} scheduled post${visible.length === 1 ? '' : 's'}`;
 
   const dates = getWeekDates();
-  const dayLabels = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const dayLabels = dates.map(getDayLabel);
 
   const postsByDate = new Map<string, ScheduledPost[]>();
   for (const post of visible) {
@@ -456,7 +459,7 @@ async function suggestNextSlot(platforms: string[]) {
     });
 
     if (isScopeDenied(result)) {
-      showError("You don't have permission to find slots. Upgrade your plan to schedule posts.");
+      showError(`${READ_ONLY_SCHEDULE_HINT} to find slots.`);
       return;
     }
 
@@ -801,8 +804,7 @@ async function submitQuickCreate() {
 
     if (isScopeDenied(result)) {
       state.modal.submitting = false;
-      state.modal.error =
-        "You don't have permission to schedule. Upgrade your plan at socialneuron.com/pricing.";
+      state.modal.error = `${READ_ONLY_SCHEDULE_HINT} to schedule posts.`;
       renderModal();
       return;
     }
