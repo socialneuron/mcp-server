@@ -49,7 +49,7 @@ import { captureException, flushSentry, initSentry, shutdownSentry } from './lib
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
 import { buildWwwAuthenticateHeader } from './lib/www-authenticate.js';
-import { buildDiscoveryCatalog } from './lib/discovery-catalog.js';
+import { buildDiscoveryHttpResponse } from './lib/discovery-catalog.js';
 import { publicToolsForProfile, resolveToolProfile } from './lib/tool-profile.js';
 import {
   buildProtectedResourceMetadata,
@@ -975,24 +975,10 @@ app.post('/mcp', (req: express.Request, res: express.Response, next: express.Nex
 
   if (body?.jsonrpc === '2.0' && body.method === 'tools/list') {
     // Public discovery → static catalog WITH real input schemas.
-    buildDiscoveryCatalog(TOOL_PROFILE)
-      .then(tools => {
-        res.json({ jsonrpc: '2.0', id: body.id ?? null, result: { tools } });
-      })
-      .catch(() => {
-        // Last-resort fallback: names-only (never throw out of discovery).
-        res.json({
-          jsonrpc: '2.0',
-          id: body.id ?? null,
-          result: {
-            tools: publicToolsForProfile(TOOL_PROFILE).map(t => ({
-              name: t.name,
-              description: t.description,
-              inputSchema: { type: 'object' as const, properties: {} },
-            })),
-          },
-        });
-      });
+    void buildDiscoveryHttpResponse(body.id, TOOL_PROFILE).then(response => {
+      if (response.status !== 200) res.setHeader('Cache-Control', 'no-store');
+      res.status(response.status).json(response.body);
+    });
     return;
   }
 

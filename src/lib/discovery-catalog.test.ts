@@ -6,12 +6,50 @@
  * makes every array/object/number arg untransportable and silently disables the
  * tools that take them (schedule_post, run_content_pipeline, …).
  */
-import { describe, it, expect, beforeEach } from 'vitest';
-import { buildDiscoveryCatalog, __resetDiscoveryCatalogCache } from './discovery-catalog.js';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { buildDiscoveryCatalog, buildDiscoveryHttpResponse, __resetDiscoveryCatalogCache } from './discovery-catalog.js';
 import { TOOL_CATALOG } from './tool-catalog.js';
 
 describe('discovery catalog (unauthenticated tools/list carries real input schemas)', () => {
   beforeEach(() => __resetDiscoveryCatalogCache());
+  afterEach(() => vi.restoreAllMocks());
+
+  it('rejects a failed SDK discovery probe and retries successfully on the next request', async () => {
+    vi.spyOn(McpServer.prototype, 'tool').mockImplementationOnce(() => {
+      throw new Error('synthetic SDK registration failure');
+    });
+    await expect(buildDiscoveryCatalog()).rejects.toThrow();
+    const recovered = await buildDiscoveryCatalog();
+    const schedule = recovered.find(tool => tool.name === 'schedule_post');
+    expect(schedule?.inputSchema.properties.platforms).toMatchObject({ type: 'array' });
+    expect(recovered.find(tool => tool.name === 'list_compositions')?.inputSchema.properties).toEqual({});
+  });
+
+
+  it('returns a sanitized retryable HTTP error without a successful tool catalog', async () => {
+    vi.spyOn(McpServer.prototype, 'tool').mockImplementationOnce(() => {
+      throw new Error('synthetic private SDK detail');
+    });
+    const failed = await buildDiscoveryHttpResponse('request-7');
+    expect(failed).toEqual({
+      status: 503,
+      body: {
+        jsonrpc: '2.0',
+        id: 'request-7',
+        error: { code: -32603, message: 'Tool discovery is temporarily unavailable. Retry tools/list.' },
+      },
+    });
+    expect(JSON.stringify(failed)).not.toContain('synthetic private SDK detail');
+    const recovered = await buildDiscoveryHttpResponse('request-8');
+    expect(recovered.status).toBe(200);
+    expect(recovered.body.result?.tools.find(tool => tool.name === 'execute_recipe')?.inputSchema.properties.inputs).toMatchObject({type: 'object'});
+  });
+
+  it('rejects an incomplete SDK tool set rather than filling missing schemas with empty objects', async () => {
+    vi.spyOn(McpServer.prototype, 'tool').mockImplementationOnce(() => undefined as never);
+    await expect(buildDiscoveryCatalog()).rejects.toThrow('Discovery input schema is unavailable');
+  });
 
   it('advertises scope-qualified connection recovery in the emitted discovery catalog', async () => {
     const tools = await buildDiscoveryCatalog();

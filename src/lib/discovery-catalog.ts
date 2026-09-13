@@ -12,7 +12,7 @@
  * The schemas are sourced from the SAME SDK serialization the AUTHENTICATED
  * tools/list uses (registerAllTools → the SDK's `tools/list` handler), so discovery
  * and authenticated clients see identical schemas. Name-matched to TOOL_CATALOG with
- * a `{}` fallback, so the advertised tool SET is unchanged — we only attach schemas.
+ * strict completeness check. Failed builds are retryable and never cached as empty schemas.
  */
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { registerAllTools } from './register-tools.js';
@@ -33,7 +33,10 @@ const cached = new Map<ToolProfile, Promise<DiscoveryTool[]>>();
 export function buildDiscoveryCatalog(profile: ToolProfile = 'full'): Promise<DiscoveryTool[]> {
   const existing = cached.get(profile);
   if (existing) return existing;
-  const catalog = computeDiscoveryCatalog(profile);
+  const catalog = computeDiscoveryCatalog(profile).catch(error => {
+    if (cached.get(profile) === catalog) cached.delete(profile);
+    throw error;
+  });
   cached.set(profile, catalog);
   return catalog;
 }
@@ -45,7 +48,7 @@ export function __resetDiscoveryCatalogCache(): void {
 
 async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryTool[]> {
   const schemaByName = new Map<string, DiscoveryTool['inputSchema']>();
-  try {
+  {
     // Throwaway server — mirrors the HTTP-mode registration (skipScreenshots:true,
     // as http.ts does for the live transport). No user context, no session.
     const probe = new McpServer({ name: 'discovery-probe', version: MCP_VERSION });
@@ -73,11 +76,12 @@ async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryT
       }
     ).server._requestHandlers;
     const listHandler = handlers.get('tools/list');
-    if (listHandler) {
+    if (!listHandler) throw new Error('Discovery tools/list handler is unavailable');
+    {
       const out = await listHandler({ method: 'tools/list', params: {} }, {});
       for (const t of out.tools) {
         const props = t.inputSchema?.properties;
-        if (props && Object.keys(props).length > 0) {
+        if (t.inputSchema?.type === 'object' && props && typeof props === 'object' && !Array.isArray(props)) {
           schemaByName.set(t.name, {
             type: 'object',
             properties: props,
@@ -86,24 +90,20 @@ async function computeDiscoveryCatalog(profile: ToolProfile): Promise<DiscoveryT
         }
       }
     }
-  } catch (err) {
-    console.error(
-      '[mcp] discovery schema build failed; serving names-only catalog:',
-      (err as Error)?.message
-    );
   }
 
   // localOnly tools (e.g. screenshots needing Playwright) aren't registered on
   // the HTTP transport — don't advertise them in HTTP discovery. Internal
   // operations tools are registered but likewise not advertised.
-  return publicToolsForProfile(profile).map(t => ({
-    name: t.name,
-    description: t.description,
-    inputSchema: sanitizePublicInputSchema(
-      t.name,
-      schemaByName.get(t.name) ?? { type: 'object' as const, properties: {} }
-    ),
-  }));
+  return publicToolsForProfile(profile).map(t => {
+    const schema = schemaByName.get(t.name);
+    if (!schema) throw new Error(`Discovery input schema is unavailable for ${t.name}`);
+    return {
+      name: t.name,
+      description: t.description,
+      inputSchema: sanitizePublicInputSchema(t.name, schema),
+    };
+  });
 }
 
 function sanitizePublicInputSchema(
@@ -126,4 +126,21 @@ function sanitizePublicInputSchema(
     properties,
     ...(required?.length ? { required } : {}),
   };
+}
+
+/** HTTP discovery must return an explicit error instead of a cacheable broken catalog. */
+export async function buildDiscoveryHttpResponse(id: unknown, profile: ToolProfile = 'full') {
+  try {
+    const tools = await buildDiscoveryCatalog(profile);
+    return { status: 200, body: { jsonrpc: '2.0', id: id ?? null, result: { tools } } };
+  } catch {
+    return {
+      status: 503,
+      body: {
+        jsonrpc: '2.0',
+        id: id ?? null,
+        error: { code: -32603, message: 'Tool discovery is temporarily unavailable. Retry tools/list.' },
+      },
+    };
+  }
 }
