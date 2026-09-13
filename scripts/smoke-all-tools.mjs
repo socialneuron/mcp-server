@@ -62,6 +62,7 @@ const BRAND_ID = '00000000-0000-4000-8000-000000000003';
 const PLAN_ID = '00000000-0000-4000-8000-000000000004';
 const POST_ID = '00000000-0000-4000-8000-000000000005';
 const JOB_ID = '00000000-0000-4000-8000-000000000006';
+const TTS_TASK_ID = '00000000-0000-4000-8000-00000000000d';
 const CONFIG_ID = '00000000-0000-4000-8000-000000000007';
 const APPROVAL_ID = '00000000-0000-4000-8000-000000000008';
 const CAROUSEL_ID = '00000000-0000-4000-8000-000000000009';
@@ -239,12 +240,12 @@ const SAMPLE_RECIPE = {
   id: 'weekly-ig',
   name: 'Weekly IG Calendar',
   description: 'Plan a week of Instagram content',
-  steps: [{ name: 'plan', type: 'tool', tool: 'plan_content_week', description: 'Generate the plan' }],
+  steps: [{ id: 'step-1', name: 'plan', type: 'tool', tool: 'plan_content_week', description: 'Generate the plan' }],
   inputs_schema: [
-    { key: 'topic', label: 'Topic', required: true, type: 'string', description: 'Topic to plan around' },
+    { id: 'topic', key: 'topic', label: 'Topic', required: true, type: 'string', placeholder: 'Topic to plan around', description: 'Topic to plan around' },
   ],
   estimated_credits: 50,
-  estimated_seconds: 120,
+  estimated_duration_seconds: 120,
   category: 'planning',
   is_featured: true,
 };
@@ -260,7 +261,9 @@ const SAMPLE_SKILL = {
   body_chars: 120,
   locked: false,
   body: '# TikTok playbook\nShort hooks beat long intros.',
-  compiled: { whats_working_now: 'Short hooks beat long intros.' },
+  compiled_section: 'Short hooks beat long intros.',
+  recipe_slug: null,
+  version: 1,
 };
 
 const PLAN_POSTS_JSON = JSON.stringify([
@@ -354,20 +357,45 @@ const EF_RESPONSES = {
         return { ...base, posts: [SAMPLE_POST], total: 1 };
       case 'job-status':
         return { ...base, job: SAMPLE_JOB };
+      case 'credit-balance':
+        return {
+          ...base,
+          balance: 1200,
+          credits: 1200,
+          monthlyUsed: 300,
+          monthlyLimit: 1500,
+          monthlyRemaining: 1200,
+          spendingCap: 3750,
+          plan: 'pro',
+          tier: 'pro',
+        };
       case 'ideation-context':
         return { ...base, context: IDEATION_CONTEXT };
       case 'loop-summary':
-        return {
-          ...base,
-          summary: {
-            brandProfile: { exists: true, version: 3, updatedAt: NOW },
-            recentContent: { total: 5, published: 4, scheduled: 1 },
-            insights: [{ metric: 'engagement_rate', value: 0.12, trend: 'up' }],
-          },
-          brandProfile: { exists: true, version: 3, updatedAt: NOW },
-          recentContent: { total: 5, published: 4, scheduled: 1 },
-          insights: [{ metric: 'engagement_rate', value: 0.12, trend: 'up' }],
-        };
+        {
+          const brandStatus = { hasProfile: true, brandName: 'Smokebrand', version: 3, updatedAt: NOW };
+          const recentContent = Array.from({ length: 5 }, (_, index) => ({
+            id: `${POST_ID}-${index + 1}`,
+            content_type: 'video',
+            created_at: NOW,
+          }));
+          const currentInsights = [{ metric: 'engagement_rate', value: 0.12, trend: 'up' }];
+          const recommendedNextAction = 'Review current insights and schedule the next posts.';
+          return {
+            ...base,
+            hasProfile: true,
+            brandStatus,
+            recentContent,
+            currentInsights,
+            recommendedNextAction,
+            summary: {
+              brandStatus,
+              recentContentCount: recentContent.length,
+              currentInsightsCount: currentInsights.length,
+              recommendedNextAction,
+            },
+          };
+        }
       case 'get-content-plan':
         return { ...base, plan: SAMPLE_CONTENT_PLAN, posts: [SAMPLE_PLAN_POST] };
       case 'save-content-plan':
@@ -379,6 +407,7 @@ const EF_RESPONSES = {
       case 'submit-plan-approval':
       case 'submit-content-plan-for-approval':
         return { ...base, plan: { ...SAMPLE_CONTENT_PLAN, status: 'in_review' }, approvalsCreated: 1, created: 1 };
+      case 'create-plan-approval':
       case 'create-plan-approvals':
         return { ...base, created: 1, items: [{ ...SAMPLE_APPROVAL, status: 'pending' }] };
       case 'list-plan-approvals':
@@ -467,8 +496,10 @@ const EF_RESPONSES = {
           ...base,
           run: {
             id: RUN_ID,
+            recipe_id: 'weekly-ig',
             recipe_slug: 'weekly-ig',
             status: 'completed',
+            progress: 100,
             current_step: 1,
             total_steps: 1,
             credits_used: 50,
@@ -494,12 +525,22 @@ const EF_RESPONSES = {
             {
               id: 'w1',
               title: 'Winning short',
-              platform: 'tiktok',
-              views: 2000000,
-              hook_pattern: 'pattern interrupt',
-              structure: 'hook→proof→cta',
+              source_platform: 'tiktok',
+              source_url: 'https://example.com/winner',
+              creator_name: 'Smoke Creator',
+              hook_text: 'Stop scrolling',
+              hook_type: 'pattern interrupt',
+              story_type: 'educational',
+              visual_pattern: 'teal close-up',
+              emotional_triggers: ['curiosity'],
+              content_structure: { hook: 'proof', cta: 'next step' },
+              metrics: { views: 2000000 },
+              velocity_vph: 100000,
+              qa_score: 0.9,
+              is_viral: true,
+              ai_analysis: {},
               replication_prompt: 'Make a video that opens on a pattern interrupt...',
-              qa_gated: true,
+              scanned_at: NOW,
             },
           ],
           filters: {},
@@ -534,6 +575,9 @@ const EF_RESPONSES = {
     jobId: JOB_ID,
     job_id: JOB_ID,
     status: 'queued',
+    model: 'grok-imagine',
+    estimatedTime: 60,
+    creditsDeducted: 264,
     creditsReserved: 264,
     credits_reserved: 264,
     creditsUsed: 264,
@@ -545,6 +589,9 @@ const EF_RESPONSES = {
     jobId: JOB_ID,
     job_id: JOB_ID,
     status: 'queued',
+    model: 'midjourney',
+    estimatedTime: 60,
+    creditsDeducted: 20,
     creditsReserved: 20,
     credits_reserved: 20,
     creditsUsed: 20,
@@ -555,6 +602,18 @@ const EF_RESPONSES = {
     progress: 100,
     resultUrl: 'https://media.example.com/video.mp4',
     jobId: JOB_ID,
+  }),
+  'kie-tts-generate': () => ({
+    success: true,
+    status: 'processing',
+    taskId: TTS_TASK_ID,
+  }),
+  'kie-tts-status': body => ({
+    success: true,
+    status: 'completed',
+    taskId: body?.taskId ?? TTS_TASK_ID,
+    resultUrl: 'https://media.example.com/audio.mp3',
+    durationSeconds: 12,
   }),
   'elevenlabs-tts': () => ({
     success: true,
@@ -629,7 +688,11 @@ const EF_RESPONSES = {
   'brand-extract': () => ({ ...BRAND_CONTEXT, logoUrl: 'https://example.com/logo.png' }),
 
   // --- analytics / insights -------------------------------------------------
-  'fetch-analytics': () => ({ success: true, posts: [SAMPLE_POST], metrics: SAMPLE_POST.metrics, total: 1 }),
+  'fetch-analytics': () => ({
+    success: true,
+    postsProcessed: 1,
+    results: [{ postId: POST_ID, status: 'queued', jobId: JOB_ID }],
+  }),
   'refresh-analytics': () => ({ success: true, queued: 1, jobs: [{ id: JOB_ID, platform: 'youtube' }] }),
   'youtube-analytics': () => ({
     success: true,
@@ -652,8 +715,10 @@ const EF_RESPONSES = {
     post: SAMPLE_POST,
     postId: POST_ID,
     post_id: POST_ID,
-    scheduled_at: NOW,
-    results: [{ platform: 'youtube', status: 'scheduled', post_id: POST_ID }],
+    scheduledAt: NOW,
+    results: {
+      youtube: { success: true, jobId: JOB_ID, postId: POST_ID, publishStatus: 'scheduled' },
+    },
   }),
   'schedule-content-plan': () => ({
     success: true,
@@ -774,6 +839,9 @@ const EF_RESPONSES = {
   'fetch-trends': () => ({
     success: true,
     trends: [{ title: 'Trending topic', source: 'youtube', views: 100000, url: 'https://example.com/t' }],
+    source: 'youtube',
+    category: 'general',
+    count: 1,
     cached: false,
   }),
   'adapt-content': () => ({ success: true, content: 'Adapted content', adapted: 'Adapted content', creditsUsed: 1 }),
