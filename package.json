@@ -116,7 +116,7 @@
     "vite": "7.3.5",
     "esbuild": "$esbuild",
     "@hono/node-server": "2.0.10",
-    "hono": "4.12.34",
+    "hono": "4.13.7",
     "path-to-regexp": "8.4.2"
   },
   "engines": {
