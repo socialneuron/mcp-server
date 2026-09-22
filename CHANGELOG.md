@@ -4,6 +4,22 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.1.0 - 2026-09-22
+
+### Added
+
+- Connected-account responses preserve supported bridge/native rail metadata and
+  explain optional native upgrades without disconnecting the working bridge.
+- TikTok inbox video requests can explicitly acknowledge that the end user will
+  enable TikTok's native AI-generated-content label; schedule receipts now retain
+  the disclosure decision and render delegated, native-covered, appended, and
+  ordinary not-appended outcomes distinctly.
+
+### Fixed
+
+- Included the already-merged public-base Hono #486 dependency fix; its existing
+  resolution is unchanged.
+
 ## 2.0.2 - 2026-09-06
 
 ### Fixed
