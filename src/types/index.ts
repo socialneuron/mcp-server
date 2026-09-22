@@ -167,9 +167,38 @@ export interface ResponseEnvelope<T> {
   data: T;
 }
 
+export interface AiDisclosureReceipt {
+  schema_version: number;
+  policy_version: string;
+  is_ai_generated: boolean;
+  source_class: string;
+  platform_flags: {
+    platform: string;
+    native_flag_name: string | null;
+    native_flag_value: boolean | null;
+    caption_disclosure_added: boolean;
+    caption_label_decision?:
+      'caption-applied' | 'suppressed-native-covers' | 'delegated-to-user' | null;
+  };
+  c2pa_status: string;
+  signer_identity: string | null;
+  validation_result: string;
+  failure_reason: string | null;
+}
+
 export interface SchedulePostResult {
   success: boolean;
-  results: Record<string, { success: boolean; jobId?: string; postId?: string; error?: string }>;
+  results: Record<
+    string,
+    {
+      success: boolean;
+      jobId?: string;
+      postId?: string;
+      error?: string;
+      aiDisclosureAdded?: boolean;
+      aiDisclosure?: AiDisclosureReceipt;
+    }
+  >;
   scheduledAt: string;
 }
 
@@ -184,6 +213,8 @@ export interface ConnectedAccount {
   expires_at?: string | null;
   has_refresh_token?: boolean;
   project_id?: string | null;
+  connection_rail?: 'bridge' | 'native';
+  upgrade_available?: boolean;
 }
 
 export interface AnalyticsSummary {

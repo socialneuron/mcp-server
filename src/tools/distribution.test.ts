@@ -4,6 +4,7 @@ import { registerDistributionTools } from './distribution.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { z } from 'zod';
 
 // Stub SSRF so tests against fictional hosts (example.com variants, r2-signed.example.com)
 // don't actually resolve DNS. Individual tests override for rejection cases.
@@ -928,6 +929,119 @@ describe('distribution tools', () => {
           { timeoutMs: 30_000 }
         );
       });
+
+      it('parses and forwards TikTok delegated disclosure input', async () => {
+        mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['TikTok']));
+        mockCallEdge.mockResolvedValueOnce({
+          data: { success: true, results: {}, scheduledAt: '2099-08-15T14:00:00Z' },
+          error: null,
+        });
+
+        const rawArgs = {
+          media_url: 'https://example.com/audit.mp4',
+          media_type: 'VIDEO',
+          caption: 'Inbox draft',
+          platforms: ['tiktok'],
+          platform_metadata: {
+            tiktok: {
+              use_inbox: true,
+              is_ai_generated: true,
+              ai_disclosure_delegated: true,
+            },
+          },
+          auto_rehost: false,
+        };
+        const registration = server.tool.mock.calls.find(
+          call => call[0] === 'schedule_post'
+        );
+        expect(registration).toBeDefined();
+        const parsedArgs = z.object(registration![2]).parse(rawArgs);
+        expect(parsedArgs.platform_metadata.tiktok.ai_disclosure_delegated).toBe(true);
+        const result = await server.getHandler('schedule_post')!(parsedArgs);
+
+        expect(result.isError).toBe(false);
+        expect(mockCallEdge.mock.calls[1][1]).toEqual(
+          expect.objectContaining({
+            platformMetadata: {
+              tiktok: {
+                useInbox: true,
+                isAiGenerated: true,
+                aiDisclosureDelegated: true,
+              },
+            },
+          })
+        );
+      });
+
+      it('renders all disclosure receipt decisions and preserves them in JSON/structured output', async () => {
+        mockCallEdge.mockResolvedValueOnce(
+          mockPreflightAccounts(['TikTok', 'Instagram', 'YouTube', 'Twitter'])
+        );
+        const receipt = (
+          decision: 'caption-applied' | 'suppressed-native-covers' | 'delegated-to-user' | null,
+          native: string | null,
+          value: boolean | null
+        ) => ({
+          schema_version: 1,
+          policy_version: 'article50-fixture-v1',
+          is_ai_generated: true,
+          source_class: 'trained_algorithmic_media',
+          platform_flags: {
+            platform: 'fixture',
+            native_flag_name: native,
+            native_flag_value: value,
+            caption_disclosure_added: decision === 'caption-applied',
+            caption_label_decision: decision,
+          },
+          c2pa_status: 'embedded',
+          signer_identity: null,
+          validation_result: 'not_run',
+          failure_reason: null,
+        });
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            scheduledAt: '2099-08-15T14:00:00Z',
+            results: {
+              TikTok: { success: true, aiDisclosure: receipt('delegated-to-user', null, null) },
+              Instagram: { success: true, aiDisclosure: receipt('suppressed-native-covers', 'isAiGenerated', true) },
+              YouTube: { success: true, aiDisclosure: receipt('caption-applied', null, null) },
+              Twitter: { success: true, aiDisclosure: receipt(null, null, null) },
+            },
+          },
+          error: null,
+        });
+
+        const textResult = await server.getHandler('schedule_post')!({
+          media_url: 'https://example.com/audit.mp4',
+          caption: 'Receipt fixture',
+          platforms: ['tiktok', 'instagram', 'youtube', 'twitter'],
+          auto_rehost: false,
+        });
+        expect(textResult.content[0].text).toContain('caption/AI label NOT sent');
+        expect(textResult.content[0].text).toContain('caption label suppressed');
+        expect(textResult.content[0].text).toContain('caption label appended');
+        expect(textResult.content[0].text).toContain('caption label not appended');
+
+        mockCallEdge.mockResolvedValueOnce(mockPreflightAccounts(['TikTok']));
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            scheduledAt: '2099-08-15T14:00:00Z',
+            results: { TikTok: { success: true, aiDisclosure: receipt('delegated-to-user', null, null) } },
+          },
+          error: null,
+        });
+        const jsonResult = await server.getHandler('schedule_post')!({
+          media_url: 'https://example.com/audit.mp4',
+          caption: 'Receipt fixture',
+          platforms: ['tiktok'],
+          response_format: 'json',
+          auto_rehost: false,
+        });
+        expect(jsonResult.structuredContent).toBeDefined();
+        expect(JSON.stringify(jsonResult.structuredContent)).toContain('delegated-to-user');
+      });
     });
   });
 
@@ -1091,6 +1205,99 @@ describe('distribution tools', () => {
       expect(text).not.toContain('must-not-leak');
       expect(text).not.toContain('provider_diagnostics');
       expect(result.structuredContent).toBeDefined();
+    });
+
+    it('preserves bridge rail metadata, including false upgrade availability', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: 'bridge-account',
+              platform: 'Instagram',
+              status: 'active',
+              username: 'fixture-brand',
+              created_at: '2026-09-22T00:00:00Z',
+              project_id: '11111111-1111-4111-8111-111111111111',
+              connection_rail: 'bridge',
+              upgrade_available: false,
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('list_connected_accounts')!({});
+      expect(result.content[0].text).toContain('rail=bridge');
+      expect(result.content[0].text).not.toContain('reconnect to upgrade');
+      expect(result.structuredContent).toMatchObject({
+        data: {
+          accounts: [
+            expect.objectContaining({
+              connection_rail: 'bridge',
+              upgrade_available: false,
+            }),
+          ],
+        },
+      });
+    });
+
+    it('does not invent absent rail fields and renders the optional upgrade nudge', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          accounts: [
+            {
+              id: 'native-account',
+              platform: 'YouTube',
+              status: 'active',
+              username: 'fixture-native',
+              created_at: '2026-09-22T00:00:00Z',
+              project_id: '11111111-1111-4111-8111-111111111111',
+              upgrade_available: true,
+            },
+            {
+              id: 'plain-account',
+              platform: 'TikTok',
+              status: 'active',
+              username: 'fixture-plain',
+              created_at: '2026-09-22T00:00:00Z',
+              project_id: '11111111-1111-4111-8111-111111111111',
+            },
+            {
+              id: 'bare-account',
+              platform: 'LinkedIn',
+              status: 'active',
+              username: 'fixture-bare',
+              created_at: '2026-09-22T00:00:00Z',
+              project_id: '11111111-1111-4111-8111-111111111111',
+            },
+          ],
+        },
+        error: null,
+      });
+
+      const result = await server.getHandler('list_connected_accounts')!({});
+      expect(result.content[0].text).not.toContain('rail=bridge');
+      expect(result.content[0].text).not.toContain('reconnect to upgrade');
+      expect(result.structuredContent).toMatchObject({
+        data: {
+          accounts: [
+            expect.objectContaining({ id: 'native-account', upgrade_available: true }),
+            expect.objectContaining({ id: 'plain-account' }),
+            expect.objectContaining({ id: 'bare-account' }),
+          ],
+        },
+      });
+      const structuredAccounts = (
+        result.structuredContent as { data: { accounts: Array<Record<string, unknown>> } }
+      ).data.accounts;
+      expect(structuredAccounts).toHaveLength(3);
+      for (const account of structuredAccounts) {
+        expect(account.connection_rail).toBeUndefined();
+      }
+      expect(structuredAccounts[1].upgrade_available).toBeUndefined();
+      expect(structuredAccounts[2].upgrade_available).toBeUndefined();
     });
   });
 

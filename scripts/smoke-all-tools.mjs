@@ -992,7 +992,7 @@ function startMockBackend() {
               valid: true,
               userId: USER_ID,
               scopes: ['mcp:full'],
-              email: 'smoke@harness.local',
+              email: 'fixture@example.invalid',
               expiresAt: null,
               projectId: PROJECT_ID,
             });

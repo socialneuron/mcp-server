@@ -142,6 +142,12 @@ function publicConnectedAccount(value: unknown): ConnectedAccount | null {
     ...(typeof row.project_id === 'string' || row.project_id === null
       ? { project_id: row.project_id as string | null }
       : {}),
+    ...(row.connection_rail === 'bridge' || row.connection_rail === 'native'
+      ? { connection_rail: row.connection_rail }
+      : {}),
+    ...(typeof row.upgrade_available === 'boolean'
+      ? { upgrade_available: row.upgrade_available }
+      : {}),
   };
 }
 
@@ -344,12 +350,19 @@ export function registerDistributionTools(server: McpServer): void {
                 .boolean()
                 .optional()
                 .describe('Post to TikTok inbox/draft instead of direct publish.'),
+              ai_disclosure_delegated: z
+                .boolean()
+                .optional()
+                .describe(
+                  "Required (must be true) when use_inbox=true and the content is AI-generated (is_ai_generated is not explicitly false) and media is video, not a photo. TikTok's inbox video upload accepts no caption and no AI-content flag at all, so setting this confirms you (or the end user) will manually enable TikTok's own \"AI-generated content\" toggle in-app before publishing from the draft. Not required for photo posts — TikTok's photo endpoint carries the caption into inbox mode. Omitting it when required returns code tiktok_inbox_ai_ack_required."
+                ),
             })
             .optional()
             .describe(
-              'TikTok posting metadata. Two server-enforced compliance rules (schedule-post returns a structured 400 if violated — fix the field and retry, do NOT treat as a server failure): ' +
+              'TikTok posting metadata. Three server-enforced compliance rules (schedule-post returns a structured error if violated — fix the field and retry, do NOT treat as a server failure): ' +
                 '(1) privacy_status is REQUIRED unless use_inbox=true. Omitting both returns code TIKTOK_PRIVACY_LEVEL_REQUIRED: "TikTok requires a privacy level to be selected. Please choose a privacy level before posting." ' +
-                '(2) brand_content=true cannot combine with privacy_status="SELF_ONLY". That combination returns code TIKTOK_BRANDED_SELF_ONLY_CONFLICT: "Branded content visibility cannot be set to private on TikTok. Please select a different privacy level."'
+                '(2) brand_content=true cannot combine with privacy_status="SELF_ONLY". That combination returns code TIKTOK_BRANDED_SELF_ONLY_CONFLICT: "Branded content visibility cannot be set to private on TikTok. Please select a different privacy level." ' +
+                "(3) use_inbox=true with AI-generated video requires ai_disclosure_delegated=true (see that field). A 422 with code tiktok_inbox_ai_ack_required means TikTok's inbox upload cannot carry the disclosure automatically — either set ai_disclosure_delegated=true, or set use_inbox=false so Direct Post transmits it."
             ),
           youtube: z
             .object({
@@ -1021,6 +1034,26 @@ export function registerDistributionTools(server: McpServer): void {
       for (const [platform, result] of Object.entries(data.results)) {
         if (result.success) {
           lines.push(`  ${platform}: OK (jobId=${result.jobId}, postId=${result.postId})`);
+          const receipt = result.aiDisclosure;
+          if (receipt) {
+            const flags = receipt.platform_flags;
+            const nativePart = flags.native_flag_name
+              ? `native flag ${flags.native_flag_name}=${
+                  flags.native_flag_value === null ? 'not transmitted' : flags.native_flag_value
+                }`
+              : 'no native flag on this platform';
+            const captionPart =
+              flags.caption_label_decision === 'delegated-to-user'
+                ? 'caption/AI label NOT sent — TikTok inbox mode carries neither; enable TikTok\'s own "AI-generated content" toggle in-app before publishing from the draft'
+                : flags.caption_label_decision === 'suppressed-native-covers'
+                  ? 'caption label suppressed — a native platform flag already discloses AI'
+                  : flags.caption_disclosure_added
+                    ? 'caption label appended'
+                    : 'caption label not appended (already present, opted out, or covered by the native flag)';
+            lines.push(
+              `    AI disclosure: ${nativePart}; ${captionPart}; c2pa=${receipt.c2pa_status}`
+            );
+          }
         } else {
           lines.push(`  ${platform}: FAILED - ${result.error}`);
         }
@@ -1276,6 +1309,10 @@ export function registerDistributionTools(server: McpServer): void {
           };
         }
         return {
+          structuredContent: asEnvelope({
+            accounts: [],
+            ...(projectAutoResolvedNote ? { project_auto_resolved: projectAutoResolvedNote } : {}),
+          }),
           content: [
             {
               type: 'text' as const,
@@ -1300,19 +1337,25 @@ export function registerDistributionTools(server: McpServer): void {
           ? `project_id=${account.project_id}`
           : 'project_id=unassigned';
         const status = accountEffectiveStatus(account);
+        const railNote = account.connection_rail === 'bridge' && account.upgrade_available
+          ? ' | rail=bridge — reconnect to upgrade to the native rail (start_platform_connection); the bridge keeps working until then'
+          : account.connection_rail === 'bridge'
+            ? ' | rail=bridge'
+            : '';
         lines.push(
-          `  ${platformLower}: ${name} | id=${account.id} | ${project} | status=${status} (connected ${account.created_at.split('T')[0]})`
+          `  ${platformLower}: ${name} | id=${account.id} | ${project} | status=${status} (connected ${account.created_at.split('T')[0]})${railNote}`
         );
       }
       if (projectAutoResolvedNote) {
         lines.push('', `Note: ${projectAutoResolvedNote}`);
       }
 
+      const structuredContent = asEnvelope({
+        accounts,
+        ...(projectAutoResolvedNote ? { project_auto_resolved: projectAutoResolvedNote } : {}),
+      });
+
       if (format === 'json') {
-        const structuredContent = asEnvelope({
-          accounts,
-          ...(projectAutoResolvedNote ? { project_auto_resolved: projectAutoResolvedNote } : {}),
-        });
         return {
           structuredContent,
           content: [
@@ -1325,6 +1368,7 @@ export function registerDistributionTools(server: McpServer): void {
       }
 
       return {
+        structuredContent,
         content: [{ type: 'text' as const, text: lines.join('\n') }],
       };
     }
