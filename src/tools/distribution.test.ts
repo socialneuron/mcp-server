@@ -1264,6 +1264,14 @@ describe('distribution tools', () => {
               created_at: '2026-09-22T00:00:00Z',
               project_id: '11111111-1111-4111-8111-111111111111',
             },
+            {
+              id: 'bare-account',
+              platform: 'LinkedIn',
+              status: 'active',
+              username: 'fixture-bare',
+              created_at: '2026-09-22T00:00:00Z',
+              project_id: '11111111-1111-4111-8111-111111111111',
+            },
           ],
         },
         error: null,
@@ -1275,14 +1283,21 @@ describe('distribution tools', () => {
       expect(result.structuredContent).toMatchObject({
         data: {
           accounts: [
-            expect.objectContaining({ upgrade_available: true }),
+            expect.objectContaining({ id: 'native-account', upgrade_available: true }),
+            expect.objectContaining({ id: 'plain-account' }),
+            expect.objectContaining({ id: 'bare-account' }),
           ],
         },
       });
-      expect(
-        (result.structuredContent as { data: { accounts: Array<Record<string, unknown>> } }).data
-          .accounts[0].connection_rail
-      ).toBeUndefined();
+      const structuredAccounts = (
+        result.structuredContent as { data: { accounts: Array<Record<string, unknown>> } }
+      ).data.accounts;
+      expect(structuredAccounts).toHaveLength(3);
+      for (const account of structuredAccounts) {
+        expect(account.connection_rail).toBeUndefined();
+      }
+      expect(structuredAccounts[1].upgrade_available).toBeUndefined();
+      expect(structuredAccounts[2].upgrade_available).toBeUndefined();
     });
   });
 
