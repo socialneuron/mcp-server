@@ -4,6 +4,7 @@ import { registerDistributionTools } from './distribution.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId, getDefaultUserId } from '../lib/supabase.js';
 import { MCP_VERSION } from '../lib/version.js';
+import { z } from 'zod';
 
 // Stub SSRF so tests against fictional hosts (example.com variants, r2-signed.example.com)
 // don't actually resolve DNS. Individual tests override for rejection cases.
@@ -936,7 +937,7 @@ describe('distribution tools', () => {
           error: null,
         });
 
-        const result = await server.getHandler('schedule_post')!({
+        const rawArgs = {
           media_url: 'https://example.com/audit.mp4',
           media_type: 'VIDEO',
           caption: 'Inbox draft',
@@ -949,7 +950,14 @@ describe('distribution tools', () => {
             },
           },
           auto_rehost: false,
-        });
+        };
+        const registration = server.tool.mock.calls.find(
+          call => call[0] === 'schedule_post'
+        );
+        expect(registration).toBeDefined();
+        const parsedArgs = z.object(registration![2]).parse(rawArgs);
+        expect(parsedArgs.platform_metadata.tiktok.ai_disclosure_delegated).toBe(true);
+        const result = await server.getHandler('schedule_post')!(parsedArgs);
 
         expect(result.isError).toBe(false);
         expect(mockCallEdge.mock.calls[1][1]).toEqual(
@@ -1262,15 +1270,19 @@ describe('distribution tools', () => {
       });
 
       const result = await server.getHandler('list_connected_accounts')!({});
-      expect(result.content[0].text).toContain('reconnect to upgrade to the native rail');
+      expect(result.content[0].text).not.toContain('rail=bridge');
+      expect(result.content[0].text).not.toContain('reconnect to upgrade');
       expect(result.structuredContent).toMatchObject({
         data: {
           accounts: [
             expect.objectContaining({ upgrade_available: true }),
-            expect.not.objectContaining({ connection_rail: expect.anything() }),
           ],
         },
       });
+      expect(
+        (result.structuredContent as { data: { accounts: Array<Record<string, unknown>> } }).data
+          .accounts[0].connection_rail
+      ).toBeUndefined();
     });
   });
 

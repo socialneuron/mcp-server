@@ -1337,7 +1337,7 @@ export function registerDistributionTools(server: McpServer): void {
           ? `project_id=${account.project_id}`
           : 'project_id=unassigned';
         const status = accountEffectiveStatus(account);
-        const railNote = account.upgrade_available
+        const railNote = account.connection_rail === 'bridge' && account.upgrade_available
           ? ' | rail=bridge — reconnect to upgrade to the native rail (start_platform_connection); the bridge keeps working until then'
           : account.connection_rail === 'bridge'
             ? ' | rail=bridge'
