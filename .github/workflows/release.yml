@@ -135,8 +135,12 @@ jobs:
           --latest
 
       - name: Verify npm/GitHub release consistency
+        timeout-minutes: 10
         run: |
-          for attempt in 1 2 3 4 5; do
+          # npm propagation can lag a successful Trusted Publishing run. Keep
+          # this verification-only wait bounded at ten minutes; never republish
+          # or retag from a consistency check.
+          for attempt in $(seq 1 60); do
             npm run verify:release:live && exit 0
             sleep 10
           done

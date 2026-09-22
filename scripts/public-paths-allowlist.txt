@@ -22,6 +22,7 @@
 .github/workflows/live-metadata.yml
 .github/workflows/release-sdk.yml
 .github/workflows/release.yml
+.github/workflows/verify-release-consistency.yml
 .github/workflows/secret-scan.yml
 .gitignore
 .gitleaks.toml
