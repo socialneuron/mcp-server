@@ -19,6 +19,11 @@ updates:
           - patch
           - minor
     ignore:
+      # Vitest 5+ requires Node 22. Keep Vitest 4 while CI runs npm test
+      # on Node 20; revisit with a supported test-toolchain migration (#503).
+      - dependency-name: "vitest"
+        versions:
+          - ">=5.0.0"
       # The repo still supports Node 20. @supabase/supabase-js >=2.110 requires
       # Node 22; remove this ignore only in the same PR that migrates engines,
       # CI, docs, deployment runtime, and release notes to Node 22.
