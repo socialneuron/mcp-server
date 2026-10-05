@@ -1,0 +1,19 @@
+name: Verify release consistency
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 24
+      - name: Verify npm and GitHub release consistency
+        timeout-minutes: 10
+        run: node scripts/verify-release-consistency.mjs
