@@ -51,9 +51,11 @@ describe('Content Calendar MCP App server', () => {
 
     const tool = server.tools.get('open_content_calendar');
     expect(tool?.config._meta.ui.resourceUri).toBe('ui://content-calendar/v1/mcp-app.html');
+    expect(tool?.config._meta['ui/resourceUri']).toBe('ui://content-calendar/v1/mcp-app.html');
     expect(tool?.config._meta.ui.csp).toBeUndefined();
 
     const resource = server.resources.get('ui://content-calendar/v1/mcp-app.html');
+    expect(resource?.config.mimeType).toBe('text/html;profile=mcp-app');
     expect(resource?.config._meta.ui.csp).toEqual({
       connectDomains: [],
       resourceDomains: [],

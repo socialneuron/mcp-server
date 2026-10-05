@@ -34,10 +34,11 @@ describe('Analytics Pulse MCP App server', () => {
     registerAnalyticsPulseApp(server as never);
     const tool = server.tools.get('open_analytics_pulse');
     expect(tool.config._meta.ui.resourceUri).toBe('ui://analytics-pulse/v1/mcp-app.html');
+    expect(tool.config._meta['ui/resourceUri']).toBe('ui://analytics-pulse/v1/mcp-app.html');
     expect(tool.config._meta.ui.csp).toBeUndefined();
-    expect(
-      server.resources.get('ui://analytics-pulse/v1/mcp-app.html').config._meta.ui.csp
-    ).toEqual({
+    const resource = server.resources.get('ui://analytics-pulse/v1/mcp-app.html');
+    expect(resource.config.mimeType).toBe('text/html;profile=mcp-app');
+    expect(resource.config._meta.ui.csp).toEqual({
       connectDomains: [],
       resourceDomains: [],
       frameDomains: [],

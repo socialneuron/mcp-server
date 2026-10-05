@@ -1,8 +1,3 @@
-import {
-  registerAppTool,
-  registerAppResource,
-  RESOURCE_MIME_TYPE,
-} from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
@@ -11,6 +6,8 @@ import { fileURLToPath } from 'node:url';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getRequestScopes } from '../lib/request-context.js';
 import { getAuthenticatedScopes, getDefaultProjectId } from '../lib/supabase.js';
+
+const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
 
 const CALENDAR_URI = 'ui://content-calendar/v1/mcp-app.html';
 const CALENDAR_CSP = {
@@ -114,8 +111,7 @@ async function readCalendarHtml(): Promise<string> {
 }
 
 export function registerContentCalendarApp(server: McpServer): void {
-  registerAppTool(
-    server,
+  server.registerTool(
     'open_content_calendar',
     {
       title: 'Content Calendar',
@@ -144,6 +140,7 @@ export function registerContentCalendarApp(server: McpServer): void {
         scopes: z.array(z.string()),
       },
       _meta: {
+        'ui/resourceUri': CALENDAR_URI,
         ui: {
           resourceUri: CALENDAR_URI,
         },
@@ -222,8 +219,7 @@ export function registerContentCalendarApp(server: McpServer): void {
     }
   );
 
-  registerAppResource(
-    server,
+  server.registerResource(
     CALENDAR_URI,
     CALENDAR_URI,
     {

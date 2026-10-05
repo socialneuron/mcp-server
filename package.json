@@ -92,7 +92,6 @@
     "verify:release:live": "node scripts/verify-release-consistency.mjs"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "1.7.5",
     "@modelcontextprotocol/sdk": "^1.27.1",
     "@sentry/node": "10.75.1",
     "@supabase/supabase-js": "2.110.7",

@@ -1,8 +1,3 @@
-import {
-  registerAppResource,
-  registerAppTool,
-  RESOURCE_MIME_TYPE,
-} from '@modelcontextprotocol/ext-apps/server';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
 import fs from 'node:fs/promises';
@@ -10,6 +5,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { getDefaultProjectId } from '../lib/supabase.js';
+
+const RESOURCE_MIME_TYPE = 'text/html;profile=mcp-app';
 
 const ANALYTICS_URI = 'ui://analytics-pulse/v1/mcp-app.html';
 const ANALYTICS_CSP = {
@@ -138,8 +135,7 @@ async function readAnalyticsHtml(): Promise<string> {
 }
 
 export function registerAnalyticsPulseApp(server: McpServer): void {
-  registerAppTool(
-    server,
+  server.registerTool(
     'open_analytics_pulse',
     {
       title: 'Analytics Pulse',
@@ -182,7 +178,10 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
         ),
         posts: z.array(AnalyticsPostOutputSchema),
       },
-      _meta: { ui: { resourceUri: ANALYTICS_URI } },
+      _meta: {
+        'ui/resourceUri': ANALYTICS_URI,
+        ui: { resourceUri: ANALYTICS_URI },
+      },
     },
     async ({ project_id, platform, days }) => {
       const resolvedProjectId = project_id ?? (await getDefaultProjectId());
@@ -282,8 +281,7 @@ export function registerAnalyticsPulseApp(server: McpServer): void {
     }
   );
 
-  registerAppResource(
-    server,
+  server.registerResource(
     ANALYTICS_URI,
     ANALYTICS_URI,
     {
