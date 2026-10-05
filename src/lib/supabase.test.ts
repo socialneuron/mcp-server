@@ -37,7 +37,10 @@ describe('supabase module', () => {
     process.env.SOCIALNEURON_PROJECT_ID = 'test-project-id';
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    // Telemetry imports PostHog in the background, which imports this module.
+    // Let those imports finish before retiring their environment and registry.
+    await vi.dynamicImportSettled();
     process.env = { ...ORIGINAL_ENV };
     // Tests below install module-scoped auth and credential mocks. Always
     // release them even when an assertion throws so a later shuffled test
