@@ -3,13 +3,14 @@
  * Dependency compatibility contracts that npm's generic solver cannot enforce.
  *
  * These checks are intentionally small and explicit:
- * - The public package still supports Node 20, so direct production deps must
- *   not silently raise their installed engine floor above Node 20.
+ * - Supabase must accept the minimum Node version in every runtime range
+ *   advertised by this package (including Node 20 with a nonzero minor floor).
  * - Remotion's bundler and renderer are imported together by render_demo_video,
  *   so they must move in lockstep.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
+import semver from 'semver';
 
 const root = resolve(new URL('..', import.meta.url).pathname);
 const pkg = JSON.parse(readFileSync(resolve(root, 'package.json'), 'utf8'));
@@ -27,55 +28,44 @@ function major(version) {
   return match ? Number(match[1]) : null;
 }
 
-function compareVersion(a, b) {
-  const pa = String(a).split('.').map(part => Number.parseInt(part, 10) || 0);
-  const pb = String(b).split('.').map(part => Number.parseInt(part, 10) || 0);
-  for (let i = 0; i < Math.max(pa.length, pb.length); i += 1) {
-    const av = pa[i] ?? 0;
-    const bv = pb[i] ?? 0;
-    if (av !== bv) return av > bv ? 1 : -1;
+// Check declared runtime floors, not arbitrary holes or upper bounds in a range.
+// Parse each OR branch separately so a later supported runtime cannot be skipped.
+function nodeFloors(label, range) {
+  if (typeof range !== 'string' || range.split('||').some(clause => !clause.trim()) ||
+      semver.validRange(range) === null) {
+    failures.push(`${label} must declare a valid, nonempty Node semver range`);
+    return null;
   }
-  return 0;
-}
 
-function satisfiesComparator(version, comparator) {
-  const match = comparator.match(/^(>=|>|<=|<|=)?\s*(\d+(?:\.\d+){0,2})$/);
-  if (!match) return true;
-  const op = match[1] ?? '=';
-  const cmp = compareVersion(version, match[2]);
-  if (op === '>=') return cmp >= 0;
-  if (op === '>') return cmp > 0;
-  if (op === '<=') return cmp <= 0;
-  if (op === '<') return cmp < 0;
-  return cmp === 0;
+  const floors = new semver.Range(range).set.map(comparators =>
+    semver.minVersion(comparators.map(comparator => comparator.value).join(' '))
+  );
+  if (floors.some(version => version === null)) {
+    failures.push(`${label} contains an unsatisfiable Node semver range`);
+    return null;
+  }
+  return floors;
 }
-
-function rangeSupportsMajor(range, nodeMajor) {
-  if (!range) return false;
-  const representative = `${nodeMajor}.0.0`;
-  return String(range)
-    .split('||')
-    .some(clause => {
-      const comparators = clause.trim().split(/\s+/).filter(Boolean);
-      return comparators.length > 0 && comparators.every(c => satisfiesComparator(representative, c));
-    });
-}
-
-const projectNodeRange = pkg.engines?.node ?? '';
-const projectSupportsNode20 = rangeSupportsMajor(projectNodeRange, 20);
 
 const supabase = lockPackage('@supabase/supabase-js');
-if (pkg.dependencies?.['@supabase/supabase-js'] && projectSupportsNode20) {
+if (pkg.dependencies?.['@supabase/supabase-js']) {
+  const projectNodeRange = pkg.engines?.node;
+  const projectFloors = nodeFloors('package.json engines.node', projectNodeRange);
   if (!supabase) {
     failures.push('@supabase/supabase-js is a direct dependency but is missing from package-lock.json');
   } else {
-    const supabaseNodeRange = supabase.engines?.node ?? '';
-    if (supabaseNodeRange && !rangeSupportsMajor(supabaseNodeRange, 20)) {
-      failures.push(
-        `@supabase/supabase-js@${supabase.version} requires node "${supabaseNodeRange}", ` +
-          `but package.json engines still support Node 20 ("${projectNodeRange}"). ` +
-          'Keep Supabase on a Node-20-compatible version, or migrate engines, CI, docs, and deployment runtime to Node 22 together.'
-      );
+    const supabaseNodeRange = supabase.engines?.node;
+    const dependencyFloors = nodeFloors('@supabase/supabase-js engines.node', supabaseNodeRange);
+    if (projectFloors && dependencyFloors) {
+      for (const floor of projectFloors) {
+        if (!semver.satisfies(floor, supabaseNodeRange)) {
+          failures.push(
+            `@supabase/supabase-js@${supabase.version} requires node "${supabaseNodeRange}", ` +
+              `which excludes minimum supported Node ${floor} from package.json ("${projectNodeRange}"). ` +
+              'Keep Supabase compatible, or migrate engines, CI, docs, and deployment runtime together.'
+          );
+        }
+      }
     }
   }
 }
