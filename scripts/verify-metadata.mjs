@@ -9,20 +9,44 @@
  *      codenames, dead endpoints) in the public metadata surface
  *
  * Live check (opt-in: `node scripts/verify-metadata.mjs --live`):
- *   4. Hosted server card version matches package.json version and
- *      carries no forbidden strings
+ *   4. Hosted server card and OpenAPI match the separately reviewed hosted
+ *      version and tool names in server.json, with no forbidden strings
  *
  * Fails loud (exit 1) on any violation so CI blocks the drift instead of
  * shipping it. Extend FORBIDDEN when retiring a public claim — that is the
  * ratchet that keeps it retired.
  */
 import { readFileSync, readdirSync } from 'node:fs';
+import semver from 'semver';
 
 const pkg = JSON.parse(readFileSync('package.json', 'utf8'));
 const server = JSON.parse(readFileSync('server.json', 'utf8'));
 
 const failures = [];
-const expectedHostedToolCount = server.tools_count;
+// The deployed service and npm package have separate release/runtime contracts.
+// This reviewed snapshot must change explicitly when the hosted surface changes.
+const hosted = server.hosted;
+const hostedTools = Array.isArray(hosted?.tools) ? hosted.tools : [];
+const validHosted = typeof hosted?.version === 'string' && semver.valid(hosted.version) &&
+  hostedTools.length > 0 && hostedTools.every(name =>
+    typeof name === 'string' && /^[A-Za-z0-9_.-]{1,128}$/.test(name)) &&
+  new Set(hostedTools).size === hostedTools.length;
+if (!validHosted) {
+  failures.push('server.json hosted must declare a valid version and unique nonempty tool names');
+}
+const expectedHostedToolCount = hostedTools.length;
+const expectedHostedVersion = hosted?.version;
+function sameNames(actual, expected) {
+  const names = new Set(actual);
+  return names.size === actual.length && names.size === expected.length &&
+    expected.every(name => names.has(name));
+}
+try {
+  const plugin = JSON.parse(readFileSync('.cursor-plugin/plugin.json', 'utf8'));
+  if (plugin.version !== pkg.version) failures.push('Cursor plugin version must match package.json version');
+} catch {
+  failures.push('Cursor plugin version metadata could not be read');
+}
 
 // Names that must not appear on the hosted server card. Sourced from the
 // out-of-repo needle file (see FORBIDDEN below) so this guard does not itself
@@ -42,6 +66,9 @@ if (!pkg.mcpName) {
 // 3. Forbidden strings — retired claims, internal codenames, dead endpoints
 const FORBIDDEN = [
   // stale public-contract claims
+  'request_upload_session',
+  '76 MCP tools',
+  'Hosted HTTP and npm stdio each expose **91 public tools**',
   '85+ MCP tools',
   '85 public tools',
   '80+ public',
@@ -185,6 +212,7 @@ function scanText(label, text, { skipPatterns = false } = {}) {
 const SURFACE = [
   'README.md',
   'server.json',
+  '.cursor-plugin/plugin.json',
   'CHANGELOG.md',
   'docs/rest-api.md',
   'docs/integration-methods.md',
@@ -242,7 +270,7 @@ if (!sensitiveConfigured) {
 }
 
 // 4. Optional live server-card check
-if (process.argv.includes('--live')) {
+if (process.argv.includes('--live') && validHosted) {
   const CARD_URL = 'https://mcp.socialneuron.com/.well-known/mcp/server-card.json';
   try {
     const res = await fetch(CARD_URL, { signal: AbortSignal.timeout(15_000) });
@@ -251,17 +279,21 @@ if (process.argv.includes('--live')) {
     } else {
       const card = await res.json();
       const cardVersion = card.serverInfo?.version ?? card.version;
-      if (cardVersion !== pkg.version) {
-        failures.push(`live server card version "${cardVersion}" !== package.json version "${pkg.version}" (deploy lag or drift)`);
+      if (cardVersion !== expectedHostedVersion) {
+        failures.push(`live server card version "${cardVersion}" !== reviewed hosted version "${expectedHostedVersion}"`);
       }
       if (card.toolCount !== expectedHostedToolCount) {
-        failures.push(`live server card toolCount ${card.toolCount} !== server.json tools_count ${expectedHostedToolCount}`);
+        failures.push(`live server card toolCount ${card.toolCount} !== reviewed hosted tool count ${expectedHostedToolCount}`);
       }
       const cardTools = Array.isArray(card.tools) ? card.tools : [];
       if (cardTools.length !== expectedHostedToolCount) {
-        failures.push(`live server card tools.length ${cardTools.length} !== server.json tools_count ${expectedHostedToolCount}`);
+        failures.push(`live server card tools.length ${cardTools.length} !== reviewed hosted tool count ${expectedHostedToolCount}`);
       }
-      const cardToolNames = new Set(cardTools.map(tool => tool?.name).filter(Boolean));
+      const cardNames = cardTools.map(tool => tool?.name);
+      if (!sameNames(cardNames, hostedTools)) {
+        failures.push('live server card tool names differ from the reviewed hosted contract');
+      }
+      const cardToolNames = new Set(cardNames);
       for (const retiredTool of retiredHostedTools) {
         if (cardToolNames.has(retiredTool)) {
           failures.push(`live server card exposes a retired hosted tool — ${needleLabel(retiredTool)}`);
@@ -281,12 +313,15 @@ if (process.argv.includes('--live')) {
       failures.push(`live openapi: HTTP ${res.status}`);
     } else {
       const doc = await res.json();
-      if (doc.info?.version !== pkg.version) {
-        failures.push(`live openapi version "${doc.info?.version}" !== package.json "${pkg.version}"`);
+      if (doc.info?.version !== expectedHostedVersion) {
+        failures.push(`live openapi version "${doc.info?.version}" !== reviewed hosted version "${expectedHostedVersion}"`);
       }
       const pathCount = Object.keys(doc.paths ?? {}).length;
       if (pathCount !== expectedHostedToolCount) {
-        failures.push(`live openapi path count ${pathCount} !== server.json tools_count ${expectedHostedToolCount}`);
+        failures.push(`live openapi path count ${pathCount} !== reviewed hosted tool count ${expectedHostedToolCount}`);
+      }
+      if (!sameNames(Object.keys(doc.paths ?? {}), hostedTools.map(name => `/tools/${name}`))) {
+        failures.push('live openapi paths differ from the reviewed hosted contract');
       }
       for (const retiredTool of retiredHostedTools) {
         if (doc.paths?.[`/tools/${retiredTool}`]) {

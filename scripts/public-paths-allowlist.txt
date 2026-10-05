@@ -183,6 +183,7 @@ src/lib/creditEstimates.test.ts
 src/lib/creditEstimates.ts
 src/lib/dependency-contracts.test.ts
 src/lib/disclosure-pack-contract.test.ts
+src/lib/metadata-contract.test.ts
 src/lib/discovery-catalog.test.ts
 src/lib/discovery-catalog.ts
 src/lib/edge-function.test.ts
@@ -329,3 +330,10 @@ src/types/index.ts
 tools.lock.json
 tsconfig.json
 vitest.config.ts
+
+# Calendar permission-copy browser proof
+docs/proof/calendar-permissions/before-desktop-readonly.png
+docs/proof/calendar-permissions/before-mobile-schedule-denied.png
+docs/proof/calendar-permissions/after-desktop-readonly.png
+docs/proof/calendar-permissions/after-mobile-schedule-denied.png
+docs/proof/calendar-permissions/README.md

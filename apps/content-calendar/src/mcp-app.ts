@@ -255,7 +255,7 @@ function renderToolbar() {
   suggest.disabled = !state.canSchedule || candidatePlatforms.length === 0;
   if (suggest.disabled) {
     suggest.title = !state.canSchedule
-      ? 'Upgrade to schedule posts'
+      ? 'Scheduling requires the mcp:distribute scope'
       : 'No platforms with posts to suggest for';
   }
   suggest.addEventListener('click', () => {
@@ -268,15 +268,19 @@ function renderToolbar() {
 
 // ─── Calendar grid ────────────────────────────────────────────────────
 
-function renderUpgradeBanner(): HTMLElement | null {
+function renderAccessBanner(): HTMLElement | null {
   if (state.canSchedule) return null;
   const wrap = el('div', 'upgrade-banner');
-  wrap.append(document.createTextNode('Read-only — upgrade your plan to drag-drop reschedule. '));
+  wrap.append(
+    document.createTextNode(
+      'Read-only — scheduling and rescheduling require the mcp:distribute scope. '
+    )
+  );
   const link = document.createElement('a');
-  link.href = 'https://socialneuron.com/pricing';
+  link.href = 'https://socialneuron.com/developers';
   link.target = '_blank';
   link.rel = 'noopener noreferrer';
-  link.textContent = 'View pricing →';
+  link.textContent = 'Check access in Developers →';
   wrap.append(link);
   return wrap;
 }
@@ -334,8 +338,8 @@ function renderCalendar() {
   const banner = document.getElementById('upgrade-banner-slot');
   if (!root || !subtitle || !banner) return;
 
-  const upgrade = renderUpgradeBanner();
-  banner.replaceChildren(...(upgrade ? [upgrade] : []));
+  const accessBanner = renderAccessBanner();
+  banner.replaceChildren(...(accessBanner ? [accessBanner] : []));
 
   const visible = visiblePosts();
 
@@ -456,7 +460,9 @@ async function suggestNextSlot(platforms: string[]) {
     });
 
     if (isScopeDenied(result)) {
-      showError("You don't have permission to find slots. Upgrade your plan to schedule posts.");
+      showError(
+        'Finding slots requires the mcp:read scope. Check access at socialneuron.com/developers.'
+      );
       return;
     }
 
@@ -564,7 +570,9 @@ async function onSlotDrop(ev: DragEvent) {
     });
     if (isScopeDenied(result)) {
       revertPost(postId, oldScheduledAt);
-      showError("You don't have permission to reschedule. Upgrade your plan to schedule posts.");
+      showError(
+        'Rescheduling requires the mcp:distribute scope. Check access at socialneuron.com/developers.'
+      );
       return;
     }
     if ((result as { isError?: boolean }).isError) {
@@ -802,7 +810,7 @@ async function submitQuickCreate() {
     if (isScopeDenied(result)) {
       state.modal.submitting = false;
       state.modal.error =
-        "You don't have permission to schedule. Upgrade your plan at socialneuron.com/pricing.";
+        'Scheduling requires the mcp:distribute scope. Check access at socialneuron.com/developers.';
       renderModal();
       return;
     }

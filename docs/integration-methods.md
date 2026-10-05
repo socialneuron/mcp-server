@@ -1,6 +1,6 @@
 # Integration Methods
 
-Social Neuron provides four runtime integration methods. Plugins and skills package those runtimes for easier discovery and safer agent use; they are not separate backends. All surfaces must share the same auth system, scopes, rate limits, credit pool, and audit trail. Hosted HTTP and npm stdio each expose **91 public tools**. Hosted includes the Content Calendar and Analytics Pulse MCP Apps; stdio substitutes 2 local screen-capture tools. The hosted endpoint at `mcp.socialneuron.com` advertises its live surface through the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json).
+Social Neuron provides four runtime integration methods. Plugins and skills package those runtimes for easier discovery and safer agent use; they are not separate backends. All surfaces must share the same auth system, scopes, rate limits, credit pool, and audit trail. The npm package exposes **91 public tools** per transport. The separately versioned hosted service exposes **92 public tools**, including hosted-only `get_account_status`. Hosted includes the Content Calendar and Analytics Pulse MCP Apps; stdio substitutes 2 local screen-capture tools. The hosted endpoint at `mcp.socialneuron.com` advertises its live surface through the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json).
 
 ## Comparison
 

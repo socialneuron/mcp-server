@@ -272,6 +272,8 @@ describe('media tools', () => {
         expect(result.isError).toBe(true);
         expect(result.content[0].text).toContain('10MB');
         expect(result.content[0].text).toContain('presigned PUT');
+        expect(result.content[0].text).toContain('(Assets)');
+        expect(result.content[0].text).not.toContain('request_' + 'upload_session');
         expect(mockCallEdge).not.toHaveBeenCalled();
       });
 

@@ -94,7 +94,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-The hosted endpoint and npm stdio server each expose **91 public tools**. Their surfaces differ intentionally: hosted HTTP includes the Content Calendar and Analytics Pulse MCP Apps, while stdio includes 2 local screen-capture tools instead. The live hosted count is published by the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json). A small set of internal service tools used by Social Neuron's own automation are registered but not part of the public surface.
+The npm package exposes **91 public tools** per transport. The separately versioned hosted service exposes **92 public tools**, including hosted-only `get_account_status`. Hosted HTTP includes the Content Calendar and Analytics Pulse MCP Apps; npm stdio includes 2 local screen-capture tools instead. The live hosted count is published by the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json). The npm package supports Node 20.20+ and Node 22.22+ under its declared engine ranges. The hosted service runs its separate 3.0.0 contract; its version is recorded alongside its reviewed tool inventory in `server.json.hosted`.
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 

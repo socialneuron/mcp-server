@@ -80,8 +80,8 @@ export function registerMediaTools(server: McpServer): void {
       'AGENT ROUTING GUIDE: If the media was produced by another tool here (generate_image, ' +
       'generate_video, create_carousel, etc.), use the returned job_id or r2_key directly with ' +
       'schedule_post — do NOT download and re-upload. For user-authored files larger than ~1MB, ' +
-      'prefer request_upload_session (returns a tokenized Dashboard URL the user uploads through ' +
-      'in their browser) so bytes never flow through the agent context. Reserve file_data for ' +
+      'ask the user to upload them in the Social Neuron app (Assets) so bytes never flow ' +
+      'through the agent context. Reserve file_data for ' +
       'small assets (thumbnails, logos, short clips).',
     {
       source: z
@@ -215,8 +215,8 @@ export function registerMediaTools(server: McpServer): void {
                   `Alternatives, in order of preference: ` +
                   `(1) if this media came from another tool here (generate_image/video, create_carousel), ` +
                   `pass its job_id or r2_key directly to schedule_post — do not re-upload. ` +
-                  `(2) for user-authored files, call request_upload_session to get a tokenized Dashboard ` +
-                  `URL where the user uploads directly to R2 in their browser. ` +
+                  `(2) for user-authored files, ask the user to upload them in the Social Neuron app ` +
+                  `(Assets) so the bytes never pass through this chat. ` +
                   `(3) for stdio/local mode, pass a filesystem path via \`source\` so the server can ` +
                   `stream and use presigned PUT.`,
               },

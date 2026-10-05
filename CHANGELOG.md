@@ -4,6 +4,24 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.1.1 - 2026-10-05
+
+### Fixed
+
+- Validate each declared Node runtime floor and pin the matching Node20-compatible Supabase cohort.
+- Correct upload guidance to use the existing Assets screen for large user files.
+- Separate the npm package's 91-tool contract from the hosted service's reviewed version 3.0.0 and 92 public tools. Live checks validate exact tool names and versions for the hosted target.
+- Refresh the Cursor manifest and clarify the trial's permitted scopes.
+- Replace Calendar upgrade/pricing prompts with neutral guidance about required access scopes.
+
+### Maintenance
+
+- Include reviewed dependency/security updates for the MCP SDK, Hono, IP parsing, Zod, Sentry, keyring, Remotion, build tools and both MCP App Views.
+- Register MCP Apps through the native server SDK, preserving tool/resource metadata and App behavior.
+- Keep Node20 support, defer Vitest5, settle pending auth-test imports, and tolerate npm release propagation without republishing.
+- Retire obsolete release-tag cooldown bypasses; every release retains the 14-day dependency cooldown.
+
+
 ## 2.1.0 - 2026-09-22
 
 ### Added
