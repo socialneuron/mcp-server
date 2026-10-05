@@ -22,6 +22,12 @@ import type {
 import { MCP_VERSION } from '../lib/version.js';
 import { resolveConnectedAccountRouting } from '../lib/connected-account-routing.js';
 
+// Zod 4.6 defaults to seconds; existing scheduling clients also send minutes.
+const ScheduleTimestampSchema = z.union([
+  z.string().datetime({ offset: true }),
+  z.string().datetime({ offset: true, precision: -1 }),
+]);
+
 /** Convert snake_case keys to camelCase (one level deep) */
 function snakeToCamel(obj: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -1095,13 +1101,9 @@ export function registerDistributionTools(server: McpServer): void {
         .describe(
           "Brand/project ID that owns the post. Defaults to the authenticated key's project or the account default."
         ),
-      scheduled_at: z
-        .string()
-        .datetime({ offset: true })
+      scheduled_at: ScheduleTimestampSchema
         .describe('New future publish time as an ISO 8601 datetime with timezone.'),
-      expected_scheduled_at: z
-        .string()
-        .datetime({ offset: true })
+      expected_scheduled_at: ScheduleTimestampSchema
         .optional()
         .describe(
           'Optional current schedule timestamp. If it changed since you read it, the update is rejected instead of silently overwriting it.'
