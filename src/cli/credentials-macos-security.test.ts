@@ -9,7 +9,9 @@ import {
   writeFileSync,
 } from 'node:fs';
 
-const TEST_HOME = '/tmp/social-neuron-macos-credentials-test';
+const { TEST_HOME } = vi.hoisted(() => ({
+  TEST_HOME: `/tmp/social-neuron-macos-credentials-test-${process.pid}`,
+}));
 const TEST_CONFIG_DIR = `${TEST_HOME}/.config/social-neuron`;
 const TEST_CREDENTIALS_FILE = `${TEST_CONFIG_DIR}/credentials.json`;
 
@@ -34,7 +36,7 @@ function keychainItemNotFound(): Error & { status: number } {
 }
 
 vi.mock('node:os', () => ({
-  homedir: () => '/tmp/social-neuron-macos-credentials-test',
+  homedir: () => TEST_HOME,
   platform: () => 'darwin',
 }));
 
@@ -59,12 +61,14 @@ vi.mock('@napi-rs/keyring', () => ({
   },
 }));
 
-import { deleteApiKey, loadApiKey, saveApiKey, saveSupabaseUrl } from './credentials.js';
+import { deleteApiKey, loadApiKey, loadSupabaseUrl, saveApiKey, saveSupabaseUrl } from './credentials.js';
 
 describe('macOS Keychain credential security', () => {
   beforeEach(() => {
     rmSync(TEST_HOME, { recursive: true, force: true });
     vi.stubEnv('SOCIALNEURON_API_KEY', '');
+    vi.stubEnv('SOCIALNEURON_SUPABASE_URL', '');
+    vi.stubEnv('SUPABASE_URL', '');
     execFileSync.mockReset();
     keyringConstructor.mockReset();
     keyringSetPassword.mockReset();
@@ -114,6 +118,119 @@ describe('macOS Keychain credential security', () => {
       ],
       { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
     );
+  });
+
+  const credentialReads = [
+    {
+      name: 'API key',
+      load: loadApiKey,
+      service: 'socialneuron-api-key',
+      field: 'apiKey',
+      value: 'synthetic-api-key',
+    },
+    {
+      name: 'Supabase URL',
+      load: loadSupabaseUrl,
+      service: 'socialneuron-supabase-url',
+      field: 'supabaseUrl',
+      value: 'https://synthetic.example',
+    },
+  ];
+
+  it.each(credentialReads)(
+    'reads the $name through the CLI when keyring 2 throws a provider error',
+    async ({ load, service, value }) => {
+      keyringGetPassword.mockImplementation(() => {
+        throw new Error('synthetic native provider unavailable');
+      });
+      execFileSync.mockReturnValue(value + '\n');
+
+      await expect(load()).resolves.toBe(value);
+
+      expect(keyringGetPassword).toHaveBeenCalledOnce();
+      expect(execFileSync).toHaveBeenCalledWith(
+        'security',
+        ['find-generic-password', '-a', 'socialneuron', '-s', service, '-w'],
+        { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'pipe'] }
+      );
+      expect(keyringSetPassword).not.toHaveBeenCalled();
+      expect(keyringDeletePassword).not.toHaveBeenCalled();
+    }
+  );
+
+  it.each(credentialReads)(
+    'reads the existing $name file fallback when native and CLI providers fail',
+    async ({ load, field, value }) => {
+      mkdirSync(TEST_CONFIG_DIR, { recursive: true, mode: 0o700 });
+      writeFileSync(TEST_CREDENTIALS_FILE, JSON.stringify({ [field]: value }), {
+        mode: 0o600,
+      });
+      keyringGetPassword.mockImplementation(() => {
+        throw new Error('synthetic native provider unavailable');
+      });
+      execFileSync.mockImplementation(() => {
+        throw Object.assign(new Error('User interaction is not allowed.'), { status: 36 });
+      });
+
+      await expect(load()).resolves.toBe(value);
+
+      expect(keyringGetPassword).toHaveBeenCalledOnce();
+      expect(execFileSync).toHaveBeenCalledOnce();
+      expect(JSON.parse(readFileSync(TEST_CREDENTIALS_FILE, 'utf8'))).toEqual({
+        [field]: value,
+      });
+      expect(keyringSetPassword).not.toHaveBeenCalled();
+      expect(keyringDeletePassword).not.toHaveBeenCalled();
+    }
+  );
+
+  it('verifies CLI logout when keyring 2 native delete and read both throw', async () => {
+    keyringDeletePassword.mockImplementation(() => {
+      throw new Error('synthetic native deletion denied');
+    });
+    keyringGetPassword.mockImplementation(() => {
+      throw new Error('synthetic native read denied');
+    });
+    execFileSync.mockImplementation((_command, args: string[]) => {
+      if (args[0] === 'delete-generic-password') return '';
+      throw keychainItemNotFound();
+    });
+
+    await expect(deleteApiKey()).resolves.toBeUndefined();
+
+    expect(keyringDeletePassword).toHaveBeenCalledOnce();
+    expect(keyringGetPassword).toHaveBeenCalledOnce();
+    expect(execFileSync.mock.calls.map(([, args]) => args[0])).toEqual([
+      'delete-generic-password',
+      'find-generic-password',
+    ]);
+  });
+
+  it('clears only the file API key when provider errors prevent verifying logout', async () => {
+    mkdirSync(TEST_CONFIG_DIR, { recursive: true, mode: 0o700 });
+    writeFileSync(
+      TEST_CREDENTIALS_FILE,
+      JSON.stringify({ apiKey: 'synthetic-api-key', supabaseUrl: 'https://synthetic.example' }),
+      { mode: 0o600 }
+    );
+    keyringDeletePassword.mockImplementation(() => {
+      throw new Error('synthetic native deletion denied');
+    });
+    keyringGetPassword.mockImplementation(() => {
+      throw new Error('synthetic native read denied');
+    });
+    execFileSync.mockImplementation((_command, args: string[]) => {
+      if (args[0] === 'delete-generic-password') return '';
+      throw Object.assign(new Error('User interaction is not allowed.'), { status: 36 });
+    });
+
+    await expect(deleteApiKey()).rejects.toThrow(
+      /Unable to verify removal of the existing Social Neuron Keychain credential/
+    );
+
+    expect(JSON.parse(readFileSync(TEST_CREDENTIALS_FILE, 'utf8'))).toEqual({
+      supabaseUrl: 'https://synthetic.example',
+    });
   });
 
   it('checks the legacy CLI after native deletion and verifies logout', async () => {
