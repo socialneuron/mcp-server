@@ -100,11 +100,11 @@
     "jose": "^6.2.1",
     "open": "11.0.1",
     "posthog-node": "5.48.1",
-    "zod": "^4.3.6"
+    "zod": "4.4.3"
   },
   "devDependencies": {
-    "@remotion/bundler": "4.0.508",
-    "@remotion/renderer": "4.0.508",
+    "@remotion/bundler": "4.0.522",
+    "@remotion/renderer": "4.0.522",
     "@types/express": "5.0.6",
     "@types/node": "26.2.0",
     "esbuild": "^0.28.1",
