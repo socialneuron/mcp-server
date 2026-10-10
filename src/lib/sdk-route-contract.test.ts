@@ -222,3 +222,126 @@ describe('SDK canonical REST tool contract', () => {
     });
   });
 });
+
+describe('SDK tool-name dispatch boundary', () => {
+  let requests: Request[];
+
+  beforeEach(() => {
+    requests = [];
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+        requests.push(new Request(input, init));
+        return successResponse();
+      })
+    );
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
+  function expectToolRequest(request: Request, encodedName: string) {
+    const url = new URL(request.url);
+    expect(url.origin).toBe('https://example.test');
+    expect(url.pathname).toBe('/v1/tools/' + encodedName);
+    expect(url.search).toBe('');
+    expect(url.hash).toBe('');
+    expect(request.method).toBe('POST');
+    expect(request.headers.get('authorization')).toBe('Bearer ' + API_KEY);
+    expect(request.headers.get('content-type')).toBe('application/json');
+  }
+
+  it.each(['', '.', '..'])(
+    'rejects invalid tool name %j before dispatch or serialization',
+    async name => {
+      const sn = new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test' });
+      const serialize = vi.fn(() => ({ synthetic: true }));
+
+      await expect(sn.tools.execute(name, { toJSON: serialize })).rejects.toMatchObject({
+        name: 'Error',
+        message: 'Invalid tool name',
+      });
+
+      expect(fetch).not.toHaveBeenCalled();
+      expect(requests).toHaveLength(0);
+      expect(serialize).not.toHaveBeenCalled();
+    }
+  );
+
+  it('rejects a non-string tool name without coercing it', async () => {
+    const sn = new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test' });
+    const coerce = vi.fn(() => '..');
+    const name = { toString: coerce } as unknown as string;
+    const serialize = vi.fn(() => ({ synthetic: true }));
+
+    await expect(sn.tools.execute(name, { toJSON: serialize })).rejects.toMatchObject({
+      name: 'Error',
+      message: 'Invalid tool name',
+    });
+
+    expect(fetch).not.toHaveBeenCalled();
+    expect(requests).toHaveLength(0);
+    expect(serialize).not.toHaveBeenCalled();
+    expect(coerce).not.toHaveBeenCalled();
+  });
+
+  it.each(['quality_check', 'future_tool', '...'])(
+    'preserves tool name %j and its payload',
+    async name => {
+      const sn = new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test' });
+      const params = { content: 'synthetic content', options: { enabled: true } };
+
+      await sn.tools.execute(name, params);
+
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(requests).toHaveLength(1);
+      expectToolRequest(requests[0], name);
+      expect(await requests[0].json()).toEqual(params);
+    }
+  );
+
+  it.each([
+    ['a/b', 'a%2Fb'],
+    ['../posts', '..%2Fposts'],
+    ['a\\b', 'a%5Cb'],
+    ['..\\posts', '..%5Cposts'],
+    ['%2e', '%252e'],
+    ['%2E%2E', '%252E%252E'],
+    ['..%2Fposts', '..%252Fposts'],
+    ['%252e%252e%252fposts', '%25252e%25252e%25252fposts'],
+    ['tool?x=y', 'tool%3Fx%3Dy'],
+    ['tool#fragment', 'tool%23fragment'],
+  ])('keeps tool name %j within one encoded route segment', async (name, encodedName) => {
+    const sn = new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test' });
+    const params = { synthetic: true };
+
+    await sn.tools.execute(name, params);
+
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(requests).toHaveLength(1);
+    expectToolRequest(requests[0], encodedName);
+    expect(await requests[0].json()).toEqual(params);
+  });
+
+  it.each(['..', '../synthetic?x=1#fragment'])(
+    'keeps identifier %j in the body of fixed routes',
+    async id => {
+      const sn = new SocialNeuron({ apiKey: API_KEY, baseUrl: 'https://example.test' });
+
+      await sn.plans.get(id);
+      await sn.comments.delete(id);
+      await sn.jobs.check(id);
+
+      expect(fetch).toHaveBeenCalledTimes(3);
+      expect(requests).toHaveLength(3);
+      const expected = [
+        ['get_content_plan', 'plan_id'],
+        ['delete_comment', 'comment_id'],
+        ['check_status', 'job_id'],
+      ];
+      for (const [index, [tool, field]] of expected.entries()) {
+        expectToolRequest(requests[index], tool);
+        expect(await requests[index].json()).toEqual({ [field]: id, response_format: 'json' });
+      }
+    }
+  );
+});
