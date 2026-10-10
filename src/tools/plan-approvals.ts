@@ -93,7 +93,7 @@ export function registerPlanApprovalTools(server: McpServer): void {
       if (!result?.success) {
         return {
           content: [
-            { type: 'text' as const, text: result?.error ?? 'Failed to create plan approvals.' },
+            { type: 'text' as const, text: 'Failed to create plan approvals.' },
           ],
           isError: true,
         };
