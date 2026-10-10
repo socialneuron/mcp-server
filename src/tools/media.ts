@@ -1,6 +1,6 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { z } from 'zod';
-import { readFile } from 'node:fs/promises';
+import { LocalMediaError, readLocalMedia } from '../lib/local-media.js';
 import { basename, extname } from 'node:path';
 import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
@@ -351,8 +351,11 @@ export function registerMediaTools(server: McpServer): void {
         }
         let fileBuffer: Buffer;
         try {
-          fileBuffer = await readFile(src);
-        } catch {
+          fileBuffer = await readLocalMedia(src);
+        } catch (error) {
+          if (error instanceof LocalMediaError) {
+            return { content: [{ type: 'text' as const, text: error.message }], isError: true };
+          }
           return {
             content: [
               {

@@ -1,3 +1,7 @@
+vi.mock('node:fs/promises', async () => {
+  const actual = await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+  return { ...actual, open: vi.fn(actual.open) };
+});
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerMediaTools } from './media.js';
@@ -32,6 +36,15 @@ vi.mock('../lib/ssrf.js', async () => {
 });
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+
+/** Some environments use a hidden TMPDIR, which the production path policy rejects.
+ * Keep synthetic fixtures in the isolated checkout when that happens; each
+ * test removes its unique directory in finally. Never relax the upload policy.
+ */
+function mediaFixtureRoot(osTemp: string): string {
+  return osTemp.split(/[\\/]/).some(part => part.startsWith('.')) ? process.cwd() : osTemp;
+}
+
 
 describe('media tools', () => {
   let server: ReturnType<typeof createMockServer>;
@@ -353,7 +366,7 @@ describe('media tools', () => {
         const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
         const { tmpdir } = await import('node:os');
         const { join } = await import('node:path');
-        const dir = mkdtempSync(join(tmpdir(), 'sn-media-test-'));
+        const dir = mkdtempSync(join(mediaFixtureRoot(tmpdir()), 'sn-media-test-'));
         const bigPath = join(dir, 'big.mp4');
         const bigSize = 11 * 1024 * 1024;
         writeFileSync(bigPath, Buffer.alloc(bigSize));
@@ -557,4 +570,171 @@ describe('media tools', () => {
       expect(result.content[0].text).toMatch(/job_id/i);
     });
   });
+});
+
+// All local-file fixtures are synthetic; provider calls remain mocked.
+describe('local media boundary', () => {
+  it.each([
+    '.env',
+    '.env.production',
+    '.ssh/id_rsa',
+    '.aws/credentials',
+    '.codex/auth.json',
+    'private.pem',
+    'private.key',
+    '.secrets/photo.png',
+    'credentials.png',
+    'notes.txt',
+  ])('rejects %s even with a media MIME override', async name => {
+    const fs = await import('node:fs/promises');
+    const { tmpdir } = await import('node:os');
+    const { join, dirname } = await import('node:path');
+    const dir = await fs.mkdtemp(join(mediaFixtureRoot(tmpdir()), 'media-boundary-'));
+    const source = join(dir, name);
+    const prior = process.env.MCP_TRANSPORT;
+    process.env.MCP_TRANSPORT = 'stdio';
+    vi.clearAllMocks();
+    try {
+      await fs.mkdir(dirname(source), { recursive: true });
+      await fs.writeFile(source, 'synthetic non-media fixture');
+      const server = createMockServer();
+      registerMediaTools(server as any);
+      const result = await server.getHandler('upload_media')!({
+        source,
+        content_type: 'image/png',
+        file_name: 'safe.png',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toMatch(/Local media rejected/);
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    } finally {
+      if (prior === undefined) delete process.env.MCP_TRANSPORT;
+      else process.env.MCP_TRANSPORT = prior;
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['sensitive symlink', 'oversize', 'directory', 'hard link'])(
+    'rejects a %s before upload',
+    async scenario => {
+      const fs = await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dir = await fs.mkdtemp(join(mediaFixtureRoot(tmpdir()), 'media-boundary-'));
+      const source = join(dir, 'asset.png');
+      const prior = process.env.MCP_TRANSPORT;
+      process.env.MCP_TRANSPORT = 'stdio';
+      vi.clearAllMocks();
+      try {
+        if (scenario === 'sensitive symlink') {
+          await fs.writeFile(join(dir, '.env'), 'synthetic fixture');
+          await fs.symlink(join(dir, '.env'), source);
+        } else if (scenario === 'oversize') {
+          const handle = await fs.open(source, 'w');
+          await handle.truncate(500 * 1024 * 1024 + 1);
+          await handle.close();
+        } else if (scenario === 'hard link') {
+          await fs.writeFile(join(dir, 'original.png'), 'synthetic fixture');
+          await fs.link(join(dir, 'original.png'), source);
+        } else {
+          await fs.mkdir(source);
+        }
+        vi.mocked(fs.open).mockClear();
+        const server = createMockServer();
+        registerMediaTools(server as any);
+        const result = await server.getHandler('upload_media')!({
+          source,
+          content_type: 'image/png',
+        });
+        expect(result.isError).toBe(true);
+        expect(result.content[0].text).toMatch(/Local media rejected/);
+        // No descriptor was opened for reading: reject before allocating media bytes.
+        expect(fs.open).not.toHaveBeenCalled();
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      } finally {
+        if (prior === undefined) delete process.env.MCP_TRANSPORT;
+        else process.env.MCP_TRANSPORT = prior;
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }
+  );
+});
+
+describe('local media descriptor validation', () => {
+  it.each(['parent swap', 'leaf swap', 'read mutation', 'valid.png', 'valid.mp4', 'valid.mp3'])(
+    'handles %s with the validated descriptor',
+    async scenario => {
+      const fs = await import('node:fs/promises');
+      const { tmpdir } = await import('node:os');
+      const { join } = await import('node:path');
+      const dir = await fs.mkdtemp(join(mediaFixtureRoot(tmpdir()), 'media-descriptor-'));
+      const mediaDir = join(dir, 'media');
+      await fs.mkdir(mediaDir);
+      const source = join(mediaDir, scenario.startsWith('valid') ? scenario : 'asset.png');
+      const content = Buffer.from('synthetic media bytes');
+      await fs.writeFile(source, content);
+      const prior = process.env.MCP_TRANSPORT;
+      process.env.MCP_TRANSPORT = 'stdio';
+      vi.clearAllMocks();
+      mockCallEdge.mockResolvedValue({
+        data: { key: 'test/asset', size: content.length, contentType: 'image/png' },
+        error: null,
+      });
+      const { open: originalOpen } =
+        await vi.importActual<typeof import('node:fs/promises')>('node:fs/promises');
+      let openSpy: ReturnType<typeof vi.spyOn> | undefined;
+      try {
+        if (scenario.endsWith('swap')) {
+          openSpy = vi.spyOn(fs, 'open').mockImplementationOnce(async (...args) => {
+            if (scenario === 'parent swap') {
+              const secrets = join(dir, '.secrets');
+              await fs.mkdir(secrets);
+              await fs.writeFile(join(secrets, 'asset.png'), 'synthetic sensitive bytes');
+              await fs.rename(mediaDir, join(dir, 'original'));
+              await fs.symlink(secrets, mediaDir);
+            } else {
+              await fs.rename(source, source + '.old');
+              await fs.writeFile(source, 'replacement bytes');
+            }
+            return originalOpen(...args);
+          });
+        }
+        if (scenario === 'read mutation') {
+          openSpy = vi.spyOn(fs, 'open').mockImplementationOnce(async (...args) => {
+            const handle = await originalOpen(...args);
+            const originalRead = handle.read.bind(handle);
+            vi.spyOn(handle, 'read').mockImplementationOnce(
+              async (buffer: any, offset: any, length: any, position: any) => {
+                const result = await originalRead(buffer, offset, length, position);
+                await fs.appendFile(source, 'changed during read');
+                return result;
+              }
+            );
+            return handle;
+          });
+        }
+        const server = createMockServer();
+        registerMediaTools(server as any);
+        const result = await server.getHandler('upload_media')!({ source });
+        if (scenario.endsWith('swap') || scenario === 'read mutation') {
+          expect(result.isError).toBe(true);
+          expect(mockCallEdge).not.toHaveBeenCalled();
+        } else {
+          expect(result.isError).toBe(false);
+          expect(mockCallEdge).toHaveBeenCalledWith(
+            'upload-to-r2',
+            expect.objectContaining({
+              fileData: expect.stringContaining(content.toString('base64')),
+            }),
+            expect.anything()
+          );
+        }
+      } finally {
+        openSpy?.mockRestore();
+        if (prior === undefined) delete process.env.MCP_TRANSPORT;
+        else process.env.MCP_TRANSPORT = prior;
+        await fs.rm(dir, { recursive: true, force: true });
+      }
+    }
+  );
 });
