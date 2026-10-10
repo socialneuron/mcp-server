@@ -280,3 +280,24 @@ describe('planning tools', () => {
     expect(envelope.data.status).toBe('in_review');
   });
 });
+
+describe('backend result failure privacy', () => {
+  it.each([
+    { message: 'synthetic diagnostic', details: { hint: 'internal.example.invalid' } },
+    'synthetic diagnostic internal.example.invalid',
+    null,
+  ])('returns only a fixed string for failed backend results: %j', async backendError => {
+    vi.clearAllMocks();
+    const server = createMockServer();
+    registerPlanningTools(server as any);
+    mockCallEdge.mockResolvedValueOnce({
+      data: { success: false, error: backendError }, error: null,
+    } as any);
+    const result = await server.getHandler('submit_content_plan_for_approval')!({ plan_id: '11111111-1111-4111-8111-111111111111' });
+    expect(result.isError).toBe(true);
+    expect(result.content).toEqual([{ type: 'text', text: 'Failed to submit plan for approval.' }]);
+    expect(typeof result.content[0].text).toBe('string');
+    expect(JSON.stringify(result)).not.toContain('synthetic diagnostic');
+    expect(JSON.stringify(result)).not.toContain('internal.example.invalid');
+  });
+});

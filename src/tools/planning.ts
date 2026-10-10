@@ -744,7 +744,7 @@ export function registerPlanningTools(server: McpServer): void {
           content: [
             {
               type: 'text' as const,
-              text: result?.error ?? `Plan ${plan_id} not found or has no posts.`,
+              text: 'Failed to submit plan for approval.',
             },
           ],
           isError: true,
