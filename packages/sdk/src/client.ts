@@ -159,6 +159,9 @@ class HttpClient {
   }
 
   async callTool<T>(name: string, params: Record<string, unknown> = {}): Promise<ToolResponse<T>> {
+    if (typeof name !== 'string' || name === '' || name === '.' || name === '..') {
+      throw new Error('Invalid tool name');
+    }
     const raw = await this.request<RawToolResponse>(
       'POST',
       `/tools/${encodeURIComponent(name)}`,
