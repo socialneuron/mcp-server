@@ -4,6 +4,18 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.1.2 - 2026-10-11
+
+### Fixed
+
+- Return consistent messages when content approval fails.
+- Validate local media inputs before upload.
+- Preserve bundled dependency license text in both MCP Apps.
+
+### Maintenance
+
+- Include reviewed dependency updates and SDK request validation.
+
 ## 2.1.1 - 2026-10-05
 
 ### Fixed
