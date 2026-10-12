@@ -53,6 +53,7 @@ const state: { payload: AnalyticsPayload | null; loading: boolean } = {
 };
 
 const app = new App({ name: 'Analytics Pulse', version: '1.0.0' });
+app.onteardown = () => ({});
 app.connect();
 
 app.ontoolresult = (result) => {

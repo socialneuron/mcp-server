@@ -1,3 +1,5 @@
+import { createContext, Script } from 'node:vm';
+import { transformSync } from 'esbuild';
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import type { SpawnSyncReturns } from 'node:child_process';
@@ -390,4 +392,38 @@ describe('MCP App license packaging', () => {
     }
     for (const app of apps) output(root, app);
   }), 60_000);
+});
+
+describe('MCP App teardown lifecycle', () => {
+  it.each(['content-calendar', 'analytics-pulse'])('%s acknowledges teardown before connecting', (name) => {
+    const connected = vi.fn();
+    let instance: FixtureApp | undefined;
+    class FixtureApp {
+      onteardown?: () => unknown;
+      constructor() { instance = this; }
+      connect() {
+        // A host can request teardown immediately after connecting.
+        expect(typeof this.onteardown).toBe('function');
+        expect(this.onteardown?.()).toEqual({});
+        connected();
+      }
+    }
+    const source = readFileSync(new URL('../../apps/' + name + '/src/mcp-app.ts', import.meta.url), 'utf8');
+    const code = transformSync(source, { loader: 'ts', format: 'cjs' }).code;
+    const context = createContext({
+      exports: {},
+      require(id: string) {
+        if (id === '@modelcontextprotocol/ext-apps') return { App: FixtureApp };
+        throw new Error('Unexpected app dependency: ' + id);
+      },
+      document: {
+        addEventListener: vi.fn(),
+        querySelectorAll: () => [],
+        getElementById: () => null,
+      },
+    });
+    new Script(code, { filename: name + '/mcp-app.ts' }).runInContext(context);
+    expect(connected).toHaveBeenCalledOnce();
+    expect(instance?.onteardown?.()).toEqual({});
+  });
 });
