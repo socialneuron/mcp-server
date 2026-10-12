@@ -87,6 +87,7 @@ LICENSE
 mcp.json
 package-lock.json
 package.json
+packages/sdk/LICENSE
 packages/sdk/package-lock.json
 packages/sdk/package.json
 packages/sdk/README.md
