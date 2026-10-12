@@ -52,6 +52,30 @@ jobs:
             exit 1
           fi
 
+      - name: Verify packaged license
+        run: |
+          npm pack --ignore-scripts --json > sdk-pack.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          import tarfile
+
+          packs = json.loads(Path("sdk-pack.json").read_text())
+          if len(packs) != 1:
+              raise SystemExit("ERROR: expected one SDK package")
+          filename = packs[0]["filename"]
+          if Path(filename).name != filename or not filename.endswith(".tgz"):
+              raise SystemExit("ERROR: invalid SDK package filename")
+          with tarfile.open(filename, "r:gz") as archive:
+              matches = [entry for entry in archive.getmembers() if entry.name == "package/LICENSE"]
+              if len(matches) != 1 or not matches[0].isfile():
+                  raise SystemExit("ERROR: SDK package must contain one regular LICENSE")
+              contents = archive.extractfile(matches[0]).read()
+          if contents != Path("../../LICENSE").read_bytes():
+              raise SystemExit("ERROR: SDK package LICENSE differs from repository LICENSE")
+          print("SDK package LICENSE matches repository LICENSE")
+          PY
+
       - name: Publish
         # Configure this exact workflow as the package's npm Trusted Publisher.
         # No reusable registry token is accepted by the release job.
