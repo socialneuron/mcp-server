@@ -3,6 +3,7 @@
  * Dependency compatibility contracts that npm's generic solver cannot enforce.
  *
  * These checks are intentionally small and explicit:
+ * - The MCP SDK consumer range and lock must exclude affected OAuth versions.
  * - Supabase must accept the minimum Node version in every runtime range
  *   advertised by this package (including Node 20 with a nonzero minor floor).
  * - Remotion's bundler and renderer are imported together by render_demo_video,
@@ -30,21 +31,65 @@ function major(version) {
 
 // Check declared runtime floors, not arbitrary holes or upper bounds in a range.
 // Parse each OR branch separately so a later supported runtime cannot be skipped.
-function nodeFloors(label, range) {
-  if (typeof range !== 'string' || range.split('||').some(clause => !clause.trim()) ||
-      semver.validRange(range) === null) {
-    failures.push(`${label} must declare a valid, nonempty Node semver range`);
-    return null;
-  }
+function rangeFloors(label, range, kind = '') {
+  const description = kind + 'semver range';
+  try {
+    if (typeof range !== 'string' || range.split('||').some(clause => !clause.trim()) ||
+        semver.validRange(range) === null) {
+      failures.push(label + ' must declare a valid, nonempty ' + description);
+      return null;
+    }
 
-  const floors = new semver.Range(range).set.map(comparators =>
-    semver.minVersion(comparators.map(comparator => comparator.value).join(' '))
-  );
-  if (floors.some(version => version === null)) {
-    failures.push(`${label} contains an unsatisfiable Node semver range`);
+    // Validate each original branch: normalization may discard impossible alternatives.
+    const floors = range.split('||').map(clause => semver.minVersion(clause));
+    if (floors.some(version => version === null)) {
+      failures.push(label + ' contains an unsatisfiable ' + description);
+      return null;
+    }
+    return floors;
+  } catch {
+    failures.push(label + ' must declare a valid, nonempty ' + description);
     return null;
   }
-  return floors;
+}
+
+function nodeFloors(label, range) {
+  return rangeFloors(label, range, 'Node ');
+}
+
+// GHSA-6qxp-vccf-f47h: @modelcontextprotocol/sdk first patched version.
+const MCP_SDK_MIN_VERSION = '1.31.0';
+const sdkName = '@modelcontextprotocol/sdk';
+const sdkRange = pkg.dependencies?.[sdkName];
+const sdkFloors = rangeFloors('package.json ' + sdkName, sdkRange);
+if (sdkFloors) {
+  try {
+    if (!semver.subset(sdkRange, '>=' + MCP_SDK_MIN_VERSION)) {
+      failures.push(sdkName + ' declared range must exclude versions below ' + MCP_SDK_MIN_VERSION);
+    }
+  } catch {
+    failures.push('package.json ' + sdkName + ' must declare a valid, nonempty semver range');
+  }
+}
+
+if (lockPackages['']?.dependencies?.[sdkName] !== sdkRange) {
+  failures.push(sdkName + ' lock root range must match package.json');
+}
+
+const sdk = lockPackage(sdkName);
+if (!sdk) {
+  failures.push(sdkName + ' is missing from package-lock.json');
+} else {
+  const version = sdk.version;
+  // Explicit defense in depth; subset + satisfies already imply the stable floor.
+  if (typeof version !== 'string' || !semver.valid(version) ||
+      semver.prerelease(version) !== null || !semver.gte(version, MCP_SDK_MIN_VERSION)) {
+    failures.push(sdkName + ' locked version must be stable and at least ' + MCP_SDK_MIN_VERSION);
+  }
+  if (sdkFloors && typeof version === 'string' && semver.valid(version) &&
+      !semver.satisfies(version, sdkRange)) {
+    failures.push(sdkName + ' locked version must satisfy its declared range');
+  }
 }
 
 const supabase = lockPackage('@supabase/supabase-js');
