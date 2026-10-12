@@ -9,9 +9,17 @@ const projectRange = '>=20.20.0 <21.0.0 || >=22.22.0';
 
 function check(project: unknown = projectRange, dependency: unknown = '>=20.0.0', options: {
   missingLock?: boolean;
+  sdkRange?: unknown;
+  sdkLockRange?: unknown;
+  sdkVersion?: unknown;
+  missingSdkLock?: boolean;
+  missingSdkRoot?: boolean;
   remotionDeclaration?: string;
   remotionLocked?: string;
 } = {}) {
+  const sdkRange = 'sdkRange' in options ? options.sdkRange : '^1.31.0';
+  const sdkLockRange = 'sdkLockRange' in options ? options.sdkLockRange : sdkRange;
+  const sdkVersion = 'sdkVersion' in options ? options.sdkVersion : '1.31.0';
   const parent = join(root, '.tmp-vitest');
   mkdirSync(parent, { recursive: true });
   // Keeping fixtures below the repo lets the real CLI resolve its declared semver dependency.
@@ -22,12 +30,14 @@ function check(project: unknown = projectRange, dependency: unknown = '>=20.0.0'
       join(fixture, 'scripts/verify-dependency-contracts.mjs'));
     writeFileSync(join(fixture, 'package.json'), JSON.stringify({
       engines: { node: project },
-      dependencies: { '@supabase/supabase-js': '2.109.0' },
+      dependencies: { '@supabase/supabase-js': '2.109.0', '@modelcontextprotocol/sdk': sdkRange },
       devDependencies: { '@remotion/bundler': '4.0.526',
         '@remotion/renderer': options.remotionDeclaration ?? '4.0.526' },
     }));
     writeFileSync(join(fixture, 'package-lock.json'), JSON.stringify({
       packages: {
+        ...(!options.missingSdkRoot && { '': { dependencies: { '@modelcontextprotocol/sdk': sdkLockRange } } }),
+        ...(!options.missingSdkLock && { 'node_modules/@modelcontextprotocol/sdk': { version: sdkVersion } }),
         ...(!options.missingLock && { 'node_modules/@supabase/supabase-js': {
           version: '2.109.0', engines: { node: dependency },
         } }),
@@ -105,5 +115,73 @@ describe('dependency runtime floor contracts (real CLI)', () => {
     const result = check(projectRange, '>=20', options);
     expect(result.status, result.output).toBe(1);
     expect(result.output).toContain(message);
+  });
+});
+
+describe('MCP SDK consumer security floor (real CLI)', () => {
+  function reject(options: Parameters<typeof check>[2], message: string) {
+    const result = check(projectRange, '>=20', options);
+    expect(result.status, result.output).toBe(1);
+    expect(result.output).toContain('[verify-dependency-contracts] FAILED:');
+    expect(result.output).toContain(message);
+    expect(result.output).not.toMatch(/TypeError|RangeError|SyntaxError/);
+    return result;
+  }
+
+  it.each(['^1.27.1', '^1.27.1 || ^1.31.0', '>1.30.0', '>=1.31.0-0', '*'])(
+    'rejects vulnerable consumer range %s even with a patched lock', sdkRange => {
+      reject({ sdkRange }, 'must exclude versions below 1.31.0');
+    },
+  );
+
+  it.each([undefined, null, '', ' ', 'latest', '^1.31.0 || ', 1.31, '>=1.31.0 <1.31.0',
+    '^1.31.0 || >=2 <1'])('rejects invalid SDK range %j with a controlled diagnostic', sdkRange => {
+    reject({ sdkRange }, 'package.json @modelcontextprotocol/sdk');
+    const result = check(projectRange, '>=20', { sdkRange });
+    expect(result.output).toMatch(/valid, nonempty semver range|unsatisfiable semver range/);
+  });
+
+  it.each(['^1.31.0', '~1.31.0', '1.31.x', '>=1.31.0 <2', '1.31.0',
+    '^1.31.0 || ^2.0.0'])('accepts safe consumer range %s', sdkRange => {
+    const result = check(projectRange, '>=20', { sdkRange });
+    expect(result.status, result.output).toBe(0);
+  });
+
+  it.each(['1.32.0', '1.99.0'])('accepts later matching stable lock %s', sdkVersion => {
+    const result = check(projectRange, '>=20', { sdkVersion });
+    expect(result.status, result.output).toBe(0);
+  });
+
+  it('accepts matching stable version in a safe major-crossing OR branch', () => {
+    const result = check(projectRange, '>=20', { sdkRange: '^1.31.0 || ^2.0.0', sdkVersion: '2.0.0' });
+    expect(result.status, result.output).toBe(0);
+  });
+
+  it.each([undefined, null, '', 'invalid', 1.31, '1.30.0', '1.31.0-beta.1'])(
+    'rejects invalid or unsafe SDK lock version %j', sdkVersion => {
+      reject({ sdkVersion }, '@modelcontextprotocol/sdk locked version must be stable and at least 1.31.0');
+    },
+  );
+
+  it('rejects missing SDK resolved entry', () => {
+    reject({ missingSdkLock: true }, '@modelcontextprotocol/sdk is missing from package-lock.json');
+  });
+
+  it('rejects a safe but out-of-range locked SDK', () => {
+    reject({ sdkVersion: '2.0.0' }, '@modelcontextprotocol/sdk locked version must satisfy its declared range');
+  });
+
+  it.each([{ sdkLockRange: '^1.27.1' }, { sdkLockRange: undefined }, { missingSdkRoot: true }])(
+    'rejects unsynchronized lock-root declaration %j', options => {
+      reject(options, '@modelcontextprotocol/sdk lock root range must match package.json');
+    },
+  );
+
+  it('accumulates independent failures without losing existing dependency diagnostics', () => {
+    const result = check(projectRange, '>=22', { sdkRange: '^1.27.1', sdkLockRange: '^1.31.0' });
+    expect(result.status, result.output).toBe(1);
+    expect(result.output).toContain('minimum supported Node');
+    expect(result.output).toContain('must exclude versions below 1.31.0');
+    expect(result.output).toContain('lock root range must match package.json');
   });
 });
