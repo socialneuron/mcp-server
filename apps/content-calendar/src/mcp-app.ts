@@ -166,6 +166,7 @@ const state: {
 };
 
 const app = new App({ name: 'Content Calendar', version: '0.5.0' });
+app.onteardown = () => ({});
 app.connect();
 
 // Global Escape key — close whichever overlay is open (modal first, then drilldown).
