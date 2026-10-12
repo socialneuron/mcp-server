@@ -89,6 +89,7 @@ package-lock.json
 package.json
 packages/sdk/package-lock.json
 packages/sdk/package.json
+packages/sdk/LICENSE
 packages/sdk/README.md
 packages/sdk/src/client.ts
 packages/sdk/src/index.ts
