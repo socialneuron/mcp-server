@@ -9,7 +9,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "@modelcontextprotocol/ext-apps": "2.0.0"
+    "@modelcontextprotocol/ext-apps": "2.0.3"
   },
   "devDependencies": {
     "@types/node": "26.6.4",
