@@ -157,6 +157,17 @@ const EXEMPT_EXACT_VERSIONS = new Set([
   // publisher; @supabase/supabase-js by Supabase. Age out by 2026-07-30.
   '@sentry/node@10.66.0',
   '@supabase/supabase-js@2.110.7',
+  // 2026-10-23: founder-approved security waiver (decision card in the
+  // project thread) for the Dependabot alerts left after #565. vitest
+  // 4.1.12 (GHSA-qxg6-89mg-rqv8, GHSA-xp26-3454-mjgp) is published by
+  // GitHub Actions with npm SLSA provenance. vite-plugin-singlefile 2.3.4
+  // (drops micromatch/braces, GHSA-vfj7-8cjw-p6xm) is published by its sole
+  // canonical maintainer; its tarball diff against 2.3.3 was reviewed
+  // (micromatch -> picomatch, a CSP build warning, an outputFileName option;
+  // no install scripts, no network or process access). Exact pins only;
+  // both age out of the window by 2026-10-31.
+  'vitest@4.1.12',
+  'vite-plugin-singlefile@2.3.4',
 ]);
 
 // name → { versionRange, resolved } deduped across surfaces; a dep appearing
