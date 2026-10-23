@@ -113,10 +113,10 @@
     "vitest": "^4.1.10"
   },
   "overrides": {
-    "vite": "7.3.5",
+    "vite": "7.3.7",
     "esbuild": "$esbuild",
     "@hono/node-server": "2.0.10",
-    "hono": "4.13.7",
+    "hono": "4.13.13",
     "path-to-regexp": "8.4.2"
   },
   "engines": {
