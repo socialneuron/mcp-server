@@ -98,7 +98,7 @@
     "express": "^5.1.0",
     "jose": "^6.2.1",
     "open": "11.0.4",
-    "posthog-node": "5.55.0",
+    "posthog-node": "5.56.0",
     "zod": "4.6.5"
   },
   "devDependencies": {
