@@ -93,7 +93,7 @@
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "@sentry/node": "11.5.0",
+    "@sentry/node": "11.7.0",
     "@supabase/supabase-js": "2.109.0",
     "express": "^5.1.0",
     "jose": "^6.2.1",
