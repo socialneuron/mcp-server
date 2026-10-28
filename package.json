@@ -99,7 +99,7 @@
     "jose": "^6.2.1",
     "open": "11.0.4",
     "posthog-node": "5.56.0",
-    "zod": "4.6.5"
+    "zod": "4.6.7"
   },
   "devDependencies": {
     "@remotion/bundler": "4.0.535",
