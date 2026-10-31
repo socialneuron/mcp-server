@@ -4,6 +4,13 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.1.3 - 2026-10-31
+
+### Fixed
+
+- Use Supabase publishable keys for public MCP authentication requests.
+- Report local configuration errors without trusting remote responses to classify them.
+
 ## 2.1.2 - 2026-10-11
 
 ### Fixed
