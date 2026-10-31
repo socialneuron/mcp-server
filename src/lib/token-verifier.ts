@@ -192,7 +192,7 @@ async function verifySupabaseJwt(
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: supabaseAnonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ access_token: token }),
@@ -237,7 +237,7 @@ async function verifyApiKey(
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: supabaseAnonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ api_key: apiKey }),
@@ -317,7 +317,7 @@ async function verifyConnectorToken(
       {
         method: 'POST',
         headers: {
-          Authorization: `Bearer ${supabaseAnonKey}`,
+          apikey: supabaseAnonKey,
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({ access_token: accessToken, resource: expectedResource }),

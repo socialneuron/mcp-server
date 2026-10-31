@@ -523,7 +523,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=exchange-key`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${supabaseAnonKey}`,
+            apikey: supabaseAnonKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
@@ -617,7 +617,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
           {
             method: 'POST',
             headers: {
-              Authorization: `Bearer ${supabaseAnonKey}`,
+              apikey: supabaseAnonKey,
               'Content-Type': 'application/json',
             },
             body: JSON.stringify({
@@ -707,7 +707,7 @@ export function createOAuthProvider(options: OAuthProviderOptions): OAuthServerP
         const response = await fetch(`${supabaseUrl}/functions/v1/mcp-auth?action=${action}`, {
           method: 'POST',
           headers: {
-            Authorization: `Bearer ${supabaseAnonKey}`,
+            apikey: supabaseAnonKey,
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({

@@ -62,19 +62,25 @@ export function getSupabaseClient(): SupabaseClient {
  */
 export const CLOUD_SUPABASE_URL = "https://rhukkjscgzauutioyeei.supabase.co";
 
-/**
- * Cloud Supabase anon key — intentionally public, NOT a secret.
- *
- * This is the same value shipped in the frontend bundle as VITE_SUPABASE_ANON_KEY.
- * The JWT payload decodes to: { "role": "anon", ... }
- *
- * Row Level Security (RLS) enforces all access control. The anon key alone
- * cannot read, write, or modify any user data without a valid user JWT.
- *
- * The SUPABASE_SERVICE_ROLE_KEY is NEVER embedded in this package.
+/** Public project credential for apikey headers; never an end-user bearer.
+ * Legacy environment names remain compatible during staged migration.
+ * The embedded cloud publishable key preserves zero-config stdio; it grants no user identity.
  */
-export const CLOUD_SUPABASE_ANON_KEY =
-  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJodWtranNjZ3phdXV0aW95ZWVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NjM4ODYsImV4cCI6MjA4MDQzOTg4Nn0.JVtrviGvN0HaSh0JFS5KNl5FAB5ffG5Y1IMZsQFUrNQ";
+export const CLOUD_SUPABASE_PUBLISHABLE_KEY = "sb_publishable_jTqjn723YeBZspIumKom4Q_4LwdrHnM";
+
+export function getSupabasePublicKey(supabaseUrl = getSupabaseUrl()): string {
+  return (
+    process.env.SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SOCIALNEURON_PUBLISHABLE_KEY ||
+    process.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    process.env.SUPABASE_ANON_KEY ||
+    process.env.SOCIALNEURON_ANON_KEY ||
+    process.env.VITE_SUPABASE_ANON_KEY ||
+    (supabaseUrl.replace(/\/+$/, "") === CLOUD_SUPABASE_URL
+      ? CLOUD_SUPABASE_PUBLISHABLE_KEY
+      : "")
+  );
+}
 
 export function getSupabaseUrl(): string {
   if (SUPABASE_URL) return SUPABASE_URL;
@@ -588,6 +594,9 @@ export async function initializeAuth(): Promise<void> {
     } else {
       authenticatedApiKey = null; // Don't use the key for cloud transport
       // DO NOT fall back to service-role.
+      if (result.configurationError) {
+        throw new Error(result.error || "Missing public project key configuration.");
+      }
       if (result.retryable) {
         // Transient (network / 429 / 5xx, already retried with backoff) — the key
         // is NOT necessarily invalid. Don't push the user to re-auth over a hiccup;

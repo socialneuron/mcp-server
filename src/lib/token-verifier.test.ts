@@ -239,9 +239,12 @@ describe('createTokenVerifier', () => {
         `${SUPABASE_URL}/functions/v1/mcp-auth?action=validate-user-token`,
         expect.objectContaining({
           method: 'POST',
+          headers: expect.objectContaining({ apikey: SUPABASE_ANON_KEY }),
           body: JSON.stringify({ access_token: 'jwt-entitlement-check' }),
         })
       );
+      const [, options] = vi.mocked(globalThis.fetch).mock.calls[0] as [string, RequestInit];
+      expect(new Headers(options.headers).has('Authorization')).toBe(false);
     });
 
     it('fails closed when the entitlement user does not match the verified JWT subject', async () => {
@@ -315,9 +318,8 @@ describe('createTokenVerifier', () => {
       const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(VALIDATE_URL);
       expect(options.method).toBe('POST');
-      expect((options.headers as Record<string, string>)['Authorization']).toBe(
-        `Bearer ${SUPABASE_ANON_KEY}`
-      );
+      expect((options.headers as Record<string, string>)['apikey']).toBe(SUPABASE_ANON_KEY);
+      expect(new Headers(options.headers).has('Authorization')).toBe(false);
       expect((options.headers as Record<string, string>)['Content-Type']).toBe('application/json');
       expect(JSON.parse(options.body as string)).toEqual({
         api_key: 'snk_live_test123',
@@ -576,6 +578,9 @@ describe('createTokenVerifier', () => {
       const [url, options] = fetchMock.mock.calls[0] as [string, RequestInit];
       expect(url).toBe(CONNECTOR_VALIDATE_URL);
       expect(options.method).toBe('POST');
+      const headers = new Headers(options.headers);
+      expect(headers.get('apikey')).toBe(SUPABASE_ANON_KEY);
+      expect(headers.has('Authorization')).toBe(false);
       expect(JSON.parse(options.body as string)).toEqual({
         access_token: 'sno_connector_test_1',
         resource: 'https://mcp.socialneuron.com',

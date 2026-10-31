@@ -48,6 +48,7 @@ import { initPostHog, shutdownPostHog } from './lib/posthog.js';
 import { captureException, flushSentry, initSentry, shutdownSentry } from './lib/sentry.js';
 import { MCP_VERSION } from './lib/version.js';
 import { sanitizeError } from './lib/sanitize-error.js';
+import { getSupabasePublicKey } from './lib/supabase.js';
 import { buildWwwAuthenticateHeader } from './lib/www-authenticate.js';
 import { buildDiscoveryCatalog } from './lib/discovery-catalog.js';
 import { publicToolsForProfile, resolveToolProfile } from './lib/tool-profile.js';
@@ -72,7 +73,7 @@ import { selectExactOAuthResource } from './lib/oauth-resource-param.js';
 
 const PORT = parseInt(process.env.PORT ?? '8080', 10);
 const SUPABASE_URL = process.env.SUPABASE_URL ?? '';
-const SUPABASE_ANON_KEY = process.env.SUPABASE_ANON_KEY ?? '';
+const SUPABASE_ANON_KEY = getSupabasePublicKey(SUPABASE_URL);
 const MCP_SERVER_URL = process.env.MCP_SERVER_URL ?? `http://localhost:${PORT}/mcp`;
 const APP_BASE_URL = process.env.APP_BASE_URL ?? 'https://www.socialneuron.com';
 const NODE_ENV = process.env.NODE_ENV ?? 'development';
@@ -146,7 +147,9 @@ function safeEndpointForLog(value: string): string {
 }
 
 if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
-  console.error('[MCP HTTP] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+  console.error(
+    '[MCP HTTP] Missing SUPABASE_URL or SUPABASE_PUBLISHABLE_KEY (legacy SUPABASE_ANON_KEY supported)'
+  );
   process.exit(1);
 }
 

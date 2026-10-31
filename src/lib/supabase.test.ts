@@ -252,6 +252,31 @@ describe('supabase module', () => {
       vi.resetModules();
     });
 
+    it('reports missing public configuration without asking the user to log in again', async () => {
+      const validateApiKey = vi.fn().mockResolvedValue({
+        valid: false,
+        retryable: false,
+        configurationError: true,
+        error: 'Missing public project key. Set SUPABASE_PUBLISHABLE_KEY.',
+      });
+
+      vi.doMock('../auth/api-keys.js', () => ({ validateApiKey }));
+      vi.doMock('../cli/credentials.js', () => ({
+        loadApiKey: vi.fn().mockResolvedValue('snk_config_fixture'),
+      }));
+
+      vi.resetModules();
+      const { initializeAuth } = await import('./supabase.js');
+
+      await expect(initializeAuth()).rejects.toThrow(
+        'Missing public project key. Set SUPABASE_PUBLISHABLE_KEY.'
+      );
+
+      vi.doUnmock('../auth/api-keys.js');
+      vi.doUnmock('../cli/credentials.js');
+      vi.resetModules();
+    });
+
     it('rejects a revoked key immediately without serving a cached result', async () => {
       const validateApiKey = vi.fn().mockResolvedValue({
         valid: false,
@@ -379,5 +404,54 @@ describe('supabase module', () => {
 
       expect(result).toBe('proj-from-request-context');
     });
+  });
+});
+
+describe('public key is bound to the resolved project', () => {
+  const keyAliases = [
+    'SUPABASE_PUBLISHABLE_KEY',
+    'SOCIALNEURON_PUBLISHABLE_KEY',
+    'VITE_SUPABASE_PUBLISHABLE_KEY',
+    'SUPABASE_ANON_KEY',
+    'SOCIALNEURON_ANON_KEY',
+    'VITE_SUPABASE_ANON_KEY',
+  ];
+  const urlAliases = [
+    'SOCIALNEURON_SUPABASE_URL',
+    'SUPABASE_URL',
+    'SOCIALNEURON_CLOUD_SUPABASE_URL',
+  ];
+
+  beforeEach(() => {
+    for (const name of [...keyAliases, ...urlAliases]) vi.stubEnv(name, '');
+    vi.resetModules();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+    vi.resetModules();
+  });
+
+  it('keeps default-cloud zero-config', async () => {
+    const m = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+    expect(m.getSupabaseUrl()).toBe(m.CLOUD_SUPABASE_URL);
+    expect(m.getSupabasePublicKey()).toMatch(/^sb_publishable_/);
+  });
+
+  it.each(urlAliases)('does not inherit cloud key for custom %s', async name => {
+    vi.stubEnv(name, 'https://custom-project.supabase.co');
+    const m = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+    expect(m.getSupabaseUrl()).toBe('https://custom-project.supabase.co');
+    expect(m.getSupabasePublicKey()).toBe('');
+  });
+
+  it.each(keyAliases)('keeps an explicit custom-project key from %s', async name => {
+    vi.stubEnv('SUPABASE_URL', 'https://custom-project.supabase.co');
+    vi.stubEnv(
+      name,
+      name.includes('PUBLISHABLE') ? 'sb_publishable_custom_fixture' : 'legacy-custom-fixture'
+    );
+    const m = await vi.importActual<typeof import('./supabase.js')>('./supabase.js');
+    expect(m.getSupabasePublicKey()).toBe(process.env[name]);
   });
 });

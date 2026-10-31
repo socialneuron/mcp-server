@@ -335,6 +335,9 @@ describe('createOAuthProvider', () => {
       const [url, opts] = mockFetch.mock.calls[0];
       expect(url).toBe('https://test.supabase.co/functions/v1/mcp-auth?action=exchange-key');
       expect(opts.method).toBe('POST');
+      const headers = new Headers(opts.headers);
+      expect(headers.get('apikey')).toBe(TEST_OPTIONS.supabaseAnonKey);
+      expect(headers.has('Authorization')).toBe(false);
       const body = JSON.parse(opts.body);
       expect(body.code_verifier).toBe('test-verifier');
       expect(body.authorization_code).toBe('auth-code-state');
@@ -403,6 +406,9 @@ describe('createOAuthProvider', () => {
       expect(url).toBe(
         'https://test.supabase.co/functions/v1/mcp-auth?action=refresh-connector-token'
       );
+      const headers = new Headers(opts.headers);
+      expect(headers.get('apikey')).toBe(TEST_OPTIONS.supabaseAnonKey);
+      expect(headers.has('Authorization')).toBe(false);
       expect(JSON.parse(opts.body)).toEqual({
         client_id: client.client_id,
         refresh_token: 'refresh-token',
@@ -497,6 +503,9 @@ describe('createOAuthProvider', () => {
       const [url, opts] = mockFetch.mock.calls[0];
       expect(url).toBe('https://test.supabase.co/functions/v1/mcp-auth?action=revoke-by-token');
       expect(opts.method).toBe('POST');
+      const headers = new Headers(opts.headers);
+      expect(headers.get('apikey')).toBe(TEST_OPTIONS.supabaseAnonKey);
+      expect(headers.has('Authorization')).toBe(false);
       const body = JSON.parse(opts.body);
       expect(body.token).toBe('snk_test_fake_token'); // gitleaks:allow (test fixture)
     });
@@ -519,6 +528,9 @@ describe('createOAuthProvider', () => {
       expect(url).toBe(
         'https://test.supabase.co/functions/v1/mcp-auth?action=revoke-connector-token'
       );
+      const headers = new Headers(opts.headers);
+      expect(headers.get('apikey')).toBe(TEST_OPTIONS.supabaseAnonKey);
+      expect(headers.has('Authorization')).toBe(false);
       expect(JSON.parse(opts.body)).toMatchObject({
         token: 'sno_test_fake_token',
         client_id: client.client_id,
