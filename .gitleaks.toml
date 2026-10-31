@@ -1,6 +1,6 @@
 title = "Social Neuron MCP Server - Gitleaks Config"
 
-[allowlist]
+[[allowlists]]
   description = "Allowlisted files and patterns"
   paths = [
     '''node_modules/''',
@@ -11,11 +11,10 @@ title = "Social Neuron MCP Server - Gitleaks Config"
     # contain credentials while high-entropy hash values cause false positives.
     '''tools\.lock\.json''',
   ]
-  # Narrowly allowlist ONLY the known public anon JWT embedded in supabase.ts
-  # (role:"anon", intentionally shipped client-side; RLS enforces access).
-  # The whole file is deliberately NOT allowlisted: a future service-role key
-  # accidentally added there has a different payload/signature and would still
-  # be flagged.
-  regexes = [
-    '''eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJodWtranNjZ3phdXV0aW95ZWVpIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjQ4NjM4ODYsImV4cCI6MjA4MDQzOTg4Nn0\.JVtrviGvN0HaSh0JFS5KNl5FAB5ffG5Y1IMZsQFUrNQ''',
-  ]
+  # Narrowly allowlist only the public publishable key embedded in supabase.ts.
+  # Keep the source file scanned so unrelated credentials still trigger detection.
+[[allowlists]]
+regexTarget = "secret"
+regexes = [
+  '''^sb_publishable_jTqjn723YeBZspIumKom4Q_4LwdrHnM$''',
+]

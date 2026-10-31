@@ -5,7 +5,7 @@
  * SHA-256 hash against the `api_keys` table.
  */
 
-import { getSupabaseUrl, CLOUD_SUPABASE_ANON_KEY } from '../lib/supabase.js';
+import { getSupabaseUrl, getSupabasePublicKey } from '../lib/supabase.js';
 
 export interface ValidateApiKeyResult {
   valid: boolean;
@@ -14,6 +14,8 @@ export interface ValidateApiKeyResult {
   email?: string;
   expiresAt?: string;
   error?: string;
+  /** Local configuration failure, not a rejected user credential. */
+  configurationError?: boolean;
   /**
    * The key's own project scope, resolved server-side by mcp-auth's
    * validate-key-public (server-side). Null/absent
@@ -43,14 +45,16 @@ const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(r
 export async function validateApiKey(apiKey: string, _attempt = 0): Promise<ValidateApiKeyResult> {
   const supabaseUrl = getSupabaseUrl();
   try {
-    // Supabase Edge Functions require an Authorization header even for "public" endpoints.
-    // Use the anon key for Bearer auth. Never use the API key itself as bearer —
-    // it leaks the secret in Authorization headers and bypasses proper auth flow.
-    const anonKey =
-      process.env.SUPABASE_ANON_KEY ||
-      process.env.SOCIALNEURON_ANON_KEY ||
-      process.env.VITE_SUPABASE_ANON_KEY ||
-      CLOUD_SUPABASE_ANON_KEY;
+    const anonKey = getSupabasePublicKey(supabaseUrl);
+    if (!anonKey) {
+      return {
+        valid: false,
+        retryable: false,
+        configurationError: true,
+        error:
+          'Missing public project key. Set SUPABASE_PUBLISHABLE_KEY (or SUPABASE_ANON_KEY during migration).',
+      };
+    }
 
     // Sending the locally stored Social Neuron API key to the fixed first-party auth
     // endpoint is the intended validation protocol; the URL cannot be request-controlled.
@@ -61,7 +65,7 @@ export async function validateApiKey(apiKey: string, _attempt = 0): Promise<Vali
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${anonKey}`,
+          apikey: anonKey,
         },
         body: JSON.stringify({ api_key: apiKey }),
       }

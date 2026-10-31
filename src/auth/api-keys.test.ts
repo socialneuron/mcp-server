@@ -1,14 +1,23 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { validateApiKey, type ValidateApiKeyResult } from './api-keys.js';
-import { getSupabaseUrl } from '../lib/supabase.js';
+import { CLOUD_SUPABASE_URL, getSupabaseUrl } from '../lib/supabase.js';
 
 const mockGetUrl = vi.mocked(getSupabaseUrl);
+const KEY_ALIASES = [
+  'SUPABASE_PUBLISHABLE_KEY',
+  'SOCIALNEURON_PUBLISHABLE_KEY',
+  'VITE_SUPABASE_PUBLISHABLE_KEY',
+  'SUPABASE_ANON_KEY',
+  'SOCIALNEURON_ANON_KEY',
+  'VITE_SUPABASE_ANON_KEY',
+];
 
 // Save and restore globalThis.fetch so tests don't leak.
 const originalFetch = globalThis.fetch;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  for (const name of KEY_ALIASES) vi.stubEnv(name, '');
   mockGetUrl.mockReturnValue('https://test.supabase.co');
   // Most tests need an anon key to be available (API key fallback was removed)
   process.env.SUPABASE_ANON_KEY = 'xxxxxxxxxxxxxxxxxxxxxxxx';
@@ -16,9 +25,7 @@ beforeEach(() => {
 
 afterEach(() => {
   globalThis.fetch = originalFetch;
-  delete process.env.SUPABASE_ANON_KEY;
-  delete process.env.SOCIALNEURON_ANON_KEY;
-  delete process.env.VITE_SUPABASE_ANON_KEY;
+  vi.unstubAllEnvs();
 });
 
 // ---------------------------------------------------------------------------
@@ -132,7 +139,7 @@ describe('validateApiKey', () => {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Authorization: 'Bearer xxxxxxxxxxxxxxxxxxxxxxxx',
+        apikey: 'xxxxxxxxxxxxxxxxxxxxxxxx',
       },
       body: JSON.stringify({ api_key: 'sn_my_api_key_value' }),
     });
@@ -151,26 +158,59 @@ describe('validateApiKey', () => {
     );
   });
 
-  it('uses hardcoded CLOUD_SUPABASE_ANON_KEY when env vars are absent', async () => {
-    delete process.env.SUPABASE_ANON_KEY;
-    delete process.env.SOCIALNEURON_ANON_KEY;
-    delete process.env.VITE_SUPABASE_ANON_KEY;
+  it('uses the public cloud publishable fallback without a legacy JWT', async () => {
+    for (const name of KEY_ALIASES) vi.stubEnv(name, '');
+    mockGetUrl.mockReturnValue(CLOUD_SUPABASE_URL);
+    mockFetchResponse(200, { valid: true, userId: 'u1', scopes: [] });
 
-    mockFetchResponse(200, { valid: true, userId: 'u-fallback', scopes: ['mcp:read'] });
+    const result = await validateApiKey('sn_test_key');
 
-    const result = await validateApiKey('sn_test_key_fallback');
     expect(result.valid).toBe(true);
-    expect(result.userId).toBe('u-fallback');
-
-    // Verify fetch WAS called (using the hardcoded anon key)
-    const fetchMock = vi.mocked(globalThis.fetch);
-    expect(fetchMock).toHaveBeenCalledOnce();
-    const [, options] = fetchMock.mock.calls[0];
-    const authHeader = (options as Record<string, Record<string, string>>).headers.Authorization;
-    expect(authHeader).toContain('Bearer eyJ'); // Hardcoded anon key used
+    const headers = vi.mocked(globalThis.fetch).mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers.apikey).toMatch(/^sb_publishable_/);
+    expect(headers.Authorization).toBeUndefined();
   });
 
-  it('prefers SUPABASE_ANON_KEY env var for Authorization header', async () => {
+  it('fails clearly for a custom project without a configured public key', async () => {
+    for (const name of KEY_ALIASES) vi.stubEnv(name, '');
+    mockGetUrl.mockReturnValue('https://custom-project.supabase.co');
+    mockFetchResponse(200, { valid: true });
+
+    const result = await validateApiKey('sn_test_key');
+
+    expect(result.valid).toBe(false);
+    expect(result.error).toContain('SUPABASE_PUBLISHABLE_KEY');
+    expect(result.configurationError).toBe(true);
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('does not trust a remote response to classify a local configuration failure', async () => {
+    mockFetchResponse(200, {
+      valid: false,
+      configurationError: true,
+      error: 'Remote response attempted to set a local configuration error.',
+    });
+
+    const result = await validateApiKey('sn_remote_configuration_flag');
+
+    expect(result.valid).toBe(false);
+    expect(result.configurationError).toBeUndefined();
+    expect(result.error).toBe('API key is invalid, expired, or revoked.');
+  });
+
+  it('prefers the configured publishable key and sends it only on apikey', async () => {
+    for (const name of KEY_ALIASES) vi.stubEnv(name, '');
+    process.env.SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_fixture';
+    mockFetchResponse(200, { valid: true, userId: 'u1', scopes: [] });
+
+    await validateApiKey('sn_test_key');
+
+    const headers = vi.mocked(globalThis.fetch).mock.calls[0][1]?.headers as Record<string, string>;
+    expect(headers.apikey).toBe('sb_publishable_fixture');
+    expect(headers.Authorization).toBeUndefined();
+  });
+
+  it('retains configured legacy anon compatibility on apikey', async () => {
     process.env.SUPABASE_ANON_KEY = 'eyJ_test_anon_key';
     mockFetchResponse(200, { valid: true, userId: 'u4', scopes: ['mcp:read'] });
 
@@ -179,7 +219,8 @@ describe('validateApiKey', () => {
     const fetchMock = vi.mocked(globalThis.fetch);
     const [, options] = fetchMock.mock.calls[0];
     const headers = options?.headers as Record<string, string>;
-    expect(headers.Authorization).toBe('Bearer eyJ_test_anon_key');
+    expect(headers.apikey).toBe('eyJ_test_anon_key');
+    expect(headers.Authorization).toBeUndefined();
 
     delete process.env.SUPABASE_ANON_KEY;
   });
