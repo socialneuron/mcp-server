@@ -132,6 +132,6 @@
     }
   },
   "optionalDependencies": {
-    "@napi-rs/keyring": "2.1.0"
+    "@napi-rs/keyring": "2.1.1"
   }
 }
