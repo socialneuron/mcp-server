@@ -115,7 +115,7 @@ const sensitiveUrls = [
   ['encoded SSN', 'https://example.invalid/?id=000%2D12%2D3456', 'ssn'],
   [
     'encoded key',
-    'https://example.invalid/?key=' + encodeURIComponent(dummyKey).replace('_', '%5F'),
+    'https://example.invalid/?key=' + encodeURIComponent(dummyKey).replaceAll('_', '%5F'),
     'api_key',
   ],
   ['formatted phone', 'https://example.invalid/?phone=%2B1%20202%20555%200123', 'phone_us'],
