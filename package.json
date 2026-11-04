@@ -102,8 +102,8 @@
     "zod": "4.6.7"
   },
   "devDependencies": {
-    "@remotion/bundler": "4.0.535",
-    "@remotion/renderer": "4.0.535",
+    "@remotion/bundler": "4.0.537",
+    "@remotion/renderer": "4.0.537",
     "@types/express": "5.0.6",
     "@types/node": "26.6.5",
     "esbuild": "^0.28.1",
