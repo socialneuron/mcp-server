@@ -48,6 +48,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   export_design_tokens: 'mcp:read',
   get_ideation_context: 'mcp:read',
   get_credit_balance: 'mcp:read',
+  get_generation_options: 'mcp:read',
   get_budget_status: 'mcp:read',
   get_loop_summary: 'mcp:read',
   list_connected_accounts: 'mcp:read',

@@ -182,6 +182,7 @@ src/lib/connected-account-routing.test.ts
 src/lib/connected-account-routing.ts
 src/lib/creditEstimates.test.ts
 src/lib/creditEstimates.ts
+src/lib/creditEstimates.video.test.ts
 src/lib/dependency-contracts.test.ts
 src/lib/disclosure-pack-contract.test.ts
 src/lib/local-media.ts
@@ -219,6 +220,7 @@ src/lib/rest-invoke.test.ts
 src/lib/rest-invoke.ts
 src/lib/sanitize-error.test.ts
 src/lib/sanitize-error.ts
+src/lib/sdk-model-parity.test.ts
 src/lib/sdk-route-contract.test.ts
 src/lib/sentry.test.ts
 src/lib/sentry.ts
@@ -288,6 +290,8 @@ src/tools/distribution.test.ts
 src/tools/distribution.ts
 src/tools/extraction.test.ts
 src/tools/extraction.ts
+src/tools/generation-options.test.ts
+src/tools/generation-options.ts
 src/tools/hyperframes.test.ts
 src/tools/hyperframes.ts
 src/tools/ideation-context.test.ts

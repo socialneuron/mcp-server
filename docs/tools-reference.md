@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **91 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **92 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -31,6 +31,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `get_budget_status` | Check how much of the per-session budget has been consumed. Tracks credits spent and assets created in this MCP session against configured limits. Use to avoid hitting budget caps mid-workflow. |
 | `get_content_plan` | Load a persisted content plan by its UUID — returns the full plan including all posts, scheduling status, and approval state. Use to inspect a plan before update_content_plan or schedule_content_plan. plan_id comes from save_content_plan, p |
 | `get_credit_balance` | Check remaining credits, monthly limit, spending cap, and plan tier. Call this before expensive operations — generate_video costs 30-1000 credits (dynamic models can run higher based on duration/audio/resolution), generate_image costs 15-50 |
+| `get_generation_options` | Read current image model IDs and customer credit estimates before generation. No charge, reservation, or account/provider availability check. Estimates do not confirm request-limit availability. Pass the approved max_credits to generate_ima |
 | `get_ideation_context` | Get synthesized ideation context from performance insights. Returns the same prompt-injection context used by ideation generation. |
 | `get_loop_summary` | Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights). |
 | `get_mcp_usage` | Get your MCP API usage breakdown for the current billing month. Shows per-tool call counts and credit usage. Useful for monitoring API consumption and staying within tier limits. |

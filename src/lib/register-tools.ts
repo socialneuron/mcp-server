@@ -18,6 +18,7 @@ import { getVerifiedMediaReferences } from './verified-media-reference.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
+import { registerGenerationOptionsTools } from '../tools/generation-options.js';
 import { registerDistributionTools } from '../tools/distribution.js';
 import { registerMediaTools } from '../tools/media.js';
 import { registerAnalyticsTools } from '../tools/analytics.js';
@@ -462,6 +463,7 @@ export function registerAllTools(
   registerCommentsTools(server);
   registerIdeationContextTools(server);
   registerCreditsTools(server);
+  registerGenerationOptionsTools(server);
   registerLoopSummaryTools(server);
   registerUsageTools(server);
   registerAutopilotTools(server);
