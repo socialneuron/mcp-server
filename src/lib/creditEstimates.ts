@@ -42,6 +42,17 @@ export const IMAGE_CREDIT_ESTIMATES: Record<string, number> = {
   seedream: 20,
 };
 
+// Suno music models. Unlike video, the backend bills a flat per-model amount, so
+// these are the real charges, not just estimates. Must stay identical to the
+// platform's Suno pricing table and cover exactly generate_music's model enum.
+export const MUSIC_CREDIT_ESTIMATES: Record<string, number> = {
+  'suno-v3.5': 30,
+  'suno-v4': 50,
+  'suno-v4.5': 70,
+  'suno-v4.5plus': 70,
+  'suno-v5': 90,
+};
+
 /** The [min, max] credit span across an estimate table's admitted models. */
 export function creditRange(estimates: Record<string, number>): { min: number; max: number } {
   const values = Object.values(estimates);

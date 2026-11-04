@@ -1149,6 +1149,7 @@ const TOOL_ARGS = {
   generate_video: { prompt: PARAM_VALUES.prompt, model: 'grok-imagine' },
   generate_image: { prompt: PARAM_VALUES.prompt },
   generate_voiceover: { text: 'Welcome to the smoke test.' },
+  generate_music: { prompt: PARAM_VALUES.prompt, model: 'suno-v3.5' },
   upload_media: {
     file_data: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==',
     file_name: 'smoke.png',

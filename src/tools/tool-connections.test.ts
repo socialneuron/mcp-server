@@ -334,6 +334,7 @@ describe('Registration & Scope Coverage', () => {
       'update_platform_voice',
       'create_storyboard',
       'generate_voiceover',
+      'generate_music',
       'plan_content_week',
       'save_content_plan',
       'update_content_plan',

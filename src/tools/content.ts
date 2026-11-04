@@ -13,6 +13,7 @@ import { sanitizeDbError, redactSensitiveIdentifiers } from '../lib/sanitize-err
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
+  GenerateMusicResponse,
   JobStatusResponse,
   ResponseEnvelope,
 } from '../types/index.js';
@@ -29,6 +30,7 @@ import {
 import {
   VIDEO_CREDIT_ESTIMATES,
   IMAGE_CREDIT_ESTIMATES,
+  MUSIC_CREDIT_ESTIMATES,
   formatCreditRange,
 } from '../lib/creditEstimates.js';
 
@@ -97,6 +99,10 @@ const VIDEO_MODEL_ENUM = [
 // hand-drift from IMAGE_CREDIT_ESTIMATES, the same table the estimate lookup
 // below uses to budget-check every call. See ../lib/creditEstimates.ts.
 const IMAGE_CREDIT_RANGE = formatCreditRange(IMAGE_CREDIT_ESTIMATES);
+
+// Suno music models accepted by the backend, oldest to newest.
+const MUSIC_MODEL_ENUM = ['suno-v3.5', 'suno-v4', 'suno-v4.5', 'suno-v4.5plus', 'suno-v5'] as const;
+const MUSIC_CREDIT_RANGE = formatCreditRange(MUSIC_CREDIT_ESTIMATES);
 
 export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
@@ -314,6 +320,182 @@ export function registerContentTools(server: McpServer): void {
   );
 
   // ---------------------------------------------------------------------------
+  // generate_music
+  // ---------------------------------------------------------------------------
+  server.tool(
+    'generate_music',
+    `Start an async AI music generation job (Suno) — returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_id for a fresh download link). Costs ${MUSIC_CREDIT_RANGE} credits depending on model; use get_credit_balance to confirm sufficient balance first. Music models are not included on every plan — a plan rejection is returned as an error before any charge. For spoken narration use generate_voiceover instead.`,
+    {
+      prompt: z
+        .string()
+        .min(1)
+        .max(3000)
+        .describe(
+          'Describe the track: mood, genre, instruments, tempo, and use. Example: "Upbeat lo-fi hip hop with warm keys and soft vinyl crackle, 90 bpm, for a product demo." Without lyrics, Suno composes the whole song from this description.'
+        ),
+      model: z
+        .enum(MUSIC_MODEL_ENUM)
+        .describe(
+          'REQUIRED. Suno model version — must exactly match one of the enum values (case-sensitive). Newer versions cost more credits.'
+        ),
+      lyrics: z
+        .string()
+        .max(5000)
+        .optional()
+        .describe(
+          'Optional exact lyrics to sing. Providing lyrics switches Suno to custom mode, where the song follows these words instead of composing its own.'
+        ),
+      style: z
+        .string()
+        .max(1000)
+        .optional()
+        .describe('Optional style tags, e.g. "synthpop, female vocals, 120 bpm".'),
+      instrumental: z
+        .boolean()
+        .optional()
+        .describe('Set true for a track with no vocals. Defaults to false.'),
+      project_id: z
+        .string()
+        .optional()
+        .describe(
+          'Project ID to associate the track with. Required when more than one project is ' +
+            'accessible; omitted values auto-resolve only when exactly one project is accessible.'
+        ),
+      response_format: z
+        .enum(['text', 'json'])
+        .optional()
+        .describe('Optional response format. Defaults to text.'),
+    },
+    async ({ prompt, model, lyrics, style, instrumental, project_id, response_format }) => {
+      const format = response_format ?? 'text';
+      const projectResolution = await resolveProjectStrict(project_id);
+      if (!projectResolution.projectId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text:
+                projectResolution.error ??
+                'A project_id is required for music generation. Configure an explicit project or use an API key scoped to exactly one project.',
+            },
+          ],
+          isError: true,
+        };
+      }
+      const resolvedProjectId = projectResolution.projectId;
+      const userId = await getDefaultUserId();
+      const assetBudget = checkAssetBudget();
+      if (!assetBudget.ok) {
+        return {
+          content: [{ type: 'text' as const, text: assetBudget.message }],
+          isError: true,
+        };
+      }
+      const estimatedCost = MUSIC_CREDIT_ESTIMATES[model] ?? 90;
+      const budgetCheck = checkCreditBudget(estimatedCost);
+      if (!budgetCheck.ok) {
+        return {
+          content: [{ type: 'text' as const, text: budgetCheck.message }],
+          isError: true,
+        };
+      }
+      const rateLimit = checkRateLimit('generation', `generate_music:${userId}`);
+      if (!rateLimit.allowed) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Rate limit exceeded. Retry in ~${rateLimit.retryAfter}s.`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const { data, error } = await callEdgeFunction<GenerateMusicResponse>(
+        'kie-music-generate',
+        {
+          prompt,
+          model,
+          ...(lyrics !== undefined && { lyrics }),
+          ...(style !== undefined && { style }),
+          ...(instrumental !== undefined && { instrumental }),
+          projectId: resolvedProjectId,
+        },
+        { timeoutMs: 30_000 }
+      );
+
+      if (error) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: `Music generation failed to start: ${error}`,
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      if (!data?.taskId && !data?.asyncJobId) {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: 'Music generation failed: no job ID returned.',
+            },
+          ],
+          isError: true,
+        };
+      }
+
+      const jobId = data.asyncJobId ?? data.taskId;
+      const estimated = data.estimatedTime ?? 30;
+      const charged = Number(data.creditsDeducted ?? estimatedCost);
+      addCreditsUsed(Number.isFinite(charged) ? charged : estimatedCost);
+      addAssetsGenerated(1);
+
+      if (format === 'json') {
+        return {
+          content: [
+            {
+              type: 'text' as const,
+              text: JSON.stringify(
+                asEnvelope({
+                  jobId,
+                  taskId: data.taskId,
+                  asyncJobId: data.asyncJobId,
+                  model: data.model,
+                  estimatedTime: estimated,
+                  creditsDeducted: data.creditsDeducted,
+                }),
+                null,
+                2
+              ),
+            },
+          ],
+        };
+      }
+      return {
+        content: [
+          {
+            type: 'text' as const,
+            text: [
+              `Music generation started successfully.`,
+              `  Job ID: ${jobId}`,
+              `  Model: ${data.model}`,
+              `  Credits used: ${data.creditsDeducted}`,
+              `  Estimated time: ~${estimated} seconds`,
+              ``,
+              `Use check_status with job_id="${jobId}" to poll for the result.`,
+            ].join('\n'),
+          },
+        ],
+      };
+    }
+  );
+
+  // ---------------------------------------------------------------------------
   // generate_image
   // ---------------------------------------------------------------------------
   server.tool(
@@ -497,13 +679,13 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'check_status',
-    'Poll an async job started by generate_video or generate_image. Returns status (queued/processing/completed/failed), progress %, and result URL on completion. Poll every 10-30s for video, 5-15s for images. On "failed" status, the error field explains why — check credits or try a different model. ' +
+    'Poll an async job started by generate_video, generate_image or generate_music. Returns status (queued/processing/completed/failed), progress %, and result URL on completion. Poll every 10-30s for video, 5-15s for images. On "failed" status, the error field explains why — check credits or try a different model. ' +
       'JSON shape (response_format=json) is stable across the whole poll lifecycle — canonical fields job_id, status, progress, result_url, r2_key, all_urls, error, credits_cost, created_at, completed_at are always present (never only camelCase or only snake_case); legacy aliases jobId/resultUrl/credits/createdAt/completedAt/error_message are also always populated for backward compatibility.',
     {
       job_id: z
         .string()
         .describe(
-          'The job ID returned by generate_video or generate_image. ' +
+          'The job ID returned by generate_video, generate_image or generate_music. ' +
             'This is the asyncJobId or taskId value.'
         ),
       response_format: z

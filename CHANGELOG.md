@@ -4,6 +4,10 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+### Added
+
+- `generate_music` tool: start an async Suno music job (`suno-v3.5` to `suno-v5`, 30-90 credits) with optional lyrics, style tags and instrumental mode; poll with `check_status` and sign the stored mp3 with `get_media_url`.
+
 ## 2.1.4 - 2026-11-04
 
 ### Fixed

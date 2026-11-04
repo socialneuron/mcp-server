@@ -16,6 +16,7 @@ export type ToolProfile = (typeof TOOL_PROFILES)[number];
 export const ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS = new Set<string>([
   'generate_video',
   'generate_image',
+  'generate_music',
   'check_status',
   'create_storyboard',
   'generate_voiceover',

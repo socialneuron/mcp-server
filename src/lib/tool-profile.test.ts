@@ -15,6 +15,10 @@ describe('tool profiles', () => {
     expect(() => resolveToolProfile('typo')).toThrow(/Unsupported MCP_TOOL_PROFILE/);
   });
 
+  it('excludes AI music generation from the Anthropic directory profile', () => {
+    expect(ANTHROPIC_DIRECTORY_EXCLUDED_TOOLS.has('generate_music')).toBe(true);
+  });
+
   it('removes prohibited media generation and broad workflow runners from Anthropic discovery', () => {
     const names = new Set(publicToolsForProfile('anthropic-directory').map(tool => tool.name));
 
@@ -39,6 +43,7 @@ describe('tool profiles', () => {
     const registered = (server as unknown as { _registeredTools: Record<string, unknown> })
       ._registeredTools;
     expect(registered.generate_image).toBeUndefined();
+    expect(registered.generate_music).toBeUndefined();
     expect(registered.render_hyperframes).toBeUndefined();
     expect(registered.execute_recipe).toBeUndefined();
     expect(registered.generate_content).toBeDefined();

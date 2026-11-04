@@ -59,6 +59,20 @@ export interface GenerateVideoResponse {
   creditsDeducted: number;
 }
 
+/** Generation-start response from the kie-music-generate Edge Function. */
+export interface GenerateMusicResponse {
+  taskId: string;
+  asyncJobId: string | null;
+  /** Compatibility alias for asyncJobId. */
+  jobId?: string | null;
+  status: string;
+  model: string;
+  estimatedTime: number;
+  creditsDeducted: number;
+  /** Canonical alias for creditsDeducted. */
+  credits_used?: number;
+}
+
 export interface GenerateImageResponse {
   taskId: string;
   asyncJobId: string | null;
