@@ -174,11 +174,21 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       } catch {
         // never block on audit log failure
       }
+      if (outputScan.flagged_patterns.includes('url_reference_pii')) {
+        return toolError(
+          'policy_block',
+          'The response contains a URL with sensitive data and was withheld. The action may already have completed.',
+          {
+            details: { retryable: false, action_may_have_completed: true },
+            recover_with: [
+              'Do not retry automatically. Check the existing action state or contact support.',
+            ],
+          }
+        );
+      }
       return toolError(
         'server_error',
-        outputScan.flagged_patterns.includes('url_reference_pii')
-          ? 'The response contains a URL with sensitive data and was not returned.'
-          : 'The response exceeded the safe output limit and was not returned.'
+        'The response exceeded the safe output limit and was not returned.'
       );
     }
     if (outputScan.sanitized_text !== undefined) {

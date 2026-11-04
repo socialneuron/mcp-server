@@ -145,8 +145,9 @@ describe('wrapToolWithScanner', () => {
       userId: 'fixture-user',
     } as never);
     expect(result.structuredContent.error).toMatchObject({
-      error_type: 'server_error',
-      message: 'The response contains a URL with sensitive data and was not returned.',
+      error_type: 'policy_block',
+      retryable: false,
+      action_may_have_completed: true,
     });
     expect(JSON.stringify(result)).not.toContain(url);
     expect(JSON.stringify(result)).not.toContain('fixture%40example.invalid');
@@ -163,4 +164,17 @@ describe('wrapToolWithScanner', () => {
     expect(handler).toHaveBeenCalled();
     expect(result).toEqual(original);
   });
+  it('does not recommend repeating a completed action when its output reference is blocked', async () => {
+    let actions = 0;
+    const url = 'https://example.invalid/items/4111111111111111';
+    const handler = vi.fn(async () => { actions += 1; return { content: [{ type: 'text', text: url }] }; });
+    const result = await wrapToolWithScanner('test_tool', handler)({ caption: 'safe' }, { userId: 'fixture-user' } as never);
+    expect(actions).toBe(1);
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(result.structuredContent.error).toMatchObject({ error_type: 'policy_block', retryable: false, action_may_have_completed: true });
+    expect(result.structuredContent.error.message).toContain('may already have completed');
+    expect(result.structuredContent.error.recover_with).toContain('Do not retry automatically. Check the existing action state or contact support.');
+    expect(JSON.stringify(result)).not.toContain(url);
+  });
+
 });

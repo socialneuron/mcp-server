@@ -108,6 +108,7 @@ describe('scanStructuredText', () => {
 });
 
 const dummyKey = 'sk_' + 'syntheticfixtureonly0123456789';
+const syntheticJwt = ['eyJmaXh0dXJlIjp0cnVlfQ', 'eyJzdWIiOiJmaXh0dXJlIn0', 'c3ludGhldGlj'].join('.');
 const sensitiveUrls = [
   ['raw email', 'https://example.invalid/?email=fixture@example.invalid', 'email'],
   ['encoded email', 'https://example.invalid/?email=fixture%40example.invalid', 'email'],
@@ -135,6 +136,8 @@ const sensitiveUrls = [
     'https://example.invalid/items/4111111111111111',
     'credit_card',
   ],
+  ['Supabase-style signed JWT reference', 'https://example.invalid/storage/v1/object/sign/media/clip.png?token=' + syntheticJwt, 'jwt'],
+  ['signed AWS credential reference', 'https://example.invalid/clip.png?X-Amz-Credential=' + encodeURIComponent('AKIA' + 'Z'.repeat(16) + '/20261104/eu-west-1/s3/aws4_request'), 'aws_access_key'],
 ] as const;
 
 describe('PII reference protection', () => {
@@ -176,6 +179,7 @@ describe('PII reference protection', () => {
     'http://127.0.0.1:54321/storage/clip.png',
     'HTTPS://198.51.100.25:8443/clip.png',
     'https://%31%39%32.0.2.10/clip.png',
+    'https://example.invalid/clip.png?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential=EXAMPLEKEY%2F20261104%2Feu-west-1%2Fs3%2Faws4_request&X-Amz-Signature=' + 'a'.repeat(64),
   ])('preserves a safe media URL byte-for-byte: %s', url => {
     expect(scrubPii(url, 'mcp_tool_output')).toEqual({ text: url, redacted: false, patterns: [] });
     expect(scanStructuredText(JSON.stringify({ media: url }), output)).toMatchObject({
