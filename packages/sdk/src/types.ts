@@ -13,6 +13,7 @@ export type VideoModel =
   | 'veo3-fast'
   | 'kling-3-pro'
   | 'seedance-2'
+  | 'seedance-2.5'
   | 'veo3-quality'
   | 'wan-2.6'
   | 'gemini-omni-video'
@@ -80,10 +81,17 @@ export interface GenerateVideoParams {
   prompt: string;
   model: VideoModel;
   duration?: number;
+  /** Supported by the Seedance 2 family; other models apply their own. */
+  resolution?: '480p' | '720p' | '1080p';
   aspect_ratio?: Extract<AspectRatio, '16:9' | '9:16' | '1:1'>;
   enable_audio?: boolean;
   image_url?: string;
   end_frame_url?: string;
+  /**
+   * seedance-2.5 only: up to 30 https:// reference images, addressed in the
+   * prompt as @image1..@imageN. Mutually exclusive with image_url/end_frame_url.
+   */
+  reference_image_urls?: string[];
   project_id?: string;
   response_format?: 'text' | 'json';
 }
@@ -95,6 +103,27 @@ export interface GenerateImageParams {
   image_url?: string;
   project_id?: string;
   response_format?: 'text' | 'json';
+  /** Approved per-request credit ceiling; read estimates with sn.account.generationOptions(). */
+  max_credits?: number;
+}
+
+export interface GenerationOptionsParams {
+  /** Only image generation is covered. */
+  modality: 'image';
+  /** Optional image model ID. Omit to list every exposed image model. */
+  model?: string;
+}
+
+/** Estimate only — not a price reservation. */
+export interface GenerationOptions {
+  modality: 'image';
+  generatedAt: string;
+  bindingQuote: false;
+  generationScope: 'mcp:write';
+  accessVerified: false;
+  providerAvailabilityVerified: false;
+  models: Array<{ id: string; credits: number; costType: 'per_image' }>;
+  limitations: string[];
 }
 
 export interface GenerateCarouselParams {

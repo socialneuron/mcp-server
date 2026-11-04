@@ -90,7 +90,8 @@ export function scan(text: string, options: ScanOptions, verified: readonly Veri
   // tool outputs can legitimately contain larger analytics/brand payloads but
   // still have a hard ceiling so regex scanning cannot become a memory/CPU DoS.
   const maxLength =
-    options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH;
+    options.maxLength ??
+    (options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH);
   if (text.length > maxLength) {
     return {
       passed: false,
@@ -157,7 +158,8 @@ export function scanStructuredText(
   jsonText: string, options: ScanOptions, verified: readonly VerifiedMediaField[] = []
 ): ScanResult {
   const maxLength =
-    options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH;
+    options.maxLength ??
+    (options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH);
   if (jsonText.length > maxLength) {
     return {
       passed: false,

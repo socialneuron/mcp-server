@@ -1,7 +1,7 @@
 {
   "name": "@socialneuron/mcp-server",
   "display_name": "Social Neuron",
-  "description": "92 public MCP tools in the npm package for creating, scheduling, and analyzing social content. The separately versioned hosted service exposes 92 public tools, including project-scoped Content Calendar and Analytics Pulse MCP Apps.",
+  "description": "93 public MCP tools in the npm package for creating, scheduling, and analyzing social content. The separately versioned hosted service exposes 92 public tools, including project-scoped Content Calendar and Analytics Pulse MCP Apps.",
   "version": "2.1.4",
   "homepage": "https://socialneuron.com/for-developers",
   "repository": "https://github.com/socialneuron/mcp-server",
@@ -45,7 +45,7 @@
     "marketing",
     "automation"
   ],
-  "tools_count": 92,
+  "tools_count": 93,
   "transport": [
     "stdio",
     "http"

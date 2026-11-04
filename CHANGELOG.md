@@ -6,7 +6,17 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ### Added
 
-- `generate_music` tool: start an async Suno music job (`suno-v3.5` to `suno-v5`, 30-90 credits) with optional lyrics, style tags and instrumental mode; poll with `check_status` and sign the stored mp3 with `get_media_url`.
+- `generate_music` tool: start an async Suno music job (`suno-v3.5` to `suno-v5`, 30-90 credits) from a description, with optional style tags and instrumental mode; poll with `check_status` and sign the stored mp3 with `get_media_url`. Custom lyrics fail closed before generation until backend support is implemented.
+- `get_generation_options` (read-only, `mcp:read`): current image model IDs and per-image credit estimates. No charge or price reservation; fails closed when pricing is unavailable.
+- `generate_video`: `seedance-2.5` model (4–30 s single shot, native audio by default; reference price 504 credits for 8 s/720p, provisional).
+- `generate_video`: `resolution` (`480p`/`720p`/`1080p`) and `reference_image_urls` (Seedance 2.5 only, up to 30 https URLs, mutually exclusive with `image_url`/`end_frame_url`). Prompt limit raised to 30,000 characters.
+- `generate_image`: optional `max_credits` per-request ceiling. Capped calls fail closed unless `MCP_IMAGE_CREDIT_LIMIT_ENABLED=true`.
+- SDK: `seedance-2.5` in `VideoModel`, the new video/image params, and `sn.account.generationOptions()`.
+
+### Changed
+
+- `generate_video` budget precheck now estimates the dispatched request (model, duration, resolution, audio) instead of a fixed per-model reference cost.
+- Video input scanning allows up to 256,000 serialized characters to accommodate JSON escaping and reference URLs while retaining all safety checks and the 30,000-character prompt limit.
 
 ## 2.1.4 - 2026-11-04
 

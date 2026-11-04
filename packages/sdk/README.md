@@ -57,7 +57,7 @@ The client accepts only Social Neuron `snk_live_…` or `snk_test_…` API keys.
 | `sn.jobs` | `check()`, `waitForCompletion()`, `cancel()` |
 | `sn.autopilot` | `deleteConfiguration()` |
 | `sn.tools` | `list()`, `execute()` |
-| `sn.account` | `credits()`, `usage()` |
+| `sn.account` | `credits()`, `usage()`, `generationOptions()` |
 
 ## Results and errors
 

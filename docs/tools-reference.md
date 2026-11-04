@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **92 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **93 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -31,6 +31,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `get_budget_status` | Check how much of the per-session budget has been consumed. Tracks credits spent and assets created in this MCP session against configured limits. Use to avoid hitting budget caps mid-workflow. |
 | `get_content_plan` | Load a persisted content plan by its UUID — returns the full plan including all posts, scheduling status, and approval state. Use to inspect a plan before update_content_plan or schedule_content_plan. plan_id comes from save_content_plan, p |
 | `get_credit_balance` | Check remaining credits, monthly limit, spending cap, and plan tier. Call this before expensive operations — generate_video costs 30-1000 credits (dynamic models can run higher based on duration/audio/resolution), generate_image costs 15-50 |
+| `get_generation_options` | Read current image model IDs and customer credit estimates before generation. No charge, reservation, or account/provider availability check. Estimates do not confirm request-limit availability. Pass the approved max_credits to generate_ima |
 | `get_ideation_context` | Get synthesized ideation context from performance insights. Returns the same prompt-injection context used by ideation generation. |
 | `get_loop_summary` | Get a one-call dashboard summary of the feedback loop state (brand profile, recent content, and current insights). |
 | `get_mcp_usage` | Get your MCP API usage breakdown for the current billing month. Shows per-tool call counts and credit usage. Useful for monitoring API consumption and staying within tier limits. |
@@ -84,7 +85,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. project_id may be omitted only when exact |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 10-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (i |
-| `generate_music` | Start an async AI music generation job (Suno) — returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_id for a fresh dow |
+| `generate_music` | Start an async AI music generation job (Suno) from a description. Returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_ |
 | `generate_video` | Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. Available models and accepted options are defined by the live input schema. Credit usage varies by model, duration, a |
 | `generate_voiceover` | Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Pass project_id to keep the asset with the corre |
 | `plan_content_week` | Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_pl |

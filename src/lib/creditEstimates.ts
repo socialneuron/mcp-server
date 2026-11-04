@@ -22,6 +22,8 @@ export const VIDEO_CREDIT_ESTIMATES: Record<string, number> = {
   'veo3-fast': 65,
   'kling-3-pro': 135,
   'seedance-2': 328,
+  // PROVISIONAL — re-pinned after the first measured provider job
+  'seedance-2.5': 504,
   'veo3-quality': 1000,
   'wan-2.6': 105,
   'gemini-omni-video': 126,
@@ -67,4 +69,66 @@ export function creditRange(estimates: Record<string, number>): { min: number; m
 export function formatCreditRange(estimates: Record<string, number>): string {
   const { min, max } = creditRange(estimates);
   return min === max ? `${min}` : `${min}-${max}`;
+}
+
+// Per-request estimate used by generate_video's budget precheck. Mirrors the
+// platform's dynamic video pricing: credits/second by resolution x the
+// duration the provider is actually dispatched (clamped to the model's range),
+// floored at the model minimum. The VIDEO_CREDIT_ESTIMATES table above stays
+// the reference-config display quote. Rates: [480p, 720p, 1080p] credits/s.
+const SEEDANCE_REQUEST_PRICING: Record<
+  string,
+  { rates: readonly number[]; max: number; floor: number }
+> = {
+  'seedance-2': { rates: [19, 41, 102], max: 15, floor: 80 },
+  'seedance-2-fast': { rates: [11, 33, 57], max: 15, floor: 40 },
+  // PROVISIONAL — re-pinned after the first measured provider job
+  'seedance-2.5': { rates: [30, 63, 157], max: 30, floor: 80 },
+};
+
+/** Estimate the request dispatched by generate_video (default 5s, no reference video).
+ * Mirrors the platform charge for the dispatched request; the tables above remain
+ * reference-config display quotes, never the per-request budget precheck. */
+export function estimateVideoCredits(
+  model: string,
+  duration = 5,
+  resolution = '720p',
+  enableAudio = false
+): number {
+  const seedance = SEEDANCE_REQUEST_PRICING[model];
+  if (seedance) {
+    const seconds = Math.min(Math.max(duration, 4), seedance.max);
+    const normalizedResolution = resolution.toLowerCase();
+    const rate =
+      seedance.rates[
+        normalizedResolution === '1080p' ? 2 : normalizedResolution === '480p' ? 0 : 1
+      ];
+    return Math.max(Math.round(seconds * rate), seedance.floor);
+  }
+  if (model === 'kling' || model === 'kling-3' || model === 'kling-3-pro') {
+    const pro = model === 'kling-3-pro';
+    const allowed = pro ? [5, 10, 15] : [5, 10];
+    const raw = Number.isFinite(duration) ? duration : model === 'kling' ? 10 : 5;
+    const seconds = allowed.reduce((best, candidate) =>
+      Math.abs(candidate - raw) <= Math.abs(best - raw) ? candidate : best
+    );
+    const rate =
+      model === 'kling'
+        ? enableAudio
+          ? 45
+          : 17
+        : pro
+          ? enableAudio
+            ? 40
+            : 27
+          : enableAudio
+            ? 30
+            : 20;
+    return seconds * rate;
+  }
+  if (model === 'grok-imagine') return duration >= 10 ? 50 : 30;
+  if (model === 'hailuo-02-standard') return duration >= 10 ? 300 : 180;
+  if (model === 'wan-2.6') return duration >= 15 ? 315 : duration >= 10 ? 210 : 105;
+  if (model === 'seedance-1.5-pro') return duration >= 12 ? 225 : duration >= 8 ? 150 : 75;
+  return VIDEO_CREDIT_ESTIMATES[model] ?? 120;
 }

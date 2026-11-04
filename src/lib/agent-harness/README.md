@@ -40,7 +40,10 @@ three copies in the same PR. Parity is guarded by:
 - `scanner.ts` — `scan(text, options)` for one text segment, plus
   `scanStructuredText(jsonText, options)` which scans a JSON payload per
   string field/key so the end-anchored allow rule sees real segment
-  boundaries instead of serialization syntax
+  boundaries instead of serialization syntax. Both honour an optional
+  `options.maxLength`, a per-caller widening of the role's length ceiling
+  (the MCP wrapper's named per-tool allowance in `register-tools.ts`); every
+  other check still runs in full
 
 ## Known divergence
 

@@ -10,6 +10,7 @@ import {
   resolveProjectStrict,
 } from '../lib/supabase.js';
 import { sanitizeDbError, redactSensitiveIdentifiers } from '../lib/sanitize-error.js';
+import { toolError } from '../lib/tool-error.js';
 import type {
   GenerateVideoResponse,
   GenerateImageResponse,
@@ -28,9 +29,9 @@ import {
   getCurrentBudgetStatus,
 } from '../lib/budget.js';
 import {
-  VIDEO_CREDIT_ESTIMATES,
   IMAGE_CREDIT_ESTIMATES,
   MUSIC_CREDIT_ESTIMATES,
+  estimateVideoCredits,
   formatCreditRange,
 } from '../lib/creditEstimates.js';
 
@@ -87,6 +88,7 @@ const VIDEO_MODEL_ENUM = [
   'veo3-fast',
   'kling-3-pro',
   'seedance-2',
+  'seedance-2.5',
   'veo3-quality',
   'wan-2.6',
   'gemini-omni-video',
@@ -105,6 +107,10 @@ const MUSIC_MODEL_ENUM = ['suno-v3.5', 'suno-v4', 'suno-v4.5', 'suno-v4.5plus', 
 const MUSIC_CREDIT_RANGE = formatCreditRange(MUSIC_CREDIT_ESTIMATES);
 
 export function registerContentTools(server: McpServer): void {
+  // Capture the operator's verified backend rollout once for this registration.
+  // Default-off: a capped image request fails closed unless the operator has
+  // confirmed the backend enforces max_credits.
+  const imageCreditLimitEnabled = process.env.MCP_IMAGE_CREDIT_LIMIT_ENABLED === 'true';
   // ---------------------------------------------------------------------------
   // generate_video
   // ---------------------------------------------------------------------------
@@ -115,9 +121,10 @@ export function registerContentTools(server: McpServer): void {
     {
       prompt: z
         .string()
-        .max(2500)
+        .max(30000)
         .describe(
-          'Video prompt — be specific about visual style, camera movement, lighting, and mood. Example: "Aerial drone shot of coastal cliffs at golden hour, slow dolly forward, cinematic 24fps, warm color grading." Vague prompts produce generic results.'
+          'Video prompt — be specific about visual style, camera movement, lighting, and mood. Example: "Aerial drone shot of coastal cliffs at golden hour, slow dolly forward, cinematic 24fps, warm color grading." Vague prompts produce generic results. ' +
+            'Up to 30,000 characters (matches the Kie provider cap) — seedance-2.5 supports long, structured multi-shot scripts (timed shot lists, camera moves, dialogue/VO cues); most other models still work best with 2-3 sentences.'
         ),
       model: z
         .enum(VIDEO_MODEL_ENUM)
@@ -132,9 +139,15 @@ export function registerContentTools(server: McpServer): void {
         .optional()
         .describe(
           'Video duration in seconds. kling: 5 or 10s · kling-3: 5 or 10s · kling-3-pro: 5/10/15s · ' +
-            'grok-imagine/hailuo: 6 or 10s · wan-2.6: 5/10/15s · seedance family: 4-15s · ' +
+            'grok-imagine/hailuo: 6 or 10s · wan-2.6: 5/10/15s · seedance-2.5: 4–30 s single shot · other seedance models: 4-15s · ' +
             'veo3-fast/veo3-quality: fixed 8s (duration ignored). Out-of-range values are clamped ' +
             'server-side, never rejected. Defaults to 5 seconds.'
+        ),
+      resolution: z
+        .enum(['480p', '720p', '1080p'])
+        .optional()
+        .describe(
+          'Video resolution for supported models, including the Seedance 2 family. Seedance defaults to 720p; other models apply their supported resolution. Resolution can change credit usage.'
         ),
       aspect_ratio: z
         .enum(['16:9', '9:16', '1:1'])
@@ -156,6 +169,16 @@ export function registerContentTools(server: McpServer): void {
         .string()
         .optional()
         .describe('End frame image URL (Kling 3.0 only). Enables seamless loop transitions.'),
+      reference_image_urls: z
+        .array(z.string().url())
+        .max(30)
+        .optional()
+        .describe(
+          'Seedance 2.5 ONLY (bytedance/seedance-2.5) — up to 30 reference image URLs for multi-reference/multimodal generation (character sheets, product shots, location plates, style boards, etc.). Ignored by other models. ' +
+            'Order matters: image N in this array is addressed in the prompt as @imageN (1-indexed, e.g. the first URL is @image1). Reference each one in the prompt with a scope + exclusion line, e.g. "@image2 = character card; face/hair/wardrobe from it only. Do not use its background." ' +
+            'Every entry must be an absolute https:// URL — kie-video-generate rejects http:// references before generation, so an http URL is refused here rather than failing downstream. ' +
+            'Mutually exclusive with first/last-frame mode (image_url/end_frame_url) for this model — passing both is rejected, because the Seedance request builder would give these references precedence and silently discard the supplied start/end frame.'
+        ),
       project_id: z
         .string()
         .optional()
@@ -173,14 +196,65 @@ export function registerContentTools(server: McpServer): void {
       prompt,
       model,
       duration,
+      resolution,
       aspect_ratio,
       enable_audio,
       image_url,
       end_frame_url,
+      reference_image_urls,
       project_id,
       response_format,
     }) => {
       const format = response_format ?? 'text';
+
+      // Reference-image contract. Both checks run FIRST — before the project
+      // lookup, the budget checks and the backend call — so a malformed call
+      // costs nothing and the caller gets a specific reason instead of a
+      // downstream 400 (or a silently-honoured subset of the inputs it sent).
+      if (reference_image_urls?.length) {
+        // (a) Frame-mode exclusivity. The Seedance request builder resolves
+        //     reference images ahead of the start frame and ignores the end
+        //     frame, so accepting both would render only the references while
+        //     the caller believed the start/end frames applied.
+        if (image_url || end_frame_url) {
+          const supplied = [image_url && 'image_url', end_frame_url && 'end_frame_url']
+            .filter(Boolean)
+            .join(' and ');
+          return {
+            content: [
+              {
+                type: 'text' as const,
+                text:
+                  `reference_image_urls is mutually exclusive with first/last-frame mode, but ${supplied} ` +
+                  `was also supplied. Multi-reference mode would take precedence and the frame URLs would be ` +
+                  `silently discarded. Send reference_image_urls OR image_url/end_frame_url, not both.`,
+              },
+            ],
+            isError: true,
+          };
+        }
+
+        // (b) https-only, matching the backend's own validation.
+        //     `z.string().url()` accepts http:, so without this the two
+        //     contracts would disagree.
+        for (let i = 0; i < reference_image_urls.length; i++) {
+          const protocol = new URL(reference_image_urls[i]).protocol;
+          if (protocol !== 'https:') {
+            return {
+              content: [
+                {
+                  type: 'text' as const,
+                  text:
+                    `reference_image_urls[${i}] must use https (got ${protocol}). ` +
+                    `Reference images are fetched by the provider, so only absolute https:// URLs are accepted.`,
+                },
+              ],
+              isError: true,
+            };
+          }
+        }
+      }
+
       const projectResolution = await resolveProjectStrict(project_id);
       if (!projectResolution.projectId) {
         return {
@@ -204,7 +278,7 @@ export function registerContentTools(server: McpServer): void {
           isError: true,
         };
       }
-      const estimatedCost = VIDEO_CREDIT_ESTIMATES[model] ?? 120;
+      const estimatedCost = estimateVideoCredits(model, duration ?? 5, resolution, enable_audio);
       const budgetCheck = checkCreditBudget(estimatedCost);
       if (!budgetCheck.ok) {
         return {
@@ -232,16 +306,20 @@ export function registerContentTools(server: McpServer): void {
           model,
           duration: duration ?? 5,
           aspectRatio: aspect_ratio ?? '16:9',
+          ...(resolution && { resolution }),
           // Default FALSE (2026-07-13) for kling-family etc: the old `?? true` default
           // silently multiplied cost (2.65x on kling 2.6) for callers that never asked
-          // for audio. seedance-2/-fast are native audio-video models with no audio
+          // for audio. seedance-2/-fast/2.5 are native audio-video models with no audio
           // cost multiplier (kie-video-generate/index.ts `generate_audio = enableAudio
           // !== false`, defaults true) — this tool must not override that default to a
           // silent `false`, or every MCP seedance call ships mute unless the caller
           // remembers to pass `enable_audio: true` (2026-07-20 pilot silent-video bug).
-          enableAudio: enable_audio ?? (model === 'seedance-2' || model === 'seedance-2-fast'),
+          enableAudio:
+            enable_audio ??
+            (model === 'seedance-2' || model === 'seedance-2-fast' || model === 'seedance-2.5'),
           ...(image_url && { imageUrl: image_url }),
           ...(end_frame_url && { endFrameUrl: end_frame_url }),
+          ...(reference_image_urls?.length && { referenceImageUrls: reference_image_urls }),
           // The server reads projectId and enforces
           // ownership via resolveProjectAndContent (index.ts:416-423).
           projectId: resolvedProjectId,
@@ -324,7 +402,7 @@ export function registerContentTools(server: McpServer): void {
   // ---------------------------------------------------------------------------
   server.tool(
     'generate_music',
-    `Start an async AI music generation job (Suno) — returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_id for a fresh download link). Costs ${MUSIC_CREDIT_RANGE} credits depending on model; use get_credit_balance to confirm sufficient balance first. Music models are not included on every plan — a plan rejection is returned as an error before any charge. For spoken narration use generate_voiceover instead.`,
+    `Start an async AI music generation job (Suno) from a description. Returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_id for a fresh download link). Costs ${MUSIC_CREDIT_RANGE} credits depending on model; use get_credit_balance to confirm sufficient balance first. Custom lyrics are currently unavailable and rejected before generation. Music models are not included on every plan; a plan rejection is returned as an error before any charge. For spoken narration use generate_voiceover instead.`,
     {
       prompt: z
         .string()
@@ -343,7 +421,7 @@ export function registerContentTools(server: McpServer): void {
         .max(5000)
         .optional()
         .describe(
-          'Optional exact lyrics to sing. Providing lyrics switches Suno to custom mode, where the song follows these words instead of composing its own.'
+          'Custom lyrics are currently unavailable. Supplying this field is rejected before generation; do not remove requested lyrics and retry without user approval.'
         ),
       style: z
         .string()
@@ -367,6 +445,17 @@ export function registerContentTools(server: McpServer): void {
         .describe('Optional response format. Defaults to text.'),
     },
     async ({ prompt, model, lyrics, style, instrumental, project_id, response_format }) => {
+      // The deployed custom-mode contract lacks a required title and the gateway
+      // does not admit lyric text. Refuse it before project lookup or any spend.
+      if (lyrics !== undefined) {
+        return {
+          content: [{
+            type: 'text' as const,
+            text: 'Custom lyrics are currently unavailable. No music generation was started. Do not remove requested lyrics and retry without user approval.',
+          }],
+          isError: true,
+        };
+      }
       const format = response_format ?? 'text';
       const projectResolution = await resolveProjectStrict(project_id);
       if (!projectResolution.projectId) {
@@ -417,7 +506,6 @@ export function registerContentTools(server: McpServer): void {
         {
           prompt,
           model,
-          ...(lyrics !== undefined && { lyrics }),
           ...(style !== undefined && { style }),
           ...(instrumental !== undefined && { instrumental }),
           projectId: resolvedProjectId,
@@ -449,7 +537,7 @@ export function registerContentTools(server: McpServer): void {
         };
       }
 
-      const jobId = data.asyncJobId ?? data.taskId;
+      const jobId = data.asyncJobId || data.taskId;
       const estimated = data.estimatedTime ?? 30;
       const charged = Number(data.creditsDeducted ?? estimatedCost);
       addCreditsUsed(Number.isFinite(charged) ? charged : estimatedCost);
@@ -545,12 +633,35 @@ export function registerContentTools(server: McpServer): void {
         .describe(
           'Project ID to associate the generated image with. Required when more than one project is accessible; omitted values auto-resolve only for a sole project.'
         ),
+      max_credits: z
+        .number()
+        .finite()
+        .nonnegative()
+        .optional()
+        .describe(
+          'Approved maximum credits for this image request. Read current credit estimates with get_generation_options. Capped calls fail closed until verified credit-limit support is enabled; never remove the ceiling to retry. The backend rejects a higher price before debit. This is not a whole-run limit.'
+        ),
       response_format: z
         .enum(['text', 'json'])
         .optional()
         .describe('Optional response format. Defaults to text.'),
     },
-    async ({ prompt, model, aspect_ratio, image_url, project_id, response_format }) => {
+    async ({
+      prompt,
+      model,
+      aspect_ratio,
+      image_url,
+      project_id,
+      response_format,
+      max_credits,
+    }) => {
+      if (max_credits !== undefined && !imageCreditLimitEnabled) {
+        return toolError(
+          'policy_block',
+          'Capped image generation is unavailable. No generation was started. Keep max_credits; do not retry without the requested ceiling.',
+          { details: { reason: 'image_credit_limit_unconfigured' } }
+        );
+      }
       const format = response_format ?? 'text';
       const projectResolution = await resolveProjectStrict(project_id);
       if (!projectResolution.projectId) {
@@ -602,6 +713,7 @@ export function registerContentTools(server: McpServer): void {
         {
           prompt,
           model,
+          ...(max_credits !== undefined && { max_credits }),
           aspectRatio: aspect_ratio ?? '1:1',
           imageUrl: image_url,
           projectId: resolvedProjectId,

@@ -466,6 +466,13 @@ export const TOOL_CATALOG: ToolEntry[] = [
     module: 'credits',
     scope: 'mcp:read',
   },
+  {
+    name: 'get_generation_options',
+    description:
+      'Read current image model IDs and customer credit estimates without charging or reserving a price. Video and other paid workflows are not covered.',
+    module: 'credits',
+    scope: 'mcp:read',
+  },
 
   // autopilot
   {
