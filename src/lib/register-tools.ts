@@ -135,7 +135,9 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       return toolError('policy_block', 'Request blocked by the input safety policy.', {
         details: { blocked_patterns: inputScan.flagged_patterns },
         recover_with: [
-          'Remove instruction-like or unsafe phrasing from the input and retry.',
+          inputScan.flagged_patterns.includes('url_reference_pii')
+            ? 'Replace URLs that contain sensitive data and retry.'
+            : 'Remove instruction-like or unsafe phrasing from the input and retry.',
         ],
       });
     }
@@ -174,7 +176,9 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       }
       return toolError(
         'server_error',
-        'The response exceeded the safe output limit and was not returned.'
+        outputScan.flagged_patterns.includes('url_reference_pii')
+          ? 'The response contains a URL with sensitive data and was not returned.'
+          : 'The response exceeded the safe output limit and was not returned.'
       );
     }
     if (outputScan.sanitized_text !== undefined) {
@@ -204,8 +208,7 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
   const originalTool = server.tool.bind(server) as (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const originalRegisterTool = (server as any).registerTool?.bind(server) as
-    | ((...args: any[]) => any)
-    | undefined;
+    ((...args: any[]) => any) | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wrapRegistration = (...args: any[]) => {

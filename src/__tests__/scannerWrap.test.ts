@@ -16,6 +16,9 @@ describe('wrapToolWithScanner', () => {
     expect((result as any).structuredContent.error.error_type).toBe('policy_block');
     expect((result as any).structuredContent.error.blocked_patterns).toBeInstanceOf(Array);
     expect((result as any).content[0].text).toContain('policy_block');
+    expect((result as any).structuredContent.error.recover_with).toEqual([
+      'Remove instruction-like or unsafe phrasing from the input and retry.',
+    ]);
   });
 
   it('sanitizes PII in tool output before returning', async () => {
@@ -89,6 +92,9 @@ describe('wrapToolWithScanner', () => {
     expect((r as any).isError).toBe(true);
     expect((r as any).structuredContent.error.error_type).toBe('server_error');
     expect(JSON.stringify(r)).not.toContain('x'.repeat(100));
+    expect((r as any).structuredContent.error.message).toBe(
+      'The response exceeded the safe output limit and was not returned.'
+    );
   });
 
   it('preserves UUIDs in tool output', async () => {
@@ -115,5 +121,46 @@ describe('wrapToolWithScanner', () => {
     const r = await wrapped(undefined, { userId: 'user-1' } as any);
     expect(handler).toHaveBeenCalled();
     expect((r as any).isError).toBeUndefined();
+  });
+
+  it('gives privacy-safe recovery for sensitive input URLs', async () => {
+    const url = 'https://192.0.2.10/?email=fixture%40example.invalid';
+    const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: 'ok' }] });
+    const result = await wrapToolWithScanner('test_tool', handler)({ media: url }, {
+      userId: 'fixture-user',
+    } as never);
+    expect(handler).not.toHaveBeenCalled();
+    expect(result.structuredContent.error).toMatchObject({
+      error_type: 'policy_block',
+      recover_with: ['Replace URLs that contain sensitive data and retry.'],
+    });
+    expect(JSON.stringify(result)).not.toContain(url);
+    expect(JSON.stringify(result)).not.toContain('fixture%40example.invalid');
+  });
+
+  it('explains sensitive output refusal without suggesting a smaller request', async () => {
+    const url = 'https://192.0.2.10/?email=fixture%40example.invalid';
+    const handler = vi.fn().mockResolvedValue({ content: [{ type: 'text', text: url }] });
+    const result = await wrapToolWithScanner('test_tool', handler)({ caption: 'safe' }, {
+      userId: 'fixture-user',
+    } as never);
+    expect(result.structuredContent.error).toMatchObject({
+      error_type: 'server_error',
+      message: 'The response contains a URL with sensitive data and was not returned.',
+    });
+    expect(JSON.stringify(result)).not.toContain(url);
+    expect(JSON.stringify(result)).not.toContain('fixture%40example.invalid');
+    expect(JSON.stringify(result)).not.toContain('output limit');
+  });
+
+  it('preserves an IPv4-hosted media URL through input and output', async () => {
+    const url = 'https://192.0.2.10/clip.png?expires=1790000000';
+    const original = { content: [{ type: 'text', text: url }] };
+    const handler = vi.fn().mockResolvedValue(original);
+    const result = await wrapToolWithScanner('test_tool', handler)({ media: url }, {
+      userId: 'fixture-user',
+    } as never);
+    expect(handler).toHaveBeenCalled();
+    expect(result).toEqual(original);
   });
 });

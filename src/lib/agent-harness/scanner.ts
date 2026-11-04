@@ -86,7 +86,8 @@ export function scan(text: string, options: ScanOptions): ScanResult {
   const flaggedArr = Array.from(detection.patterns);
 
   // Hard-block categories: zero-width + instruction phrase.
-  // observe mode never blocks; block + sanitize both stop here when flagged.
+  // Observe mode reports these instruction signals without blocking. Length
+  // limits and sensitive URL refusals remain enforced in every mode.
   if ((options.mode === 'block' || options.mode === 'sanitize') && flaggedArr.length > 0) {
     return {
       passed: false,
@@ -98,6 +99,14 @@ export function scan(text: string, options: ScanOptions): ScanResult {
 
   // PII scrub (role-aware — UUIDs preserved in mcp_tool_output via anchored regexes).
   const pii = scrubPii(detection.normalized, options.source);
+  if (pii.blocked_reason) {
+    return {
+      passed: false,
+      risk_score: Math.max(detection.risk, 0.3),
+      flagged_patterns: [...flaggedArr, pii.blocked_reason, ...pii.patterns.map(p => `pii_${p}`)],
+      pii_redacted: false,
+    };
+  }
   if (pii.redacted) {
     return {
       passed: true,
@@ -227,6 +236,14 @@ export function scanStructuredText(jsonText: string, options: ScanOptions): Scan
   // PII scrub on the whole normalized serialization — identical to scan()'s
   // behavior so the sanitized text stays valid JSON for the caller to re-parse.
   const pii = scrubPii(normalize(jsonText), options.source);
+  if (pii.blocked_reason) {
+    return {
+      passed: false,
+      risk_score: Math.max(risk, 0.3),
+      flagged_patterns: [...flaggedArr, pii.blocked_reason, ...pii.patterns.map(p => `pii_${p}`)],
+      pii_redacted: false,
+    };
+  }
   if (pii.redacted) {
     return {
       passed: true,
