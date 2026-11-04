@@ -504,6 +504,31 @@ describe('content tools', () => {
       expect(result.content[0].text).toContain('Model not allowed on plan');
     });
 
+    it('treats a provider rejection (error plus a failed body) as an error, not a job', async () => {
+      // Real backend shape when the provider rejects the request: HTTP 422 with
+      // a body that still carries taskId/status fields. Must never read as success.
+      mockCallEdge.mockResolvedValueOnce({
+        data: { error: 'Provider rejected the request', taskId: '', status: 'failed', refunded: 90 },
+        error: 'Provider rejected the request',
+      } as any);
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v5' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Music generation failed to start');
+      expect(result.content[0].text).not.toContain('Job ID');
+    });
+
+    it('forwards instrumental: true', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      await handler({ prompt: 'ambient pad', model: 'suno-v4', instrumental: true });
+
+      expect(mockCallEdge.mock.calls[0][1]).toMatchObject({ instrumental: true });
+    });
+
     it('returns isError when no job ID is in the response', async () => {
       mockCallEdge.mockResolvedValueOnce({
         data: { ...startResponse, taskId: '', asyncJobId: null, jobId: null },

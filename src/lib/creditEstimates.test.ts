@@ -123,8 +123,8 @@ describe('credit estimate ranges', () => {
   });
 
   it('prices music at the backend per-model Suno rates', () => {
-    // Must match the platform's Suno pricing table exactly: the backend bills
-    // these flat per-call amounts, so the pre-check estimate is the real charge.
+    // Pins the per-model prices so a change here is deliberate. This cannot see
+    // the backend's pricing table; update both together when Suno prices move.
     expect(MUSIC_CREDIT_ESTIMATES).toEqual({
       'suno-v3.5': 30,
       'suno-v4': 50,
