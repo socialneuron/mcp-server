@@ -610,20 +610,6 @@ const EF_RESPONSES = {
       usp: 'The fastest workflow',
     },
   }),
-  'scrape-youtube': () => ({
-    success: true,
-    data: {
-      title: 'Smoke video',
-      description: 'desc',
-      viewCount: 1000,
-      likes: 100,
-      tags: ['smoke'],
-      channelName: 'Smoke Channel',
-      duration: 60,
-      segments: [{ text: 'hello world' }],
-      segmentCount: 1,
-    },
-  }),
 
   // --- brand ---------------------------------------------------------------
   'brand-extract': () => ({ ...BRAND_CONTEXT, logoUrl: 'https://example.com/logo.png' }),

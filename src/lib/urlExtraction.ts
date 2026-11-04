@@ -1,12 +1,16 @@
 /**
  * Shared URL → content extraction (P1.5/P1.4 contract). Used by BOTH the
  * extract_url_content tool and plan_content_week's source_url path so the two
- * cannot drift apart (they previously had independent — and independently broken —
- * copies of the scrape-youtube / fetch-url-content contract).
+ * cannot drift apart.
  *
- * scrape-youtube + fetch-url-content return HTTP 200 with a { success, data }
- * envelope even on failure; the real payload lives under `.data`. callers must
- * still run validateUrlForSSRF on the URL BEFORE calling (this module does not).
+ * YouTube URLs (any youtube.com / youtu.be / youtube-nocookie.com path) are
+ * not supported: the backend function that read YouTube is no longer routable
+ * through the MCP gateway, so they return YOUTUBE_UNSUPPORTED_MESSAGE without
+ * any backend call.
+ *
+ * fetch-url-content returns HTTP 200 with a { success, data } envelope even on
+ * failure; the real payload lives under `.data`. Callers must still run
+ * validateUrlForSSRF on the URL BEFORE calling (this module does not).
  */
 import { callEdgeFunction } from './edge-function.js';
 import type { ExtractedContent } from '../types/index.js';
@@ -18,23 +22,6 @@ interface EfEnvelope<T> {
   error?: string;
   data?: T | null;
 }
-interface YtTranscriptData {
-  segments?: Array<{ text?: string | null }>;
-  segmentCount?: number;
-}
-interface YtMetadataData {
-  title?: string | null;
-  description?: string | null;
-  viewCount?: number | null;
-  likes?: number | null;
-  tags?: string[] | null;
-  channelName?: string | null;
-  duration?: number | null;
-}
-interface YtChannelData {
-  videos?: Array<{ title?: string | null; viewCount?: number | string | null }>;
-  totalVideos?: number;
-}
 interface ProductInfoData {
   name?: string;
   description?: string;
@@ -44,10 +31,26 @@ interface ProductInfoData {
   suggestedHookAngles?: string[];
 }
 
-export function classifyYouTubeUrl(url: string): 'video' | 'channel' | false {
-  if (/youtube\.com\/watch|youtu\.be\//.test(url)) return 'video';
-  if (/youtube\.com\/@/.test(url)) return 'channel';
-  return false;
+export const YOUTUBE_UNSUPPORTED_MESSAGE =
+  'YouTube transcripts are not supported via MCP. To repurpose a YouTube video, paste its ' +
+  'transcript or description as text (for example into generate_content), or use an article ' +
+  'or product page URL instead.';
+
+const YOUTUBE_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com'];
+
+/**
+ * True for any URL on a YouTube host (any path: watch, shorts, embed, live,
+ * channel, @handle, …). Parses the URL so host case, ports and lookalike
+ * hosts or query strings cannot slip past a substring match.
+ */
+export function isYouTubeUrl(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return false;
+  }
+  return YOUTUBE_HOSTS.some(h => host === h || host.endsWith(`.${h}`));
 }
 
 function unwrapEf<T>(
@@ -62,14 +65,6 @@ function unwrapEf<T>(
   return { payload: (env.data ?? undefined) as T | undefined };
 }
 
-function segmentsToTranscript(segments?: Array<{ text?: string | null }>): string {
-  if (!Array.isArray(segments)) return '';
-  return segments
-    .map(s => (s?.text ?? '').trim())
-    .filter(Boolean)
-    .join(' ');
-}
-
 /**
  * Extract content from any URL. Returns { content } on success or { error } on
  * failure. SSRF validation is the caller's responsibility.
@@ -79,71 +74,9 @@ export async function extractUrlContent(
   opts: { extractType?: ExtractType } = {}
 ): Promise<{ content?: ExtractedContent; error?: string }> {
   const extractType = opts.extractType ?? 'auto';
-  const youtubeType = classifyYouTubeUrl(url);
-
-  if (youtubeType === 'video') {
-    // transcript carries no title — fetch transcript + metadata in parallel.
-    const [txRes, metaRes] = await Promise.all([
-      callEdgeFunction<EfEnvelope<YtTranscriptData>>(
-        'scrape-youtube',
-        { action: 'transcript', videoUrl: url },
-        { timeoutMs: 30_000 }
-      ),
-      callEdgeFunction<EfEnvelope<YtMetadataData>>(
-        'scrape-youtube',
-        { action: 'metadata', videoUrl: url },
-        { timeoutMs: 30_000 }
-      ),
-    ]);
-    const tx = unwrapEf<YtTranscriptData>(txRes, 'scrape-youtube transcript');
-    const meta = unwrapEf<YtMetadataData>(metaRes, 'scrape-youtube metadata');
-
-    // Only hard-fail if BOTH calls failed.
-    if (tx.error && meta.error) {
-      return { error: `Failed to extract YouTube video: ${meta.error ?? tx.error}` };
-    }
-
-    const m = meta.payload;
-    return {
-      content: {
-        source_type: 'youtube_video',
-        url,
-        title: m?.title ?? '',
-        description: m?.description ?? '',
-        transcript: segmentsToTranscript(tx.payload?.segments),
-        video_metadata: m
-          ? {
-              views: typeof m.viewCount === 'number' ? m.viewCount : 0,
-              likes: typeof m.likes === 'number' ? m.likes : 0,
-              duration: typeof m.duration === 'number' ? m.duration : 0,
-              tags: Array.isArray(m.tags) ? m.tags : [],
-              channel_name: m.channelName ?? '',
-            }
-          : undefined,
-      },
-    };
-  }
-
-  if (youtubeType === 'channel') {
-    const res = await callEdgeFunction<EfEnvelope<YtChannelData>>(
-      'scrape-youtube',
-      { action: 'channel_videos', videoUrl: url },
-      { timeoutMs: 30_000 }
-    );
-    const ch = unwrapEf<YtChannelData>(res, 'scrape-youtube channel');
-    if (ch.error) return { error: `Failed to extract YouTube channel: ${ch.error}` };
-
-    const videos = ch.payload?.videos ?? [];
-    return {
-      content: {
-        source_type: 'youtube_channel',
-        url,
-        title: url,
-        description: videos.length
-          ? `${videos.length} recent videos:\n${videos.map(v => `- ${v.title ?? 'Untitled'}`).join('\n')}`
-          : 'No videos found for this channel.',
-      },
-    };
+  if (isYouTubeUrl(url)) {
+    // No backend call: YouTube content is not read through the MCP surface.
+    return { error: YOUTUBE_UNSUPPORTED_MESSAGE };
   }
 
   // Non-YouTube: fetch-url-content uses `extractType` and returns

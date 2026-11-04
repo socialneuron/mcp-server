@@ -43,15 +43,16 @@ function formatExtractedContentAsText(content: ExtractedContent): string {
 export function registerExtractionTools(server: McpServer): void {
   server.tool(
     'extract_url_content',
-    'Extract text content from any URL — YouTube video transcript + metadata (title/views/channel), or article text, or product page features/benefits/USP. YouTube URLs auto-route to transcript+metadata extraction; channel URLs return a recent-video list. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.',
+    'Extract text content from an article or product page URL — article text, or product page features/benefits/USP. YouTube video and channel URLs are not supported (no transcripts); paste the transcript or description as text instead. Use before generate_content to repurpose existing content, or before plan_content_week to base a content plan on a source URL.',
     {
       url: z.string().url().describe('URL to extract content from'),
       extract_type: z
         .enum(['auto', 'transcript', 'article', 'product'])
         .default('auto')
         .describe(
-          'auto = product-style extraction; transcript = YouTube (auto-detected by URL); ' +
-            'article = blog/news main text + key points; product = e-commerce features/benefits/USP.'
+          'auto = product-style extraction; transcript = spoken-content transcript (YouTube URLs ' +
+            'are not supported); article = blog/news main text + key points; ' +
+            'product = e-commerce features/benefits/USP.'
         ),
       response_format: z.enum(['text', 'json']).default('text'),
     },

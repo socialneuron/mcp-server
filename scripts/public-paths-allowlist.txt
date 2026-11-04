@@ -246,6 +246,7 @@ src/lib/tool-profile.test.ts
 src/lib/tool-profile.ts
 src/lib/toolCountDrift.test.ts
 src/lib/tools-lock.test.ts
+src/lib/urlExtraction.test.ts
 src/lib/urlExtraction.ts
 src/lib/validation-cache.test.ts
 src/lib/validation-cache.ts

@@ -134,20 +134,10 @@ describe('planning tools', () => {
     expect(envelope.data.context_used?.loop_summary?.loopHealth).toBe('good');
   });
 
-  it('plan_content_week extracts a YouTube source_url with the correct EF contract', async () => {
-    // Regression: planning previously sent { url } to scrape-youtube and read
-    // top-level data.title/transcript → silent empty source context. It now uses
-    // the shared lib/urlExtraction helper ({ action, videoUrl } + envelope unwrap).
-    mockCallEdge.mockImplementation(((fn: string, body: Record<string, unknown>) => {
-      if (fn === 'scrape-youtube' && body.action === 'transcript') {
-        return Promise.resolve({
-          data: { success: true, data: { segments: [{ text: 'hello world' }] } },
-          error: null,
-        });
-      }
-      if (fn === 'scrape-youtube' && body.action === 'metadata') {
-        return Promise.resolve({ data: { success: true, data: { title: 'Vid' } }, error: null });
-      }
+  it('plan_content_week skips a YouTube source_url without calling the backend for it', async () => {
+    // YouTube extraction is not supported via MCP: the plan is still generated
+    // (source context is non-fatal) and no YouTube backend function is called.
+    mockCallEdge.mockImplementation(((fn: string) => {
       if (fn === 'social-neuron-ai') {
         return Promise.resolve({ data: { text: JSON.stringify(MOCK_POSTS) }, error: null });
       }
@@ -165,16 +155,9 @@ describe('planning tools', () => {
     });
 
     expect(result.isError).toBe(false);
-    const ytCalls = mockCallEdge.mock.calls.filter(c => c[0] === 'scrape-youtube');
-    expect(ytCalls.length).toBeGreaterThan(0);
-    // The fix: action/videoUrl contract — NOT the old { url } shape.
-    expect(
-      ytCalls.every(c => {
-        const b = c[1] as Record<string, unknown>;
-        return 'action' in b && 'videoUrl' in b && !('url' in b);
-      })
-    ).toBe(true);
-    expect(ytCalls.some(c => (c[1] as Record<string, unknown>).action === 'transcript')).toBe(true);
+    const calledFns = mockCallEdge.mock.calls.map(c => c[0]);
+    expect(calledFns).not.toContain('scrape-youtube');
+    expect(calledFns).not.toContain('fetch-url-content');
   });
 
   it('save_content_plan persists a provided plan payload', async () => {
