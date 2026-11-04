@@ -549,6 +549,16 @@ const EF_RESPONSES = {
     credits_reserved: 20,
     creditsUsed: 20,
   }),
+  'kie-music-generate': () => ({
+    success: true,
+    taskId: 'kie-task-3',
+    asyncJobId: JOB_ID,
+    jobId: JOB_ID,
+    model: 'suno-v3.5',
+    status: 'pending',
+    estimatedTime: 30,
+    creditsDeducted: 30,
+  }),
   'kie-task-status': () => ({
     success: true,
     status: 'completed',
@@ -1147,6 +1157,7 @@ const TOOL_ARGS = {
 
   // media
   generate_video: { prompt: PARAM_VALUES.prompt, model: 'grok-imagine' },
+  generate_music: { prompt: PARAM_VALUES.prompt, model: 'suno-v3.5', instrumental: true },
   generate_image: { prompt: PARAM_VALUES.prompt },
   generate_voiceover: { text: 'Welcome to the smoke test.' },
   upload_media: {

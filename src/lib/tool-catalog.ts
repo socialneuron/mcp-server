@@ -64,6 +64,12 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
   {
+    name: 'generate_music',
+    description: 'Generate music tracks using AI (Suno)',
+    module: 'content',
+    scope: 'mcp:write',
+  },
+  {
     name: 'generate_image',
     description: 'Generate images using AI',
     module: 'content',

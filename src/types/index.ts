@@ -59,6 +59,15 @@ export interface GenerateVideoResponse {
   creditsDeducted: number;
 }
 
+export interface GenerateMusicResponse {
+  taskId: string;
+  asyncJobId: string | null;
+  status: string;
+  model: string;
+  estimatedTime?: number;
+  creditsDeducted?: number;
+}
+
 export interface GenerateImageResponse {
   taskId: string;
   asyncJobId: string | null;

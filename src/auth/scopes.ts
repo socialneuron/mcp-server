@@ -60,6 +60,7 @@ export const TOOL_SCOPES: Record<string, string> = {
   generate_content: 'mcp:write',
   adapt_content: 'mcp:write',
   generate_video: 'mcp:write',
+  generate_music: 'mcp:write',
   generate_image: 'mcp:write',
   // check_status is read-only (polls job state) despite living in this write block.
   check_status: 'mcp:read',

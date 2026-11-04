@@ -329,6 +329,7 @@ describe('Registration & Scope Coverage', () => {
       'adapt_content',
       'generate_video',
       'generate_image',
+      'generate_music',
       'render_demo_video',
       'save_brand_profile',
       'update_platform_voice',
@@ -533,6 +534,73 @@ describe('Module: content', () => {
     });
     expect(result.isError).toBeUndefined();
     expect(mockCallEdge.mock.calls[0][0]).toBe('social-neuron-ai');
+  });
+
+  it('generate_music: happy path calls kie-music-generate and returns the async job ID', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        asyncJobId: 'music-1',
+        taskId: 'suno-task-1',
+        model: 'suno-v4.5',
+        creditsDeducted: 70,
+        estimatedTime: 30,
+        status: 'pending',
+      },
+      error: null,
+    });
+    const result = await server.getHandler('generate_music')!({
+      prompt: 'slow lofi beat for sleep, soft rain',
+      model: 'suno-v4.5',
+      style: 'lofi, ambient',
+      instrumental: true,
+    });
+    expect(result.isError).toBeUndefined();
+    expect(result.content[0].text).toContain('Job ID: music-1');
+    expect(result.content[0].text).toContain('check_status');
+    expect(mockCallEdge.mock.calls[0][0]).toBe('kie-music-generate');
+    expect(mockCallEdge.mock.calls[0][1]).toEqual({
+      prompt: 'slow lofi beat for sleep, soft rain',
+      model: 'suno-v4.5',
+      style: 'lofi, ambient',
+      instrumental: true,
+      projectId: 'test-project-id',
+    });
+  });
+
+  it('generate_music: lyrics are forwarded (custom mode) and instrumental defaults to false', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: { asyncJobId: 'music-2', taskId: 't2', model: 'suno-v5', creditsDeducted: 90 },
+      error: null,
+    });
+    await server.getHandler('generate_music')!({
+      prompt: 'upbeat pop chorus',
+      model: 'suno-v5',
+      lyrics: '[Verse]\nHello',
+    });
+    const body = mockCallEdge.mock.calls[0][1] as Record<string, unknown>;
+    expect(body.lyrics).toBe('[Verse]\nHello');
+    expect(body.instrumental).toBe(false);
+    expect(body).not.toHaveProperty('style');
+  });
+
+  it('generate_music: error path returns isError without a job ID', async () => {
+    mockCallEdge.mockResolvedValueOnce({ data: null, error: 'Insufficient credits' });
+    const result = await server.getHandler('generate_music')!({
+      prompt: 'ambient pad',
+      model: 'suno-v3.5',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('Insufficient credits');
+  });
+
+  it('generate_music: missing job ID in the response is an error', async () => {
+    mockCallEdge.mockResolvedValueOnce({ data: { model: 'suno-v4' }, error: null });
+    const result = await server.getHandler('generate_music')!({
+      prompt: 'ambient pad',
+      model: 'suno-v4',
+    });
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('no job ID');
   });
 
   it('generate_voiceover: error path returns isError', async () => {
@@ -1437,6 +1505,29 @@ describe('JSON envelope format (spot checks)', () => {
     expect(parsed._meta.version).toBe(MCP_VERSION);
     expect(parsed._meta.timestamp).toBeDefined();
     expect(parsed.data.jobId).toBe('env-test');
+  });
+
+  it('generate_music returns valid _meta envelope when response_format=json', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        asyncJobId: 'music-env',
+        taskId: 'suno-env',
+        model: 'suno-v4.5',
+        creditsDeducted: 70,
+        estimatedTime: 30,
+        status: 'pending',
+      },
+      error: null,
+    });
+    const result = await server.getHandler('generate_music')!({
+      prompt: 'test',
+      model: 'suno-v4.5',
+      response_format: 'json',
+    });
+    const parsed = JSON.parse(result.content[0].text);
+    expect(parsed._meta.version).toBe(MCP_VERSION);
+    expect(parsed.data.jobId).toBe('music-env');
+    expect(parsed.data.creditsDeducted).toBe(70);
   });
 
   it('schedule_post returns valid _meta envelope when response_format=json', async () => {

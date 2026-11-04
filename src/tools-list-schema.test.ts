@@ -52,6 +52,7 @@ describe('tools/list schema (P1.6 — SDK serialization emits rich schemas)', ()
     for (const name of [
       'generate_video',
       'generate_image',
+      'generate_music',
       'create_storyboard',
       'generate_voiceover',
       'render_hyperframes',
