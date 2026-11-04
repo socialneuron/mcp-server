@@ -87,6 +87,15 @@ function redactBase64Payloads(args: unknown): unknown {
   return changed ? out : args;
 }
 
+function withheldOutput(code: 'policy_block' | 'server_error', message: string) {
+  return toolError(code, message, {
+    details: { retryable: false, action_may_have_completed: true },
+    recover_with: [
+      'Do not retry automatically. Check the existing action state or contact support.',
+    ],
+  });
+}
+
 /**
  * Wrap a tool handler with the agent-harness scanner middleware (Task 1.14).
  *
@@ -155,9 +164,9 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       // Result was not JSON-serialisable (e.g. contains a BigInt, which
       // throws rather than returning undefined). Fail closed with a clean
       // structured error instead of crashing the handler.
-      return toolError(
+      return withheldOutput(
         'server_error',
-        'The response could not be returned safely. Please retry or contact support.'
+        'The response could not be returned safely. Check the existing action state or contact support.'
       );
     }
     if (outputText === undefined) {
@@ -184,20 +193,14 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
         // never block on audit log failure
       }
       if (outputScan.flagged_patterns.includes('url_reference_pii')) {
-        return toolError(
+        return withheldOutput(
           'policy_block',
-          'The response contains a URL with sensitive data and was withheld. The action may already have completed.',
-          {
-            details: { retryable: false, action_may_have_completed: true },
-            recover_with: [
-              'Do not retry automatically. Check the existing action state or contact support.',
-            ],
-          }
+          'The response contains a URL with sensitive data and was withheld. The action may already have completed.'
         );
       }
-      return toolError(
+      return withheldOutput(
         'server_error',
-        'The response exceeded the safe output limit and was not returned.'
+        'The response could not pass the output safety checks and was not returned.'
       );
     }
     if (outputScan.sanitized_text !== undefined) {
@@ -209,9 +212,9 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       try {
         return JSON.parse(outputScan.sanitized_text);
       } catch {
-        return toolError(
+        return withheldOutput(
           'server_error',
-          'The response could not be returned safely. Please retry or contact support.'
+          'The response could not be returned safely. Check the existing action state or contact support.'
         );
       }
     }

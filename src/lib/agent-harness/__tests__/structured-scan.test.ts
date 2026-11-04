@@ -79,6 +79,74 @@ describe('scanStructuredText', () => {
     expect(reparsed.contact).not.toContain('someone@example.com');
   });
 
+  it.each(['\n', '\t', '\r'])('scans decoded string fields across a %j boundary', separator => {
+    const url = 'https://example.invalid/image.png';
+    const result = scanStructuredText(JSON.stringify({ contact: url + separator + 'fixture@example.invalid' }), output);
+    expect(result.passed).toBe(true);
+    expect(result.pii_redacted).toBe(true);
+    expect(JSON.parse(result.sanitized_text!).contact).toBe(url + separator + '[REDACTED:email]');
+  });
+
+  it('keeps an IPv4 URL followed by a decoded newline safe and unchanged', () => {
+    const media = 'https://192.0.2.10\n';
+    const result = scanStructuredText(JSON.stringify({ media }), output);
+    expect(result).toMatchObject({ passed: true, pii_redacted: false });
+    expect(result.sanitized_text).toBeUndefined();
+  });
+
+  it('still blocks PII inside a URL containing literal backslash-n text', () => {
+    const media = 'https://example.invalid/image.png\\nfixture@example.invalid';
+    const result = scanStructuredText(JSON.stringify({ media }), output);
+    expect(result.passed).toBe(false);
+    expect(result.flagged_patterns).toContain('url_reference_pii');
+    expect(result.sanitized_text).toBeUndefined();
+  });
+
+  it('scans decoded quotes and control escapes without treating JSON syntax as URL content', () => {
+    const url = 'https://example.invalid/image.png';
+    for (const separator of ['"', '\u0001']) {
+      const result = scanStructuredText(JSON.stringify({ contact: url + separator + ' fixture@example.invalid' }), output);
+      expect(result.passed).toBe(true);
+      expect(result.pii_redacted).toBe(true);
+      expect(JSON.parse(result.sanitized_text!).contact).toBe(url + separator + ' [REDACTED:email]');
+    }
+  });
+
+  it('scans object keys, detects redaction collisions, and protects JSON __proto__ keys', () => {
+    const keyResult = scanStructuredText(JSON.stringify({ 'contact fixture@example.invalid': 'safe' }), output);
+    expect(keyResult.passed).toBe(true);
+    expect(Object.keys(JSON.parse(keyResult.sanitized_text!))).toEqual(['contact [REDACTED:email]']);
+
+    const collision = scanStructuredText(JSON.stringify({ 'one@example.com': 'first', 'two@example.org': 'second' }), output);
+    expect(collision.passed).toBe(false);
+    expect(collision.flagged_patterns).toContain('pii_key_collision');
+    expect(collision.sanitized_text).toBeUndefined();
+
+    const proto = JSON.parse('{"__proto__":{"contact":"fixture@example.invalid"}}');
+    const protoResult = scanStructuredText(JSON.stringify(proto), output);
+    expect(protoResult.passed).toBe(true);
+    const reparsed = JSON.parse(protoResult.sanitized_text!);
+    expect(Object.hasOwn(reparsed, '__proto__')).toBe(true);
+    expect(reparsed.__proto__.contact).toBe('[REDACTED:email]');
+    expect(({} as { contact?: string }).contact).toBeUndefined();
+  });
+
+  it('checks numeric JSON values and leaves non-PII confidence and UUIDs untouched', () => {
+    const card = scanStructuredText('{"card":4111111111111111}', output);
+    expect(card.passed).toBe(false);
+    expect(card.flagged_patterns).toContain('pii_credit_card');
+    expect(card.sanitized_text).toBeUndefined();
+
+    const value = {
+      confidence: 0.8333333333333334,
+      id: '550e8400-e29b-41d4-a716-446655440000',
+      '550e8400-e29b-41d4-a716-446655440000': 'uuid-key',
+    };
+    const result = scanStructuredText(JSON.stringify(value), output);
+    expect(result).toMatchObject({ passed: true, pii_redacted: false });
+    expect(result.sanitized_text).toBeUndefined();
+  });
+
   it('blocks zero-width smuggling inside a field', () => {
     const args = { caption: `benign​text` };
     const result = scanStructuredText(JSON.stringify(args), input);

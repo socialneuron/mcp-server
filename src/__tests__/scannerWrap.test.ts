@@ -96,7 +96,7 @@ describe('wrapToolWithScanner', () => {
     expect((r as any).structuredContent.error.error_type).toBe('server_error');
     expect(JSON.stringify(r)).not.toContain('x'.repeat(100));
     expect((r as any).structuredContent.error.message).toBe(
-      'The response exceeded the safe output limit and was not returned.'
+      'The response could not pass the output safety checks and was not returned.'
     );
   });
 
@@ -227,5 +227,22 @@ describe('authenticated media receipt wrapper', () => {
     delete (result as {other?:string}).other;
     const otherContext={...context,projectId:'00000000-0000-4000-8000-000000000004'};
     expect((await requestContext.run(otherContext,()=>wrapped({}))).isError).toBe(true);
+  });
+});
+
+describe('nonretryable output refusals', () => {
+  it.each([
+    ['numeric privacy failure', {structuredContent:{card:4111111111111111}}],
+    ['serialization failure', {structuredContent:{count:1n}}],
+    ['oversized output', {content:[{type:'text',text:'x'.repeat(1_000_001)}]}],
+  ])('does not encourage repeating a completed action after %s', async (_name,result) => {
+    const handler=vi.fn().mockResolvedValue(result);
+    const wrapped=wrapToolWithScanner('schedule_post',handler);
+    const response=await wrapped({});
+    expect(handler).toHaveBeenCalledTimes(1);
+    expect(response.isError).toBe(true);
+    expect(response.structuredContent.error.retryable).toBe(false);
+    expect(response.structuredContent.error.action_may_have_completed).toBe(true);
+    expect(response.structuredContent.error.recover_with.join(' ')).toContain('Do not retry automatically');
   });
 });
