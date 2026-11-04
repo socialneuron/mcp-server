@@ -6,7 +6,8 @@ import { callEdgeFunction } from '../lib/edge-function.js';
 import { checkRateLimit } from '../lib/rate-limit.js';
 import { sanitizeError } from '../lib/sanitize-error.js';
 import { validateUrlForSSRF } from '../lib/ssrf.js';
-import { getDefaultUserId } from '../lib/supabase.js';
+import { getDefaultUserId, getVerifiedMediaCaller } from '../lib/supabase.js';
+import { registerVerifiedMediaReference, type VerifiedMediaCaller } from '../lib/verified-media-reference.js';
 
 /** Max base64 upload size (10MB decoded) — larger files need presigned PUT. */
 const MAX_BASE64_SIZE = 10 * 1024 * 1024;
@@ -31,6 +32,52 @@ const ALLOWED_UPLOAD_TYPES = new Set<string>([
 
 const BASE64_CHARS = /^[A-Za-z0-9+/]+={0,2}$/;
 const DATA_URI_PREFIX = /^data:([^;,]+);base64,/;
+
+type SignedUrlResponse = {
+  success?: boolean;
+  url?: string;
+  signedUrl?: string;
+  key?: string;
+  expiresIn?: number;
+  expiresAt?: string;
+};
+
+function registerVerifiedSignerResult(
+  result: object,
+  caller: VerifiedMediaCaller | null,
+  data: SignedUrlResponse | null | undefined,
+  returnedUrl: string | null | undefined
+): void {
+  if (
+    !caller ||
+    !data ||
+    data.success !== true ||
+    typeof data.url !== 'string' ||
+    data.url.length === 0 ||
+    data.url !== returnedUrl ||
+    typeof data.key !== 'string' ||
+    data.key.length === 0 ||
+    data.key.trim() !== data.key ||
+    typeof data.expiresIn !== 'number' ||
+    !Number.isFinite(data.expiresIn) ||
+    data.expiresIn <= 0 ||
+    typeof data.expiresAt !== 'string' ||
+    data.expiresAt.trim().length === 0
+  ) {
+    return;
+  }
+
+  const expiresAtMs = Date.parse(data.expiresAt);
+  if (!Number.isFinite(expiresAtMs) || expiresAtMs <= Date.now()) return;
+
+  registerVerifiedMediaReference(result, {
+    caller,
+    key: data.key,
+    url: data.url,
+    expiresAt: data.expiresAt,
+    path: ['content', 0, 'text'],
+  });
+}
 
 /** Mask R2 key for display — hides org/user IDs, shows only filename */
 function maskR2Key(key: string): string {
@@ -125,6 +172,7 @@ export function registerMediaTools(server: McpServer): void {
     },
     async ({ source, file_data, file_name, content_type, project_id, response_format }) => {
       const format = response_format ?? 'text';
+      const verifiedCaller = getVerifiedMediaCaller();
       const userId = await getDefaultUserId();
 
       const rateLimit = checkRateLimit('upload', `upload_media:${userId}`);
@@ -439,15 +487,18 @@ export function registerMediaTools(server: McpServer): void {
             };
           }
 
-          // Presigned PUT succeeded — return the R2 key directly
-          const { data: signData } = await callEdgeFunction<{
-            signedUrl?: string;
-            url?: string;
-          }>('get-signed-url', { r2Key: putData.key, operation: 'get' }, { timeoutMs: 10_000 });
+          // Presigned PUT succeeded — return the R2 key directly. Only a
+          // complete successful GET signer response can establish provenance.
+          const { data: signData, error: signError } =
+            await callEdgeFunction<SignedUrlResponse>(
+              'get-signed-url',
+              { r2Key: putData.key, operation: 'get' },
+              { timeoutMs: 10_000 }
+            );
           const signedDownloadUrl = signData?.url ?? signData?.signedUrl ?? null;
 
           if (format === 'json') {
-            return {
+            const result = {
               content: [
                 {
                   type: 'text' as const,
@@ -465,9 +516,13 @@ export function registerMediaTools(server: McpServer): void {
               ],
               isError: false,
             };
+            if (!signError) {
+              registerVerifiedSignerResult(result, verifiedCaller, signData, signedDownloadUrl);
+            }
+            return result;
           }
 
-          return {
+          const result = {
             content: [
               {
                 type: 'text' as const,
@@ -486,6 +541,10 @@ export function registerMediaTools(server: McpServer): void {
             ],
             isError: false,
           };
+          if (!signError) {
+            registerVerifiedSignerResult(result, verifiedCaller, signData, signedDownloadUrl);
+          }
+          return result;
         }
 
         const base64 = `data:${ct};base64,${fileBuffer.toString('base64')}`;
@@ -613,12 +672,8 @@ export function registerMediaTools(server: McpServer): void {
         };
       }
 
-      const { data, error } = await callEdgeFunction<{
-        signedUrl?: string;
-        url?: string;
-        key?: string;
-        expiresIn?: number;
-      }>(
+      const verifiedCaller = getVerifiedMediaCaller();
+      const { data, error } = await callEdgeFunction<SignedUrlResponse>(
         'get-signed-url',
         effectiveJobId
           ? { jobId: effectiveJobId, operation: 'get' }
@@ -652,7 +707,7 @@ export function registerMediaTools(server: McpServer): void {
       }
 
       if (format === 'json') {
-        return {
+        const result = {
           content: [
             {
               type: 'text' as const,
@@ -670,9 +725,11 @@ export function registerMediaTools(server: McpServer): void {
           ],
           isError: false,
         };
+        registerVerifiedSignerResult(result, verifiedCaller, data, signedDownloadUrl);
+        return result;
       }
 
-      return {
+      const result = {
         content: [
           {
             type: 'text' as const,
@@ -685,6 +742,8 @@ export function registerMediaTools(server: McpServer): void {
         ],
         isError: false,
       };
+      registerVerifiedSignerResult(result, verifiedCaller, data, signedDownloadUrl);
+      return result;
     }
   );
 }

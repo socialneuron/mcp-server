@@ -1,4 +1,4 @@
-// Mirror of lib/agent-harness/detectors/pii.ts. Update ../README.md when this file changes.
+// Public mirror of lib/agent-harness/detectors/pii.ts; see ../README.md for sync rules.
 import { CONSTANTS } from '../constants.js';
 import type { ScanRole } from '../types.js';
 
@@ -28,52 +28,157 @@ export interface PiiResult {
   text: string;
   redacted: boolean;
   patterns: string[];
+  /** Sensitive URLs must be refused rather than rewritten into another resource. */
+  blocked_reason?: 'url_reference_pii';
 }
 
-// A URL is machine-addressed data — digit runs inside paths/query strings/
-// signatures are not phone numbers, credit cards, or SSNs. Without this guard
-// the PII patterns (esp. phone_us's bare 10-digit form) corrupt signed media
-// URLs by clobbering part of the signature, breaking the link outright.
-//
-// We protect the ENTIRE URL span (not just the digit-bearing parts). This is
-// the simplest, most consistent rule and it accepts one deliberate residual
-// risk: an email embedded in a URL's query string (e.g. `?email=a@b.com`)
-// will also survive unredacted. That tradeoff is intentional — corrupting a
-// signature is strictly worse than a querystring email surviving one
-// redaction pass, and the scanner's instruction-phrase/zero-width checks
-// still run over the full raw+normalized text regardless of this guard.
-const URL_RE = /https?:\/\/[^\s"'<>)\]]+/g;
-// Sentinel uses Private-Use-Area characters, which never appear in the PII_PATTERNS alphabet
-// (all patterns match visible ASCII/word characters), so it cannot itself be
-// matched or partially matched by any PII pattern.
-const URL_SENTINEL_RE = /\uE000URL(\d+)\uE001/g;
+// Keep bracketed IPv6 hosts in the same span as the path and query.
+const URL_RE = /https?:\/\/(?:\[[0-9A-Fa-f:.]*\][^\s"'<>)\]]*|[^\s"'<>)\]]+)/gi;
 
-export function scrubPii(text: string, _role: ScanRole): PiiResult {
-  const urls: string[] = [];
-  let out = text.replace(URL_RE, match => `\uE000URL${urls.push(match) - 1}\uE001`);
+function decodedReference(text: string): string {
+  // One byte-wise decoding pass covers ASCII detectors and never throws for
+  // malformed UTF-8. It is only a detection view, never a rewritten URL.
+  return text.replace(/%([0-9a-f]{2})/gi, (_match, hex: string) =>
+    String.fromCharCode(parseInt(hex, 16))
+  );
+}
 
-  const hits: string[] = [];
+function* referenceMatches(name: string, re: RegExp, text: string): Generator<string> {
+  // Unbounded email/JWT patterns otherwise retry from every character of long
+  // URL tokens. Anchor each candidate and skip failed runs in linear time.
+  const sticky = new RegExp(re.source, 'iy');
+  if (name === 'email') {
+    let floor = 0;
+    for (let at = text.indexOf('@'); at !== -1; at = text.indexOf('@', at + 1)) {
+      if (at < floor) continue;
+      let start = at;
+      while (start > floor && /[\w.+-]/.test(text[start - 1])) start -= 1;
+      if (start === at) continue;
+      sticky.lastIndex = start;
+      const match = sticky.exec(text);
+      if (match) {
+        yield match[0];
+        floor = start + match[0].length;
+      }
+    }
+    return;
+  }
+  if (name === 'jwt') {
+    const starts = /eyJ/gi;
+    let start: RegExpExecArray | null;
+    while ((start = starts.exec(text)) !== null) {
+      sticky.lastIndex = start.index;
+      const match = sticky.exec(text);
+      if (match) {
+        yield match[0];
+        starts.lastIndex = start.index + match[0].length;
+      } else {
+        let end = start.index + 3;
+        while (end < text.length && /[A-Za-z0-9_-]/.test(text[end])) end += 1;
+        starts.lastIndex = end;
+      }
+    }
+    return;
+  }
+  if (name === 'private_key_block' && !/-----END [A-Z ]*PRIVATE KEY-----/i.test(text)) return;
+  re.lastIndex = 0;
+  for (const match of text.matchAll(re)) yield match[0];
+  re.lastIndex = 0;
+}
+
+function withoutAddressHostname(view: string, hostname: string | undefined): string {
+  // Exempt only the parsed URL's IPv4 hostname from the IP detector. The same
+  // address in credentials, path, query or fragment still receives inspection.
+  const authority = /^https?:\/\/(?:[^/?#@]*@)?([^/?#:@]+)(?::\d+)?(?=[/?#]|$)/i.exec(view);
+  if (
+    !hostname ||
+    !/^\d{1,3}(?:\.\d{1,3}){3}$/.test(hostname) ||
+    !authority ||
+    decodedReference(authority[1]) !== hostname
+  )
+    return view;
+  const start = authority[0].lastIndexOf(authority[1]);
+  return (
+    view.slice(0, start) + 'x'.repeat(authority[1].length) + view.slice(start + authority[1].length)
+  );
+}
+
+export interface VerifiedUrlSpan {
+  url: string;
+  credentialRanges: readonly (readonly number[])[];
+}
+
+function referencePatterns(url: string, verified: readonly VerifiedUrlSpan[]): string[] {
+  // Receipts originate out of band in the authenticated media adapter. Only
+  // signer-defined value spans are masked in this detection view.
+  const receipt = verified.find(reference => reference.url === url);
+  let inspection = url;
+  if (receipt) {
+    for (const [start, end] of receipt.credentialRanges) {
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > url.length) continue;
+      inspection = inspection.slice(0, start) + 'x'.repeat(end - start) + inspection.slice(end);
+    }
+  }
+  const decoded = decodedReference(inspection);
+  let hostname: string | undefined;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // Invalid references gain no hostname exemption. Parsing performs no I/O.
+  }
+  const hits = new Set<string>();
+  for (const view of decoded === inspection ? [inspection] : [inspection, decoded]) {
+    const ipView = withoutAddressHostname(view, hostname);
+    for (const { name, re } of COMPILED) {
+      for (const match of referenceMatches(name, re, name === 'ip' ? ipView : view)) {
+        if (name === 'credit_card' && !passesLuhn(match)) continue;
+        // Bare timestamp/signature digits are not a phone number. Other
+        // detectors and formatted phone numbers retain their normal rules.
+        if (name === 'phone_us' && /^\d+$/.test(match)) continue;
+        hits.add(name);
+      }
+    }
+  }
+  return [...hits];
+}
+
+function scrubPlainText(text: string, hits: Set<string>): string {
+  let out = text;
   for (const { name, re } of COMPILED) {
-    let redacted = false;
     re.lastIndex = 0;
     out = out.replace(re, match => {
       if (name === 'credit_card' && !passesLuhn(match)) return match;
-      redacted = true;
-      return `[REDACTED:${name}]`;
+      hits.add(name);
+      return '[REDACTED:' + name + ']';
     });
     re.lastIndex = 0;
-    if (redacted) {
-      hits.push(name);
-    }
+  }
+  return out;
+}
+
+export function scrubPii(text: string, _role: ScanRole, verified: readonly VerifiedUrlSpan[] = []): PiiResult {
+  URL_RE.lastIndex = 0;
+  const urls = [...text.matchAll(URL_RE)];
+  const referenceHits = new Set(urls.flatMap(match => referencePatterns(match[0], verified)));
+  if (referenceHits.size > 0) {
+    return {
+      text: '',
+      redacted: true,
+      patterns: [...referenceHits],
+      blocked_reason: 'url_reference_pii',
+    };
   }
 
-  out = out.replace(URL_SENTINEL_RE, (_m, i: string) => urls[Number(i)] ?? _m);
-
-  // NOTE: UUID is not in PII_PATTERNS; never redacted in any role.
-  // mcp_tool_output role passes UUID-bearing payloads through unchanged because:
-  //   - credit_card candidates must also pass Luhn, rejecting metric fractions and IDs
-  //   - phone_us regex carries the same boundary anchors for the same reason
-  //   - phone_intl requires leading +, ssn requires 3-2-4 grouping, ip requires dots
-  // The `_role` parameter is reserved for future role-conditional rules (none today).
-  return { text: out, redacted: hits.length > 0, patterns: hits };
+  // Only validated URL spans are preserved. Rebuild from source slices rather
+  // than sentinel text, which an untrusted input could itself supply.
+  const hits = new Set<string>();
+  const pieces: string[] = [];
+  let cursor = 0;
+  for (const url of urls) {
+    const start = url.index ?? 0;
+    pieces.push(scrubPlainText(text.slice(cursor, start), hits), url[0]);
+    cursor = start + url[0].length;
+  }
+  pieces.push(scrubPlainText(text.slice(cursor), hits));
+  return { text: pieces.join(''), redacted: hits.size > 0, patterns: [...hits] };
 }

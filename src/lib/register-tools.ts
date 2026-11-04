@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
-import { logMcpToolInvocation } from './supabase.js';
+import { logMcpToolInvocation, getVerifiedMediaCaller } from './supabase.js';
 import { buildWwwAuthenticateHeader } from './www-authenticate.js';
 import { toolError, classifyToolError } from './tool-error.js';
 import { applyToolProfile, type ToolProfile } from './tool-profile.js';
@@ -14,6 +14,7 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
 import { scanStructuredText } from './agent-harness/scanner.js';
+import { getVerifiedMediaReferences } from './verified-media-reference.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -86,6 +87,15 @@ function redactBase64Payloads(args: unknown): unknown {
   return changed ? out : args;
 }
 
+function withheldOutput(code: 'policy_block' | 'server_error', message: string) {
+  return toolError(code, message, {
+    details: { retryable: false, action_may_have_completed: true },
+    recover_with: [
+      'Do not retry automatically. Check the existing action state or contact support.',
+    ],
+  });
+}
+
 /**
  * Wrap a tool handler with the agent-harness scanner middleware (Task 1.14).
  *
@@ -135,12 +145,15 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       return toolError('policy_block', 'Request blocked by the input safety policy.', {
         details: { blocked_patterns: inputScan.flagged_patterns },
         recover_with: [
-          'Remove instruction-like or unsafe phrasing from the input and retry.',
+          inputScan.flagged_patterns.includes('url_reference_pii')
+            ? 'Replace URLs that contain sensitive data and retry.'
+            : 'Remove instruction-like or unsafe phrasing from the input and retry.',
         ],
       });
     }
 
     // 2. Execute the underlying handler.
+    const caller = getVerifiedMediaCaller();
     const result = await handler(...handlerArgs);
 
     // 3. Scan output. Output role keeps UUIDs intact via anchored regex.
@@ -151,9 +164,9 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       // Result was not JSON-serialisable (e.g. contains a BigInt, which
       // throws rather than returning undefined). Fail closed with a clean
       // structured error instead of crashing the handler.
-      return toolError(
+      return withheldOutput(
         'server_error',
-        'The response could not be returned safely. Please retry or contact support.'
+        'The response could not be returned safely. Check the existing action state or contact support.'
       );
     }
     if (outputText === undefined) {
@@ -161,34 +174,47 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       // Skip output scan rather than crash.
       return result;
     }
+    const currentCaller = getVerifiedMediaCaller();
+    const sameCaller = caller && currentCaller &&
+      caller.userId === currentCaller.userId && caller.projectId === currentCaller.projectId;
+    const references = sameCaller && (toolName === 'get_media_url' || toolName === 'upload_media')
+      ? getVerifiedMediaReferences(result, caller) : [];
     const outputScan = scanStructuredText(outputText, {
       mode: 'sanitize',
       source: 'mcp_tool_output',
       user_id: ctx?.userId,
-    });
+    }, references);
+    // Never copy signed credentials into scanner audit payloads.
+    const outputAudit = references.length ? {...outputScan, sanitized_text: undefined} : outputScan;
     if (!outputScan.passed) {
       try {
-        ctx?.logScan?.(toolName, 'output', outputScan);
+        ctx?.logScan?.(toolName, 'output', outputAudit);
       } catch {
         // never block on audit log failure
       }
-      return toolError(
+      if (outputScan.flagged_patterns.includes('url_reference_pii')) {
+        return withheldOutput(
+          'policy_block',
+          'The response contains a URL with sensitive data and was withheld. The action may already have completed.'
+        );
+      }
+      return withheldOutput(
         'server_error',
-        'The response exceeded the safe output limit and was not returned.'
+        'The response could not pass the output safety checks and was not returned.'
       );
     }
     if (outputScan.sanitized_text !== undefined) {
       try {
-        ctx?.logScan?.(toolName, 'output', outputScan);
+        ctx?.logScan?.(toolName, 'output', outputAudit);
       } catch {
         // never block on audit log failure
       }
       try {
         return JSON.parse(outputScan.sanitized_text);
       } catch {
-        return toolError(
+        return withheldOutput(
           'server_error',
-          'The response could not be returned safely. Please retry or contact support.'
+          'The response could not be returned safely. Check the existing action state or contact support.'
         );
       }
     }
@@ -204,8 +230,7 @@ export function applyScopeEnforcement(server: McpServer, scopeResolver: () => st
   const originalTool = server.tool.bind(server) as (...args: any[]) => any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const originalRegisterTool = (server as any).registerTool?.bind(server) as
-    | ((...args: any[]) => any)
-    | undefined;
+    ((...args: any[]) => any) | undefined;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const wrapRegistration = (...args: any[]) => {

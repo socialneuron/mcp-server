@@ -6,6 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockServer } from '../test-setup.js';
 import { registerMediaTools } from './media.js';
 import { callEdgeFunction } from '../lib/edge-function.js';
+import * as supabase from '../lib/supabase.js';
+import * as verifiedMediaReferences from '../lib/verified-media-reference.js';
 
 // Stub SSRF so upload_media URL-mode tests don't hit real DNS for fictional hosts.
 vi.mock('../lib/ssrf.js', async () => {
@@ -36,6 +38,11 @@ vi.mock('../lib/ssrf.js', async () => {
 });
 
 const mockCallEdge = vi.mocked(callEdgeFunction);
+const getVerifiedMediaCallerSpy = vi.spyOn(supabase, 'getVerifiedMediaCaller');
+const registerVerifiedMediaReferenceSpy = vi.spyOn(
+  verifiedMediaReferences,
+  'registerVerifiedMediaReference'
+);
 
 /** Some environments use a hidden TMPDIR, which the production path policy rejects.
  * Keep synthetic fixtures in the isolated checkout when that happens; each
@@ -45,12 +52,42 @@ function mediaFixtureRoot(osTemp: string): string {
   return osTemp.split(/[\\/]/).some(part => part.startsWith('.')) ? process.cwd() : osTemp;
 }
 
+const VERIFIED_USER_ID = '00000000-0000-4000-8000-000000000001';
+const VERIFIED_PROJECT_ID = '00000000-0000-4000-8000-000000000002';
+const VERIFIED_ORG_ID = '00000000-0000-4000-8000-000000000003';
+
+function makeVerifiedSignerData(filename: string) {
+  const issuedAtMs = Math.floor(Date.now() / 1000) * 1000;
+  const issuedAt = new Date(issuedAtMs);
+  const amzDate = `${issuedAt.toISOString().slice(0, 19).replace(/[-:]/g, '')}Z`;
+  const dateFolder = issuedAt.toISOString().slice(0, 10);
+  const key =
+    `org_${VERIFIED_ORG_ID}/user_${VERIFIED_USER_ID}/project_${VERIFIED_PROJECT_ID}` +
+    `/images/${dateFolder}/${filename}`;
+  const credentialId = 'AKIA' + 'Z'.repeat(16);
+  const credential = `${credentialId}%2F${amzDate.slice(0, 8)}%2Fauto%2Fs3%2Faws4_request`;
+  return {
+    success: true,
+    url:
+      `https://r2.example.invalid/media-bucket/${key}` +
+      `?X-Amz-Algorithm=AWS4-HMAC-SHA256` +
+      `&X-Amz-Credential=${credential}` +
+      `&X-Amz-Date=${amzDate}` +
+      `&X-Amz-Expires=3600` +
+      `&X-Amz-SignedHeaders=host` +
+      `&X-Amz-Signature=${'a'.repeat(64)}`,
+    key,
+    expiresIn: 3600,
+    expiresAt: new Date(issuedAtMs + 3_600_000).toISOString(),
+  };
+}
 
 describe('media tools', () => {
   let server: ReturnType<typeof createMockServer>;
 
   beforeEach(() => {
     vi.clearAllMocks();
+    getVerifiedMediaCallerSpy.mockReturnValue(null);
     server = createMockServer();
     registerMediaTools(server as any);
   });
@@ -373,22 +410,40 @@ describe('media tools', () => {
         const prior = process.env.MCP_TRANSPORT;
         process.env.MCP_TRANSPORT = 'stdio';
         try {
-          mockCallEdge.mockResolvedValueOnce({
-            data: { url: 'https://put.example.com/x', key: 'org_1/user_1/big.mp4' },
-            error: null,
-          });
+          const caller = { userId: VERIFIED_USER_ID, projectId: VERIFIED_PROJECT_ID };
+          const signerData = makeVerifiedSignerData('big.mp4');
+          getVerifiedMediaCallerSpy.mockReturnValue(caller);
+          mockCallEdge
+            .mockResolvedValueOnce({
+              data: { url: 'https://put.example.com/x', key: 'org_1/user_1/big.mp4' },
+              error: null,
+            })
+            .mockResolvedValueOnce({ data: signerData, error: null });
           // The PUT itself + follow-up signing are network calls; stub fetch.
           const fetchSpy = vi
             .spyOn(globalThis, 'fetch')
             .mockResolvedValue(new Response(null, { status: 200 }));
           try {
             const handler = server.getHandler('upload_media')!;
-            await handler({ source: bigPath, content_type: 'video/mp4' });
+            const result = await handler({ source: bigPath, content_type: 'video/mp4' });
             expect(mockCallEdge).toHaveBeenCalledWith(
               'get-signed-url',
               expect.objectContaining({ operation: 'put', fileSize: bigSize }),
               expect.anything()
             );
+            expect(getVerifiedMediaCallerSpy.mock.invocationCallOrder[0]).toBeLessThan(
+              mockCallEdge.mock.invocationCallOrder[0]
+            );
+            expect(registerVerifiedMediaReferenceSpy).toHaveBeenCalledWith(result, {
+              caller,
+              key: signerData.key,
+              url: signerData.url,
+              expiresAt: signerData.expiresAt,
+              path: ['content', 0, 'text'],
+            });
+            expect(
+              verifiedMediaReferences.getVerifiedMediaReferences(result, caller)
+            ).toHaveLength(1);
           } finally {
             fetchSpy.mockRestore();
           }
@@ -510,6 +565,99 @@ describe('media tools', () => {
       const result = await handler({ r2_key: 'some/key' });
       expect(result.isError).toBe(true);
       expect(result.content[0].text).toContain('No signed URL returned');
+    });
+
+    it('registers only the exact result from a successful authenticated GET signer call', async () => {
+      const caller = { userId: VERIFIED_USER_ID, projectId: VERIFIED_PROJECT_ID };
+      const signerData = makeVerifiedSignerData('verified.png');
+      getVerifiedMediaCallerSpy.mockReturnValue(caller);
+      mockCallEdge.mockResolvedValueOnce({ data: signerData, error: null });
+
+      const handler = server.getHandler('get_media_url')!;
+      const result = await handler({ r2_key: signerData.key });
+
+      expect(result.isError).toBeFalsy();
+      expect(getVerifiedMediaCallerSpy).toHaveBeenCalledTimes(1);
+      expect(getVerifiedMediaCallerSpy.mock.invocationCallOrder[0]).toBeLessThan(
+        mockCallEdge.mock.invocationCallOrder[0]
+      );
+      expect(registerVerifiedMediaReferenceSpy).toHaveBeenCalledWith(result, {
+        caller,
+        key: signerData.key,
+        url: signerData.url,
+        expiresAt: signerData.expiresAt,
+        path: ['content', 0, 'text'],
+      });
+      expect(verifiedMediaReferences.getVerifiedMediaReferences(result, caller)).toHaveLength(1);
+    });
+
+    it.each([
+      {
+        reason: 'missing success:true',
+        data: {
+          url: 'https://r2.example.com/x?X-Amz-Signature=untrusted',
+          key: 'project_1/user_1/x.png',
+          expiresIn: 3600,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+          verified: true,
+        },
+      },
+      {
+        reason: 'missing canonical key',
+        data: {
+          success: true,
+          url: 'https://r2.example.com/x?X-Amz-Signature=untrusted',
+          expiresIn: 3600,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+      },
+      {
+        reason: 'missing expiry',
+        data: {
+          success: true,
+          url: 'https://r2.example.com/x?X-Amz-Signature=untrusted',
+          key: 'project_1/user_1/x.png',
+          expiresIn: 3600,
+        },
+      },
+      {
+        reason: 'missing expiry duration',
+        data: {
+          success: true,
+          url: 'https://r2.example.com/x?X-Amz-Signature=untrusted',
+          key: 'project_1/user_1/x.png',
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+      },
+    ])('does not register signer data $reason', async ({ data }) => {
+      getVerifiedMediaCallerSpy.mockReturnValue({
+        userId: VERIFIED_USER_ID,
+        projectId: VERIFIED_PROJECT_ID,
+      });
+      mockCallEdge.mockResolvedValueOnce({ data, error: null });
+
+      const handler = server.getHandler('get_media_url')!;
+      await handler({ r2_key: 'project_1/user_1/x.png' });
+
+      expect(registerVerifiedMediaReferenceSpy).not.toHaveBeenCalled();
+    });
+
+    it('does not register a successful signer response without an authenticated caller', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: {
+          success: true,
+          url: 'https://r2.example.com/x?X-Amz-Signature=untrusted',
+          key: 'project_1/user_1/x.png',
+          expiresIn: 3600,
+          expiresAt: '2099-01-01T00:00:00.000Z',
+        },
+        error: null,
+      });
+
+      const handler = server.getHandler('get_media_url')!;
+      await handler({ r2_key: 'project_1/user_1/x.png' });
+
+      expect(registerVerifiedMediaReferenceSpy).not.toHaveBeenCalled();
     });
   });
 

@@ -1,6 +1,6 @@
 import { createClient, SupabaseClient } from "@supabase/supabase-js";
 import { randomUUID } from "node:crypto";
-import { getRequestUserId, getRequestProjectId } from "./request-context.js";
+import { getRequestUserId, getRequestProjectId, requestContext } from "./request-context.js";
 
 const SUPABASE_URL =
   process.env.SOCIALNEURON_SUPABASE_URL || process.env.SUPABASE_URL || "";
@@ -109,6 +109,43 @@ export function getServiceKey(): string {
  */
 function getServiceKeyOrNull(): string | null {
   return SUPABASE_SERVICE_KEY || null;
+}
+
+/**
+ * Caller identity for verified media receipts. This deliberately excludes the
+ * operator-configured SOCIALNEURON_USER_ID fallback used by ordinary tools.
+ */
+export function getVerifiedMediaCaller(): {
+  userId: string;
+  projectId: string | null;
+} | null {
+  const request = requestContext.getStore();
+  if (request !== undefined) {
+    if (
+      typeof request.userId !== "string" ||
+      request.userId.trim().length === 0 ||
+      typeof request.token !== "string" ||
+      request.token.trim().length === 0 ||
+      (request.projectId !== null &&
+        (typeof request.projectId !== "string" ||
+          request.projectId.trim().length === 0))
+    ) {
+      return null;
+    }
+    return { userId: request.userId, projectId: request.projectId };
+  }
+
+  if (
+    _authMode !== "api-key" ||
+    typeof authenticatedUserId !== "string" ||
+    authenticatedUserId.trim().length === 0 ||
+    typeof authenticatedApiKey !== "string" ||
+    authenticatedApiKey.trim().length === 0
+  ) {
+    return null;
+  }
+
+  return { userId: authenticatedUserId, projectId: authenticatedProjectId };
 }
 
 /**

@@ -4,6 +4,15 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 
 ## Unreleased
 
+## 2.1.4 - 2026-11-04
+
+### Fixed
+
+- Inspect URL-contained sensitive data before tool execution and before returning results.
+- Preserve R2 download links issued through the authenticated media-signing flow using per-result verification.
+- Withhold unsafe output with nonretryable guidance and inspect raw text before normalization.
+- Detect URL boundaries in decoded JSON fields so multiline responses can be redacted safely.
+
 ## 2.1.3 - 2026-10-31
 
 ### Fixed
