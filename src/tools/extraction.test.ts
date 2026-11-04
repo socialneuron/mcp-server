@@ -13,9 +13,8 @@ vi.mock('../lib/ssrf.js', () => ({
   })),
 }));
 
-// scrape-youtube + fetch-url-content both return a { success, data } envelope at
-// HTTP 200. Mock by (functionName, body.action) so the parallel transcript+metadata
-// video calls resolve correctly regardless of order.
+// fetch-url-content returns a { success, data } envelope at HTTP 200.
+// Mock by (functionName, body) so each test can route its calls.
 function mockEf(map: (fn: string, body: Record<string, unknown>) => unknown) {
   vi.mocked(callEdgeFunction).mockImplementation(((fn: string, body: Record<string, unknown>) =>
     Promise.resolve(map(fn, body) as { data: unknown; error: string | null })) as never);
@@ -30,86 +29,16 @@ describe('extract_url_content', () => {
     registerExtractionTools(server as any);
   });
 
-  it('YouTube video: sends {action,videoUrl} and maps segments→transcript + metadata→title', async () => {
-    mockEf((fn, body) => {
-      if (fn === 'scrape-youtube' && body.action === 'transcript') {
-        return {
-          data: { success: true, data: { segments: [{ text: 'Hello' }, { text: 'world' }] } },
-          error: null,
-        };
-      }
-      if (fn === 'scrape-youtube' && body.action === 'metadata') {
-        return {
-          data: {
-            success: true,
-            data: {
-              title: 'Test Video',
-              description: 'Desc',
-              viewCount: 1000,
-              likes: 50,
-              duration: 120,
-              tags: ['t'],
-              channelName: 'TestChannel',
-            },
-          },
-          error: null,
-        };
-      }
-      return { data: null, error: 'unexpected call' };
-    });
+  it.each([
+    ['video', 'https://youtube.com/watch?v=abc123'],
+    ['channel', 'https://youtube.com/@testchannel'],
+  ])('YouTube %s URL: explicit not-supported error, no backend call', async (_, url) => {
     const handler = server.getHandler('extract_url_content');
-    const result = await handler({
-      url: 'https://youtube.com/watch?v=abc123',
-      extract_type: 'auto',
-      response_format: 'text',
-    });
+    const result = await handler({ url, extract_type: 'auto', response_format: 'text' });
 
-    expect(result.isError).toBe(false);
-    expect(result.content[0].text).toContain('Test Video');
-    expect(result.content[0].text).toContain('Hello world'); // segments joined
-    expect(result.content[0].text).toContain('TestChannel');
-    // Must use the action/videoUrl contract — NOT the old {url,includeComments} shape.
-    expect(vi.mocked(callEdgeFunction)).toHaveBeenCalledWith(
-      'scrape-youtube',
-      expect.objectContaining({
-        action: 'transcript',
-        videoUrl: 'https://youtube.com/watch?v=abc123',
-      }),
-      expect.any(Object)
-    );
-    expect(vi.mocked(callEdgeFunction)).toHaveBeenCalledWith(
-      'scrape-youtube',
-      expect.objectContaining({
-        action: 'metadata',
-        videoUrl: 'https://youtube.com/watch?v=abc123',
-      }),
-      expect.any(Object)
-    );
-  });
-
-  it('YouTube channel: sends action:channel_videos and lists recent videos', async () => {
-    mockEf((fn, body) => {
-      if (fn === 'scrape-youtube' && body.action === 'channel_videos') {
-        return {
-          data: {
-            success: true,
-            data: { videos: [{ title: 'V1' }, { title: 'V2' }], totalVideos: 2 },
-          },
-          error: null,
-        };
-      }
-      return { data: null, error: 'unexpected call' };
-    });
-    const handler = server.getHandler('extract_url_content');
-    const result = await handler({
-      url: 'https://youtube.com/@testchannel',
-      extract_type: 'auto',
-      response_format: 'text',
-    });
-
-    expect(result.isError).toBe(false);
-    expect(result.content[0].text).toContain('youtube_channel');
-    expect(result.content[0].text).toContain('V1');
+    expect(result.isError).toBe(true);
+    expect(result.content[0].text).toContain('YouTube transcripts are not supported via MCP');
+    expect(vi.mocked(callEdgeFunction)).not.toHaveBeenCalled();
   });
 
   it('non-YouTube: sends extractType (not type) and unwraps data.name/description', async () => {
@@ -202,24 +131,6 @@ describe('extract_url_content', () => {
     expect(envelope.data.suggested_hooks).toEqual(['Hook A']);
   });
 
-  it('treats an HTTP-200 {success:false} envelope as an error (the silent-empty bug)', async () => {
-    // Both video calls return success:false → hard error (not a near-empty success).
-    mockEf(fn => {
-      if (fn === 'scrape-youtube')
-        return { data: { success: false, error: 'video unavailable' }, error: null };
-      return { data: null, error: 'unexpected call' };
-    });
-    const handler = server.getHandler('extract_url_content');
-    const result = await handler({
-      url: 'https://youtube.com/watch?v=fail',
-      extract_type: 'auto',
-      response_format: 'text',
-    });
-
-    expect(result.isError).toBe(true);
-    expect(result.content[0].text).toContain('video unavailable');
-  });
-
   it('non-YouTube {success:false} envelope surfaces as an error', async () => {
     mockEf(fn => {
       if (fn === 'fetch-url-content')
@@ -238,32 +149,29 @@ describe('extract_url_content', () => {
   });
 
   it('returns JSON envelope with version + source_type', async () => {
-    mockEf((fn, body) => {
-      if (fn === 'scrape-youtube' && body.action === 'metadata') {
-        return { data: { success: true, data: { title: 'Test' } }, error: null };
-      }
-      if (fn === 'scrape-youtube' && body.action === 'transcript') {
-        return { data: { success: true, data: { segments: [{ text: 'Content' }] } }, error: null };
+    mockEf(fn => {
+      if (fn === 'fetch-url-content') {
+        return { data: { success: true, data: { name: 'Test' } }, error: null };
       }
       return { data: null, error: 'unexpected call' };
     });
     const handler = server.getHandler('extract_url_content');
     const result = await handler({
-      url: 'https://youtube.com/watch?v=test',
-      extract_type: 'auto',
+      url: 'https://example.com/blog/test',
+      extract_type: 'article',
       response_format: 'json',
     });
 
     const envelope = JSON.parse(result.content[0].text);
     expect(envelope._meta.version).toBe(MCP_VERSION);
-    expect(envelope.data.source_type).toBe('youtube_video');
+    expect(envelope.data.source_type).toBe('article');
   });
 
   it('returns error on transport failure', async () => {
     mockEf(() => ({ data: null, error: 'Network timeout' }));
     const handler = server.getHandler('extract_url_content');
     const result = await handler({
-      url: 'https://youtube.com/watch?v=fail',
+      url: 'https://example.com/fail',
       extract_type: 'auto',
       response_format: 'text',
     });
@@ -272,25 +180,4 @@ describe('extract_url_content', () => {
     expect(result.content[0].text).toContain('Network timeout');
   });
 
-  it('video with metadata but no captions still succeeds (no Transcript section)', async () => {
-    mockEf((fn, body) => {
-      if (fn === 'scrape-youtube' && body.action === 'transcript') {
-        return { data: { success: true, data: { segments: [] } }, error: null };
-      }
-      if (fn === 'scrape-youtube' && body.action === 'metadata') {
-        return { data: { success: true, data: { title: 'No Transcript' } }, error: null };
-      }
-      return { data: null, error: 'unexpected call' };
-    });
-    const handler = server.getHandler('extract_url_content');
-    const result = await handler({
-      url: 'https://youtube.com/watch?v=notranscript',
-      extract_type: 'auto',
-      response_format: 'text',
-    });
-
-    expect(result.isError).toBe(false);
-    expect(result.content[0].text).toContain('No Transcript');
-    expect(result.content[0].text).not.toContain('Transcript:');
-  });
 });

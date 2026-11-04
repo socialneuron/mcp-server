@@ -1139,42 +1139,31 @@ describe('Module: extraction', () => {
     registerExtractionTools(server as any);
   });
 
-  it('extract_url_content: happy path for YouTube URL', async () => {
-    // Video path makes parallel transcript + metadata calls; both return the
-    // { success, data } envelope.
-    mockCallEdge.mockImplementation(((fn: string, body: Record<string, unknown>) => {
-      if (fn === 'scrape-youtube' && body.action === 'transcript') {
+  it('extract_url_content: happy path for article URL', async () => {
+    mockCallEdge.mockImplementation(((fn: string) => {
+      if (fn === 'fetch-url-content') {
         return Promise.resolve({
-          data: { success: true, data: { segments: [{ text: 'Hello world transcript' }] } },
-          error: null,
-        });
-      }
-      if (fn === 'scrape-youtube' && body.action === 'metadata') {
-        return Promise.resolve({
-          data: {
-            success: true,
-            data: { title: 'My Video', viewCount: 5000, channelName: 'TestCh' },
-          },
+          data: { success: true, data: { name: 'My Article', description: 'Summary' } },
           error: null,
         });
       }
       return Promise.resolve({ data: null, error: 'unexpected' });
     }) as never);
     const result = await server.getHandler('extract_url_content')!({
-      url: 'https://youtube.com/watch?v=abc',
-      extract_type: 'auto',
+      url: 'https://example.com/post',
+      extract_type: 'article',
       response_format: 'text',
     });
     expect(result.isError).toBe(false);
-    expect(result.content[0].text).toContain('My Video');
-    expect(mockCallEdge.mock.calls[0][0]).toBe('scrape-youtube');
+    expect(result.content[0].text).toContain('My Article');
+    expect(mockCallEdge.mock.calls[0][0]).toBe('fetch-url-content');
   });
 
   it('extract_url_content: error path returns isError', async () => {
     mockCallEdge.mockImplementation((() =>
       Promise.resolve({ data: null, error: 'Failed to scrape' })) as never);
     const result = await server.getHandler('extract_url_content')!({
-      url: 'https://youtube.com/watch?v=fail',
+      url: 'https://example.com/fail',
       extract_type: 'auto',
       response_format: 'text',
     });

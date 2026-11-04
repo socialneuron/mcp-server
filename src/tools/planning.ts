@@ -95,7 +95,9 @@ export function registerPlanningTools(server: McpServer): void {
     'Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_plan then schedule_content_plan. Costs ~5-15 credits depending on post count.',
     {
       topic: z.string().describe('Main topic or content theme'),
-      source_url: z.string().optional().describe('URL to extract content from (YouTube, article)'),
+      source_url: z.string().optional().describe(
+          'URL to extract content from (article or product page; YouTube URLs are not supported)'
+        ),
       platforms: z
         .array(
           z.enum([
