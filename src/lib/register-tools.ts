@@ -128,16 +128,17 @@ function withheldOutput(code: 'policy_block' | 'server_error', message: string) 
  *
  * `generate_video.prompt` is capped at 30,000 by its zod schema (the provider
  * cap for timed multi-shot seedance-2.5 scripts). Serialising that prompt
- * alongside the model, duration and up to 30 reference URLs adds JSON escaping
- * overhead, so the allowance is 40,000: enough headroom for the largest
- * schema-legal call, and nowhere near unbounded. Every other scanner check
+ * can require six serialized characters per code unit (180,000 total).
+ * Another 30 URLs of 2,048 characters each and a 10,000-character envelope
+ * fit within 256,000. This is an aggregate transport ceiling, not a promise
+ * to accept unbounded URL strings. Every other scanner check
  * (zero-width, instruction phrase, PII) still runs in full on the longer input.
  *
  * Adding an entry here widens the abuse surface for that one tool: justify it
  * against the tool's own schema maximum, never round up "for safety".
  */
 const TOOL_INPUT_LENGTH_LIMITS: Readonly<Record<string, number>> = {
-  generate_video: 40_000,
+  generate_video: 256_000,
 };
 
 /** The scan ceiling for one tool's serialised input. Default = CONSTANTS.MAX_LENGTH. */

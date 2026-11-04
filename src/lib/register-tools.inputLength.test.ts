@@ -42,7 +42,7 @@ describe('per-tool input length allowance', () => {
   it('keeps every other tool at the default ceiling', () => {
     expect(toolInputLengthLimit('generate_content')).toBe(CONSTANTS.MAX_LENGTH);
     expect(toolInputLengthLimit('generate_image')).toBe(CONSTANTS.MAX_LENGTH);
-    expect(toolInputLengthLimit('generate_video')).toBe(40_000);
+    expect(toolInputLengthLimit('generate_video')).toBe(256_000);
   });
 
   it('lets a 16,717-character video prompt reach the handler', async () => {
@@ -55,7 +55,7 @@ describe('per-tool input length allowance', () => {
     expect(vi.mocked(callEdgeFunction).mock.calls[0][1]).toMatchObject({ prompt });
   });
 
-  it('admits the largest schema-legal call (30,000-char prompt + 30 references)', async () => {
+  it('admits a 30,000-char prompt with 30 short references', async () => {
     const prompt = 'a "quoted" \\ line\n'.repeat(1_700).slice(0, 30_000);
     const reference_image_urls = Array.from(
       { length: 30 },
@@ -69,6 +69,21 @@ describe('per-tool input length allowance', () => {
     expect(callEdgeFunction).toHaveBeenCalledOnce();
   });
 
+  it.each(['\n', '\t', '"', '\\', '\u0001'])(
+    'admits a full prompt whose characters require JSON escaping (%j)',
+    async character => {
+      const prompt = character.repeat(30_000);
+      const reference_image_urls = Array.from({ length: 30 }, (_, i) =>
+        `https://cdn.example.com/${'a'.repeat(2_000)}/${i}.png`
+      );
+      const result = await wrappedContentTools().get('generate_video')!(
+        { prompt, model: 'seedance-2.5', reference_image_urls }, {}
+      );
+      expect(JSON.stringify(result)).not.toContain('excessive_length');
+      expect(callEdgeFunction).toHaveBeenCalledOnce();
+    }
+  );
+
   it('still blocks oversized input on tools without an allowance', async () => {
     const result = await wrappedContentTools().get('generate_image')!(
       { prompt: 'x '.repeat(6_000), model: 'nano-banana' },
@@ -80,7 +95,7 @@ describe('per-tool input length allowance', () => {
 
   it('still blocks video input past the allowance', async () => {
     const result = await wrappedContentTools().get('generate_video')!(
-      { prompt: 'x'.repeat(40_001), model: 'seedance-2.5' },
+      { prompt: 'x'.repeat(256_001), model: 'seedance-2.5' },
       {}
     );
     expect(JSON.stringify(result)).toContain('excessive_length');

@@ -103,7 +103,7 @@ export interface GenerateImageParams {
   image_url?: string;
   project_id?: string;
   response_format?: 'text' | 'json';
-  /** Approved per-request credit ceiling; read estimates with getGenerationOptions(). */
+  /** Approved per-request credit ceiling; read estimates with sn.account.generationOptions(). */
   max_credits?: number;
 }
 

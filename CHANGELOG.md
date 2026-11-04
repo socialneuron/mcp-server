@@ -15,6 +15,7 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 ### Changed
 
 - `generate_video` budget precheck now estimates the dispatched request (model, duration, resolution, audio) instead of a fixed per-model reference cost.
+- Video input scanning allows up to 256,000 serialized characters to accommodate JSON escaping and reference URLs while retaining all safety checks and the 30,000-character prompt limit.
 
 ## 2.1.4 - 2026-11-04
 
