@@ -210,6 +210,7 @@ src/lib/quality.ts
 src/lib/rate-limit.test.ts
 src/lib/rate-limit.ts
 src/lib/register-tools.handler-exception.test.ts
+src/lib/register-tools.inputLength.test.ts
 src/lib/register-tools.scannerBase64.test.ts
 src/lib/register-tools.scope-enforcement.test.ts
 src/lib/register-tools.ts

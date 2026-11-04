@@ -14,6 +14,7 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
 import { scanStructuredText } from './agent-harness/scanner.js';
+import { CONSTANTS } from './agent-harness/constants.js';
 import { getVerifiedMediaReferences } from './verified-media-reference.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
@@ -117,6 +118,33 @@ function withheldOutput(code: 'policy_block' | 'server_error', message: string) 
  * second, original handler third. The scope-denial path (isError result)
  * skips the scanner because it returns before the handler executes.
  */
+/**
+ * Per-tool input-length allowance.
+ *
+ * The scanner's `MAX_LENGTH` (10,000 chars) is a prompt-injection / regex-DoS
+ * bound applied to the SERIALISED argument object, so it is deliberately not
+ * raised globally. A tool whose own schema legitimately accepts more than that
+ * gets a named, bounded allowance here instead.
+ *
+ * `generate_video.prompt` is capped at 30,000 by its zod schema (the provider
+ * cap for timed multi-shot seedance-2.5 scripts). Serialising that prompt
+ * alongside the model, duration and up to 30 reference URLs adds JSON escaping
+ * overhead, so the allowance is 40,000: enough headroom for the largest
+ * schema-legal call, and nowhere near unbounded. Every other scanner check
+ * (zero-width, instruction phrase, PII) still runs in full on the longer input.
+ *
+ * Adding an entry here widens the abuse surface for that one tool: justify it
+ * against the tool's own schema maximum, never round up "for safety".
+ */
+const TOOL_INPUT_LENGTH_LIMITS: Readonly<Record<string, number>> = {
+  generate_video: 40_000,
+};
+
+/** The scan ceiling for one tool's serialised input. Default = CONSTANTS.MAX_LENGTH. */
+export function toolInputLengthLimit(toolName: string): number {
+  return TOOL_INPUT_LENGTH_LIMITS[toolName] ?? CONSTANTS.MAX_LENGTH;
+}
+
 export function wrapToolWithScanner(toolName: string, handler: ToolHandler): ToolHandler {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async function scannerWrappedHandler(...handlerArgs: any[]): Promise<any> {
@@ -135,6 +163,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     const inputScan = scanStructuredText(inputText, {
       mode: 'block',
       source: 'mcp_tool_input',
+      maxLength: toolInputLengthLimit(toolName),
       user_id: ctx?.userId,
     });
     if (!inputScan.passed) {

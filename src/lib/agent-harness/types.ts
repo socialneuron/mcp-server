@@ -8,6 +8,12 @@ export interface ScanOptions {
   mode: ScanMode;
   source: ScanRole;
   user_id?: string;
+  /**
+   * Deliberate per-caller widening of the role's length ceiling (the MCP
+   * wrapper's per-tool allowance). Absent keeps the role default; every
+   * other check still runs in full on the longer text.
+   */
+  maxLength?: number;
 }
 
 export interface ScanResult {
