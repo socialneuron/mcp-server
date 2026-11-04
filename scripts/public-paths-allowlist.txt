@@ -219,6 +219,8 @@ src/lib/request-context.test.ts
 src/lib/request-context.ts
 src/lib/rest-invoke.test.ts
 src/lib/rest-invoke.ts
+src/lib/robots.test.ts
+src/lib/robots.ts
 src/lib/sanitize-error.test.ts
 src/lib/sanitize-error.ts
 src/lib/sdk-model-parity.test.ts

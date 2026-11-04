@@ -1,8 +1,8 @@
 {
   "name": "socialneuron-mcp-server",
   "displayName": "Social Neuron MCP Server",
-  "version": "2.1.4",
-  "description": "91 public stdio MCP tools for creating, scheduling, and analyzing social content through Social Neuron. Hosted MCP Apps are available through the separate HTTP connector.",
+  "version": "2.1.5",
+  "description": "93 public stdio MCP tools for creating, scheduling, and analyzing social content through Social Neuron. Hosted MCP Apps are available through the separate HTTP connector.",
   "author": {
     "name": "Social Neuron",
     "url": "https://socialneuron.com"
