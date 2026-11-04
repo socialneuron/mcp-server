@@ -236,3 +236,41 @@ describe('PII reference protection', () => {
     expect(JSON.stringify(result)).not.toContain('fixture%40example.invalid');
   });
 });
+
+describe('verified media field scanning', () => {
+  const url = 'https://media.example.com/owned/file.png?X-Amz-Credential=' + ('AKIA' + 'Z'.repeat(16)) + '%2Fscope&X-Amz-Signature=' + 'a'.repeat(64);
+  const start = url.indexOf('AKIA');
+  const refs = [{path:['content',0,'text'],url,credentialRanges:[[start,url.indexOf('&')],[url.lastIndexOf('=')+1,url.length]]}];
+  it('preserves only the receipted credential spans in an actual string leaf', () => {
+    const value = {content:[{text:'Signed URL: '+url+'\nExpires soon'}]};
+    const result = scanStructuredText(JSON.stringify(value), output, refs);
+    expect(result.passed).toBe(true);
+    expect(JSON.parse(result.sanitized_text!)).toEqual(value);
+  });
+  it('never permits receipt-based exceptions on tool input', () => {
+    expect(scan(url,input,refs).passed).toBe(false);
+    expect(scanStructuredText(JSON.stringify({content:[{text:url}]}),input,refs).passed).toBe(false);
+  });
+  it('still blocks copied credentials in another field and PII in the URL path', () => {
+    const copied = {content:[{text:url}],other:url};
+    expect(scanStructuredText(JSON.stringify(copied), output, refs).passed).toBe(false);
+    const changed = url.replace('/file.png','/jane@example.com.png');
+    const shifted = refs.map(r=>({...r,url:changed,credentialRanges:r.credentialRanges.map(([a,b])=>[a+12,b+12])}));
+    expect(scanStructuredText(JSON.stringify({content:[{text:changed}]}), output, shifted).passed).toBe(false);
+  });
+  it('does not hide numeric PII or surrounding comment PII', () => {
+    expect(scanStructuredText(JSON.stringify({content:[{text:url}],card:4111111111111111}), output, refs).passed).toBe(false);
+    const result=scanStructuredText(JSON.stringify({content:[{text:url}],card:4111111111111111}), output, refs);
+    expect(JSON.stringify(result)).not.toContain('4111111111111111');
+    const comment=scanStructuredText(JSON.stringify({content:[{text:url+' <!--jane@example.com-->'}]}),output,refs);
+    expect(comment.sanitized_text).not.toContain('jane@example.com');
+  });
+});
+
+describe('raw privacy coverage before normalization', () => {
+  it.each(['plain','structured'])('refuses sensitive URLs inside comments in %s text', kind => {
+    const text='<!--https://example.com/jane@example.com-->';
+    const result=kind==='plain' ? scan(text,output) : scanStructuredText(JSON.stringify({text}),output);
+    expect(result.passed).toBe(false);
+  });
+});

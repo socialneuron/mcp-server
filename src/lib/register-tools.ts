@@ -5,7 +5,7 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { TOOL_SCOPES, hasScope } from '../auth/scopes.js';
 import { applyAnnotations } from './tool-annotations.js';
-import { logMcpToolInvocation } from './supabase.js';
+import { logMcpToolInvocation, getVerifiedMediaCaller } from './supabase.js';
 import { buildWwwAuthenticateHeader } from './www-authenticate.js';
 import { toolError, classifyToolError } from './tool-error.js';
 import { applyToolProfile, type ToolProfile } from './tool-profile.js';
@@ -14,6 +14,7 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
 import { scanStructuredText } from './agent-harness/scanner.js';
+import { getVerifiedMediaReferences } from './verified-media-reference.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
@@ -143,6 +144,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     }
 
     // 2. Execute the underlying handler.
+    const caller = getVerifiedMediaCaller();
     const result = await handler(...handlerArgs);
 
     // 3. Scan output. Output role keeps UUIDs intact via anchored regex.
@@ -163,14 +165,21 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
       // Skip output scan rather than crash.
       return result;
     }
+    const currentCaller = getVerifiedMediaCaller();
+    const sameCaller = caller && currentCaller &&
+      caller.userId === currentCaller.userId && caller.projectId === currentCaller.projectId;
+    const references = sameCaller && (toolName === 'get_media_url' || toolName === 'upload_media')
+      ? getVerifiedMediaReferences(result, caller) : [];
     const outputScan = scanStructuredText(outputText, {
       mode: 'sanitize',
       source: 'mcp_tool_output',
       user_id: ctx?.userId,
-    });
+    }, references);
+    // Never copy signed credentials into scanner audit payloads.
+    const outputAudit = references.length ? {...outputScan, sanitized_text: undefined} : outputScan;
     if (!outputScan.passed) {
       try {
-        ctx?.logScan?.(toolName, 'output', outputScan);
+        ctx?.logScan?.(toolName, 'output', outputAudit);
       } catch {
         // never block on audit log failure
       }
@@ -193,7 +202,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     }
     if (outputScan.sanitized_text !== undefined) {
       try {
-        ctx?.logScan?.(toolName, 'output', outputScan);
+        ctx?.logScan?.(toolName, 'output', outputAudit);
       } catch {
         // never block on audit log failure
       }

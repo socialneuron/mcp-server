@@ -3,8 +3,8 @@ import { CONSTANTS } from './constants.js';
 import { normalize, skeleton } from './normalize.js';
 import { detectZeroWidth } from './detectors/zeroWidth.js';
 import { detectInstructionPhrase } from './detectors/instructionPhrase.js';
-import { scrubPii } from './detectors/pii.js';
-import type { ScanOptions, ScanResult } from './types.js';
+import { scrubPii, type PiiResult, type VerifiedUrlSpan } from './detectors/pii.js';
+import type { ScanOptions, ScanResult, ScanRole } from './types.js';
 
 /** Nesting ceiling for structured payload walks — beyond this, fail closed. */
 const MAX_STRUCTURED_DEPTH = 64;
@@ -67,7 +67,25 @@ function detectSegment(raw: string): SegmentDetection {
   return { patterns, risk, normalized };
 }
 
-export function scan(text: string, options: ScanOptions): ScanResult {
+/** Inspect returned bytes before normalization can remove comment contents. */
+function scrubPiiViews(
+  text: string,
+  role: ScanRole,
+  verified: readonly VerifiedUrlSpan[] = []
+): PiiResult {
+  const raw = scrubPii(text, role, verified);
+  if (raw.blocked_reason) return raw;
+  const normalized = scrubPii(normalize(raw.redacted ? raw.text : text), role, verified);
+  if (normalized.blocked_reason) return normalized;
+  return {
+    text: normalized.redacted ? normalized.text : raw.text,
+    redacted: raw.redacted || normalized.redacted,
+    patterns: [...new Set([...raw.patterns, ...normalized.patterns])],
+  };
+}
+
+export function scan(text: string, options: ScanOptions, verified: readonly VerifiedUrlSpan[] = []): ScanResult {
+  if (options.source !== 'mcp_tool_output') verified = [];
   // Length check BEFORE normalize (cheap). Tool inputs stay tightly bounded;
   // tool outputs can legitimately contain larger analytics/brand payloads but
   // still have a hard ceiling so regex scanning cannot become a memory/CPU DoS.
@@ -97,8 +115,7 @@ export function scan(text: string, options: ScanOptions): ScanResult {
     };
   }
 
-  // PII scrub (role-aware — UUIDs preserved in mcp_tool_output via anchored regexes).
-  const pii = scrubPii(detection.normalized, options.source);
+  const pii = scrubPiiViews(text, options.source, verified);
   if (pii.blocked_reason) {
     return {
       passed: false,
@@ -191,7 +208,13 @@ function collectStringSegments(value: unknown, out: string[], depth: number): bo
  *
  * Non-JSON input falls back to plain scan().
  */
-export function scanStructuredText(jsonText: string, options: ScanOptions): ScanResult {
+export interface VerifiedMediaField extends VerifiedUrlSpan {
+  path: readonly (string | number)[];
+}
+
+export function scanStructuredText(
+  jsonText: string, options: ScanOptions, verified: readonly VerifiedMediaField[] = []
+): ScanResult {
   const maxLength =
     options.source === 'mcp_tool_output' ? CONSTANTS.MAX_OUTPUT_LENGTH : CONSTANTS.MAX_LENGTH;
   if (jsonText.length > maxLength) {
@@ -233,9 +256,58 @@ export function scanStructuredText(jsonText: string, options: ScanOptions): Scan
     return { passed: false, risk_score: risk, flagged_patterns: flaggedArr, pii_redacted: false };
   }
 
-  // PII scrub on the whole normalized serialization — identical to scan()'s
-  // behavior so the sanitized text stays valid JSON for the caller to re-parse.
-  const pii = scrubPii(normalize(jsonText), options.source);
+  // Only out-of-band receipts from the exact handler result reach this path.
+  // Remove checked leaves from a parsed scan copy, never from the returned
+  // object. Every key, numeric value and unreceipted field retains its scan.
+  if (verified.length && options.source === 'mcp_tool_output') {
+    let localRedacted = false;
+    const restorations: Array<{path: readonly (string | number)[]; text: string}> = [];
+    const parentAt = (value: unknown, path: readonly (string | number)[]): Record<string | number, unknown> | undefined => {
+      let current = value;
+      for (const key of path.slice(0, -1)) {
+        if (current === null || typeof current !== 'object' || !Object.hasOwn(current, key)) return;
+        current = (current as Record<string | number, unknown>)[key];
+      }
+      if (current === null || typeof current !== 'object') return;
+      return current as Record<string | number, unknown>;
+    };
+    for (const reference of verified) {
+      if (!reference.path.length) continue;
+      const parent = parentAt(parsed, reference.path);
+      const key = reference.path[reference.path.length - 1];
+      const text = parent?.[key];
+      if (typeof text !== 'string') continue;
+      const local = scan(text, options, [reference]);
+      if (!local.passed) return local;
+      localRedacted ||= local.pii_redacted;
+      local.flagged_patterns.forEach(p => flagged.add(p));
+      risk = Math.max(risk, local.risk_score);
+      restorations.push({path: reference.path, text: local.sanitized_text ?? text});
+      parent![key] = null;
+    }
+    const remainder = scanStructuredText(JSON.stringify(parsed), options);
+    if (!remainder.passed) return remainder;
+    let sanitized: unknown;
+    try {
+      sanitized = remainder.sanitized_text === undefined ? parsed : JSON.parse(remainder.sanitized_text);
+    } catch {
+      return {passed:false,risk_score:1,flagged_patterns:['invalid_sanitized_output'],pii_redacted:true};
+    }
+    for (const restoration of restorations) {
+      const parent = parentAt(sanitized, restoration.path);
+      if (!parent) return {passed:false,risk_score:1,flagged_patterns:['invalid_reference_path'],pii_redacted:false};
+      parent[restoration.path[restoration.path.length-1]] = restoration.text;
+    }
+    return {
+      passed: true,
+      risk_score: Math.max(risk, remainder.risk_score),
+      flagged_patterns: [...new Set([...flagged, ...remainder.flagged_patterns])],
+      sanitized_text: JSON.stringify(sanitized),
+      pii_redacted: remainder.pii_redacted || localRedacted,
+    };
+  }
+
+  const pii = scrubPiiViews(jsonText, options.source);
   if (pii.blocked_reason) {
     return {
       passed: false,

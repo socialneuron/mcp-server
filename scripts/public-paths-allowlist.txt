@@ -246,6 +246,8 @@ src/lib/tools-lock.test.ts
 src/lib/urlExtraction.ts
 src/lib/validation-cache.test.ts
 src/lib/validation-cache.ts
+src/lib/verified-media-reference.test.ts
+src/lib/verified-media-reference.ts
 src/lib/version.test.ts
 src/lib/version.ts
 src/lib/visualGate.ts

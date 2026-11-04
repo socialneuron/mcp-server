@@ -103,8 +103,23 @@ function withoutAddressHostname(view: string, hostname: string | undefined): str
   );
 }
 
-function referencePatterns(url: string): string[] {
-  const decoded = decodedReference(url);
+export interface VerifiedUrlSpan {
+  url: string;
+  credentialRanges: readonly (readonly number[])[];
+}
+
+function referencePatterns(url: string, verified: readonly VerifiedUrlSpan[]): string[] {
+  // Receipts originate out of band in the authenticated media adapter. Only
+  // signer-defined value spans are masked in this detection view.
+  const receipt = verified.find(reference => reference.url === url);
+  let inspection = url;
+  if (receipt) {
+    for (const [start, end] of receipt.credentialRanges) {
+      if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start || end > url.length) continue;
+      inspection = inspection.slice(0, start) + 'x'.repeat(end - start) + inspection.slice(end);
+    }
+  }
+  const decoded = decodedReference(inspection);
   let hostname: string | undefined;
   try {
     hostname = new URL(url).hostname;
@@ -112,7 +127,7 @@ function referencePatterns(url: string): string[] {
     // Invalid references gain no hostname exemption. Parsing performs no I/O.
   }
   const hits = new Set<string>();
-  for (const view of decoded === url ? [url] : [url, decoded]) {
+  for (const view of decoded === inspection ? [inspection] : [inspection, decoded]) {
     const ipView = withoutAddressHostname(view, hostname);
     for (const { name, re } of COMPILED) {
       for (const match of referenceMatches(name, re, name === 'ip' ? ipView : view)) {
@@ -141,10 +156,10 @@ function scrubPlainText(text: string, hits: Set<string>): string {
   return out;
 }
 
-export function scrubPii(text: string, _role: ScanRole): PiiResult {
+export function scrubPii(text: string, _role: ScanRole, verified: readonly VerifiedUrlSpan[] = []): PiiResult {
   URL_RE.lastIndex = 0;
   const urls = [...text.matchAll(URL_RE)];
-  const referenceHits = new Set(urls.flatMap(match => referencePatterns(match[0])));
+  const referenceHits = new Set(urls.flatMap(match => referencePatterns(match[0], verified)));
   if (referenceHits.size > 0) {
     return {
       text: '',

@@ -1,5 +1,8 @@
 import { describe, it, expect, vi } from 'vitest';
 import { wrapToolWithScanner } from '../lib/register-tools.js';
+import { requestContext } from '../lib/request-context.js';
+import { getVerifiedMediaCaller } from '../lib/supabase.js';
+import { registerVerifiedMediaReference } from '../lib/verified-media-reference.js';
 
 describe('wrapToolWithScanner', () => {
   it('blocks input with zero-width injection', async () => {
@@ -177,4 +180,52 @@ describe('wrapToolWithScanner', () => {
     expect(JSON.stringify(result)).not.toContain(url);
   });
 
+});
+
+describe('authenticated media receipt wrapper', () => {
+  const userId = '00000000-0000-4000-8000-000000000001';
+  const projectId = '00000000-0000-4000-8000-000000000002';
+  const caller = {userId,projectId};
+  const accessKey = 'AKIA' + 'Z'.repeat(16);
+  const context = {...caller,token:'synthetic-test-auth',scopes:['mcp:read'],creditsUsed:0,assetsGenerated:0};
+  it('never substitutes operator environment identity for authenticated caller context', () => {
+    vi.stubEnv('SOCIALNEURON_USER_ID',userId);
+    try {
+      expect(getVerifiedMediaCaller()).toBeNull();
+      expect(requestContext.run({...context,token:''},()=>getVerifiedMediaCaller())).toBeNull();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+  function fixture() {
+    const now = new Date();
+    const date = now.toISOString().replace(/[-:]/g,'').replace(/\.\d{3}Z$/,'Z');
+    const key = 'org_00000000-0000-4000-8000-000000000003/user_'+userId+'/project_'+projectId+'/images/'+now.toISOString().slice(0,10)+'/file.png';
+    const url = 'https://media.example.com/bucket/'+key+'?X-Amz-Algorithm=AWS4-HMAC-SHA256&X-Amz-Credential='+accessKey+'%2F'+date.slice(0,8)+'%2Fauto%2Fs3%2Faws4_request&X-Amz-Date='+date+'&X-Amz-Expires=3600&X-Amz-SignedHeaders=host&X-Amz-Signature='+'a'.repeat(64);
+    return {url,key,expiresAt:new Date(Date.parse(now.toISOString().slice(0,19)+'Z')+3600000).toISOString()};
+  }
+  it('returns an issued link without logging its credentials and blocks the same unreceipted link', async () => {
+    const issued=fixture();
+    const result={content:[{type:'text',text:'Signed URL: '+issued.url+'\nExpires soon'}]};
+    expect(registerVerifiedMediaReference(result,{caller,...issued,path:['content',0,'text']})).toBe(true);
+    const logScan=vi.fn();
+    const wrapped=wrapToolWithScanner('get_media_url',vi.fn().mockResolvedValue(result));
+    const returned=await requestContext.run(context,()=>wrapped({}, {logScan}));
+    expect(returned).toEqual(result);
+    expect(JSON.stringify(logScan.mock.calls)).not.toContain(accessKey);
+    const copied=wrapToolWithScanner('get_media_url',vi.fn().mockResolvedValue(JSON.parse(JSON.stringify(result))));
+    const rejected=await requestContext.run(context,()=>copied({}));
+    expect(rejected.structuredContent.error.error_type).toBe('policy_block');
+  });
+  it('rejects context mismatches and a copied signed URL in another field', async () => {
+    const issued=fixture();
+    const result: {content:Array<{type:string;text:string}>;other?:string}={content:[{type:'text',text:issued.url}]};
+    expect(registerVerifiedMediaReference(result,{caller,...issued,path:['content',0,'text']})).toBe(true);
+    result.other=issued.url;
+    const wrapped=wrapToolWithScanner('get_media_url',vi.fn().mockResolvedValue(result));
+    expect((await requestContext.run(context,()=>wrapped({}))).isError).toBe(true);
+    delete (result as {other?:string}).other;
+    const otherContext={...context,projectId:'00000000-0000-4000-8000-000000000004'};
+    expect((await requestContext.run(otherContext,()=>wrapped({}))).isError).toBe(true);
+  });
 });
