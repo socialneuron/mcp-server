@@ -135,6 +135,7 @@ describe('RateLimiter', () => {
     it.each([
       'generate_video',
       'generate_image',
+      'generate_music',
       'render_hyperframes',
       'execute_recipe',
       'plan_content_week',

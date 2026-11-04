@@ -1,6 +1,6 @@
 # CLI Guide
 
-The Social Neuron CLI provides terminal access to the 92 public stdio tools available in the npm package, including two local screen-capture tools. Interactive hosted MCP App tools are not exposed over stdio.
+The Social Neuron CLI provides terminal access to the 93 public stdio tools available in the npm package, including two local screen-capture tools. Interactive hosted MCP App tools are not exposed over stdio.
 
 ## Installation
 

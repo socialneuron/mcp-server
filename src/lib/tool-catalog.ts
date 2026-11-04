@@ -70,6 +70,17 @@ export const TOOL_CATALOG: ToolEntry[] = [
     scope: 'mcp:write',
   },
   {
+    name: 'generate_music',
+    description: 'Generate music or a song (Suno) using AI',
+    module: 'content',
+    scope: 'mcp:write',
+    task_intent: 'Create an original music track, jingle, or song for social content',
+    use_when:
+      'The user wants a background track, jingle, or song with lyrics generated from a description.',
+    avoid_when: 'The user wants spoken narration; use generate_voiceover instead.',
+    next_tools: ['check_status', 'get_media_url'],
+  },
+  {
     name: 'check_status',
     description: 'Check status of async content generation job',
     module: 'content',

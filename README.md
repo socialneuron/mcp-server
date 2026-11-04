@@ -1,6 +1,6 @@
 # @socialneuron/mcp-server
 
-> 92 public MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
+> 93 public MCP tools for AI-powered social media management. Create content, schedule posts, track analytics, and optimize performance — all from Claude Code or any MCP client.
 
 [![npm version](https://img.shields.io/npm/v/@socialneuron/mcp-server)](https://www.npmjs.com/package/@socialneuron/mcp-server)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -94,7 +94,7 @@ Ask Claude things like:
 
 ## Tool Categories
 
-The npm package exposes **92 public tools** per transport. The separately versioned hosted service exposes **92 public tools**, including hosted-only `get_account_status`. Hosted HTTP includes the Content Calendar and Analytics Pulse MCP Apps; npm stdio includes 2 local screen-capture tools instead. The live hosted count is published by the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json). The npm package supports Node 20.20+ and Node 22.22+ under its declared engine ranges. The hosted service runs its separate 3.0.0 contract; its version is recorded alongside its reviewed tool inventory in `server.json.hosted`.
+The npm package exposes **93 public tools** per transport. The separately versioned hosted service exposes **92 public tools**, including hosted-only `get_account_status`. Hosted HTTP includes the Content Calendar and Analytics Pulse MCP Apps; npm stdio includes 2 local screen-capture tools instead. The live hosted count is published by the [server card](https://mcp.socialneuron.com/.well-known/mcp/server-card.json). The npm package supports Node 20.20+ and Node 22.22+ under its declared engine ranges. The hosted service runs its separate 3.0.0 contract; its version is recorded alongside its reviewed tool inventory in `server.json.hosted`.
 
 These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protocol.
 
@@ -103,7 +103,7 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 | Category | Tools | What It Does |
 |----------|-------|-------------|
 | Ideation | generate_content, fetch_trends, adapt_content, get_ideation_context | AI-powered content ideas and trend research |
-| Content | generate_video, generate_image, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, voiceover, and carousel creation with 20+ AI models |
+| Content | generate_video, generate_image, generate_music, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, music, voiceover, and carousel creation with 20+ AI models |
 | Distribution | schedule_post, reschedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Project-scoped multi-platform publishing, scheduling, rescheduling, and slot optimization |
 | Analytics | fetch_analytics, refresh_platform_analytics | Performance tracking across all platforms |
 | Insights | get_performance_insights, get_best_posting_times | Data-driven content optimization |

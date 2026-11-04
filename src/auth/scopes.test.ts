@@ -176,6 +176,7 @@ describe('TOOL_SCOPES', () => {
       'adapt_content',
       'generate_video',
       'generate_image',
+      'generate_music',
       'render_demo_video',
       'save_brand_profile',
       'save_content_plan',

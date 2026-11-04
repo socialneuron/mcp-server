@@ -363,6 +363,208 @@ describe('content tools', () => {
   });
 
   // -------------------------------------------------------------------------
+  // generate_music
+  // -------------------------------------------------------------------------
+  describe('generate_music', () => {
+    // Mirrors the generation-start contract returned by kie-music-generate.
+    const startResponse = {
+      taskId: 'suno-task-1',
+      status: 'pending',
+      model: 'suno-v4.5',
+      estimatedTime: 30,
+      creditsDeducted: 70,
+      credits_used: 70,
+      asyncJobId: 'music-job-1',
+      jobId: 'music-job-1',
+    };
+
+    it('registers with the suno model enum and credit-balance guidance', () => {
+      const registrationCall = (server.tool as any).mock.calls.find(
+        (call: unknown[]) => call[0] === 'generate_music'
+      );
+      expect(registrationCall).toBeTruthy();
+
+      const description = registrationCall![1] as string;
+      expect(description).toContain('check_status');
+      expect(description).toContain('get_credit_balance');
+      expect(description).toContain('30-90');
+
+      const shape = registrationCall![2] as Record<string, z.ZodTypeAny>;
+      const model = shape.model as z.ZodTypeAny;
+      for (const id of ['suno-v3.5', 'suno-v4', 'suno-v4.5', 'suno-v4.5plus', 'suno-v5']) {
+        expect(model.safeParse(id).success).toBe(true);
+      }
+      expect(model.safeParse('suno-v6').success).toBe(false);
+      expect(model.safeParse('veo3-fast').success).toBe(false);
+      expect(shape.prompt.safeParse('').success).toBe(false);
+    });
+
+    it('calls kie-music-generate with prompt, model and the resolved projectId only', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      await handler({ prompt: 'upbeat lo-fi beat for a product demo', model: 'suno-v4.5' });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'kie-music-generate',
+        {
+          prompt: 'upbeat lo-fi beat for a product demo',
+          model: 'suno-v4.5',
+          projectId: 'test-project-id',
+        },
+        { timeoutMs: 30_000 }
+      );
+    });
+
+    it('rejects custom lyrics before project lookup or provider work', async () => {
+      const result = await server.getHandler('generate_music')!({
+        prompt: 'a short jingle', model: 'suno-v5', lyrics: '[Verse]\nShip it today!',
+      });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Custom lyrics are currently unavailable');
+      expect(mockResolveProjectStrict).not.toHaveBeenCalled();
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+
+    it('forwards style and instrumental for description-based generation', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      await handler({
+        prompt: 'a short jingle',
+        model: 'suno-v5',
+        style: 'synthpop, 120 bpm',
+        instrumental: false,
+        project_id: 'proj-42',
+      });
+
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'kie-music-generate',
+        {
+          prompt: 'a short jingle',
+          model: 'suno-v5',
+          style: 'synthpop, 120 bpm',
+          instrumental: false,
+          projectId: 'proj-42',
+        },
+        { timeoutMs: 30_000 }
+      );
+    });
+
+    it('returns asyncJobId preferentially over taskId', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v4.5' });
+
+      expect(result.isError).toBeUndefined();
+      const text = result.content[0].text;
+      expect(text).toContain('Job ID: music-job-1');
+      expect(text).not.toContain('Job ID: suno-task-1');
+      expect(text).toContain('Credits used: 70');
+      expect(text).toContain('Estimated time: ~30 seconds');
+      expect(text).toContain('check_status with job_id="music-job-1"');
+    });
+
+    it.each([null, ''])('falls back to taskId when asyncJobId is %j', async asyncJobId => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { ...startResponse, asyncJobId, jobId: null },
+        error: null,
+      });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v4.5' });
+
+      expect(result.content[0].text).toContain('Job ID: suno-task-1');
+    });
+
+    it('returns JSON envelope when response_format=json', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({
+        prompt: 'test json',
+        model: 'suno-v4.5',
+        response_format: 'json',
+      });
+
+      const parsed = JSON.parse(result.content[0].text);
+      expect(parsed._meta.version).toBe(MCP_VERSION);
+      expect(parsed.data).toEqual({
+        jobId: 'music-job-1',
+        taskId: 'suno-task-1',
+        asyncJobId: 'music-job-1',
+        model: 'suno-v4.5',
+        estimatedTime: 30,
+        creditsDeducted: 70,
+      });
+      expect(result.isError).toBeUndefined();
+    });
+
+    it('returns isError when the edge function errors', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: null, error: 'Model not allowed on plan' });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v5' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Music generation failed to start');
+      expect(result.content[0].text).toContain('Model not allowed on plan');
+    });
+
+    it('treats a provider rejection (error plus a failed body) as an error, not a job', async () => {
+      // Real backend shape when the provider rejects the request: HTTP 422 with
+      // a body that still carries taskId/status fields. Must never read as success.
+      mockCallEdge.mockResolvedValueOnce({
+        data: { error: 'Provider rejected the request', taskId: '', status: 'failed', refunded: 90 },
+        error: 'Provider rejected the request',
+      } as any);
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v5' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('Music generation failed to start');
+      expect(result.content[0].text).not.toContain('Job ID');
+    });
+
+    it('forwards instrumental: true', async () => {
+      mockCallEdge.mockResolvedValueOnce({ data: startResponse, error: null });
+
+      const handler = server.getHandler('generate_music')!;
+      await handler({ prompt: 'ambient pad', model: 'suno-v4', instrumental: true });
+
+      expect(mockCallEdge.mock.calls[0][1]).toMatchObject({ instrumental: true });
+    });
+
+    it('returns isError when no job ID is in the response', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { ...startResponse, taskId: '', asyncJobId: null, jobId: null },
+        error: null,
+      });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'test', model: 'suno-v4' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('no job ID returned');
+    });
+
+    it('fails closed before provider work when project scope is ambiguous', async () => {
+      mockResolveProjectStrict.mockResolvedValueOnce({
+        error: 'project_id is required — your account has 2 projects.',
+      });
+
+      const handler = server.getHandler('generate_music')!;
+      const result = await handler({ prompt: 'jingle', model: 'suno-v4' });
+
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain('project_id is required');
+      expect(mockCallEdge).not.toHaveBeenCalled();
+    });
+  });
+
+  // -------------------------------------------------------------------------
   // generate_image
   // -------------------------------------------------------------------------
   describe('generate_image', () => {
@@ -754,6 +956,92 @@ describe('content tools', () => {
     // =========================================================================
     // project discovery disclosure (F1, 2026-07-15)
     // =========================================================================
+    describe('music jobs (generate_music)', () => {
+      const pendingMusicJob = {
+        id: 'music-job-1',
+        external_id: 'suno-task-1',
+        status: 'processing',
+        job_type: 'music_generation',
+        model: 'suno-v4.5',
+        result_url: null,
+        error_message: null,
+        credits_cost: 70,
+        created_at: '2026-11-04T10:00:00Z',
+        completed_at: null,
+      };
+
+      it('live-polls kie-task-status with the suno model and surfaces the audio URL', async () => {
+        mockCallEdge
+          .mockResolvedValueOnce({ data: { success: true, job: pendingMusicJob }, error: null })
+          .mockResolvedValueOnce({
+            data: {
+              taskId: 'suno-task-1',
+              status: 'completed',
+              progress: 100,
+              resultUrl: 'https://cdn.example.com/suno/track.mp3',
+              allImageUrls: null,
+              error: null,
+            },
+            error: null,
+          });
+
+        const handler = server.getHandler('check_status')!;
+        const text = (await handler({ job_id: 'music-job-1' })).content[0].text;
+
+        expect(mockCallEdge).toHaveBeenCalledWith('kie-task-status', {
+          taskId: 'suno-task-1',
+          model: 'suno-v4.5',
+        });
+        expect(text).toContain('Status: completed');
+        expect(text).toContain('Result URL: https://cdn.example.com/suno/track.mp3');
+      });
+
+      it('exposes the persisted mp3 as r2_key so get_media_url can sign it', async () => {
+        mockCallEdge.mockResolvedValueOnce({
+          data: {
+            success: true,
+            job: {
+              ...pendingMusicJob,
+              status: 'completed',
+              result_url: 'org/user/project/music_generation/track.mp3',
+              completed_at: '2026-11-04T10:01:00Z',
+            },
+          },
+          error: null,
+        });
+
+        const handler = server.getHandler('check_status')!;
+        const result = await handler({ job_id: 'music-job-1', response_format: 'json' });
+        const parsed = JSON.parse(result.content[0].text);
+
+        expect(parsed.data.status).toBe('completed');
+        expect(parsed.data.r2_key).toBe('org/user/project/music_generation/track.mp3');
+        expect(parsed.data.job_id).toBe('music-job-1');
+      });
+
+      it('reports a failed suno job as failed with an error', async () => {
+        mockCallEdge
+          .mockResolvedValueOnce({ data: { success: true, job: pendingMusicJob }, error: null })
+          .mockResolvedValueOnce({
+            data: {
+              taskId: 'suno-task-1',
+              status: 'failed',
+              progress: 0,
+              resultUrl: null,
+              allImageUrls: null,
+              error: 'GENERATE_AUDIO_FAILED',
+            },
+            error: null,
+          });
+
+        const handler = server.getHandler('check_status')!;
+        const text = (await handler({ job_id: 'music-job-1' })).content[0].text;
+
+        expect(text).toContain('Status: failed');
+        expect(text).toContain('Error: Generation failed.');
+      });
+    });
+
     describe('projects disclosure', () => {
       it('attaches the projects list when the caller is unscoped (ambiguous)', async () => {
         mockGetProjectId.mockResolvedValueOnce(null);

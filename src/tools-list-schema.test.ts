@@ -54,6 +54,7 @@ describe('tools/list schema (P1.6 — SDK serialization emits rich schemas)', ()
       'generate_image',
       'create_storyboard',
       'generate_voiceover',
+      'generate_music',
       'render_hyperframes',
       'fetch_analytics',
       'refresh_platform_analytics',

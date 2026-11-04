@@ -29,6 +29,12 @@ describe('tool-catalog', () => {
     }
   });
 
+  it('catalogs generate_music as a content write tool discoverable by "music"', () => {
+    const entry = TOOL_CATALOG.find(t => t.name === 'generate_music');
+    expect(entry).toMatchObject({ module: 'content', scope: 'mcp:write' });
+    expect(searchTools('music').some(t => t.name === 'generate_music')).toBe(true);
+  });
+
   it('getToolsByModule returns correct tools', () => {
     const ideation = getToolsByModule('ideation');
     expect(ideation.length).toBeGreaterThanOrEqual(2);

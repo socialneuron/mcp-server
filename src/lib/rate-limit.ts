@@ -33,6 +33,7 @@ const GENERATION_TOOLS = new Set([
   'adapt_content',
   'generate_video',
   'generate_image',
+  'generate_music',
   'create_storyboard',
   'generate_voiceover',
   'generate_carousel',

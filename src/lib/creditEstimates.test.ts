@@ -17,6 +17,7 @@ import {
   creditRange,
   formatCreditRange,
   IMAGE_CREDIT_ESTIMATES,
+  MUSIC_CREDIT_ESTIMATES,
   VIDEO_CREDIT_ESTIMATES,
 } from './creditEstimates.js';
 
@@ -116,5 +117,21 @@ describe('credit estimate ranges', () => {
     // fallback estimate and silently move the real charge outside the quote.
     expect([...(imageEnum ?? [])].sort()).toEqual(Object.keys(IMAGE_CREDIT_ESTIMATES).sort());
     expect([...(videoEnum ?? [])].sort()).toEqual(Object.keys(VIDEO_CREDIT_ESTIMATES).sort());
+    const musicEnum = tools.find(t => t.name === 'generate_music')?.inputSchema?.properties?.model
+      ?.enum;
+    expect([...(musicEnum ?? [])].sort()).toEqual(Object.keys(MUSIC_CREDIT_ESTIMATES).sort());
+  });
+
+  it('prices music at the backend per-model Suno rates', () => {
+    // Pins the per-model prices so a change here is deliberate. This cannot see
+    // the backend's pricing table; update both together when Suno prices move.
+    expect(MUSIC_CREDIT_ESTIMATES).toEqual({
+      'suno-v3.5': 30,
+      'suno-v4': 50,
+      'suno-v4.5': 70,
+      'suno-v4.5plus': 70,
+      'suno-v5': 90,
+    });
+    expect(formatCreditRange(MUSIC_CREDIT_ESTIMATES)).toBe('30-90');
   });
 });

@@ -1,6 +1,6 @@
 # Tool Reference
 
-The `@socialneuron/mcp-server` npm package registers **92 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
+The `@socialneuron/mcp-server` npm package registers **93 public tools** over stdio, grouped below by the [scope](../README.md#scopes) they require. The hosted endpoint at [`mcp.socialneuron.com`](https://mcp.socialneuron.com) exposes the HTTP public surface — query [`/.well-known/mcp/server-card.json`](https://mcp.socialneuron.com/.well-known/mcp/server-card.json) for the live list.
 
 > Generated from the runtime registry by `npm run build:docs`. Do not edit by hand.
 
@@ -15,7 +15,7 @@ _Scope: `mcp:read` — Available on **Pro** and above._
 | `capture_screenshot` | Take a screenshot of any URL. Launches a headless Chromium browser, navigates to the URL, and captures either the full page or a specific CSS selector. No login is performed. |
 | `check_brand_consistency` | Check if content text is consistent with the brand voice, vocabulary, messaging, and factual claims. Returns per-dimension scores (0-100) and specific issues found. Use this to validate scripts, captions, or post copy before publishing. |
 | `check_pipeline_readiness` | Pre-flight check before run_content_pipeline. Verifies: sufficient credits for estimated_posts, active OAuth on target platforms, brand profile exists, no stale insights. Returns pass/fail with specific issues to fix before running the pipe |
-| `check_status` | Poll an async job started by generate_video or generate_image. Returns status (queued/processing/completed/failed), progress %, and result URL on completion. Poll every 10-30s for video, 5-15s for images. On "failed" status, the error field |
+| `check_status` | Poll an async job started by generate_video, generate_image or generate_music. Returns status (queued/processing/completed/failed), progress %, and result URL on completion. Poll every 10-30s for video, 5-15s for images. On "failed" status, |
 | `explain_brand_system` | Explains what brand data is available vs missing for a project. Returns a human-readable summary of completeness, confidence levels, and recommendations for improving the brand profile. |
 | `export_design_tokens` | Export brand palette and typography as design tokens. Supports CSS custom properties, Tailwind config, and Figma Tokens JSON formats. |
 | `extract_brand` | Analyze a website URL and extract brand identity data including brand name, colors, voice/tone, target audience, and logo. Uses AI-powered analysis of the page HTML. Useful for understanding a brand before generating content for it. |
@@ -85,6 +85,7 @@ _Scope: `mcp:write` — Available on **Pro** and above._
 | `generate_carousel` | Generate carousel slide content (headlines, body text, emphasis words per slide). Supports Hormozi-style authority format and educational templates. Returns structured slide data — render visually then publish via schedule_post with media_t |
 | `generate_content` | Create a script, caption, hook, or blog post tailored to a specific platform. Pass project_id to auto-load brand profile and performance context, or call get_ideation_context first for full context. project_id may be omitted only when exact |
 | `generate_image` | Start an async AI image generation job — returns a job_id immediately. Poll with check_status every 10-15s until complete. Costs 15-50 credits depending on model. Use for social media posts, carousel slides, or as input to generate_video (i |
+| `generate_music` | Start an async AI music generation job (Suno) from a description. Returns a job_id immediately. Poll with check_status every 10-20s until complete; the finished track is an mp3 whose URL check_status returns (use get_media_url with the job_ |
 | `generate_video` | Start an async AI video generation job — returns a job_id immediately. Poll with check_status every 10-30s until complete. Available models and accepted options are defined by the live input schema. Credit usage varies by model, duration, a |
 | `generate_voiceover` | Generate a voiceover audio file for video narration. Returns an R2-hosted audio URL. Use after create_storyboard to add narration to each scene, or standalone for podcast intros and ad reads. Pass project_id to keep the asset with the corre |
 | `plan_content_week` | Generate a full content plan with platform-specific drafts, hooks, angles, and optimal schedule times. Pass a topic or source_url — brand context and performance insights auto-load via project_id. Output feeds directly into quality_check_pl |
