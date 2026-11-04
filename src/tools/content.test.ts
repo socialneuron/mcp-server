@@ -1475,3 +1475,226 @@ describe('content tools', () => {
     });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Hosted parity: seedance-2.5, resolution, multi-reference images, long
+// prompts, and the generate_image credit ceiling. These mirror the hosted
+// server's generate_video / generate_image contract so the npm package and
+// the hosted endpoint admit the same inputs.
+// ---------------------------------------------------------------------------
+describe('generate_video / generate_image hosted parity', () => {
+  let server: ReturnType<typeof createMockServer>;
+
+  const shapeOf = (tool: string) =>
+    (server.tool as any).mock.calls.find((call: unknown[]) => call[0] === tool)![2] as Record<
+      string,
+      z.ZodTypeAny
+    >;
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.stubEnv('MCP_IMAGE_CREDIT_LIMIT_ENABLED', undefined);
+    mockResolveProjectStrict.mockImplementation(async explicitProjectId => ({
+      projectId: explicitProjectId ?? 'test-project-id',
+    }));
+    server = createMockServer();
+    registerContentTools(server as any);
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it('accepts seedance-2.5 for a 30-second single shot with native audio', async () => {
+    const shape = shapeOf('generate_video');
+    expect(shape.model.safeParse('seedance-2.5').success).toBe(true);
+    expect(shape.duration.safeParse(30).success).toBe(true);
+    expect(shape.duration.description).toContain('seedance-2.5: 4–30 s single shot');
+
+    mockCallEdge.mockResolvedValueOnce({
+      data: {
+        asyncJobId: 'job-sd25',
+        taskId: 'task-sd25',
+        model: 'seedance-2.5',
+        creditsDeducted: 1890,
+        estimatedTime: 60,
+        status: 'pending',
+      },
+      error: null,
+    });
+    await server.getHandler('generate_video')!({
+      prompt: 'test',
+      model: 'seedance-2.5',
+      duration: 30,
+    });
+    expect(mockCallEdge).toHaveBeenCalledWith(
+      'kie-video-generate',
+      expect.objectContaining({ model: 'seedance-2.5', duration: 30, enableAudio: true }),
+      { timeoutMs: 30_000 }
+    );
+  });
+
+  it('accepts and forwards a resolution only when supplied', async () => {
+    const shape = shapeOf('generate_video');
+    for (const r of ['480p', '720p', '1080p']) expect(shape.resolution.safeParse(r).success).toBe(true);
+    expect(shape.resolution.safeParse('4k').success).toBe(false);
+
+    mockCallEdge.mockResolvedValue({
+      data: { asyncJobId: 'job-res', taskId: 't', creditsDeducted: 10, status: 'pending' },
+      error: null,
+    });
+    await server.getHandler('generate_video')!({
+      prompt: 'p',
+      model: 'seedance-2',
+      resolution: '1080p',
+    });
+    expect(mockCallEdge.mock.calls[0][1]).toMatchObject({ resolution: '1080p' });
+    await server.getHandler('generate_video')!({ prompt: 'p', model: 'veo3-fast' });
+    expect(mockCallEdge.mock.calls[1][1]).not.toHaveProperty('resolution');
+  });
+
+  it('accepts prompts up to the 30,000-character provider cap', () => {
+    const shape = shapeOf('generate_video');
+    expect(shape.prompt.safeParse('a'.repeat(16717)).success).toBe(true);
+    expect(shape.prompt.safeParse('a'.repeat(30000)).success).toBe(true);
+    expect(shape.prompt.safeParse('a'.repeat(30001)).success).toBe(false);
+  });
+
+  it('describes reference_image_urls as Seedance-only with @imageN ordering semantics', () => {
+    const description = shapeOf('generate_video').reference_image_urls.description as string;
+    expect(description).toContain('Seedance 2.5');
+    expect(description).toContain('@imageN');
+    expect(description).toContain('@image1');
+    expect(description).toContain('https://');
+    expect(description).toMatch(/mutually exclusive/i);
+  });
+
+  it('accepts up to 30 reference_image_urls and rejects a 31st', () => {
+    const shape = shapeOf('generate_video');
+    const thirty = Array.from({ length: 30 }, (_, i) => `https://cdn.example.com/ref${i}.png`);
+    expect(shape.reference_image_urls.safeParse(thirty).success).toBe(true);
+    expect(
+      shape.reference_image_urls.safeParse([...thirty, 'https://cdn.example.com/ref30.png'])
+        .success
+    ).toBe(false);
+    expect(shape.reference_image_urls.safeParse(['not-a-url']).success).toBe(false);
+  });
+
+  it('forwards reference_image_urls to kie-video-generate as referenceImageUrls, in order', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: { asyncJobId: 'job-refs', taskId: null, model: 'seedance-2.5', creditsDeducted: 1890 },
+      error: null,
+    });
+    const refs = [
+      'https://cdn.example.com/character.png',
+      'https://cdn.example.com/product.png',
+      'https://cdn.example.com/location.png',
+    ];
+    await server.getHandler('generate_video')!({
+      prompt: 'multi-reference montage',
+      model: 'seedance-2.5',
+      duration: 20,
+      reference_image_urls: refs,
+    });
+    expect(mockCallEdge.mock.calls[0][1].referenceImageUrls).toEqual(refs);
+  });
+
+  it('omits referenceImageUrls when reference_image_urls is not provided', async () => {
+    mockCallEdge.mockResolvedValueOnce({
+      data: { asyncJobId: 'job-no-refs', taskId: null, model: 'veo3-fast', creditsDeducted: 10 },
+      error: null,
+    });
+    await server.getHandler('generate_video')!({ prompt: 'no refs', model: 'veo3-fast' });
+    expect(mockCallEdge.mock.calls[0][1]).not.toHaveProperty('referenceImageUrls');
+  });
+
+  it.each([
+    ['image_url', { image_url: 'https://cdn.example.com/start.png' }],
+    ['end_frame_url', { end_frame_url: 'https://cdn.example.com/end.png' }],
+  ])('rejects reference_image_urls combined with %s before any call', async (_name, frame) => {
+    const r = await server.getHandler('generate_video')!({
+      prompt: 'montage',
+      model: 'seedance-2.5',
+      reference_image_urls: ['https://cdn.example.com/a.png'],
+      ...frame,
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toMatch(/mutually exclusive/i);
+    expect(mockCallEdge).not.toHaveBeenCalled();
+  });
+
+  it('rejects an http:// reference image URL with its index and the protocol', async () => {
+    const r = await server.getHandler('generate_video')!({
+      prompt: 'montage',
+      model: 'seedance-2.5',
+      reference_image_urls: ['https://cdn.example.com/a.png', 'http://cdn.example.com/b.png'],
+    });
+    expect(r.isError).toBe(true);
+    expect(r.content[0].text).toContain('reference_image_urls[1]');
+    expect(r.content[0].text).toContain('https');
+    expect(mockCallEdge).not.toHaveBeenCalled();
+  });
+
+  describe('generate_image max_credits', () => {
+    it('validates the ceiling as a finite non-negative number', () => {
+      const shape = shapeOf('generate_image');
+      for (const bad of [-1, Infinity, NaN, '15', null]) {
+        expect(
+          z.object(shape).safeParse({ prompt: 't', model: 'nano-banana', max_credits: bad }).success
+        ).toBe(false);
+      }
+      expect(
+        z.object(shape).safeParse({ prompt: 't', model: 'nano-banana', max_credits: 0 }).success
+      ).toBe(true);
+      expect(shape.max_credits.description).toContain('get_generation_options');
+    });
+
+    it.each([undefined, 'false', 'TRUE', '1'])(
+      'fails closed on a capped call when the rollout flag is %s',
+      async flag => {
+        vi.stubEnv('MCP_IMAGE_CREDIT_LIMIT_ENABLED', flag);
+        const bound = createMockServer();
+        registerContentTools(bound as any);
+        const result = await bound.getHandler('generate_image')!({
+          prompt: 'test',
+          model: 'nano-banana',
+          max_credits: 15,
+        });
+        expect(result.isError).toBe(true);
+        expect(result.structuredContent.error).toMatchObject({
+          error_type: 'policy_block',
+          reason: 'image_credit_limit_unconfigured',
+        });
+        expect(result.content[0].text).toContain('No generation was started');
+        expect(mockCallEdge).not.toHaveBeenCalled();
+      }
+    );
+
+    it('keeps uncapped calls unchanged and never sends max_credits', async () => {
+      mockCallEdge.mockResolvedValueOnce({
+        data: { asyncJobId: 'legacy-image', status: 'pending' },
+        error: null,
+      });
+      const result = await server.getHandler('generate_image')!({
+        prompt: 'test',
+        model: 'nano-banana',
+      });
+      expect(result.isError).toBeUndefined();
+      expect(mockCallEdge.mock.calls[0][1]).not.toHaveProperty('max_credits');
+    });
+
+    it.each([15, 0])('forwards an approved ceiling of %s when enabled', async max_credits => {
+      vi.stubEnv('MCP_IMAGE_CREDIT_LIMIT_ENABLED', 'true');
+      const bound = createMockServer();
+      registerContentTools(bound as any);
+      mockCallEdge.mockResolvedValueOnce({
+        data: { asyncJobId: 'img-cap', status: 'pending' },
+        error: null,
+      });
+      await bound.getHandler('generate_image')!({ prompt: 'test', model: 'nano-banana', max_credits });
+      expect(mockCallEdge).toHaveBeenCalledWith(
+        'kie-image-generate',
+        expect.objectContaining({ max_credits, model: 'nano-banana' }),
+        { timeoutMs: 30_000 }
+      );
+    });
+  });
+});

@@ -13,6 +13,8 @@ import type {
   GenerateCarouselParams,
   GenerateContentParams,
   GenerateImageParams,
+  GenerationOptions,
+  GenerationOptionsParams,
   GenerateVideoParams,
   GenerateVoiceoverParams,
   InsightsParams,
@@ -491,6 +493,13 @@ class AccountResource {
   }
   usage() {
     return this.http.callTool('get_mcp_usage', json());
+  }
+  /** Current image model IDs and credit estimates. No charge or reservation. */
+  generationOptions(params: GenerationOptionsParams = { modality: 'image' }) {
+    return this.http.callTool<GenerationOptions>(
+      'get_generation_options',
+      params as unknown as Record<string, unknown>
+    );
   }
 }
 

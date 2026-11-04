@@ -14,10 +14,12 @@ import { applyToolProfile, type ToolProfile } from './tool-profile.js';
 // has its own tsconfig (`rootDir: ./src`, `moduleResolution: node16`) that
 // rejects out-of-rootDir imports. See `src/lib/agent-harness/README.md`.
 import { scanStructuredText } from './agent-harness/scanner.js';
+import { CONSTANTS } from './agent-harness/constants.js';
 import { getVerifiedMediaReferences } from './verified-media-reference.js';
 
 import { registerIdeationTools } from '../tools/ideation.js';
 import { registerContentTools } from '../tools/content.js';
+import { registerGenerationOptionsTools } from '../tools/generation-options.js';
 import { registerDistributionTools } from '../tools/distribution.js';
 import { registerMediaTools } from '../tools/media.js';
 import { registerAnalyticsTools } from '../tools/analytics.js';
@@ -116,6 +118,34 @@ function withheldOutput(code: 'policy_block' | 'server_error', message: string) 
  * second, original handler third. The scope-denial path (isError result)
  * skips the scanner because it returns before the handler executes.
  */
+/**
+ * Per-tool input-length allowance.
+ *
+ * The scanner's `MAX_LENGTH` (10,000 chars) is a prompt-injection / regex-DoS
+ * bound applied to the SERIALISED argument object, so it is deliberately not
+ * raised globally. A tool whose own schema legitimately accepts more than that
+ * gets a named, bounded allowance here instead.
+ *
+ * `generate_video.prompt` is capped at 30,000 by its zod schema (the provider
+ * cap for timed multi-shot seedance-2.5 scripts). Serialising that prompt
+ * can require six serialized characters per code unit (180,000 total).
+ * Another 30 URLs of 2,048 characters each and a 10,000-character envelope
+ * fit within 256,000. This is an aggregate transport ceiling, not a promise
+ * to accept unbounded URL strings. Every other scanner check
+ * (zero-width, instruction phrase, PII) still runs in full on the longer input.
+ *
+ * Adding an entry here widens the abuse surface for that one tool: justify it
+ * against the tool's own schema maximum, never round up "for safety".
+ */
+const TOOL_INPUT_LENGTH_LIMITS: Readonly<Record<string, number>> = {
+  generate_video: 256_000,
+};
+
+/** The scan ceiling for one tool's serialised input. Default = CONSTANTS.MAX_LENGTH. */
+export function toolInputLengthLimit(toolName: string): number {
+  return TOOL_INPUT_LENGTH_LIMITS[toolName] ?? CONSTANTS.MAX_LENGTH;
+}
+
 export function wrapToolWithScanner(toolName: string, handler: ToolHandler): ToolHandler {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return async function scannerWrappedHandler(...handlerArgs: any[]): Promise<any> {
@@ -134,6 +164,7 @@ export function wrapToolWithScanner(toolName: string, handler: ToolHandler): Too
     const inputScan = scanStructuredText(inputText, {
       mode: 'block',
       source: 'mcp_tool_input',
+      maxLength: toolInputLengthLimit(toolName),
       user_id: ctx?.userId,
     });
     if (!inputScan.passed) {
@@ -462,6 +493,7 @@ export function registerAllTools(
   registerCommentsTools(server);
   registerIdeationContextTools(server);
   registerCreditsTools(server);
+  registerGenerationOptionsTools(server);
   registerLoopSummaryTools(server);
   registerUsageTools(server);
   registerAutopilotTools(server);
