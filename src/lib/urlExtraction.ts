@@ -3,9 +3,10 @@
  * extract_url_content tool and plan_content_week's source_url path so the two
  * cannot drift apart.
  *
- * YouTube URLs (videos and channels) are not supported: the backend function
- * that read YouTube is no longer routable through the MCP gateway, so they
- * return YOUTUBE_UNSUPPORTED_MESSAGE without any backend call.
+ * YouTube URLs (any youtube.com / youtu.be / youtube-nocookie.com path) are
+ * not supported: the backend function that read YouTube is no longer routable
+ * through the MCP gateway, so they return YOUTUBE_UNSUPPORTED_MESSAGE without
+ * any backend call.
  *
  * fetch-url-content returns HTTP 200 with a { success, data } envelope even on
  * failure; the real payload lives under `.data`. Callers must still run
@@ -35,10 +36,21 @@ export const YOUTUBE_UNSUPPORTED_MESSAGE =
   'transcript or description as text (for example into generate_content), or use an article ' +
   'or product page URL instead.';
 
-export function classifyYouTubeUrl(url: string): 'video' | 'channel' | false {
-  if (/youtube\.com\/watch|youtu\.be\//.test(url)) return 'video';
-  if (/youtube\.com\/@/.test(url)) return 'channel';
-  return false;
+const YOUTUBE_HOSTS = ['youtube.com', 'youtu.be', 'youtube-nocookie.com'];
+
+/**
+ * True for any URL on a YouTube host (any path: watch, shorts, embed, live,
+ * channel, @handle, …). Parses the URL so host case, ports and lookalike
+ * hosts or query strings cannot slip past a substring match.
+ */
+export function isYouTubeUrl(url: string): boolean {
+  let host: string;
+  try {
+    host = new URL(url).hostname.toLowerCase().replace(/\.$/, '');
+  } catch {
+    return false;
+  }
+  return YOUTUBE_HOSTS.some(h => host === h || host.endsWith(`.${h}`));
 }
 
 function unwrapEf<T>(
@@ -62,9 +74,7 @@ export async function extractUrlContent(
   opts: { extractType?: ExtractType } = {}
 ): Promise<{ content?: ExtractedContent; error?: string }> {
   const extractType = opts.extractType ?? 'auto';
-  const youtubeType = classifyYouTubeUrl(url);
-
-  if (youtubeType) {
+  if (isYouTubeUrl(url)) {
     // No backend call: YouTube content is not read through the MCP surface.
     return { error: YOUTUBE_UNSUPPORTED_MESSAGE };
   }
