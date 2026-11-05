@@ -2,7 +2,7 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
-## Unreleased
+## 2.1.5 - 2026-11-04
 
 ### Added
 
@@ -12,11 +12,13 @@ All notable changes to `@socialneuron/mcp-server` will be documented in this fil
 - `generate_video`: `resolution` (`480p`/`720p`/`1080p`) and `reference_image_urls` (Seedance 2.5 only, up to 30 https URLs, mutually exclusive with `image_url`/`end_frame_url`). Prompt limit raised to 30,000 characters.
 - `generate_image`: optional `max_credits` per-request ceiling. Capped calls fail closed unless `MCP_IMAGE_CREDIT_LIMIT_ENABLED=true`.
 - SDK: `seedance-2.5` in `VideoModel`, the new video/image params, and `sn.account.generationOptions()`.
+- `GET /robots.txt`: public crawler discovery policy allowing machine-readable discovery paths (`/v1/openapi.json`, `/v1/tools`, `/.well-known/`, `/health`, `/ready`) while disallowing authenticated execution and OAuth endpoints.
 
 ### Changed
 
 - `generate_video` budget precheck now estimates the dispatched request (model, duration, resolution, audio) instead of a fixed per-model reference cost.
 - Video input scanning allows up to 256,000 serialized characters to accommodate JSON escaping and reference URLs while retaining all safety checks and the 30,000-character prompt limit.
+- Public package metadata and Cursor plugin manifest aligned to 93 public stdio MCP tools and canonical documentation URL (`https://docs.socialneuron.com/docs/getting-started`).
 
 ## 2.1.4 - 2026-11-04
 

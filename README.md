@@ -103,7 +103,7 @@ These tools are available to AI agents (Claude, Cursor, etc.) via the MCP protoc
 | Category | Tools | What It Does |
 |----------|-------|-------------|
 | Ideation | generate_content, fetch_trends, adapt_content, get_ideation_context | AI-powered content ideas and trend research |
-| Content | generate_video, generate_image, generate_music, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, music, voiceover, and carousel creation with 20+ AI models |
+| Content | generate_video, generate_image, generate_music, generate_voiceover, generate_carousel, check_status, create_storyboard | Video, image, music, voiceover, and carousel creation across multiple AI model families |
 | Distribution | schedule_post, reschedule_post, schedule_content_plan, find_next_slots, list_connected_accounts, list_recent_posts | Project-scoped multi-platform publishing, scheduling, rescheduling, and slot optimization |
 | Analytics | fetch_analytics, refresh_platform_analytics | Performance tracking across all platforms |
 | Insights | get_performance_insights, get_best_posting_times | Data-driven content optimization |
@@ -289,7 +289,7 @@ See the [examples repo](https://github.com/socialneuron/examples) for prompt-dri
 
 - [Social Neuron](https://socialneuron.com)
 - [For Developers](https://socialneuron.com/for-developers)
-- [Documentation](https://socialneuron.com/docs)
+- [Documentation](https://docs.socialneuron.com/docs/getting-started)
 - [Examples](https://github.com/socialneuron/examples)
 - [Agent Protocol](https://socialneuron.com/system-prompt.txt)
 - [Developer Settings](https://socialneuron.com/settings/developer)

@@ -29,6 +29,7 @@ import {
   createOAuthMetadata,
 } from '@modelcontextprotocol/sdk/server/auth/router.js';
 import { applyScopeEnforcement, registerAllTools } from './lib/register-tools.js';
+import { robots } from './lib/robots.js';
 import { isSessionInitializeEnvelope } from './lib/session-initialize.js';
 import { registerPrompts } from './prompts.js';
 import { registerResources } from './resources.js';
@@ -816,6 +817,13 @@ app.get('/config', (_req, res) => {
     anonKey: SUPABASE_ANON_KEY,
   });
 });
+
+// ── Crawler discovery policy (robots.txt) ────────────────────────────
+// Explicitly allow public machine-readable contracts (/v1/openapi.json,
+// /v1/tools, /.well-known/*, /health, /ready) for API registries and AI
+// crawlers (e.g. apis.io, agentstatus.dev) while disallowing authenticated
+// RPC/OAuth execution endpoints.
+app.get('/robots.txt', robots);
 
 // ── Health check ─────────────────────────────────────────────────────
 
