@@ -2,6 +2,12 @@
 
 All notable changes to `@socialneuron/mcp-server` will be documented in this file.
 
+## 2.1.6 - 2026-11-07
+
+### Fixed
+
+- `npx -y @socialneuron/mcp-server` now runs. The package had no bin matching its own name, so npx stopped with "could not determine executable to run". Added the `mcp-server` bin; the `socialneuron-mcp` and `sn` bins are unchanged.
+
 ## 2.1.5 - 2026-11-04
 
 ### Added
