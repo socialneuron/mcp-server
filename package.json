@@ -1,11 +1,12 @@
 {
   "name": "@socialneuron/mcp-server",
   "mcpName": "com.socialneuron/mcp-server",
-  "version": "2.1.5",
+  "version": "2.1.6",
   "description": "Official MCP server, REST API & CLI for Social Neuron — create, schedule, and optimize social content across video, image, text, and avatar AI model families on YouTube, TikTok, Instagram, X, and LinkedIn.",
   "type": "module",
   "main": "dist/index.js",
   "bin": {
+    "mcp-server": "dist/index.js",
     "socialneuron-mcp": "dist/index.js",
     "sn": "dist/sn.js"
   },
