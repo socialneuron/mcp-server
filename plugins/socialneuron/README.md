@@ -6,7 +6,7 @@ Free MIT plugin; requires a Social Neuron account. Generation uses your plan's c
 
 ## Install
 
-In Grok Build, run `/marketplace`, select **socialneuron** and press `i` to install. From a terminal you can instead run `grok plugin install socialneuron --trust`, or install straight from this repository with `grok plugin install socialneuron/grok-plugin --trust`. Without `--trust`, Grok shows the source, warns that installing activates the plugin's MCP connection and skills, and stops; `--trust` grants that trust so the connection can load. The plugin is named `socialneuron`; it adds one MCP connection named `socialneuron-hosted` and the skills listed below.
+In Grok Build, run `/marketplace`, select **socialneuron** and press `i` to install. From a terminal you can instead run `grok plugin install socialneuron --trust`, or install straight from the repository with `grok plugin install socialneuron/mcp-server#plugins/socialneuron --trust`. Without `--trust`, Grok shows the source, warns that installing activates the plugin's MCP connection and skills, and stops; `--trust` grants that trust so the connection can load. The plugin is named `socialneuron`; it adds one MCP connection named `socialneuron-hosted` and the skills listed below.
 
 ## Already using the Social Neuron MCP server from npm?
 
@@ -127,7 +127,7 @@ Before each release the manifests, skills and every tool name the skills mention
 
 ## Ownership, support and terms
 
-- Published by Social Neuron (https://github.com/socialneuron). Source: https://github.com/socialneuron/grok-plugin
+- Published by Social Neuron (https://github.com/socialneuron). Source: https://github.com/socialneuron/mcp-server/tree/main/plugins/socialneuron
 - Support: https://socialneuron.com/contact
 - Terms: https://socialneuron.com/terms · Privacy: https://socialneuron.com/privacy
 - Licence: MIT, see `LICENSE`.
