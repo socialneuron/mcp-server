@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+    "socialneuron-hosted": {
+      "type": "http",
+      "url": "https://mcp.socialneuron.com/mcp",
+      "oauth": {
+        "scopes": [
+          "mcp:read",
+          "mcp:write",
+          "mcp:analytics",
+          "mcp:distribute",
+          "mcp:comments"
+        ]
+      }
+    }
+  }
+}
