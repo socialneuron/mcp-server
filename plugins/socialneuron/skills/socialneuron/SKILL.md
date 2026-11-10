@@ -26,9 +26,9 @@ If a schedule call comes back saying approval is required, show the approval lin
 
 ## Connect
 
-1. Sign-in happens in the browser when the host first uses the Social Neuron server. The person signs in on socialneuron.com and approves access; nothing is typed into the conversation. There is no brand picker: the connection works for the project the sign-in grants, which Setup below confirms.
+1. Sign-in happens in the browser. In Grok Build the person starts it once: run `/mcps`, select `socialneuron-hosted` and press `i`. Other hosts show their own connect or authenticate button. The person signs in on socialneuron.com and approves access; nothing is typed into the conversation. There is no brand picker: the connection works for the project the sign-in grants, which Setup below confirms.
 2. Grant read, create and analytics access. Grant distribute access only when the person wants to connect a platform or schedule, and comments access only when they want to read or answer YouTube comments.
-3. If a tool says the connection needs authentication, ask the person to reconnect the Social Neuron server from the host's plugin or server settings. If the sign-in page never opens, connect from the desktop app or contact Social Neuron support. Never work around it with a pasted key.
+3. If a tool says the connection needs authentication, ask the person to sign in (in Grok Build: `/mcps`, select `socialneuron-hosted`, press `i`; elsewhere, the host's plugin or server settings). If the sign-in page never opens, connect from the desktop app or contact Social Neuron support. Never work around it with a pasted key.
 4. A permission error names the missing access. Explain it and offer the reconnect; do not retry the same call in a loop. Some access, such as comments, is not on every plan; the consent page shows what the person's plan includes.
 
 ## Setup (once per session)

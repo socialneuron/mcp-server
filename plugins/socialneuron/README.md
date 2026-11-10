@@ -14,7 +14,7 @@ The npm package `@socialneuron/mcp-server` (source: https://github.com/socialneu
 
 ## Sign in
 
-The first time a skill calls Social Neuron, Grok opens your browser on the Social Neuron sign-in and consent page.
+After installing, sign in once: in Grok Build run `/mcps`, select **socialneuron-hosted** and press `i` to authenticate. Grok opens your browser on the Social Neuron sign-in and consent page. Until you do this, the skills report that the connection is not signed in and change nothing.
 
 - Sign in with your Social Neuron account and agree to the access shown. The page has no brand picker: the connection works for the Social Neuron project (brand) your sign-in grants.
 - Grok stores the resulting sign-in on your machine. You never paste an API key, password or token into the conversation, and the skills will refuse one if offered.
