@@ -78,7 +78,7 @@ For a week view, `open_content_calendar` shows the schedule in hosts that suppor
 
 ## Change or cancel
 
-- Move: confirm the new time, then `reschedule_post` with `post_id`, `project_id`, the new `scheduled_at` and the current time as `expected_scheduled_at`.
+- Move: confirm the new time. Read the post's current schedule with `list_recent_posts` (`project_id`, status scheduled, `response_format` `json`, since the text view shows the date only; raise `days` if the post is not listed), then call `reschedule_post` with `post_id`, `project_id`, the new `scheduled_at`, and the post's `scheduled_at` as read, unchanged, as `expected_scheduled_at`. It checks that nobody moved the post since you read it; it is not the time of the request. If the call says the schedule changed, read the post again, show its new time and ask again; never resend with the old value.
 - Cancel: show the post, ask for an explicit yes, then `cancel_scheduled_post` with `post_id`, `project_id` and `confirm` set to true.
 
 ## Never

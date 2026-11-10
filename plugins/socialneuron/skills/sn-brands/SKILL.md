@@ -26,9 +26,18 @@ If a schedule call comes back saying approval is required, show the approval lin
 
 In this version each sign-in works for one brand at a time.
 
-1. Call `get_brand_profile`. Say the brand name and the returned `project_id`, and keep that id. If it returns no `project_id`, stop before any write and ask the person to reconnect.
+1. Call `get_brand_profile`. Say the brand name and the returned `project_id`, and keep that id. If it says there is no brand profile yet, go to "First brand" below; signing in again cannot create one. If it returns a profile with no `project_id`, stop before any write.
 2. Call `list_connected_accounts` with that `project_id`. Say which platforms and accounts belong to this brand. If the project it reports differs from the brand profile's, or it is not the brand the person means, say so and stop before any write.
 3. Pass that same `project_id` on every later call in the session, reads included. If a tool asks for a project, never guess and never take the first one listed.
+
+## First brand
+
+When `get_brand_profile` finds no brand profile for this sign-in:
+
+1. Call `list_connected_accounts`. If it reports a `project_id`, say it and use it for the first profile. This is the only case where rule 6 lets a write go ahead without a brand profile, and it covers `save_brand_profile` alone.
+2. Offer to set the brand up here: "Build a brand from a website" below (`extract_brand` takes no cap and has no published cost, so it needs its own yes under rule 3), or the person's own words. Save it with that `project_id`, then read it back with `get_brand_profile`; it must report the same `project_id` before any other write.
+3. If no `project_id` is reported, do not guess one and do not save. Ask the person to create their first brand in the Social Neuron app, then come back and run "Which brand am I working for?" again.
+4. If `list_connected_accounts` says the connection itself has no project, suggest they reconnect the server, and say which brand they expect.
 
 ## Switch brand
 
