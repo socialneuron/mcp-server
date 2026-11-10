@@ -285,6 +285,10 @@ See the [examples repo](https://github.com/socialneuron/examples) for prompt-dri
 - Brand-aligned content generation
 - Comment engagement automation
 
+## Grok plugin
+
+A Social Neuron plugin for Grok Build lives in [`plugins/socialneuron/`](./plugins/socialneuron/). It uses the hosted server with browser sign-in and adds skills; its connection is named `socialneuron-hosted`, so it can be set up alongside this npm server. It is versioned separately from the npm package.
+
 ## Links
 
 - [Social Neuron](https://socialneuron.com)
