@@ -35,7 +35,7 @@ In this version each sign-in works for one brand at a time.
 When `get_brand_profile` finds no brand profile for this sign-in:
 
 1. Call `list_connected_accounts`. If it reports a `project_id`, say it and use it for the first profile. This is the only case where rule 6 lets a write go ahead without a brand profile, and it covers `save_brand_profile` alone.
-2. Offer to set the brand up here: "Build a brand from a website" below (`extract_brand` takes no cap and has no published cost, so it needs its own yes under rule 3), or the person's own words. Save it with that `project_id`, then read it back with `get_brand_profile`; it must report the same `project_id` before any other write.
+2. Offer to set the brand up here from the person's own words: name, audience, voice and platforms, shown back for their yes. Save it with `save_brand_profile` and that `project_id`, then read it back with `get_brand_profile`; it must report the same `project_id` before any other write. Do not call `extract_brand` before a brand profile exists. To build the first brand from a website instead, the person does it in the Social Neuron app; once a profile exists, "Build a brand from a website" below can refine it.
 3. If no `project_id` is reported, do not guess one and do not save. Ask the person to create their first brand in the Social Neuron app, then come back and run "Which brand am I working for?" again.
 4. If `list_connected_accounts` says the connection itself has no project, suggest they reconnect the server, and say which brand they expect.
 
