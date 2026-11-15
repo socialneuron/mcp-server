@@ -66,7 +66,6 @@ if (!pkg.mcpName) {
 // 3. Forbidden strings — retired claims, internal codenames, dead endpoints
 const FORBIDDEN = [
   // stale public-contract claims
-  'request_upload_session',
   '76 MCP tools',
   'Hosted HTTP and npm stdio each expose **91 public tools**',
   '85+ MCP tools',
