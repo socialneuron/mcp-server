@@ -1,0 +1,19 @@
+{
+  "name": "socialneuron",
+  "owner": {
+    "name": "Cosmo Codex Ltd",
+    "email": "hello@socialneuron.com"
+  },
+  "metadata": {
+    "description": "Official Social Neuron plugins for Cursor and Grok Bot — hosted MCP connector plus skills that orchestrate TikTok, Instagram, YouTube and X.",
+    "version": "2.1.6"
+  },
+  "plugins": [
+    {
+      "name": "socialneuron",
+      "source": "./plugins/socialneuron",
+      "description": "Plan, create, quality-check and schedule TikTok, Instagram, YouTube and X content through the Social Neuron MCP server — brand-locked, quality-gated, with confirmation before every publish.",
+      "version": "2.1.6"
+    }
+  ]
+}

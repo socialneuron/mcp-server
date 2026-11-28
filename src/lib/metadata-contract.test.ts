@@ -24,14 +24,34 @@ function check(change: (f: Fixture) => void = () => {}) {
   change(f);
   const dir = mkdtempSync(join(tmpdir(), 'mcp-metadata-'));
   try {
-    for (const sub of ['docs', 'src', '.cursor-plugin']) mkdirSync(join(dir, sub));
+    for (const sub of [
+      'docs',
+      'src',
+      'registry',
+      '.cursor-plugin',
+      '.claude-plugin',
+      'plugins/socialneuron/.cursor-plugin',
+      'plugins/socialneuron/.claude-plugin',
+      'plugins/socialneuron/.codex-plugin',
+      'plugins/socialneuron/.grok-plugin',
+    ]) {
+      mkdirSync(join(dir, sub), { recursive: true });
+    }
     for (const doc of ['README.md', 'CHANGELOG.md', 'docs/rest-api.md',
       'docs/integration-methods.md', 'docs/troubleshooting.md', 'docs/auth.md',
       'docs/tools-reference.md', 'docs/cli-guide.md', 'docs/sdk-guide.md']) {
       writeFileSync(join(dir, doc), 'Fixture public documentation.');
     }
     for (const [name, data] of Object.entries({
-      'package.json': f.pkg, 'server.json': f.server, '.cursor-plugin/plugin.json': f.plugin,
+      'package.json': f.pkg,
+      'server.json': f.server,
+      'registry/server.json': f.server,
+      '.cursor-plugin/marketplace.json': f.plugin,
+      '.claude-plugin/marketplace.json': f.plugin,
+      'plugins/socialneuron/.cursor-plugin/plugin.json': f.plugin,
+      'plugins/socialneuron/.claude-plugin/plugin.json': f.plugin,
+      'plugins/socialneuron/.codex-plugin/plugin.json': f.plugin,
+      'plugins/socialneuron/.grok-plugin/plugin.json': f.plugin,
       'responses.json': { card: f.card, api: f.api },
     })) writeFileSync(join(dir, name), JSON.stringify(data));
     writeFileSync(join(dir, 'fetch.mjs'), `

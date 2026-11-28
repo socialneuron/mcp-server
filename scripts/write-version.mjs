@@ -20,15 +20,63 @@ export const MCP_VERSION = '${pkg.version}';
 `;
 writeFileSync(resolve(root, 'src/lib/version.ts'), output, 'utf8');
 
-// Public MCP Registry metadata is part of the same release contract.
+function replaceTopLevelVersion(source, fileLabel) {
+  if (!/"version"\s*:\s*"[^"]+"/.test(source)) {
+    throw new Error(`${fileLabel} version must be a string`);
+  }
+  return source.replace(/("version"\s*:\s*)"[^"]+"/, `$1${JSON.stringify(pkg.version)}`);
+}
+
+// Public MCP Registry metadata (legacy server.json + official schema registry/server.json).
 const serverPath = resolve(root, 'server.json');
 const serverSource = readFileSync(serverPath, 'utf8');
 const server = JSON.parse(serverSource);
 if (typeof server.version !== 'string') {
   throw new Error('server.json version must be a string');
 }
-const nextServerSource = serverSource.replace(
-  /("version"\s*:\s*)"[^"]+"/,
-  `$1${JSON.stringify(pkg.version)}`
-);
-writeFileSync(serverPath, nextServerSource, 'utf8');
+writeFileSync(serverPath, replaceTopLevelVersion(serverSource, 'server.json'), 'utf8');
+
+const registryPath = resolve(root, 'registry/server.json');
+const registry = JSON.parse(readFileSync(registryPath, 'utf8'));
+if (typeof registry.version !== 'string') {
+  throw new Error('registry/server.json version must be a string');
+}
+registry.version = pkg.version;
+if (Array.isArray(registry.packages)) {
+  for (const p of registry.packages) {
+    if (p && p.registryType === 'npm' && p.identifier === pkg.name) {
+      p.version = pkg.version;
+    }
+  }
+}
+writeFileSync(registryPath, `${JSON.stringify(registry, null, 2)}\n`, 'utf8');
+
+// Marketplaces and plugin manifests share the package version as well.
+for (const mpRel of ['.cursor-plugin/marketplace.json', '.claude-plugin/marketplace.json']) {
+  const mpPath = resolve(root, mpRel);
+  const mp = JSON.parse(readFileSync(mpPath, 'utf8'));
+  if (mp?.metadata && typeof mp.metadata.version === 'string') {
+    mp.metadata.version = pkg.version;
+  }
+  if (Array.isArray(mp?.plugins)) {
+    for (const p of mp.plugins) {
+      if (p && typeof p.version === 'string') p.version = pkg.version;
+    }
+  }
+  writeFileSync(mpPath, `${JSON.stringify(mp, null, 2)}\n`, 'utf8');
+}
+
+for (const manifestRel of [
+  'plugins/socialneuron/.cursor-plugin/plugin.json',
+  'plugins/socialneuron/.claude-plugin/plugin.json',
+  'plugins/socialneuron/.codex-plugin/plugin.json',
+  'plugins/socialneuron/.grok-plugin/plugin.json',
+]) {
+  const mPath = resolve(root, manifestRel);
+  const m = JSON.parse(readFileSync(mPath, 'utf8'));
+  if (typeof m?.version !== 'string') {
+    throw new Error(`${manifestRel} version must be a string`);
+  }
+  m.version = pkg.version;
+  writeFileSync(mPath, `${JSON.stringify(m, null, 2)}\n`, 'utf8');
+}

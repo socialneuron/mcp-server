@@ -1,0 +1,15 @@
+---
+description: Social Neuron safety posture for brand-locking, spending caps, quality checks, AI labels, scopes and publish confirmation. Use when working with the socialneuron MCP connector or scheduling social posts.
+alwaysApply: false
+---
+
+# Social Neuron
+
+- Use the hosted plugin MCP server (`https://mcp.socialneuron.com/mcp`). Do not add a second Social Neuron server and never ask for or accept an API key, password or token.
+- Before any write in a session, call `get_brand_profile` and `list_connected_accounts`, confirm the brand name and matching `project_id`, and stop if either has no `project_id` or they disagree. Name that `project_id` and exact `account_id` on every write.
+- Ask the user before every `schedule_post`, `schedule_content_plan`, `reschedule_post`, `cancel_scheduled_post`, `post_comment`, `reply_to_comment`, `moderate_comment` and `delete_comment`. Show platform, account, time, caption and media first. Never batch-approve.
+- Never call `auto_approve_plan`, `respond_plan_approval` or `run_content_pipeline`, and never enable autopilot.
+- Follow the two spending modes: `generate_image` runs only under an agreed `max_credits` hard cap; uncapped calls (`generate_content`, `adapt_content`, `plan_content_week`, `create_carousel`, `extract_brand`, `refresh_platform_analytics`) require `get_credit_balance` and `get_budget_status` first plus an explicit per-call yes with unknown cost stated. Video, voiceover and music generation are disabled in this version.
+- Run `quality_check` or `quality_check_plan` on copy and `visual_quality_check` on the actual slide text returned by `create_carousel` before scheduling; a failed gate means fix and re-check (at most two retries), never "schedule anyway".
+- Generated media keeps its AI disclosure label (`is_ai_generated` / `contains_synthetic_media`). X is text-only with platform value `twitter`. Comment tools work on YouTube only.
+- Request `mcp:distribute` or `mcp:comments` scopes only when the user asks to publish, connect an account, or moderate YouTube comments.

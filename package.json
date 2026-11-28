@@ -76,6 +76,7 @@
     "build:apps": "npm --prefix apps/content-calendar run typecheck && npm --prefix apps/content-calendar run build && npm --prefix apps/analytics-pulse run typecheck && npm --prefix apps/analytics-pulse run build && node scripts/copy-app-assets.mjs",
     "build:all": "npm run build:stdio && npm run build && npm run build:sn && npm run build:lock && npm run build:apps",
     "verify:lock": "node scripts/verify-tools-lock.mjs",
+    "validate:plugin": "node scripts/validate-plugin.mjs",
     "lint:tools": "node scripts/lint-tool-descriptions.mjs",
     "start": "node dist/http.js",
     "start:stdio": "node dist/index.js",

@@ -1,0 +1,57 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "com.socialneuron/mcp-server",
+  "title": "Social Neuron",
+  "description": "Create, schedule and measure social content on TikTok, Instagram, YouTube and X.",
+  "version": "2.1.6",
+  "websiteUrl": "https://socialneuron.com/for-developers",
+  "repository": {
+    "url": "https://github.com/socialneuron/mcp-server",
+    "source": "github"
+  },
+  "icons": [
+    {
+      "src": "https://socialneuron.com/icon-512.png",
+      "mimeType": "image/png",
+      "sizes": ["512x512"],
+      "theme": "light"
+    },
+    {
+      "src": "https://socialneuron.com/icon-192.png",
+      "mimeType": "image/png",
+      "sizes": ["192x192"],
+      "theme": "light"
+    },
+    {
+      "src": "https://socialneuron.com/favicon.svg",
+      "mimeType": "image/svg+xml",
+      "sizes": ["any"]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://mcp.socialneuron.com/mcp"
+    }
+  ],
+  "packages": [
+    {
+      "registryType": "npm",
+      "registryBaseUrl": "https://registry.npmjs.org",
+      "identifier": "@socialneuron/mcp-server",
+      "version": "2.1.6",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "SOCIALNEURON_API_KEY",
+          "description": "Social Neuron API key; mint one with: npx -y @socialneuron/mcp-server login --device",
+          "isRequired": false,
+          "isSecret": true,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}
