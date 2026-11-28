@@ -1,0 +1,40 @@
+{
+  "name": "socialneuron",
+  "owner": {
+    "name": "Cosmo Codex Ltd",
+    "email": "hello@socialneuron.com"
+  },
+  "metadata": {
+    "description": "Social Neuron plugins for Claude Code and Cowork: the hosted MCP connector plus workflow skills for TikTok, Instagram, YouTube and X.",
+    "version": "2.1.6"
+  },
+  "plugins": [
+    {
+      "name": "socialneuron",
+      "source": "./plugins/socialneuron",
+      "description": "Plan, create, quality-check and schedule TikTok, Instagram, YouTube and X content through the Social Neuron MCP server — brand-locked, quality-gated, with confirmation before every publish.",
+      "version": "2.1.6",
+      "author": {
+        "name": "Cosmo Codex Ltd",
+        "email": "hello@socialneuron.com",
+        "url": "https://socialneuron.com"
+      },
+      "homepage": "https://socialneuron.com/for-developers",
+      "repository": "https://github.com/socialneuron/mcp-server",
+      "license": "MIT",
+      "keywords": [
+        "social-media",
+        "tiktok",
+        "instagram",
+        "youtube",
+        "x",
+        "content",
+        "scheduling",
+        "analytics",
+        "mcp",
+        "grok-bot"
+      ],
+      "category": "marketing"
+    }
+  ]
+}

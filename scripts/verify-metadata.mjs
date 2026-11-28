@@ -42,7 +42,7 @@ function sameNames(actual, expected) {
     expected.every(name => names.has(name));
 }
 try {
-  const plugin = JSON.parse(readFileSync('.cursor-plugin/plugin.json', 'utf8'));
+  const plugin = JSON.parse(readFileSync('plugins/socialneuron/.cursor-plugin/plugin.json', 'utf8'));
   if (plugin.version !== pkg.version) failures.push('Cursor plugin version must match package.json version');
 } catch {
   failures.push('Cursor plugin version metadata could not be read');
@@ -211,7 +211,13 @@ function scanText(label, text, { skipPatterns = false } = {}) {
 const SURFACE = [
   'README.md',
   'server.json',
-  '.cursor-plugin/plugin.json',
+  'registry/server.json',
+  '.cursor-plugin/marketplace.json',
+  '.claude-plugin/marketplace.json',
+  'plugins/socialneuron/.cursor-plugin/plugin.json',
+  'plugins/socialneuron/.claude-plugin/plugin.json',
+  'plugins/socialneuron/.codex-plugin/plugin.json',
+  'plugins/socialneuron/.grok-plugin/plugin.json',
   'CHANGELOG.md',
   'docs/rest-api.md',
   'docs/integration-methods.md',

@@ -1,0 +1,45 @@
+{
+  "name": "socialneuron",
+  "version": "2.1.6",
+  "description": "Plan, create, schedule and review TikTok, Instagram, YouTube and X content through the Social Neuron MCP server — brand-locked, quality-gated, with confirmation before every publish.",
+  "author": {
+    "name": "Cosmo Codex Ltd",
+    "email": "hello@socialneuron.com",
+    "url": "https://socialneuron.com"
+  },
+  "homepage": "https://socialneuron.com/for-developers",
+  "repository": "https://github.com/socialneuron/mcp-server",
+  "license": "MIT",
+  "keywords": [
+    "social-media",
+    "tiktok",
+    "instagram",
+    "youtube",
+    "x",
+    "content",
+    "scheduling",
+    "analytics",
+    "mcp",
+    "grok-bot"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": "Social Neuron",
+    "developerName": "Cosmo Codex Ltd",
+    "category": "Business & Operations",
+    "shortDescription": "Plan, make & schedule posts",
+    "longDescription": "Plan, create, schedule and review TikTok, Instagram, YouTube and X content through the Social Neuron MCP server — brand-locked, quality-gated, with confirmation before every publish.",
+    "capabilities": ["Read", "Write"],
+    "defaultPrompt": [
+      "Show my connected social accounts and plan this week's TikTok carousels with Social Neuron"
+    ],
+    "websiteURL": "https://socialneuron.com/for-developers",
+    "privacyPolicyURL": "https://socialneuron.com/privacy",
+    "termsOfServiceURL": "https://socialneuron.com/terms",
+    "brandColor": "#01E789",
+    "logo": "./assets/logo.png",
+    "composerIcon": "./assets/logo.svg",
+    "screenshots": []
+  }
+}
